@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://araujoadvocaciasc.com.br/sitemap.xml
