@@ -45,7 +45,75 @@
     avisoTimer = setTimeout(() => { el.hidden = true; }, ruim ? 7000 : 3500);
   }
 
+  /* ---------- memória das telas ----------
+     O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
+     mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
+  const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+    'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'modelos.listar']);
+  const FRESCO_MS = 15000; // dentro disso nem confere de novo
+  const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
+  let geracao = 0, sujo = false, redesenhoTimer = null;
+
+  function chaveDe(acao, dados) {
+    const d = {};
+    Object.keys(dados || {}).sort().forEach(k => { const v = dados[k]; if (v !== '' && v !== null && v !== undefined && v !== false) d[k] = v; });
+    return acao + '|' + JSON.stringify(d);
+  }
+  function esquecerTudo() { memoria.clear(); geracao++; }
+
   async function api(acao, dados) {
+    if (!LEITURAS.has(acao)) {
+      try { return await chamar(acao, dados); } finally { if (acao !== 'situacao') esquecerTudo(); }
+    }
+    const k = chaveDe(acao, dados);
+    const m = memoria.get(k);
+    if (m && 'txt' in m) {
+      if (Date.now() - m.t > FRESCO_MS && !m.promessa) conferir(k, acao, dados, m);
+      return JSON.parse(m.txt);
+    }
+    if (m && m.promessa) return m.promessa.then(v => JSON.parse(JSON.stringify(v)));
+    const g = geracao;
+    const promessa = chamar(acao, dados).then(v => {
+      if (g === geracao) memoria.set(k, { t: Date.now(), txt: JSON.stringify(v) }); else memoria.delete(k);
+      return JSON.parse(JSON.stringify(v));
+    }, e => { memoria.delete(k); throw e; });
+    memoria.set(k, { promessa });
+    return promessa;
+  }
+
+  function conferir(k, acao, dados, m) {
+    const g = geracao;
+    m.promessa = chamar(acao, dados).then(v => {
+      if (g !== geracao) return;
+      const txt = JSON.stringify(v);
+      const mudou = txt !== m.txt;
+      memoria.set(k, { t: Date.now(), txt });
+      if (mudou) pedirRedesenho();
+    }, () => { m.promessa = null; });
+  }
+
+  function pedirRedesenho() {
+    const hash = location.hash;
+    clearTimeout(redesenhoTimer);
+    redesenhoTimer = setTimeout(() => {
+      // não atrapalha quem está digitando num formulário
+      if (!sessao || sujo || location.hash !== hash) return;
+      const y = window.scrollY;
+      rota().then(() => window.scrollTo(0, y));
+    }, 200);
+  }
+  app.addEventListener('input', () => { sujo = true; });
+
+  /** Depois do login, já busca o que as abas principais usam. */
+  function preaquecer() {
+    const pode = (sessao && sessao.usuario && sessao.usuario.pode) || {};
+    const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}]];
+    if (pode.financeiro) lista.push(['fin.resumo'], ['fin.honorarios', {}]);
+    lista.forEach(([a, d]) => api(a, d).catch(() => {}));
+  }
+
+  async function chamar(acao, dados) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
     let resp;
     try {
@@ -156,6 +224,7 @@
   function sair(expirou) {
     const token = sessao && sessao.token;
     sessao = null;
+    esquecerTudo();
     guardar('painel_sessao', null);
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
     abasEl.hidden = true;
@@ -216,6 +285,7 @@
       document.getElementById('aviso').hidden = true;
       guardar('painel_sessao', r);
       montarTopo();
+      preaquecer();
       location.hash = '#/inicio';
       rota();
     });
@@ -1202,6 +1272,7 @@
     }
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
+    sujo = false;
     window.scrollTo(0, 0);
     try {
       switch (tela) {
@@ -1229,5 +1300,5 @@
 
   sessao = ler('painel_sessao');
   if (sessao) montarTopo();
-  rota();
+  rota().then(() => { if (sessao) preaquecer(); });
 })();

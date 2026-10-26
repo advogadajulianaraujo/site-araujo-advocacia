@@ -94,6 +94,8 @@ function configurar() {
   var feriados = semearFeriados_();
   if (feriados) importados = (importados ? importados + ' ' : '') + feriados;
   var gea = importarGEASeguro_(false);
+  var nomes = corrigirNomesMaiusculos_();
+  if (nomes) gea = (gea ? gea + '\n' : '') + nomes + ' nomes do GEA passaram de MAIÚSCULAS para o formato normal.';
   if (gea) importados = (importados ? importados + '\n\n' : '') + gea;
   var codigo = config_('CODIGO_PRIMEIRO_ACESSO');
   if (!usuarios_().length && !codigo) codigo = gerarCodigoPrimeiroAcesso_();
@@ -154,6 +156,20 @@ function gravarLote_(tab) {
   tab.base = 0;
 }
 
+/** Grava numa só chamada as linhas alteradas com tab.adiar = true. */
+function regravarMudadas_(tab) {
+  tab.adiar = false;
+  var mud = tab.linhas.filter(function (o) { return o._mudou && !o._novo; });
+  if (!mud.length) return 0;
+  var min = Infinity, max = 0;
+  mud.forEach(function (o) { min = Math.min(min, o._linha); max = Math.max(max, o._linha); });
+  var faixa = tab.aba.getRange(min, 1, max - min + 1, tab.cab.length);
+  var vals = faixa.getDisplayValues().map(function (l) { return l.map(seguro_); });
+  mud.forEach(function (o) { vals[o._linha - min] = tab.cab.map(function (k) { return seguro_(o[k]); }); delete o._mudou; });
+  faixa.setNumberFormat('@').setValues(vals);
+  return mud.length;
+}
+
 function gravarVarias_(nome, objs) {
   if (!objs.length) return;
   var tab = tabela_(nome);
@@ -177,8 +193,11 @@ function gerarCodigoPrimeiroAcesso_() {
   return codigo;
 }
 
+/** Aviso que não trava: aparece no canto da planilha e no Registro de execução do Apps Script.
+ *  (Uma janela com OK deixava o programa esperando um clique e o Google o derrubava depois de 6 minutos.) */
 function aviso_(msg) {
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) { Logger.log(msg); }
+  Logger.log(msg);
+  try { SpreadsheetApp.getActive().toast(String(msg).slice(0, 600), 'Painel', 60); } catch (e) { /* sem planilha aberta */ }
 }
 
 /* ------------------------------------------------------------------ */
@@ -773,6 +792,7 @@ function atualizarLinha_(tab, linhaObj, mudancas) {
     linhaObj[k] = mudancas[k] === null || mudancas[k] === undefined ? '' : String(mudancas[k]);
   });
   if (linhaObj._novo) return; // ainda no lote: vai gravado no fim
+  if (tab.adiar) { linhaObj._mudou = true; return; } // gravado de uma vez por regravarMudadas_
   var valores = tab.cab.map(function (k) { return seguro_(linhaObj[k]); });
   tab.aba.getRange(linhaObj._linha, 1, 1, tab.cab.length).setValues([valores]);
 }
@@ -2183,6 +2203,18 @@ function importarGEASeguro_(forcar) {
   }
 }
 
+/** Clientes vindos do GEA com o nome todo em MAIÚSCULAS passam para "Maria da Silva". */
+function corrigirNomesMaiusculos_() {
+  var tab = tabela_('Clientes');
+  tab.adiar = true;
+  tab.linhas.forEach(function (c) {
+    if (!/^GEA/.test(c.origem || '')) return;
+    var novo = nomeProprio_(c.nome);
+    if (novo !== c.nome) atualizarLinha_(tab, c, { nome: novo });
+  });
+  return regravarMudadas_(tab);
+}
+
 /** "MARIA DA SILVA LTDA" → "Maria da Silva LTDA". */
 var SIGLAS_NOME = { ltda: 'LTDA', me: 'ME', epp: 'EPP', eireli: 'EIRELI', 'sa': 'SA', 's/a': 'S/A', 'mei': 'MEI', 'cia': 'Cia' };
 var MINUSCULAS_NOME = { da: 1, de: 1, do: 1, das: 1, dos: 1, e: 1, di: 1, du: 1 };
@@ -2239,6 +2271,7 @@ function importarGEADados_(rowsCli, rowsFin) {
     if (d.length === 11 || d.length === 14) porDoc[d] = c;
   };
   tabC.linhas.forEach(indexar);
+  tabC.adiar = true; tabP.adiar = true; tabH.adiar = true; tabQ.adiar = true;
   var cont = { novos: 0, completados: 0, honorarios: 0, parcelas: 0, processosLigados: 0, processosNovos: 0, substituidos: 0 };
   tabC.buffer = [];
 
@@ -2355,6 +2388,7 @@ function importarGEADados_(rowsCli, rowsFin) {
     });
     gravarLote_(tabP); gravarLote_(tabH); gravarLote_(tabQ);
   }
+  [tabC, tabP, tabH, tabQ].forEach(regravarMudadas_);
 
   var pastas = 0;
   try { pastas = vincularPastas_(); } catch (e) { /* pasta 02. CLIENTES não configurada */ }
