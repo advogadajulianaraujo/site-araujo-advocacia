@@ -1,3 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /painel/
+Disallow: /painel-backend/
 Sitemap: https://araujoadvocaciasc.com.br/sitemap.xml

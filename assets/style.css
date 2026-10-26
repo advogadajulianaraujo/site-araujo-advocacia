@@ -329,3 +329,7 @@ footer.site{background:var(--black);color:#9e9a92;font-size:14px;padding:90px 0 
   .aside{padding:22px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}.js .reveal{opacity:1;transform:none}}
+
+/* Botão ENTRAR do painel interno, no canto do cabeçalho */
+.nav > a.entrar-site{gap:8px}
+.nav > a.entrar-site .ico{width:15px;height:15px}
