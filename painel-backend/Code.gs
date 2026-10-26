@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '4.1.0';
+var VERSAO = '4.2.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -47,7 +47,8 @@ var ESQUEMA = {
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em'],
   Feriados: ['data', 'descricao', 'abrangencia'],
-  Log: ['quando', 'usuario', 'acao', 'detalhe']
+  Log: ['quando', 'usuario', 'acao', 'detalhe'],
+  PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis']
 };
 
 var TENTATIVAS_MAX = 5;
@@ -94,6 +95,7 @@ function configurar() {
   var feriados = semearFeriados_();
   if (feriados) importados = (importados ? importados + ' ' : '') + feriados;
   var gea = importarGEASeguro_(false);
+  try { var lig = vincularPastas_(); if (lig) gea = (gea ? gea + '\n' : '') + lig + ' clientes ligados às pastas do Drive (veja a aba PastasConferir).'; } catch (e) { /* pasta 02. CLIENTES não configurada */ }
   var nomes = corrigirNomesMaiusculos_();
   if (nomes) gea = (gea ? gea + '\n' : '') + nomes + ' nomes do GEA passaram de MAIÚSCULAS para o formato normal.';
   if (gea) importados = (importados ? importados + '\n\n' : '') + gea;
@@ -516,6 +518,19 @@ function salvarCliente_(d, u) {
     dados.nome = nome;
     dados.atualizado_em = agora;
     dados.atualizado_por = u.usuario;
+    if (c.id && c.pasta_link !== undefined) {
+      var link = String(c.pasta_link || '').trim();
+      var atualLinha = tab.linhas.filter(function (r) { return r.id === c.id; })[0];
+      if (link && (!atualLinha || link !== atualLinha.pasta_url)) {
+        var mid = /folders\/([A-Za-z0-9_-]+)/.exec(link) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(link) || /^([A-Za-z0-9_-]{20,})$/.exec(link);
+        if (!mid) throw falha_('Link da pasta inválido. Abra a pasta no Google Drive e copie o endereço da barra do navegador.');
+        var pastaNova;
+        try { pastaNova = DriveApp.getFolderById(mid[1]); pastaNova.getName(); }
+        catch (e) { throw falha_('Não encontrei essa pasta no Drive da conta do escritório.'); }
+        dados.pasta_id = pastaNova.getId();
+        dados.pasta_url = pastaNova.getUrl();
+      }
+    }
     if (c.id) {
       var linha = tab.linhas.filter(function (r) { return r.id === c.id; })[0];
       if (!linha) throw falha_('Cliente não encontrado.');
@@ -576,38 +591,166 @@ function criarFicha_(pasta, c) {
 /** Menu da planilha: liga cada cliente sem pasta à pasta de mesmo nome em 02. CLIENTES. Não cria nada. */
 function vincularPastasExistentes() {
   var n = vincularPastas_();
-  aviso_(n + ' clientes ligados às pastas que já existiam.');
+  aviso_(n + ' clientes ligados às pastas que já existiam. As pastas sem cliente estão na aba PastasConferir.');
   return n;
 }
 
 function vincularPastas_() {
   var raiz = pastaClientes_();
-  var mapa = {};
+  var pastas = [];
   var it = raiz.getFolders();
   while (it.hasNext()) {
     var f = it.next();
-    mapa[normalizar_(f.getName())] = { id: f.getId(), url: f.getUrl() };
+    pastas.push({ id: f.getId(), nome: f.getName() });
   }
-  var n = 0;
+  var porNome = {};
+  pastas.forEach(function (p) { p.url = 'https://drive.google.com/drive/folders/' + p.id; porNome[normalizar_(p.nome)] = p; });
+  var n = 0, aprox = 0, duvidas = [];
   comTrava_(function () {
     var tab = tabela_('Clientes');
-    var colId = tab.cab.indexOf('pasta_id') + 1;
-    var ult = tab.aba.getLastRow();
-    if (ult < 2) return;
-    var faixa = tab.aba.getRange(2, colId, ult - 1, 2);
-    var vals = faixa.getDisplayValues();
-    var mudou = false;
+    tab.adiar = true;
+    // 1) nome igual
     tab.linhas.forEach(function (c) {
       if (c.pasta_id) return;
-      var f = mapa[normalizar_(c.nome)];
-      if (!f) return;
-      vals[c._linha - 2] = [f.id, f.url];
-      n++; mudou = true;
+      var p = porNome[normalizar_(c.nome)];
+      if (!p) return;
+      atualizarLinha_(tab, c, { pasta_id: p.id, pasta_url: p.url }); n++;
     });
-    if (mudou) faixa.setValues(vals); // uma gravação só para todas as pastas
+    // 2) nome parecido (erros de digitação, nome incompleto, complementos)
+    var r = casarPastas_(pastas, tab.linhas);
+    r.ligar.forEach(function (x) { atualizarLinha_(tab, x.cliente, { pasta_id: x.pasta.id, pasta_url: x.pasta.url }); aprox++; });
+    duvidas = r.duvidas;
+    regravarMudadas_(tab);
+    // 3) relatório: pastas que não ficaram com nenhum cliente
+    var usadas = {};
+    tab.linhas.forEach(function (c) { if (c.pasta_id) usadas[c.pasta_id] = true; });
+    var mapaDuv = {};
+    duvidas.forEach(function (d) { mapaDuv[d.pasta.id] = d.candidatos.join(' | '); });
+    var linhas = pastas.filter(function (p) { return !usadas[p.id]; })
+      .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; })
+      .map(function (p) { return [seguro_(p.nome), p.url, mapaDuv[p.id] ? 'mais de um cliente possível' : 'nenhum cliente com esse nome', seguro_(mapaDuv[p.id] || '')]; });
+    var sh = aba_('PastasConferir');
+    var cab = ESQUEMA.PastasConferir;
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, cab.length).clearContent();
+    if (linhas.length) sh.getRange(2, 1, linhas.length, cab.length).setNumberFormat('@').setValues(linhas);
   });
-  registrar_('sistema', 'pastas vinculadas', n + ' clientes');
-  return n;
+  registrar_('sistema', 'pastas vinculadas', n + ' pelo nome igual, ' + aprox + ' pelo nome parecido, ' + duvidas.length + ' em dúvida');
+  return n + aprox;
+}
+
+/* ---------- Casamento aproximado de pastas com clientes ----------
+   As pastas em 02. CLIENTES foram criadas à mão ao longo dos anos: há erros de digitação
+   ("ADELMOS"), nomes incompletos ("ZENO MORERA"), "de/da" faltando, complementos
+   ("- IMBITUBA", "(DATIVA)") e pastas com duas pessoas ("FULANO e BELTRANA").
+   Só liga quando há um único cliente possível; o resto vai para a aba PastasConferir. */
+var PARTICULAS_NOME = { da: 1, de: 1, do: 1, das: 1, dos: 1, e: 1, d: 1, di: 1, du: 1 };
+var RUIDO_PASTA = { documentos: 1, documento: 1, dativa: 1, dativo: 1, docs: 1, mae: 1, pai: 1, filho: 1, filha: 1, caso: 1,
+  criminal: 1, trabalhista: 1, previdenciario: 1, civel: 1, inventario: 1, acao: 1, processo: 1, processos: 1, ltda: 1, me: 1,
+  epp: 1, eireli: 1, novo: 1, nova: 1, antigo: 1, antiga: 1, imbituba: 1, tubarao: 1, laguna: 1, criciuma: 1, garopaba: 1,
+  argentina: 1, r: 1 };
+
+function tokensNome_(s, ruido) {
+  return normalizar_(s).replace(/[^a-z0-9 ]/g, ' ').split(' ').filter(function (w) {
+    return w && !PARTICULAS_NOME[w] && !(ruido && RUIDO_PASTA[w]) && !/^\d+$/.test(w);
+  });
+}
+
+function distancia_(a, b, max) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  var ant = [], i, j;
+  for (j = 0; j <= b.length; j++) ant[j] = j;
+  for (i = 1; i <= a.length; i++) {
+    var cur = [i], menor = i;
+    for (j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(ant[j] + 1, cur[j - 1] + 1, ant[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+      if (cur[j] < menor) menor = cur[j];
+    }
+    if (menor > max) return max + 1;
+    ant = cur;
+  }
+  return ant[b.length];
+}
+
+function palavraParecida_(a, b) {
+  if (a === b) return true;
+  var max = Math.min(a.length, b.length) >= 8 ? 2 : Math.min(a.length, b.length) >= 4 ? 1 : 0;
+  return max > 0 && distancia_(a, b, max) <= max;
+}
+
+/** Todas as palavras de "poucas" aparecem (iguais ou parecidas) em "muitas", e a primeira bate com a primeira. */
+function contidoEm_(poucas, muitas) {
+  if (poucas.length < 2 || poucas.length > muitas.length) return false;
+  if (!palavraParecida_(poucas[0], muitas[0])) return false;
+  var usadas = { 0: true };
+  for (var i = 1; i < poucas.length; i++) {
+    var achou = false;
+    for (var j = 1; j < muitas.length; j++) {
+      if (usadas[j]) continue;
+      if (palavraParecida_(poucas[i], muitas[j])) { usadas[j] = true; achou = true; break; }
+    }
+    if (!achou) return false;
+  }
+  return true;
+}
+
+/** Partes do nome da pasta: "A e B", "A, B", "A (B)", "A - complemento", "A x Empresa". */
+function partesPasta_(nome) {
+  var t = String(nome || '');
+  var partes = [];
+  // nome entre parênteses só vale se bater por inteiro (pode ser outra pessoa: "LIANA (KELLY CRISTINA)")
+  t.replace(/\(([^)]*)\)/g, function (m, dentro) { var tk = tokensNome_(dentro, true); tk.soInteiro = true; partes.push(tk); return ''; });
+  t = t.replace(/\([^)]*\)/g, ' ');
+  t.split(/\s+[-–]\s+|\s+x\s+|,|\s+e\s+|\.\s/i).forEach(function (p) { partes.push(tokensNome_(p, true)); });
+  return partes.filter(function (tk) { return tk.length >= 2; });
+}
+
+/**
+ * pastas: [{id, url, nome}]; clientes: [{id, nome, pasta_id}].
+ * Devolve { ligar: [{cliente, pasta}], duvidas: [{pasta, candidatos: [nomes]}] }.
+ */
+function casarPastas_(pastas, clientes) {
+  var usadas = {};
+  clientes.forEach(function (c) { if (c.pasta_id) usadas[c.pasta_id] = true; });
+  var porPrimeira = {};
+  var tk = clientes.map(function (c) {
+    var t = tokensNome_(c.nome, false);
+    if (t.length) (porPrimeira[t[0]] = porPrimeira[t[0]] || []).push(c);
+    return t;
+  });
+  var tokDe = {};
+  clientes.forEach(function (c, i) { tokDe[c.id] = tk[i]; });
+  var primeiras = Object.keys(porPrimeira);
+  var ligar = [], duvidas = [], jaLigado = {};
+  pastas.forEach(function (p) {
+    if (usadas[p.id]) return;
+    partesPasta_(p.nome).forEach(function (parte) {
+      var cand = [];
+      primeiras.forEach(function (w) {
+        if (!palavraParecida_(parte[0], w)) return;
+        porPrimeira[w].forEach(function (c) {
+          var ct = tokDe[c.id];
+          var inteiro = parte.length === ct.length && contidoEm_(parte, ct);
+          if (inteiro || (!parte.soInteiro && (contidoEm_(parte, ct) || (ct.length >= 3 && contidoEm_(ct, parte))))) cand.push({ c: c, inteiro: inteiro });
+        });
+      });
+      if (!cand.length) return;
+      var inteiros = cand.filter(function (x) { return x.inteiro; });
+      var mesmoNome = cand.every(function (x) { return normalizar_(x.c.nome) === normalizar_(cand[0].c.nome); });
+      // cadastros repetidos da mesma pessoa ficam todos com a pasta
+      var escolhidos = mesmoNome ? cand.map(function (x) { return x.c; }) : cand.length === 1 ? [cand[0].c] : inteiros.length === 1 ? [inteiros[0].c] : null;
+      if (!escolhidos) {
+        duvidas.push({ pasta: p, candidatos: cand.map(function (x) { return x.c.nome; }).slice(0, 6) });
+        return;
+      }
+      escolhidos.forEach(function (escolhido) {
+        if (escolhido.pasta_id || jaLigado[escolhido.id]) return;
+        jaLigado[escolhido.id] = true;
+        ligar.push({ cliente: escolhido, pasta: p });
+      });
+    });
+  });
+  return { ligar: ligar, duvidas: duvidas };
 }
 
 function pastaClientes_() {

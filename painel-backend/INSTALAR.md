@@ -74,6 +74,13 @@ Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
 4. O resultado fica na aba **Config**: em **GEA_IMPORTADO** quando deu certo, ou em **GEA_ERRO** quando deu erro.
    Para importar de novo, apague o valor de GEA_IMPORTADO.
 
+## Pastas dos clientes
+
+O **configurar** (ou o menu **Painel → 2. Vincular pastas**) liga cada cliente à pasta dele em **02. CLIENTES**:
+primeiro pelo nome igual, depois pelo nome parecido (erro de digitação, nome incompleto, "- IMBITUBA", "(DATIVA)",
+pasta com duas pessoas). Só liga quando há um único cliente possível. As pastas que sobraram ficam na aba
+**PastasConferir**; para ligar à mão, abra a ficha do cliente no painel → Editar → cole o link da pasta.
+
 ## Quando o programa for atualizado
 
 Cole o novo `Code.gs` por cima do antigo, salve e vá em
