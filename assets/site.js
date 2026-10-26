@@ -1,2 +1,28 @@
-const menu=document.querySelector('.menu');const nav=document.querySelector('.nav');menu?.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')!=='true';menu.setAttribute('aria-expanded',String(open));nav.classList.toggle('open',open);menu.textContent=open?'Fechar':'Menu';});nav?.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nav.classList.remove('open');menu.setAttribute('aria-expanded','false');menu.textContent='Menu';}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){nav?.classList.remove('open');menu?.setAttribute('aria-expanded','false');if(menu)menu.textContent='Menu';}});const topic=document.querySelector('#topic');const topicLink=document.querySelector('#topic-link');topic?.addEventListener('change',()=>{const text=topic.value?'Olá, Dra. Júlian. Gostaria de informações sobre Direito '+topic.value+'.':'Olá, Dra. Júlian. Gostaria de informações sobre o atendimento.';topicLink.href='https://wa.me/5548996126491?text='+encodeURIComponent(text);});document.querySelectorAll('[data-contact]').forEach(a=>a.addEventListener('click',()=>{window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'contact_click',contact_channel:'whatsapp',contact_location:a.dataset.contact,practice_area:topic?.value||'geral'});}));
-const documentTabs=[...document.querySelectorAll('[data-document-tab]')];function selectDocumentTab(tab,focus=false){documentTabs.forEach(button=>{const active=button===tab;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;const panel=document.getElementById(button.getAttribute('aria-controls'));if(panel)panel.hidden=!active;});if(focus)tab.focus();}documentTabs.forEach((tab,i)=>{tab.addEventListener('click',()=>selectDocumentTab(tab));tab.addEventListener('keydown',event=>{let next=i;if(event.key==='ArrowDown'||event.key==='ArrowRight')next=(i+1)%documentTabs.length;else if(event.key==='ArrowUp'||event.key==='ArrowLeft')next=(i-1+documentTabs.length)%documentTabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=documentTabs.length-1;else return;event.preventDefault();selectDocumentTab(documentTabs[next],true);});});
+(() => {
+  'use strict';
+  const menu = document.querySelector('.menu');
+  const nav = document.querySelector('.nav');
+  function setMenu(open) {
+    if (!menu || !nav) return;
+    menu.setAttribute('aria-expanded', String(open));
+    nav.classList.toggle('open', open);
+    menu.textContent = open ? 'Fechar' : 'Menu';
+  }
+  menu?.addEventListener('click', () => setMenu(menu.getAttribute('aria-expanded') !== 'true'));
+  nav?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setMenu(false)));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+
+  // Onde o clique no WhatsApp aconteceu (sem texto da mensagem nem dados do caso).
+  document.querySelectorAll('[data-contact]').forEach(a => a.addEventListener('click', () => {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event: 'contact_click', contact_channel: 'whatsapp', contact_location: a.dataset.contact, practice_area: document.body.dataset.area || 'geral' });
+  }));
+
+  // Entrada suave dos blocos ao rolar a página.
+  const items = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window)) { items.forEach(el => el.classList.add('in')); return; }
+  const io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }), { rootMargin: '0px 0px -8% 0px' });
+  items.forEach(el => io.observe(el));
+})();
