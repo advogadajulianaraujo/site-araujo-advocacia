@@ -58,6 +58,7 @@
     try { j = await resp.json(); } catch (e) { throw new Error('Resposta inesperada do servidor.'); }
     if (!j.ok) {
       if (j.sessao) { sair(true); }
+      if (j.erro === 'Ação desconhecida.') throw new Error('Esta parte precisa da atualização do programa do Google (etapa 2): cole o Code.gs novo no Apps Script e implante uma nova versão.');
       throw new Error(j.erro || 'Erro.');
     }
     return j.dados;
@@ -145,7 +146,10 @@
     return h('div', { class: extra.largo ? 'largo' : '' }, h('label', { for: id }, rotulo + (extra.obrigatorio ? ' *' : '')), input);
   }
 
-  function carregando() { app.replaceChildren(h('p', { class: 'carregando' }, 'Carregando…')); }
+  /** Troca o conteúdo da tela, ignorando partes vazias (null). */
+  function mostrar(...itens) { app.replaceChildren(...itens.filter(x => x !== null && x !== undefined && x !== false)); }
+
+  function carregando() { mostrar(h('p', { class: 'carregando' }, 'Carregando…')); }
 
   /* ---------- sessão ---------- */
 
@@ -168,8 +172,8 @@
     ['inicio', 'Início'],
     ['clientes', 'Clientes'],
     ['processos', 'Processos'],
-    ['agenda', 'Agenda', 'etapa 2'],
-    ['prazos', 'Prazos', 'etapa 2'],
+    ['prazos', 'Prazos'],
+    ['agenda', 'Agenda'],
     ['financeiro', 'Financeiro', 'etapa 3', 'financeiro'],
     ['usuarios', 'Usuários', null, 'usuarios']
   ];
@@ -191,7 +195,7 @@
 
   async function telaLogin() {
     if (!API) {
-      app.replaceChildren(h('div', { class: 'entrar' }, h('h1', {}, 'Painel interno'),
+      mostrar(h('div', { class: 'entrar' }, h('h1', {}, 'Painel interno'),
         h('p', {}, 'O painel ainda não foi ligado ao Google. Siga o passo a passo em painel-backend/INSTALAR.md e cole o endereço em painel/config.js.')));
       return;
     }
@@ -203,7 +207,7 @@
       h('button', { type: 'submit', class: 'btn' }, 'Entrar'),
       h('p', { class: 'erro' }),
       h('div', { class: 'rodape', id: 'primeiro' }));
-    app.replaceChildren(form);
+    mostrar(form);
     form.querySelector('input').focus();
     aoEnviar(form, async fd => {
       const r = await api('login', { usuario: fd.get('usuario'), senha: fd.get('senha') });
@@ -239,7 +243,7 @@
       h('button', { type: 'submit', class: 'btn' }, 'Criar administrador'),
       h('p', { class: 'erro' }),
       h('div', { class: 'rodape' }, h('a', { href: '#' }, 'Voltar ao login')));
-    app.replaceChildren(form);
+    mostrar(form);
     aoEnviar(form, async fd => {
       if (fd.get('senha') !== fd.get('senha2')) throw new Error('As senhas não conferem.');
       await api('primeiroAcesso', { codigo: fd.get('codigo'), nome: fd.get('nome'), usuario: fd.get('usuario'), senha: fd.get('senha') });
@@ -254,15 +258,23 @@
     carregando();
     const r = await api('resumo');
     const t = r.totais;
-    app.replaceChildren(
+    r.prazos = r.prazos || { vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [] };
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`), h('p', {}, hojeExtenso()))),
-      h('div', { class: 'nota' }, 'Etapa 1 no ar: clientes e processos. A contagem de prazos (com a etiqueta "calculado pelo robô") e a agenda do Google entram na etapa 2.'),
+      h('div', { class: 'nota' }, linhaRobo(r.robo)),
+      h('div', { class: 'numeros' },
+        h('a', { class: 'numero' + (r.prazos.vencendo ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.vencendo), h('span', {}, 'prazos vencem em até 5 dias')),
+        h('a', { class: 'numero' + (r.prazos.aDefinir ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.aDefinir), h('span', {}, 'prazos a definir')),
+        h('a', { class: 'numero', href: '#/prazos' }, h('b', {}, r.prazos.aConferir), h('span', {}, 'prazos a conferir')),
+        h('a', { class: 'numero', href: '#/agenda?visao=dia' }, h('b', {}, '→'), h('span', {}, 'agenda de hoje'))),
+      r.prazos.proximos.length ? h('div', {}, h('h2', {}, 'Próximos prazos'), tabelaPrazos(r.prazos.proximos, '')) : null,
+      h('h2', { class: 'mt' }, 'Cadastro'),
       h('div', { class: 'numeros' },
         h('a', { class: 'numero', href: '#/clientes' }, h('b', {}, t.clientes), h('span', {}, 'clientes')),
         h('a', { class: 'numero', href: '#/processos' }, h('b', {}, t.processos), h('span', {}, 'processos ativos')),
         h('a', { class: 'numero', href: '#/clientes?conferir=1' }, h('b', {}, t.clientesConferir), h('span', {}, 'cadastros a conferir')),
         h('a', { class: 'numero', href: '#/processos?semcliente=1' }, h('b', {}, t.processosSemCliente), h('span', {}, 'processos sem cliente'))),
-      h('h2', {}, 'Próximos 14 dias'),
+      h('h2', { class: 'mt' }, 'Audiências e atos dos próximos 14 dias'),
       h('p', { class: 'peq' }, 'Audiências e atos marcados nos processos.'),
       tabela(['Data', 'Ato', 'Cliente', 'Processo', 'Órgão'], r.proximos, p => [
         h('td', { class: 'num', 'data-r': 'Data' }, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)),
@@ -305,7 +317,7 @@
       if (form.conferir.checked) q.set('conferir', '1');
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
     });
-    app.replaceChildren(
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', {}, `${lista.length} encontrado${lista.length === 1 ? '' : 's'}`)),
         botao('Novo cliente', () => { location.hash = '#/cliente/novo'; })),
       form,
@@ -392,7 +404,7 @@
         h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato, p.proximo_ato_data ? h('div', {}, etiquetaDias(p.proximo_ato_data)) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo ligado a este cliente.'));
 
-    app.replaceChildren(
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo cliente' : c.nome),
         novo ? h('p', {}, 'Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES (ou liga a que já existir com o mesmo nome).')
           : h('p', {}, etiquetaSituacao(c.situacao), c.origem ? ` · origem: ${c.origem}` : ''))),
@@ -418,7 +430,7 @@
       if (form.semcliente.checked) q.set('semcliente', '1');
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     });
-    app.replaceChildren(
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, `${lista.length} encontrado${lista.length === 1 ? '' : 's'}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
       form,
@@ -465,10 +477,16 @@
       location.hash = '#/processo/' + res.id;
       if (!novo) telaProcesso(res.id, new URLSearchParams());
     });
-    app.replaceChildren(
+    let prazosProc = null;
+    if (!novo) {
+      const lp = await api('prazos.listar', { processo_id: p.id, encerrados: true });
+      prazosProc = h('div', {}, h('div', { class: 'cab' }, h('h2', {}, 'Prazos deste processo'), botao('Novo prazo', () => { location.hash = '#/prazo/novo?processo=' + p.id; }, 'sec')),
+        tabelaPrazos(lp, 'Nenhum prazo lançado.'));
+    }
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo processo' : (p.numero || 'Processo sem número')),
         novo ? null : h('p', {}, p.cliente_id ? p.cliente_nome : 'Cliente a identificar', p.origem ? ` · origem: ${p.origem}` : '', ' · ', acessoTribunal(p.numero)))),
-      form);
+      prazosProc, form);
   }
 
   /* ---------- usuários ---------- */
@@ -493,7 +511,7 @@
       avisar('Usuário criado.');
       telaUsuarios();
     });
-    app.replaceChildren(
+    mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Usuários'), h('p', {}, 'Quem pode entrar no painel e o que cada um vê.'))),
       tabela(['Nome', 'Usuário', 'Perfil', 'Situação', 'Último acesso'], lista, u => [
         h('td', { 'data-r': 'Nome' }, u.nome),
@@ -543,11 +561,298 @@
       avisar('Senha trocada.');
       location.hash = '#/inicio';
     });
-    app.replaceChildren(form);
+    mostrar(form);
   }
 
   function telaEmBreve(nome, etapa, texto) {
-    app.replaceChildren(h('div', { class: 'cab' }, h('h1', {}, nome)), h('div', { class: 'nota' }, `Entra na ${etapa}. ${texto}`));
+    mostrar(h('div', { class: 'cab' }, h('h1', {}, nome)), h('div', { class: 'nota' }, `Entra na ${etapa}. ${texto}`));
+  }
+
+  /* ---------- prazos ---------- */
+
+  /** Quanto falta até 23h59 do dia fatal (horário de Brasília). */
+  function contagem(fatal) {
+    if (!fatal) return null;
+    const fim = new Date(fatal + 'T23:59:59-03:00').getTime();
+    const ms = fim - Date.now();
+    if (ms < 0) {
+      const d = Math.floor(-ms / 86400000);
+      return { cls: 'tag', texto: d === 0 ? 'venceu hoje' : `venceu há ${d} dia${d === 1 ? '' : 's'}`, vencido: true };
+    }
+    const d = Math.floor(ms / 86400000);
+    const hrs = Math.floor((ms % 86400000) / 3600000);
+    const cls = d <= 2 ? 'urgente' : d <= 5 ? 'atencao' : 'ok';
+    if (d === 0) return { cls: 'tag urgente', texto: `VENCE HOJE · faltam ${hrs} h` };
+    return { cls: 'tag ' + cls, texto: `faltam ${d} dia${d === 1 ? '' : 's'} e ${hrs} h` };
+  }
+  function etiquetaContagem(fatal) {
+    const c = contagem(fatal);
+    if (!c) return h('span', { class: 'tag urgente' }, 'prazo a definir');
+    return h('span', { class: c.cls, 'data-fatal': fatal }, c.texto);
+  }
+  setInterval(() => {
+    document.querySelectorAll('[data-fatal]').forEach(el => {
+      const c = contagem(el.dataset.fatal);
+      if (c) { el.className = c.cls; el.textContent = c.texto; }
+    });
+  }, 60000);
+
+  function etiquetaPrazo(z) {
+    if (z.situacao === 'a definir') return h('span', { class: 'tag urgente' }, 'prazo a definir');
+    if (z.situacao === 'conferido') return h('span', { class: 'tag ok', title: z.conferido_em ? new Date(z.conferido_em).toLocaleString('pt-BR') : '' }, 'conferido' + (z.conferido_por ? ' por ' + z.conferido_por : ''));
+    if (z.situacao === 'calculado') return h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir');
+    return h('span', { class: 'tag' }, z.situacao);
+  }
+  function textoDias(z) {
+    if (!(+z.dias)) return 'dias a definir';
+    return `${z.dias} dia${+z.dias === 1 ? '' : 's'} ${z.contagem === 'corridos' ? 'corridos' : 'úteis'}`;
+  }
+
+  async function acaoPrazo(acao, dados, msg) {
+    await api(acao, dados);
+    avisar(msg);
+    rota();
+  }
+
+  function botoesPrazo(z) {
+    const pode = sessao.usuario.pode;
+    const parar = fn => ev => { ev.stopPropagation(); fn().catch(e => avisar(e.message, true)); };
+    return h('div', { class: 'mini-acoes' },
+      pode.conferePrazos && z.situacao === 'calculado'
+        ? h('button', { type: 'button', class: 'btn mini', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Prazo conferido.')) }, 'Conferir') : null,
+      SITUACOES_ABERTAS.includes(z.situacao)
+        ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'cumprido' }, 'Prazo marcado como cumprido.')) }, 'Cumprido')
+        : h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir'));
+  }
+  const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
+
+  function tabelaPrazos(lista, vazio) {
+    return tabela(['Fatal', 'Processo', 'Cliente', 'Prazo', 'Situação', ''], lista, z => [
+      h('td', { class: 'num', 'data-r': 'Fatal' }, z.fatal ? h('strong', {}, dataBR(z.fatal)) : '—', h('div', {}, etiquetaContagem(z.fatal))),
+      h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
+      h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
+      h('td', { 'data-r': 'Prazo' }, z.descricao, h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : ''),
+        z.ciencia_tipo ? h('div', { class: 'peq' }, z.ciencia_tipo) : null),
+      h('td', { 'data-r': 'Situação' }, etiquetaPrazo(z)),
+      h('td', {}, botoesPrazo(z))
+    ], z => { location.hash = '#/prazo/' + z.id; }, vazio);
+  }
+
+  function linhaRobo(robo) {
+    if (!robo || !robo.ultima) return 'O robô ainda não rodou. Ele lê o DJEN e os avisos do eproc e do PJe no Gmail de 6 em 6 horas.';
+    return `Última leitura do robô: ${new Date(robo.ultima).toLocaleString('pt-BR')}. ${robo.resultado ? robo.resultado.replace(/^Robô em [^:]+: /, '') : ''}`;
+  }
+
+  async function telaPrazos(params) {
+    carregando();
+    const encerrados = params.get('encerrados') === '1';
+    const [lista, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
+    const aDefinir = lista.filter(z => z.situacao === 'a definir');
+    const comData = lista.filter(z => z.situacao !== 'a definir');
+    const btnRobo = botao('Atualizar agora', async ev => {
+      ev.target.disabled = true; ev.target.textContent = 'Lendo intimações…';
+      try { const r = await api('robo.rodar'); avisar(r.resumo.replace(/^Robô em [^:]+: /, '')); rota(); }
+      catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Atualizar agora'; }
+    }, 'sec');
+    const filtro = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => { location.hash = '#/prazos' + (e.target.checked ? '?encerrados=1' : ''); } }), 'Mostrar cumpridos e cancelados (30 dias)');
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Prazos'), h('p', {}, linhaRobo(resumo.robo))),
+        h('div', { class: 'barra' }, btnRobo, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
+      h('div', { class: 'numeros' },
+        h('div', { class: 'numero' }, h('b', {}, resumo.prazos.vencendo), h('span', {}, 'vencem em até 5 dias')),
+        h('div', { class: 'numero' }, h('b', {}, resumo.prazos.aDefinir), h('span', {}, 'prazos a definir')),
+        h('div', { class: 'numero' }, h('b', {}, resumo.prazos.aConferir), h('span', {}, 'a conferir')),
+        h('div', { class: 'numero' }, h('b', {}, resumo.prazos.vencidos), h('span', {}, 'vencidos sem baixa'))),
+      h('div', { class: 'nota' }, 'O robô calcula a data fatal a partir da ciência: confirmada no dia em que a intimação é aberta, ou tácita 10 dias após a expedição; no DJEN, no dia útil seguinte à disponibilização. Conta dias úteis com feriados e o recesso de 20/12 a 20/01. Todo prazo do robô precisa ser conferido pela advogada no eproc ou no PJe.'),
+      aDefinir.length ? h('div', {}, h('h2', {}, 'A definir'), h('p', { class: 'peq' }, 'Intimações recebidas em que o robô não sabe quantos dias tem o prazo. Abra no sistema do tribunal, veja o prazo e preencha.'), tabelaPrazos(aDefinir, '')) : null,
+      h('div', { class: 'cab mt' }, h('h2', {}, 'Por data fatal'), filtro),
+      tabelaPrazos(comData, 'Nenhum prazo com data fatal.'),
+      blocoIntimacoes(),
+      sessao.usuario.pode.usuarios ? blocoFeriados() : null);
+  }
+
+  function blocoIntimacoes() {
+    const det = h('details', { class: 'caixa' }, h('summary', {}, 'Últimas intimações lidas pelo robô'));
+    det.addEventListener('toggle', async () => {
+      if (!det.open || det.dataset.ok) return;
+      det.dataset.ok = '1';
+      try {
+        const lista = await api('intimacoes.listar', { limite: 40 });
+        det.append(lista.length ? h('ul', { class: 'lista-int' }, lista.map(i => h('li', {},
+          h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), ' · ', i.fonte, ' · ', h('span', { class: 'num' }, i.numero), ' · ', i.movimento,
+          i.partes_cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
+          i.texto ? h('div', { class: 'peq' }, i.texto) : null))) : h('p', { class: 'peq' }, 'Nenhuma intimação lida ainda.'));
+      } catch (e) { det.append(h('p', { class: 'erro' }, e.message)); }
+    });
+    return det;
+  }
+
+  function blocoFeriados() {
+    const det = h('details', { class: 'caixa' }, h('summary', {}, 'Feriados e suspensões de prazo'));
+    det.addEventListener('toggle', async () => {
+      if (!det.open || det.dataset.ok) return;
+      det.dataset.ok = '1';
+      const lista = await api('feriados.listar').catch(() => []);
+      const form = h('form', { class: 'barra', novalidate: true },
+        h('input', { type: 'date', name: 'data', required: true, 'aria-label': 'Data' }),
+        h('input', { name: 'descricao', placeholder: 'Ex.: feriado municipal de Tubarão / sistema fora do ar', 'aria-label': 'Descrição' }),
+        h('select', { name: 'abrangencia', 'aria-label': 'Vale para' }, h('option', { value: 'todos' }, 'Todos os tribunais'), h('option', { value: 'TJSC' }, 'Só TJSC'), h('option', { value: 'TRT12' }, 'Só TRT12'), h('option', { value: 'JF/JT' }, 'Justiça Federal e do Trabalho')),
+        h('button', { type: 'submit', class: 'btn sec' }, 'Acrescentar'), h('p', { class: 'erro' }));
+      aoEnviar(form, async fd => {
+        await api('feriados.salvar', Object.fromEntries(fd.entries()));
+        avisar('Feriado salvo. Os prazos do robô foram recalculados.');
+        rota();
+      });
+      det.append(h('p', { class: 'peq' }, 'O recesso de 20/12 a 20/01 é automático. Acrescente feriados municipais das comarcas e dias em que o tribunal suspender os prazos.'),
+        form, h('ul', { class: 'lista-int' }, lista.filter(f => f.data >= hojeISO()).sort((a, b) => a.data < b.data ? -1 : 1).slice(0, 30)
+          .map(f => h('li', {}, h('strong', {}, dataBR(f.data)), ' · ', f.descricao, ' · ', h('span', { class: 'peq' }, f.abrangencia)))));
+    });
+    return det;
+  }
+
+  async function telaPrazo(id, params) {
+    carregando();
+    const novo = id === 'novo';
+    const [procs, lista] = await Promise.all([api('processos.listar', {}), novo ? Promise.resolve([]) : api('prazos.listar', { encerrados: true })]);
+    const z = novo ? { processo_id: params.get('processo') || '', contagem: 'uteis', ciencia: hojeISO() } : lista.find(x => x.id === id);
+    if (!z) throw new Error('Prazo não encontrado.');
+    const opcoes = [['', '— escolha o processo —']].concat(procs.filter(p => p.numero).map(p => [p.id, p.numero + ' · ' + (p.cliente_nome || 'cliente a identificar')]));
+    const form = h('form', { class: 'caixa', novalidate: true },
+      h('div', { class: 'campos' },
+        campo('processo_id', 'Processo', z.processo_id, { opcoes, largo: true }),
+        campo('descricao', 'O que fazer', z.descricao, { max: 200, dica: 'Ex.: Contestação, Recurso ordinário, Manifestação' }),
+        campo('dias', 'Dias do prazo', z.dias, { modo: 'numeric', max: 3 }),
+        campo('contagem', 'Contagem', z.contagem, { opcoes: [['uteis', 'Dias úteis'], ['corridos', 'Dias corridos (ex.: criminal)']] }),
+        campo('ciencia', 'Data da ciência / publicação', z.ciencia, { tipo: 'date' }),
+        campo('fatal', 'Data fatal (só se quiser digitar à mão)', '', { tipo: 'date' }),
+        campo('observacoes', 'Observações', z.observacoes, { area: true, largo: true })),
+      h('p', { class: 'peq' }, 'Deixe a data fatal em branco para o painel calcular a partir da ciência, contando dias úteis, feriados e o recesso.'),
+      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, novo ? 'Lançar prazo' : 'Salvar'), h('a', { class: 'btn sec', href: '#/prazos' }, 'Voltar')),
+      h('p', { class: 'erro' }));
+    aoEnviar(form, async fd => {
+      const d = Object.fromEntries(fd.entries());
+      if (!novo) d.id = z.id;
+      if (!d.fatal) delete d.fatal;
+      const r = await api('prazos.salvar', { prazo: d });
+      avisar(r.fatal ? 'Prazo salvo. Data fatal: ' + dataBR(r.fatal) + '.' : 'Prazo salvo, ainda sem data fatal (faltam os dias ou a ciência).');
+      location.hash = '#/prazo/' + r.id;
+      if (!novo) telaPrazo(r.id, new URLSearchParams());
+    });
+    const info = novo ? null : h('div', { class: 'caixa' },
+      h('div', { class: 'linha-info' }, h('div', {}, h('div', { class: 'peq' }, 'Data fatal'), h('strong', { class: 'grande' }, z.fatal ? dataBR(z.fatal) : '—'), ' ', etiquetaContagem(z.fatal)),
+        h('div', {}, etiquetaPrazo(z)), botoesPrazo(z)),
+      h('p', {}, h('span', { class: 'num' }, z.numero), ' · ', z.cliente || 'cliente a identificar', ' · ', acessoTribunal(z.numero)),
+      z.ciencia_tipo ? h('p', { class: 'peq' }, 'Ciência: ' + z.ciencia_tipo) : null,
+      h('p', { class: 'peq' }, 'Origem: ' + z.origem + (z.observacoes ? ' · ' + z.observacoes : '')));
+    mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, form);
+  }
+
+  /* ---------- agenda ---------- */
+
+  const CORES_AGENDA = { 'ATENDIMENTOS': 'ag-atend', 'AUDIÊNCIA CONCILIAÇÃO': 'ag-conc', 'AUDIÊNCIA INSTRUÇÃO': 'ag-instr' };
+  const NOME_CURTO = { 'ATENDIMENTOS': 'Atendimento', 'AUDIÊNCIA CONCILIAÇÃO': 'Conciliação', 'AUDIÊNCIA INSTRUÇÃO': 'Instrução' };
+
+  function isoSoma(iso, n) { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); }
+  function diaSem(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); }
+  function nomeDia(iso, longo) {
+    return new Date(iso + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: longo ? 'long' : 'short', day: '2-digit', month: '2-digit' });
+  }
+
+  function periodo(visao, data) {
+    if (visao === 'dia') return [data, data];
+    if (visao === 'semana') { const ini = isoSoma(data, -((diaSem(data) + 6) % 7)); return [ini, isoSoma(ini, 6)]; }
+    const primeiro = data.slice(0, 8) + '01';
+    const ultimo = isoSoma(isoSoma(primeiro, 32).slice(0, 8) + '01', -1);
+    const ini = isoSoma(primeiro, -((diaSem(primeiro) + 6) % 7));
+    const fim = isoSoma(ultimo, (7 - diaSem(ultimo)) % 7);
+    return [ini, fim];
+  }
+
+  function itensDoDia(dados, iso) {
+    const ev = dados.eventos.filter(e => e.inicio.slice(0, 10) === iso).sort((a, b) => a.inicio < b.inicio ? -1 : 1)
+      .map(e => ({ tipo: 'evento', hora: e.diaTodo ? 'dia todo' : e.inicio.slice(11, 16), cls: CORES_AGENDA[e.agenda] || '', rotulo: NOME_CURTO[e.agenda] || e.agenda, titulo: e.titulo, local: e.local, desc: e.descricao }));
+    const pz = dados.prazos.filter(z => z.fatal === iso)
+      .map(z => ({ tipo: 'prazo', hora: '23h59', cls: 'ag-prazo', rotulo: 'Prazo fatal', titulo: `${z.descricao} · ${z.numero}${z.cliente ? ' · ' + z.cliente : ''}`, id: z.id }));
+    return pz.concat(ev);
+  }
+
+  async function telaAgenda(params) {
+    carregando();
+    const visao = ['dia', 'semana', 'mes'].includes(params.get('visao')) ? params.get('visao') : 'semana';
+    const data = /^\d{4}-\d{2}-\d{2}$/.test(params.get('data') || '') ? params.get('data') : hojeISO();
+    const [ini, fim] = periodo(visao, data);
+    const dados = await api('agenda.listar', { inicio: ini, fim });
+    const ir = (v, d) => { location.hash = `#/agenda?visao=${v}&data=${d}`; };
+    const passo = visao === 'dia' ? 1 : visao === 'semana' ? 7 : 0;
+    const mover = n => passo ? ir(visao, isoSoma(data, n * passo)) : ir(visao, isoSoma(data.slice(0, 8) + '15', n * 30).slice(0, 8) + '01');
+    const titulo = visao === 'dia' ? nomeDia(data, true) : visao === 'semana' ? `Semana de ${dataBR(ini)} a ${dataBR(fim)}`
+      : new Date(data + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+    const barra = h('div', { class: 'barra agenda-barra' },
+      h('div', { class: 'grupo' }, botao('◀', () => mover(-1), 'sec'), botao('Hoje', () => ir(visao, hojeISO()), 'sec'), botao('▶', () => mover(1), 'sec')),
+      h('div', { class: 'grupo' }, ['dia', 'semana', 'mes'].map(v => h('button', { type: 'button', class: 'btn ' + (v === visao ? '' : 'sec'), onclick: () => ir(v, data) }, { dia: 'Dia', semana: 'Semana', mes: 'Mês' }[v]))),
+      botao('Novo compromisso', () => { location.hash = '#/compromisso/novo?data=' + data; }));
+    const legenda = h('div', { class: 'legenda' }, Object.keys(CORES_AGENDA).map(n => h('span', { class: 'chip ' + CORES_AGENDA[n] }, NOME_CURTO[n])), h('span', { class: 'chip ag-prazo' }, 'Prazo fatal'));
+    let corpo;
+    if (visao === 'mes') {
+      const dias = [];
+      for (let d = ini; d <= fim; d = isoSoma(d, 1)) dias.push(d);
+      corpo = h('div', { class: 'mes' },
+        ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map(n => h('div', { class: 'mes-cab' }, n)),
+        dias.map(d => {
+          const itens = itensDoDia(dados, d);
+          return h('div', { class: 'mes-dia' + (d.slice(0, 7) !== data.slice(0, 7) ? ' fora' : '') + (d === hojeISO() ? ' hoje' : '') + (itens.length ? '' : ' vazio'), onclick: () => ir('dia', d) },
+            h('div', { class: 'mes-num' }, h('span', { class: 'so-cel' }, nomeDia(d)), h('span', { class: 'so-pc' }, String(+d.slice(8)))),
+            itens.slice(0, 4).map(it => h('div', { class: 'mes-item ' + it.cls, title: it.titulo }, it.tipo === 'prazo' ? '⚑ ' : it.hora + ' ', it.titulo)),
+            itens.length > 4 ? h('div', { class: 'peq' }, `+${itens.length - 4}`) : null);
+        }));
+    } else {
+      const dias = [];
+      for (let d = ini; d <= fim; d = isoSoma(d, 1)) dias.push(d);
+      const linhas = [];
+      dias.forEach(d => {
+        const itens = itensDoDia(dados, d);
+        if (!itens.length && visao === 'semana') {
+          linhas.push(h('tr', { class: 'dia-vazio' }, h('th', { scope: 'row' }, nomeDia(d, true)), h('td', { colspan: 4, class: 'peq' }, 'Sem compromissos')));
+          return;
+        }
+        itens.forEach((it, i) => linhas.push(h('tr', { class: it.tipo === 'prazo' ? 'tr-prazo' : '', onclick: it.id ? () => { location.hash = '#/prazo/' + it.id; } : null },
+          i === 0 ? h('th', { scope: 'row', rowspan: itens.length, class: d === hojeISO() ? 'hoje' : '' }, nomeDia(d, true)) : null,
+          h('td', { class: 'num', 'data-r': 'Hora' }, it.hora),
+          h('td', { 'data-r': 'Agenda' }, h('span', { class: 'chip ' + it.cls }, it.rotulo)),
+          h('td', { 'data-r': 'Compromisso' }, it.titulo, it.desc ? h('div', { class: 'peq' }, it.desc) : null),
+          h('td', { 'data-r': 'Local' }, it.local || ''))));
+      });
+      if (!linhas.length) linhas.push(h('tr', {}, h('td', { colspan: 5, class: 'vazio' }, 'Nada marcado neste dia.')));
+      corpo = h('table', { class: 'tabela agenda' },
+        h('thead', {}, h('tr', {}, ['Dia', 'Hora', 'Agenda', 'Compromisso', 'Local'].map(c => h('th', { scope: 'col' }, c)))), h('tbody', {}, linhas));
+    }
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Agenda'), h('p', { class: 'cap' }, titulo))),
+      barra, legenda,
+      dados.avisos.length ? h('div', { class: 'nota alerta' }, dados.avisos.join(' ')) : null,
+      corpo);
+  }
+
+  async function telaCompromisso(params) {
+    const data = /^\d{4}-\d{2}-\d{2}$/.test(params.get('data') || '') ? params.get('data') : hojeISO();
+    const form = h('form', { class: 'caixa', novalidate: true },
+      h('div', { class: 'campos' },
+        campo('agenda', 'Agenda', 'ATENDIMENTOS', { opcoes: Object.keys(CORES_AGENDA).map(n => [n, n]) }),
+        campo('titulo', 'Título', '', { obrigatorio: true, max: 200, dica: 'Ex.: Atendimento — Maria da Silva (trabalhista)' }),
+        campo('data', 'Data', data, { tipo: 'date', obrigatorio: true }),
+        campo('inicio', 'Início', '09:00', { tipo: 'time', obrigatorio: true }),
+        campo('fim', 'Fim', '10:00', { tipo: 'time' }),
+        campo('local', 'Local / link', '', { max: 300, dica: 'Escritório, Zoom, vara…' }),
+        campo('descricao', 'Observações', '', { area: true, largo: true })),
+      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Marcar na agenda'), h('a', { class: 'btn sec', href: '#/agenda?data=' + data }, 'Voltar')),
+      h('p', { class: 'erro' }));
+    aoEnviar(form, async fd => {
+      const d = Object.fromEntries(fd.entries());
+      await api('agenda.criar', d);
+      avisar('Compromisso marcado no Google Agenda.');
+      location.hash = `#/agenda?visao=dia&data=${d.data}`;
+    });
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Novo compromisso'), h('p', {}, 'Vai direto para a agenda escolhida no Google Agenda do escritório.'))), form);
   }
 
   /* ---------- rotas ---------- */
@@ -560,7 +865,7 @@
       if (tela === 'primeiro-acesso') telaPrimeiroAcesso(); else telaLogin();
       return;
     }
-    const aba = { cliente: 'clientes', processo: 'processos' }[tela] || tela || 'inicio';
+    const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda' }[tela] || tela || 'inicio';
     marcarAba(aba);
     window.scrollTo(0, 0);
     try {
@@ -571,13 +876,15 @@
         case 'processo': await telaProcesso(id, params); break;
         case 'usuarios': await telaUsuarios(); break;
         case 'senha': telaSenha(); break;
-        case 'agenda': telaEmBreve('Agenda', 'etapa 2', 'Vai mostrar dia, semana e mês a partir das agendas ATENDIMENTOS, AUDIÊNCIA CONCILIAÇÃO e AUDIÊNCIA INSTRUÇÃO, junto com os prazos fatais.'); break;
-        case 'prazos': telaEmBreve('Prazos', 'etapa 2', 'O robô vai ler o DJEN (OAB/SC 54832) e os avisos do eproc e do PJe no Gmail, todo dia às 6h, e mostrar "Fatal: dd/mm · faltam X dias", com a etiqueta "calculado pelo robô" até a advogada conferir.'); break;
+        case 'agenda': await telaAgenda(params); break;
+        case 'compromisso': await telaCompromisso(params); break;
+        case 'prazos': await telaPrazos(params); break;
+        case 'prazo': await telaPrazo(id, params); break;
         case 'financeiro': telaEmBreve('Financeiro', 'etapa 3', 'Honorários, parcelas, vencimentos e atrasos, importados do GEA e conferidos com as planilhas de honorários.'); break;
         default: await telaInicio();
       }
     } catch (e) {
-      if (sessao) app.replaceChildren(h('div', { class: 'nota alerta' }, e.message));
+      if (sessao) mostrar(h('div', { class: 'nota alerta' }, e.message));
     }
   }
 

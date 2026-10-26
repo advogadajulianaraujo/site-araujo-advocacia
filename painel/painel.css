@@ -114,3 +114,44 @@ legend{font:500 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase
 .acesso{display:inline-flex;gap:12px;font-size:12.5px;margin-top:2px}
 .acesso a{color:var(--azul)}
 .link.escuro{color:var(--azul);font-size:12.5px;padding:0}
+
+/* Etapa 2: prazos e agenda */
+.numero.destaque{border-color:var(--vermelho);background:var(--vermelho-f)}
+.mini-acoes{display:flex;gap:6px;flex-wrap:wrap}
+.btn.mini{min-height:32px;padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
+.grande{font:400 28px/1.1 var(--display);color:var(--tinta)}
+.linha-info{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+details.caixa summary{cursor:pointer;font-weight:500}
+.lista-int{list-style:none;margin:12px 0 0;padding:0}
+.lista-int li{padding:8px 0;border-bottom:1px solid var(--linha);font-size:14px}
+.cap::first-letter{text-transform:uppercase}
+.agenda-barra .grupo{display:flex;gap:6px}
+.legenda{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.chip{display:inline-block;padding:2px 9px;font-size:12px;border-left:4px solid;background:#fff;white-space:nowrap}
+.ag-atend{border-color:#1d4f91;background:#e8eef8}
+.ag-conc{border-color:#1f7a3f;background:#e6f3ea}
+.ag-instr{border-color:#6b3fa0;background:#f0e9f8}
+.ag-prazo{border-color:#b42318;background:#fbe9e7;color:#7a1810}
+.tabela.agenda th[scope=row]{background:#fbfaf7;font:500 13px/1.3 var(--sans);text-transform:capitalize;white-space:nowrap;letter-spacing:0;color:var(--tinta)}
+.tabela.agenda th.hoje{color:var(--azul)}
+.tabela.agenda tr.dia-vazio{cursor:default}
+.tabela.agenda tr.tr-prazo td{background:#fff7f6}
+.mes{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--linha);background:var(--linha);gap:1px}
+.mes-cab{background:#fbfaf7;padding:6px;font:500 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:var(--mudo);text-align:center}
+.mes-dia{background:#fff;min-height:96px;padding:6px;cursor:pointer;overflow:hidden}
+.mes-dia:hover{background:#fbfaf7}
+.mes-dia.fora{background:#f8f7f3;color:#aaa}
+.mes-dia.hoje .mes-num{color:#fff;background:var(--azul);display:inline-block;padding:0 6px}
+.mes-num{font-size:13px;font-weight:500;margin-bottom:4px}
+.mes-item{font-size:11.5px;line-height:1.3;padding:2px 4px;margin-bottom:2px;border-left:3px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.so-cel{display:none}
+@media (max-width:760px){
+  .mes{display:block;background:none;border:0}
+  .mes-cab,.mes-dia.vazio,.mes-dia.fora{display:none}
+  .mes-dia{border:1px solid var(--linha);margin-bottom:8px;min-height:0}
+  .so-cel{display:inline;text-transform:capitalize}
+  .so-pc{display:none}
+  .mes-item{white-space:normal}
+  .tabela.agenda th[scope=row]{display:block;padding:10px 12px 2px}
+}
+.mt{margin-top:28px}

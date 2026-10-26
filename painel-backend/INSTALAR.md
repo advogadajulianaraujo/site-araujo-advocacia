@@ -51,6 +51,13 @@ Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
 3. Informe o código da aba Config, seu nome, um usuário e uma senha.
 4. Entre e crie os outros usuários em **Usuários**.
 
+## Ligar o robô de prazos (etapa 2)
+
+1. No Apps Script, escolha a função **configurar** e clique em **Executar** (cria as abas Intimacoes e Prazos e carrega os feriados).
+2. Escolha a função **instalarRobo** e clique em **Executar**. O Google pede permissão para ler o Gmail, a Agenda e acessar o DJEN: autorize.
+   O robô passa a rodar sozinho de 6 em 6 horas e já faz a primeira leitura (últimos 30 dias do Gmail e 15 do DJEN).
+3. Implante uma nova versão (abaixo).
+
 ## Quando o programa for atualizado
 
 Cole o novo `Code.gs` por cima do antigo, salve e vá em

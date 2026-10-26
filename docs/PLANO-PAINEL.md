@@ -30,7 +30,7 @@ A branch `painel-etapa-1` só vai para `main` (site no ar) depois que a sessão 
 ## Etapas
 
 1. **Feita (este envio):** botão ENTRAR, login, perfis, usuários, clientes, processos, pastas no Drive, carga inicial do levantamento de 23/10/2026 (68 clientes, 117 processos, 43 sem cliente).
-2. Intimações e prazos (DJEN + Gmail, contagem, "conferido"), agenda dia/semana/mês, feriados.
+2. **Feita:** robô de 6 em 6 horas (Gmail: eproc TJSC/JFSC e PJe TRT; DJEN pela OAB/SC 54832), prazos com ciência confirmada/tácita (10 dias)/publicação DJEN, sugestão de dias (sentença: apelação 15 úteis, recurso ordinário 8, recurso inominado 10, apelação criminal 5 corridos; texto do DJEN com "prazo de N dias"), "prazo a definir" quando não há como saber, Conferir/Cumprido, feriados 2026–2027 e recesso, agenda dia/semana/mês com as três agendas e os prazos fatais, marcação de compromisso.
 3. Financeiro.
 4. Modelos de procuração e contratos.
 
