@@ -51,7 +51,8 @@
     try {
       resp = await fetch(API, { method: 'POST', body: JSON.stringify({ acao, token: sessao && sessao.token, dados: dados || {} }), redirect: 'follow' });
     } catch (e) {
-      throw new Error('Sem conexão com o servidor. Verifique a internet e tente de novo.');
+      console.error('[painel] falha ao chamar o servidor', e);
+      throw new Error('Sem conexão com o servidor. Verifique a internet e tente de novo. (' + (e && e.message || e) + ')');
     }
     let j;
     try { j = await resp.json(); } catch (e) { throw new Error('Resposta inesperada do servidor.'); }
