@@ -58,3 +58,16 @@ A sessão na nuvem não alcança o GEA nem o editor do Apps Script. A sessão lo
 ## Pendências de segurança
 
 - O PDF "Passo a passo GEA Agenda.pdf" no Drive tem a senha do usuário Estagiário do GEA em texto aberto. Aprovado: tirar a senha do PDF e trocar a senha no GEA.
+
+## Para fazer no futuro (pedido do dono em 26/10/2026)
+
+- **Cópia de segurança semanal** da planilha PAINEL — BANCO DE DADOS numa pasta do Drive (gatilho do Apps Script).
+- **Alarme de robô parado:** se o robô não ler nenhuma intimação em 3 dias úteis, aviso vermelho no painel e e-mail para advogadajulianaraujo@gmail.com.
+- **Lembrete de feriados:** em novembro de 2027, aviso no painel para carregar os feriados forenses de 2028.
+- **DJEN:** a consulta pública recusa os servidores do Google (código 403, visto na primeira execução em 26/10/2026). Hoje as intimações chegam pelos avisos do eproc e do PJe no Gmail. Se for preciso o DJEN, avaliar um intermediário hospedado no Brasil.
+
+## Manutenção
+
+- Renovar o domínio no Registro.br todo ano.
+- Manter a conta Google advogadajulianaraujo com verificação em duas etapas e recuperação atualizada.
+- Se chegar e-mail do Google sobre "falha de execução" do robô, abrir o Apps Script e rodar instalarRobo de novo.
