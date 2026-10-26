@@ -136,6 +136,14 @@ function importarCargaInicial_() {
     vinculadas + ' clientes ligados às pastas que já existiam em 02. CLIENTES.';
 }
 
+function gravarLote_(tab) {
+  if (!tab.buffer || !tab.buffer.length) { tab.buffer = null; return; }
+  var linhas = tab.buffer.map(function (o) { delete o._novo; return tab.cab.map(function (k) { return seguro_(o[k]); }); });
+  tab.aba.getRange(tab.buffer[0]._linha, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas);
+  tab.buffer = null;
+  tab.base = 0;
+}
+
 function gravarVarias_(nome, objs) {
   if (!objs.length) return;
   var tab = tabela_(nome);
@@ -710,6 +718,14 @@ function seguro_(v) {
 }
 
 function inserirLinha_(tab, obj) {
+  if (tab.buffer) { // modo lote (robô): grava tudo de uma vez no fim
+    if (!tab.base) tab.base = tab.aba.getLastRow() + 1;
+    obj._linha = tab.base + tab.buffer.length;
+    obj._novo = true;
+    tab.buffer.push(obj);
+    tab.linhas.push(obj);
+    return;
+  }
   var linha = tab.cab.map(function (k) { return seguro_(obj[k]); });
   var r = tab.aba.getLastRow() + 1;
   tab.aba.getRange(r, 1, 1, tab.cab.length).setNumberFormat('@').setValues([linha]);
@@ -722,6 +738,7 @@ function atualizarLinha_(tab, linhaObj, mudancas) {
     if (tab.cab.indexOf(k) < 0) return;
     linhaObj[k] = mudancas[k] === null || mudancas[k] === undefined ? '' : String(mudancas[k]);
   });
+  if (linhaObj._novo) return; // ainda no lote: vai gravado no fim
   var valores = tab.cab.map(function (k) { return seguro_(linhaObj[k]); });
   tab.aba.getRange(linhaObj._linha, 1, 1, tab.cab.length).setValues([valores]);
 }
@@ -948,9 +965,11 @@ function rodarRobo_(quem) {
     ctx = contextoRobo_();
     try { var g = lerGmail_(ctx); novas += g.intimacoes; prazosNovos += g.prazos; }
     catch (e) { erros.push('Gmail: ' + (e.message || e)); }
-    try { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; }
+    try { if (!ctx.gmailParcial) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
     catch (e2) { erros.push('DJEN: ' + (e2.message || e2)); }
     recalcularPrazosAbertos_(ctx);
+    [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
+    if (ctx.gmailParcial) erros.push('Gmail: leitura parcial por causa do limite de tempo do Google; o resto vem na próxima rodada (ou clique em Atualizar agora).');
     var agora = new Date();
     var resumo = 'Robô em ' + Utilities.formatDate(agora, TZ, 'dd/MM/yyyy HH:mm') + ': ' + novas +
       ' intimação(ões) nova(s), ' + prazosNovos + ' prazo(s) novo(s).' + (erros.length ? ' Avisos: ' + erros.join(' | ') : '');
@@ -968,6 +987,8 @@ function contextoRobo_() {
     intim: tabela_('Intimacoes'), prazos: tabela_('Prazos'), procs: tabela_('Processos'), clientes: tabela_('Clientes'),
     feriados: mapaFeriados_(), chaves: {}, porNumero: {}, porNomeCliente: {}
   };
+  ctx.inicio = Date.now();
+  ctx.intim.buffer = []; ctx.prazos.buffer = []; ctx.procs.buffer = [];
   ctx.intim.linhas.forEach(function (i) { ctx.chaves[i.chave] = true; });
   ctx.procs.linhas.forEach(function (p) { if (p.numero) ctx.porNumero[p.numero] = p; });
   ctx.clientes.linhas.forEach(function (c) { ctx.porNomeCliente[normalizar_(c.nome)] = c; });
@@ -1051,22 +1072,25 @@ var RE_CNJ = /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/;
 function lerGmail_(ctx) {
   var desde = parseInt(config_('ROBO_GMAIL_DESDE'), 10) || (Date.now() - 30 * 86400000);
   var q = 'from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br) after:' + Math.floor(desde / 1000);
-  var threads = GmailApp.search(q, 0, 200);
-  var maisRecente = desde, intimacoes = 0, prazos = 0;
+  var threads = GmailApp.search(q, 0, 300);
+  var msgs = [];
   threads.forEach(function (th) {
-    th.getMessages().forEach(function (msg) {
-      var quando = msg.getDate().getTime();
-      if (quando <= desde) return;
-      if (quando > maisRecente) maisRecente = quando;
-      var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
-      itens.forEach(function (it) {
-        var r = registrarIntimacao_(ctx, it);
-        if (r.nova) intimacoes++;
-        if (r.prazo) prazos++;
-      });
-    });
+    th.getMessages().forEach(function (msg) { if (msg.getDate().getTime() > desde) msgs.push(msg); });
   });
-  setConfig_('ROBO_GMAIL_DESDE', String(maisRecente), 'Data (ms) do último aviso de tribunal lido no Gmail');
+  msgs.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
+  var ate = desde, intimacoes = 0, prazos = 0;
+  for (var i = 0; i < msgs.length; i++) {
+    if (Date.now() - ctx.inicio > 240000) { ctx.gmailParcial = true; break; } // 4 min: para com folga antes dos 6 do Google
+    var msg = msgs[i];
+    var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
+    itens.forEach(function (it) {
+      var r = registrarIntimacao_(ctx, it);
+      if (r.nova) intimacoes++;
+      if (r.prazo) prazos++;
+    });
+    ate = msg.getDate().getTime();
+  }
+  setConfig_('ROBO_GMAIL_DESDE', String(ate), 'Data (ms) do último aviso de tribunal lido no Gmail');
   return { intimacoes: intimacoes, prazos: prazos };
 }
 
