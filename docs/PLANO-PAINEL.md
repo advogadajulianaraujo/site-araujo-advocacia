@@ -15,13 +15,17 @@ Este documento guarda o que foi decidido para o painel interno do site
 | GEA | Deixa de ser usado. Tudo dele (clientes com processo, processos, agenda, cobrança) é importado para o painel. |
 | Cadastro | Só os dados que procuração e contrato exigem: nome, CPF/CNPJ, RG, nascimento, estado civil, profissão, representante (PJ), endereço, telefone, e-mail, origem, área, observações. |
 | Pastas | Cliente importado é ligado à pasta que já existe em **02. CLIENTES**; cliente novo ganha pasta nova (NOME EM MAIÚSCULAS) com a ficha. Procuração e contrato entram na pasta na etapa 4. |
-| Prazos | Cada prazo mostra o **número do processo**, "Prazo: X dias úteis · Fatal: dd/mm", **quantos dias e horas faltam** (até 23h59 do dia fatal) e um **link para o sistema do tribunal** (PJe abre o processo; eproc abre o login, com botão para copiar o número). Formato base: "Prazo: X dias úteis · Fatal: dd/mm · Faltam N dias", recalculado todo dia, verde (>5), amarelo (3–5), vermelho (≤2), "VENCE HOJE". Prazo calculado pelo robô fica com a etiqueta **"calculado pelo robô"** até a advogada clicar em **"conferido"**; não conferidos ficam no topo. |
+| Prazos | Cada prazo mostra o **número do processo**, "Prazo: X dias úteis · Fatal: dd/mm", **quantos dias e horas faltam**, contando até as **23h59 do dia fatal** (limite do eproc e do PJe), ex.: "Fatal: 10/11 · faltam 2 dias e 5 horas" e um **link para o sistema do tribunal** (PJe abre o processo; eproc abre o login, com botão para copiar o número). Formato base: "Prazo: X dias úteis · Fatal: dd/mm · Faltam N dias", recalculado todo dia, verde (>5), amarelo (3–5), vermelho (≤2), "VENCE HOJE". Prazo calculado pelo robô fica com a etiqueta **"calculado pelo robô"** até a advogada clicar em **"conferido"**; não conferidos ficam no topo. |
 | Fontes de intimação | DJEN pela OAB/SC 54832 e avisos no Gmail (eproc TJSC, eproc JFSC, PJe TRT12 1º e 2º grau, TRT16). |
 | Robô | Roda **de 6 em 6 horas** (0h, 6h, 12h, 18h), sempre buscando prazos novos e recalculando os que faltam, mais botão "Atualizar agora" no painel. Sem e-mail de resumo. |
 | Agenda | Tabela dia/semana/mês lendo as agendas ATENDIMENTOS, AUDIÊNCIA CONCILIAÇÃO e AUDIÊNCIA INSTRUÇÃO (não "Família" nem "UNEMAT"), com os prazos fatais do dia. O que for marcado no painel vai para a agenda certa. |
 | Feriados | 2026–2027: nacionais, SC, comarcas atendidas (Tubarão, Imbituba, Criciúma, Florianópolis, Garopaba, Armazém, Braço do Norte, Capivari de Baixo, Jaguaruna) e recesso de 20/12 a 20/01. Administrador pode acrescentar suspensões. |
 | Financeiro | Controle de honorários, parcelas, vencimentos e atrasos. Fonte principal: GEA; também Google Agenda. Planilhas "Honorários Araújo — levantamento e conciliação" e "Clientes devedores" entram para conferência, marcando divergências. |
 | Modelos | A usuária indica depois os modelos oficiais (procuração, contrato de honorários, contrato de prestação de serviços). Gerados a partir do cadastro do painel. |
+
+## Publicação
+
+A branch `painel-etapa-1` só vai para `main` (site no ar) depois que a sessão local terminar a instalação no Google e gravar a URL /exec em `painel/config.js`. Assim o botão ENTRAR já abre um painel funcionando.
 
 ## Etapas
 
