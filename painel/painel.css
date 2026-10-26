@@ -109,3 +109,8 @@ legend{font:500 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase
 
 .aviso{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--tinta);color:#fff;padding:12px 18px;max-width:calc(100% - 32px);z-index:30;font-size:14px}
 .aviso.ruim{background:var(--vermelho)}
+
+/* Acesso ao sistema do tribunal */
+.acesso{display:inline-flex;gap:12px;font-size:12.5px;margin-top:2px}
+.acesso a{color:var(--azul)}
+.link.escuro{color:var(--azul);font-size:12.5px;padding:0}

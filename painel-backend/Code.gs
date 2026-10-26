@@ -16,9 +16,10 @@
 var VERSAO = '1.0.0';
 
 var PERFIS = {
-  administrador: { nome: 'Administrador', financeiro: true, usuarios: true },
-  secretario: { nome: 'Secretário', financeiro: false, usuarios: false },
-  estagiario: { nome: 'Estagiário', financeiro: false, usuarios: false }
+  administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
+  advogada: { nome: 'Advogada', financeiro: false, usuarios: false, conferePrazos: true },
+  secretario: { nome: 'Secretário', financeiro: false, usuarios: false, conferePrazos: false },
+  estagiario: { nome: 'Estagiário', financeiro: false, usuarios: false, conferePrazos: false }
 };
 
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
@@ -35,7 +36,6 @@ var ESQUEMA = {
   Log: ['quando', 'usuario', 'acao', 'detalhe']
 };
 
-var SENHA_MIN = 10;
 var TENTATIVAS_MAX = 5;
 var BLOQUEIO_MIN = 15;
 var SESSAO_SEG = 6 * 60 * 60; // 6 horas (limite do Google)
@@ -219,20 +219,9 @@ function rotear_(acao, token, dados) {
 /* Login, senhas e sessões                                             */
 /* ------------------------------------------------------------------ */
 
-// Trechos que tornam a senha fácil de adivinhar (inclui a senha que já esteve exposta no PDF do GEA).
-var SENHAS_FRACAS = ['123456', '654321', 'senha', 'password', 'qwerty', 'abc123', 'estagio', 'estagiario', 'araujo',
-  'advocacia', 'advogad', 'julian', 'tubarao', 'admin', 'painel'];
-
-function validarSenha_(senha, usuario) {
+function validarSenha_(senha) {
   senha = String(senha || '');
-  if (senha.length < SENHA_MIN || !/[A-Za-zÀ-ÿ]/.test(senha) || !/[0-9]/.test(senha)) {
-    throw falha_('A senha precisa ter pelo menos ' + SENHA_MIN + ' caracteres, com letras e números.');
-  }
-  var s = normalizar_(senha).replace(/\s/g, '');
-  var u = normalizar_(usuario || '');
-  if ((u.length >= 3 && s.indexOf(u) >= 0) || SENHAS_FRACAS.some(function (f) { return s.indexOf(f) >= 0; }) || /^(.)\1+$/.test(s)) {
-    throw falha_('Senha fácil de adivinhar. Evite o nome do usuário, do escritório, "senha" e sequências como 123456.');
-  }
+  if (!senha.trim()) throw falha_('Informe uma senha.');
   return senha;
 }
 
@@ -330,7 +319,7 @@ function usuarioDaSessao_(token) {
 
 function publicoUsuario_(u) {
   var p = PERFIS[u.perfil];
-  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios } };
+  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos } };
 }
 
 function criarUsuario_(d) {

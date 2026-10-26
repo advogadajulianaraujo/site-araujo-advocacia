@@ -1,5 +1,8 @@
 # Como ligar o painel ao Google (uma vez só, cerca de 10 minutos)
 
+Estes passos podem ser feitos por uma sessão local do Claude com a extensão Claude in Chrome,
+no computador onde a conta Google está aberta (veja docs/PLANO-PAINEL.md).
+
 Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
 
 ## 1. Abrir a planilha-banco
@@ -45,8 +48,7 @@ Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
 
 1. Abra **araujoadvocaciasc.com.br/painel** (ou clique em **ENTRAR** no site).
 2. Clique em **Primeiro acesso: criar o administrador**.
-3. Informe o código da aba Config, seu nome, um usuário e uma senha
-   (mínimo 10 caracteres, com letras e números; senhas óbvias como `Estagio123` são recusadas).
+3. Informe o código da aba Config, seu nome, um usuário e uma senha.
 4. Entre e crie os outros usuários em **Usuários**.
 
 ## Quando o programa for atualizado
@@ -59,7 +61,8 @@ O endereço `/exec` continua o mesmo.
 
 | Perfil | Vê |
 |---|---|
-| Administrador | Tudo, inclusive Financeiro e Usuários |
+| Administrador | Tudo, inclusive Financeiro e Usuários; confere prazos |
+| Advogada | Tudo, menos Financeiro e Usuários; confere prazos |
 | Secretário | Tudo, menos Financeiro e Usuários |
 | Estagiário | Tudo, menos Financeiro e Usuários |
 

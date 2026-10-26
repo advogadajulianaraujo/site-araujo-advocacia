@@ -93,6 +93,28 @@
     return h('button', { type: 'button', class: 'btn' + (cls ? ' ' + cls : ''), onclick }, texto);
   }
 
+  /** Endereço do sistema do tribunal para o processo (PJe abre o processo; eproc abre o login). */
+  function linkTribunal(numero) {
+    const m = /^(\d{7}-\d{2}\.\d{4})\.(\d)\.(\d{2})\.(\d{4})$/.exec(numero || '');
+    if (!m) return null;
+    const [, , j, tr, orig] = m;
+    if (j === '5') return { nome: 'PJe', url: `https://pje.trt${+tr}.jus.br/consultaprocessual/detalhe-processo/${numero}` };
+    if (j === '8' && tr === '24') return { nome: 'eproc', url: orig === '0000' ? 'https://eproc2g.tjsc.jus.br/eproc/' : 'https://eproc1g.tjsc.jus.br/eproc/' };
+    if (j === '4' && tr === '04') return { nome: 'eproc', url: orig === '0000' ? 'https://eproc.trf4.jus.br/eproc2trf4/' : 'https://eproc.jfsc.jus.br/eprocV2/' };
+    return null;
+  }
+  function acessoTribunal(numero) {
+    const l = linkTribunal(numero);
+    if (!numero) return null;
+    const copiar = h('button', { type: 'button', class: 'link escuro', onclick: async ev => {
+      ev.stopPropagation();
+      try { await navigator.clipboard.writeText(numero); avisar('Número copiado: ' + numero); } catch (e) { avisar('Não deu para copiar. Selecione o número e copie.', true); }
+    } }, 'copiar nº');
+    return h('span', { class: 'acesso' },
+      l ? h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, 'abrir no ' + l.nome) : null,
+      copiar);
+  }
+
   /** Envia um formulário com o botão travado e mostra o erro embaixo. */
   function aoEnviar(form, fn) {
     form.addEventListener('submit', async ev => {
@@ -207,7 +229,7 @@
       h('div', { class: 'campo' }, campo('codigo', 'Código de primeiro acesso', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('nome', 'Seu nome', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('usuario', 'Usuário (sem espaços)', '', { obrigatorio: true, auto: 'username' })),
-      h('div', { class: 'campo' }, campo('senha', 'Senha (mín. 10 caracteres, letras e números)', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
+      h('div', { class: 'campo' }, campo('senha', 'Senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
       h('div', { class: 'campo' }, campo('senha2', 'Repita a senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Criar administrador'),
       h('p', { class: 'erro' }),
@@ -241,7 +263,7 @@
         h('td', { class: 'num', 'data-r': 'Data' }, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)),
         h('td', { 'data-r': 'Ato' }, p.proximo_ato),
         h('td', { 'data-r': 'Cliente' }, p.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero),
+        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero, h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Órgão' }, p.orgao)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nada marcado para os próximos 14 dias.'));
   }
@@ -358,7 +380,7 @@
     const procs = novo ? null : h('div', {},
       h('div', { class: 'cab' }, h('h2', {}, 'Processos'), botao('Novo processo', () => { location.hash = '#/processo/novo?cliente=' + encodeURIComponent(c.id); }, 'sec')),
       tabela(['Processo', 'Tribunal', 'Órgão', 'Parte contrária', 'Próximo ato'], r.processos, p => [
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)'),
+        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
         h('td', { 'data-r': 'Parte contrária' }, p.parte_contraria),
@@ -396,7 +418,7 @@
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
       form,
       tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', p.status === 'arquivado' ? h('div', {}, h('span', { class: 'tag' }, 'arquivado')) : null),
+        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero)), p.status === 'arquivado' ? h('div', {}, h('span', { class: 'tag' }, 'arquivado')) : null),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, 'a identificar')),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('div', { class: 'peq' }, p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
@@ -440,20 +462,20 @@
     });
     app.replaceChildren(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo processo' : (p.numero || 'Processo sem número')),
-        novo ? null : h('p', {}, p.cliente_id ? p.cliente_nome : 'Cliente a identificar', p.origem ? ` · origem: ${p.origem}` : ''))),
+        novo ? null : h('p', {}, p.cliente_id ? p.cliente_nome : 'Cliente a identificar', p.origem ? ` · origem: ${p.origem}` : '', ' · ', acessoTribunal(p.numero)))),
       form);
   }
 
   /* ---------- usuários ---------- */
 
-  const PERFIS = [['secretario', 'Secretário (tudo, menos financeiro)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
+  const PERFIS = [['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
 
   async function telaUsuarios() {
     carregando();
     const lista = await api('usuarios.listar');
     const form = h('form', { class: 'caixa', novalidate: true },
       h('h2', {}, 'Novo usuário'),
-      h('p', { class: 'peq' }, 'A senha precisa ter pelo menos 10 caracteres, com letras e números. Depois de 5 tentativas erradas, o usuário fica bloqueado por 15 minutos.'),
+      h('p', { class: 'peq' }, 'Depois de 5 senhas erradas seguidas, o usuário fica bloqueado por 15 minutos.'),
       h('div', { class: 'campos' },
         campo('nome', 'Nome da pessoa', '', { obrigatorio: true }),
         campo('usuario', 'Usuário (ex.: Estagiario)', '', { obrigatorio: true }),
@@ -506,7 +528,7 @@
     const form = h('form', { class: 'entrar' },
       h('h1', {}, 'Trocar senha'),
       h('div', { class: 'campo' }, campo('atual', 'Senha atual', '', { tipo: 'password', obrigatorio: true, auto: 'current-password' })),
-      h('div', { class: 'campo' }, campo('nova', 'Nova senha (mín. 10 caracteres, letras e números)', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
+      h('div', { class: 'campo' }, campo('nova', 'Nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
       h('div', { class: 'campo' }, campo('nova2', 'Repita a nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Trocar senha'),
       h('p', { class: 'erro' }));

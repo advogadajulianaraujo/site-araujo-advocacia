@@ -10,14 +10,14 @@ Este documento guarda o que foi decidido para o painel interno do site
 | Endereço | Mesmo domínio: botão **ENTRAR** no canto superior direito leva a `/painel/`. |
 | Conta Google | Tudo na **advogadajulianaraujo@gmail.com** (Drive, Agenda, Gmail, programa). |
 | Banco de dados | Planilha **PAINEL — BANCO DE DADOS** na pasta privada **00. PAINEL — DADOS**, lida por um Apps Script. Sem serviço externo. Nenhum dado de cliente vai para este repositório (ele é público). |
-| Login | Usuário e senha próprios do painel. Senha com 10+ caracteres, letras e números, sem padrões óbvios. Bloqueio de 15 min após 5 erros. |
-| Perfis | Administrador vê tudo. Secretário e Estagiário veem tudo menos Financeiro e Usuários. O acesso da Dra. Júlian ao financeiro fica para decidir depois. |
+| Login | Usuário e senha próprios do painel, criados pelo administrador. Qualquer senha é aceita (decisão do dono). Bloqueio de 15 min após 5 erros seguidos. |
+| Perfis | Administrador vê tudo. Advogada vê tudo menos Financeiro e Usuários e é quem clica em "conferido" nos prazos (junto com o Administrador). Secretário e Estagiário veem tudo menos Financeiro e Usuários e não conferem prazos. O acesso da Dra. Júlian ao financeiro fica para decidir depois. |
 | GEA | Deixa de ser usado. Tudo dele (clientes com processo, processos, agenda, cobrança) é importado para o painel. |
 | Cadastro | Só os dados que procuração e contrato exigem: nome, CPF/CNPJ, RG, nascimento, estado civil, profissão, representante (PJ), endereço, telefone, e-mail, origem, área, observações. |
 | Pastas | Cliente importado é ligado à pasta que já existe em **02. CLIENTES**; cliente novo ganha pasta nova (NOME EM MAIÚSCULAS) com a ficha. Procuração e contrato entram na pasta na etapa 4. |
-| Prazos | Mostrar "Prazo: X dias úteis · Fatal: dd/mm · Faltam N dias", recalculado todo dia, verde (>5), amarelo (3–5), vermelho (≤2), "VENCE HOJE". Prazo calculado pelo robô fica com a etiqueta **"calculado pelo robô"** até a advogada clicar em **"conferido"**; não conferidos ficam no topo. |
+| Prazos | Cada prazo mostra o **número do processo**, "Prazo: X dias úteis · Fatal: dd/mm", **quantos dias e horas faltam** (até 23h59 do dia fatal) e um **link para o sistema do tribunal** (PJe abre o processo; eproc abre o login, com botão para copiar o número). Formato base: "Prazo: X dias úteis · Fatal: dd/mm · Faltam N dias", recalculado todo dia, verde (>5), amarelo (3–5), vermelho (≤2), "VENCE HOJE". Prazo calculado pelo robô fica com a etiqueta **"calculado pelo robô"** até a advogada clicar em **"conferido"**; não conferidos ficam no topo. |
 | Fontes de intimação | DJEN pela OAB/SC 54832 e avisos no Gmail (eproc TJSC, eproc JFSC, PJe TRT12 1º e 2º grau, TRT16). |
-| Robô | Roda todo dia às 6h, mais botão "Atualizar agora" no painel. Sem e-mail de resumo (a equipe olha o painel todo dia). |
+| Robô | Roda **de 6 em 6 horas** (0h, 6h, 12h, 18h), sempre buscando prazos novos e recalculando os que faltam, mais botão "Atualizar agora" no painel. Sem e-mail de resumo. |
 | Agenda | Tabela dia/semana/mês lendo as agendas ATENDIMENTOS, AUDIÊNCIA CONCILIAÇÃO e AUDIÊNCIA INSTRUÇÃO (não "Família" nem "UNEMAT"), com os prazos fatais do dia. O que for marcado no painel vai para a agenda certa. |
 | Feriados | 2026–2027: nacionais, SC, comarcas atendidas (Tubarão, Imbituba, Criciúma, Florianópolis, Garopaba, Armazém, Braço do Norte, Capivari de Baixo, Jaguaruna) e recesso de 20/12 a 20/01. Administrador pode acrescentar suspensões. |
 | Financeiro | Controle de honorários, parcelas, vencimentos e atrasos. Fonte principal: GEA; também Google Agenda. Planilhas "Honorários Araújo — levantamento e conciliação" e "Clientes devedores" entram para conferência, marcando divergências. |
@@ -30,9 +30,13 @@ Este documento guarda o que foi decidido para o painel interno do site
 3. Financeiro.
 4. Modelos de procuração e contratos.
 
-## Importação do GEA (precisa de sessão local com Claude in Chrome)
+## Sessão local com Claude in Chrome: instalação e importação do GEA
 
-A sessão na nuvem não alcança o GEA. Para importar:
+A sessão na nuvem não alcança o GEA nem o editor do Apps Script. A sessão local, com o Chrome aberto na conta advogadajulianaraujo, faz as duas coisas:
+
+**A. Instalar o programa do painel** seguindo painel-backend/INSTALAR.md: abrir a planilha PAINEL — BANCO DE DADOS, colar Code.gs e appsscript.json no Apps Script, rodar Painel → Configurar planilha, autorizar, implantar como App da Web (executar como eu; qualquer pessoa) e gravar a URL /exec em painel/config.js. Enviar o commit para a branch painel-etapa-1.
+
+**B. Importar o GEA:**
 
 1. No computador do escritório, instale a extensão **Claude in Chrome** e entre no GEA pelo Chrome.
 2. Abra o aplicativo Claude, inicie uma sessão **local** do Claude Code neste repositório e peça:
