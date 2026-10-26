@@ -325,6 +325,7 @@
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
+    const limite = Math.max(150, parseInt(params.get('mais'), 10) || 150);
     const [todos, procs] = await Promise.all([api('clientes.listar', { busca }), api('processos.listar', {})]);
     let lista = todos;
     if (soConferir) lista = lista.filter(c => c.situacao !== 'completo');
@@ -338,7 +339,7 @@
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'conferir', checked: soConferir }), 'Só a conferir'),
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
     const ir = (mud) => {
-      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', mais: '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
     };
@@ -354,15 +355,16 @@
       h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todas as áreas (${todos.length})`),
         Object.keys(porArea).sort().map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
-      h('p', { class: 'peq' }, `${lista.length} na lista`),
-      tabela(['Nome', 'Tipo de ação', 'Telefone', 'Área', 'Processos', 'Cadastro'], lista, c => [
+      h('p', { class: 'peq' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} na lista`),
+      tabela(['Nome', 'Tipo de ação', 'Telefone', 'Área', 'Processos', 'Cadastro'], lista.slice(0, limite), c => [
         h('td', { 'data-r': 'Nome' }, h('strong', {}, c.nome), c.cpf_cnpj ? h('div', { class: 'peq' }, c.cpf_cnpj) : null),
         h('td', { 'data-r': 'Tipo de ação' }, c.tipo_acao || h('span', { class: 'peq' }, '—')),
         h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone),
         h('td', { 'data-r': 'Área' }, c.area),
         h('td', { 'data-r': 'Processos' }, String(c.processos)),
         h('td', { 'data-r': 'Cadastro' }, etiquetaSituacao(c.situacao), c.pasta_url ? null : h('div', { class: 'peq' }, 'sem pasta'))
-      ], c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'));
+      ], c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
+      lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(150, lista.length - limite)}`, () => ir({ mais: String(limite + 150) }), 'sec')) : null);
   }
 
   const ESTADO_CIVIL = [['', '—'], ['solteiro(a)', 'Solteiro(a)'], ['casado(a)', 'Casado(a)'], ['união estável', 'União estável'],

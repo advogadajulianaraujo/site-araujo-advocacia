@@ -65,7 +65,7 @@ function onOpen() {
     .addItem('2. Vincular pastas existentes dos clientes', 'vincularPastasExistentes')
     .addItem('3. Ligar o robô de prazos (de 6 em 6 horas)', 'instalarRobo')
     .addItem('Rodar o robô agora', 'rodarRoboMenu')
-    .addItem('4. Importar honorários da planilha de levantamento', 'importarHonorariosPlanilha')
+    .addItem('4. Importar tudo do GEA (clientes e financeiro)', 'importarGEA')
     .addItem('Gerar novo código de primeiro acesso', 'gerarCodigoPrimeiroAcesso')
     .addToUi();
 }
@@ -565,16 +565,25 @@ function vincularPastas_() {
   var it = raiz.getFolders();
   while (it.hasNext()) {
     var f = it.next();
-    mapa[normalizar_(f.getName())] = f;
+    mapa[normalizar_(f.getName())] = { id: f.getId(), url: f.getUrl() };
   }
   var n = 0;
   comTrava_(function () {
     var tab = tabela_('Clientes');
+    var colId = tab.cab.indexOf('pasta_id') + 1;
+    var ult = tab.aba.getLastRow();
+    if (ult < 2) return;
+    var faixa = tab.aba.getRange(2, colId, ult - 1, 2);
+    var vals = faixa.getDisplayValues();
+    var mudou = false;
     tab.linhas.forEach(function (c) {
       if (c.pasta_id) return;
       var f = mapa[normalizar_(c.nome)];
-      if (f) { atualizarLinha_(tab, c, { pasta_id: f.getId(), pasta_url: f.getUrl() }); n++; }
+      if (!f) return;
+      vals[c._linha - 2] = [f.id, f.url];
+      n++; mudou = true;
     });
+    if (mudou) faixa.setValues(vals); // uma gravação só para todas as pastas
   });
   registrar_('sistema', 'pastas vinculadas', n + ' clientes');
   return n;
@@ -701,7 +710,7 @@ function resumo_(d, u) {
       processosSemCliente: procs.filter(function (p) { return !p.cliente_id; }).length
     },
     proximos: proximos,
-    clientesNovos: clientes.filter(function (c) { return (c.criado_em || '').slice(0, 10) >= somarDias_(hoje, -30) && !/levantamento|planilha/.test(c.origem || ''); })
+    clientesNovos: clientes.filter(function (c) { return (c.criado_em || '').slice(0, 10) >= somarDias_(hoje, -30) && !/levantamento|planilha|GEA/.test(c.origem || ''); })
       .sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 8)
       .map(function (c) { return { id: c.id, nome: c.nome, area: c.area, criado_em: c.criado_em, situacao: c.situacao }; }),
     prazos: resumoPrazos_(),
@@ -2123,4 +2132,198 @@ function gerarDocumentos_(d, u) {
   });
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(','));
   return { gerados: gerados, pasta_url: c.pasta_url, faltando: faltando };
+}
+
+/* ================================================================== */
+/* IMPORTAÇÃO DO GEA — planilhas "GEA — clientes" e "GEA — financeiro" */
+/* ================================================================== */
+
+var ESTADOS_CIVIS_GEA = { 'casado': 'casado(a)', 'solteiro': 'solteiro(a)', 'uniao est': 'união estável', 'uniao estavel': 'união estável',
+  'divorciado': 'divorciado(a)', 'separado': 'separado(a)', 'viuvo': 'viúvo(a)' };
+
+/** Menu/editor: importa clientes e honorários exportados do GEA. Pode rodar de novo sem duplicar. */
+function importarGEA() {
+  var pai = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
+  var achar = function (nome) { var it = pai.getFilesByName(nome); return it.hasNext() ? SpreadsheetApp.openById(it.next().getId()) : null; };
+  var cli = achar('GEA — clientes'), fin = achar('GEA — financeiro');
+  if (!cli && !fin) { aviso_('Não achei as planilhas "GEA — clientes" e "GEA — financeiro" na pasta do painel.'); return; }
+  var linhas = function (ss) { return ss ? ss.getSheets()[0].getDataRange().getDisplayValues() : []; };
+  var r = importarGEADados_(linhas(cli), linhas(fin));
+  aviso_(r);
+  return r;
+}
+
+function cabecalhoIdx_(cab, padroes) {
+  var idx = {};
+  cab.forEach(function (c, j) {
+    var n = normalizar_(c);
+    Object.keys(padroes).forEach(function (k) { if (idx[k] === undefined && padroes[k].test(n)) idx[k] = j; });
+  });
+  return idx;
+}
+
+/** "Rua X, 10 – Bairro – Cidade/UF – CEP 88700000" → partes do endereço. */
+function partirEndereco_(txt) {
+  var partes = String(txt || '').replace(/\.\.\.$/, '').split(/\s+[–-]\s+/).map(function (s) { return s.trim(); }).filter(String);
+  var r = { endereco: '', cidade: '', uf: '', cep: '' };
+  var resto = [];
+  partes.forEach(function (p) {
+    var mc = /CEP\s*([\d.\-]{5,10})/i.exec(p);
+    if (mc) { var d = mc[1].replace(/\D/g, ''); r.cep = d.length === 8 ? d.slice(0, 5) + '-' + d.slice(5) : mc[1]; return; }
+    var mu = /^(.+?)\s*\/\s*([A-Z]{2})$/.exec(p);
+    if (mu) { r.cidade = mu[1]; r.uf = mu[2]; return; }
+    if (/^[A-Z]{2}$/.test(p)) { r.uf = p; return; }
+    resto.push(p);
+  });
+  r.endereco = resto.join(', ');
+  return r;
+}
+
+function dataBRparaISO_(v) {
+  var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(v || '').trim());
+  if (!m || +m[3] < 1900 || +m[3] > 2100 || +m[2] > 12 || +m[1] > 31) return '';
+  return m[3] + '-' + m[2] + '-' + m[1];
+}
+
+function importarGEADados_(rowsCli, rowsFin) {
+  var agora = new Date().toISOString();
+  var hoje = hojeSP_();
+  var tabC = tabela_('Clientes'), tabP = tabela_('Processos'), tabH = tabela_('Honorarios'), tabQ = tabela_('Parcelas');
+  var porNome = {}, porDoc = {};
+  var indexar = function (c) {
+    porNome[normalizar_(c.nome)] = c;
+    var d = String(c.cpf_cnpj || '').replace(/\D/g, '');
+    if (d.length === 11 || d.length === 14) porDoc[d] = c;
+  };
+  tabC.linhas.forEach(indexar);
+  var cont = { novos: 0, completados: 0, honorarios: 0, parcelas: 0, processosLigados: 0, processosNovos: 0, substituidos: 0 };
+  tabC.buffer = [];
+
+  /* ----- clientes ----- */
+  if (rowsCli.length > 1) {
+    var ic = cabecalhoIdx_(rowsCli[0], { nome: /^nome/, doc: /^cpf|cnpj/, rg: /^rg$/, nasc: /nascimento/, ec: /estado civil/,
+      prof: /profiss/, end: /endereco/, tel: /telefone/, email: /e-?mail/, obs: /observa/ });
+    for (var i = 1; i < rowsCli.length; i++) {
+      var row = rowsCli[i];
+      var nome = String(row[ic.nome] || '').trim();
+      if (!nome) continue;
+      var doc = String(row[ic.doc] || '').trim();
+      var dig = doc.replace(/\D/g, '');
+      var end = partirEndereco_(row[ic.end]);
+      var ecTxt = normalizar_(row[ic.ec]).replace(/\.$/, '');
+      var dados = {
+        tipo: dig.length === 14 ? 'PJ' : 'PF', cpf_cnpj: doc, rg: String(row[ic.rg] || '').trim(),
+        nascimento: dataBRparaISO_(row[ic.nasc]), estado_civil: ESTADOS_CIVIS_GEA[ecTxt] || '',
+        profissao: String(row[ic.prof] || '').trim().toLowerCase(), endereco: end.endereco, cidade: end.cidade, uf: end.uf, cep: end.cep,
+        telefone: String(row[ic.tel] || '').trim(), email: String(row[ic.email] || '').trim().toLowerCase()
+      };
+      if (dados.tipo === 'PJ') dados.estado_civil = '';
+      var obsGea = String(row[ic.obs] || '').trim();
+      var existente = (dig && porDoc[dig]) || porNome[normalizar_(nome)];
+      if (existente) {
+        var m = {};
+        Object.keys(dados).forEach(function (k) { if (dados[k] && !existente[k]) m[k] = dados[k]; });
+        if (obsGea && String(existente.observacoes || '').indexOf(obsGea) < 0) m.observacoes = (existente.observacoes ? existente.observacoes + ' | ' : '') + 'GEA: ' + obsGea;
+        if (Object.keys(m).length) {
+          m.atualizado_em = agora; m.atualizado_por = 'importação GEA';
+          atualizarLinha_(tabC, existente, m);
+          if (!existente._contado) { cont.completados++; existente._contado = true; }
+        }
+        indexar(existente);
+        continue;
+      }
+      var novo = { id: novoId_('C'), nome: nome, origem: 'GEA', area: '', situacao: 'importado — conferir',
+        observacoes: obsGea ? 'GEA: ' + obsGea : '', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
+      Object.keys(dados).forEach(function (k) { novo[k] = dados[k]; });
+      inserirLinha_(tabC, novo);
+      indexar(novo);
+      cont.novos++;
+    }
+  }
+  gravarLote_(tabC);
+
+  /* ----- processos "a identificar" com nome de cliente ----- */
+  tabP.linhas.forEach(function (p) {
+    if (p.cliente_id || !p.cliente_nome || p.cliente_nome === 'a identificar') return;
+    var c = porNome[normalizar_(p.cliente_nome)];
+    if (c) { atualizarLinha_(tabP, p, { cliente_id: c.id, cliente_nome: '' }); cont.processosLigados++; }
+  });
+
+  /* ----- financeiro ----- */
+  if (rowsFin.length > 1) {
+    // A importação provisória da planilha de levantamento é substituída pelos dados do GEA.
+    var provisorios = tabH.linhas.filter(function (h) { return h.origem === 'planilha Honorários Araújo' && h.situacao === 'importado — conferir'; });
+    var idsProv = {};
+    provisorios.forEach(function (h) { idsProv[h.id] = true; atualizarLinha_(tabH, h, apagado_(tabH.cab)); cont.substituidos++; });
+    tabQ.linhas.forEach(function (q) { if (idsProv[q.honorario_id]) atualizarLinha_(tabQ, q, apagado_(tabQ.cab)); });
+
+    var jaGea = {};
+    tabH.linhas.forEach(function (h) { var mm = /\[gea:([^\]]+)\]/.exec(h.observacoes || ''); if (mm) jaGea[mm[1]] = true; });
+    var procPorNum = {};
+    tabP.linhas.forEach(function (p) { if (p.numero) procPorNum[p.numero] = p; });
+    var f = cabecalhoIdx_(rowsFin[0], { cliente: /^cliente/, proc: /^processo/, total: /valor total/, num: /parcela$|^n.? parcela/,
+      venc: /vencimento/, valor: /valor da parcela/, sit: /situa/, pag: /pagamento/, tipo: /tipo/, desc: /descri/, obs: /observa/ });
+    var grupos = {}, ordem = [];
+    for (var k = 1; k < rowsFin.length; k++) {
+      var r = rowsFin[k];
+      var cn = String(r[f.cliente] || '').trim();
+      if (!cn) continue;
+      var numProc = (RE_CNJ.exec(String(r[f.proc] || '')) || [])[1] || '';
+      var chave = normalizar_(cn) + '|' + numProc + '|' + dinheiro_(r[f.total]) + '|' + normalizar_(r[f.tipo]);
+      if (!grupos[chave]) { grupos[chave] = { cliente: cn, numero: numProc, total: dinheiro_(r[f.total]), tipo: String(r[f.tipo] || '').trim(), linhas: [] }; ordem.push(chave); }
+      grupos[chave].linhas.push(r);
+    }
+    tabH.buffer = []; tabQ.buffer = []; tabP.buffer = [];
+    ordem.forEach(function (chave) {
+      var g = grupos[chave];
+      var chaveGea = normalizar_(chave).replace(/[\[\]]/g, '');
+      if (jaGea[chaveGea]) return;
+      var c = porNome[normalizar_(g.cliente)];
+      if (!c) {
+        c = { id: novoId_('C'), nome: g.cliente, origem: 'GEA (financeiro)', situacao: 'importado — conferir', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
+        inserirLinha_(tabC, c); indexar(c); cont.novos++;
+      }
+      var proc = g.numero ? procPorNum[g.numero] : null;
+      if (g.numero && !proc) {
+        proc = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: g.numero, tribunal: tribunalDoNumero_(g.numero), sistema: '', orgao: '',
+          area: '', polo: '', parte_contraria: '', proximo_ato: '', proximo_ato_data: '', status: 'ativo', observacoes: 'Criado pela importação do financeiro do GEA.',
+          origem: 'GEA', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
+        inserirLinha_(tabP, proc); procPorNum[g.numero] = proc; cont.processosNovos++;
+      } else if (proc && !proc.cliente_id) {
+        atualizarLinha_(tabP, proc, { cliente_id: c.id, cliente_nome: '' }); cont.processosLigados++;
+      }
+      var obsTxt = [];
+      g.linhas.forEach(function (r) { var o = String(r[f.obs] || '').trim(); if (o && obsTxt.indexOf(o) < 0) obsTxt.push(o); });
+      var desc = String(g.linhas[0][f.desc] || '').trim();
+      var h = { id: novoId_('H'), cliente_id: c.id, processo_id: proc ? proc.id : '', tipo: 'parcelado',
+        descricao: /consulta/i.test(g.tipo) ? 'Consulta' : 'Honorários contratuais' + (g.numero ? ' — ' + g.numero : ''),
+        valor_total: txtDinheiro_(g.total), percentual: '', valor_mensal: '', dia_vencimento: '', inicio: '', situacao: 'ativo',
+        observacoes: ['GEA: ' + desc].concat(obsTxt).join(' | ').slice(0, 1400) + ' [gea:' + chaveGea + ']',
+        origem: 'GEA', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
+      inserirLinha_(tabH, h); cont.honorarios++;
+      g.linhas.forEach(function (r) {
+        var venc = dataBRparaISO_(r[f.venc]);
+        var p = novaParcela_(h, String(r[f.num] || '').split(/\s+de\s+/i)[0] || '', venc || hoje, dinheiro_(r[f.valor]), 'importação GEA');
+        var pago = dataBRparaISO_(r[f.pag]);
+        if (pago || /^paga/.test(normalizar_(r[f.sit]))) { p.pago_em = pago || venc; p.valor_pago = p.valor; }
+        if (!venc) p.observacoes = 'Vencimento não informado no GEA.';
+        inserirLinha_(tabQ, p); cont.parcelas++;
+      });
+    });
+    gravarLote_(tabP); gravarLote_(tabH); gravarLote_(tabQ);
+  }
+
+  var pastas = 0;
+  try { pastas = vincularPastas_(); } catch (e) { /* pasta 02. CLIENTES não configurada */ }
+  registrar_('sistema', 'importação GEA', JSON.stringify(cont) + ' pastas:' + pastas);
+  return 'GEA importado: ' + cont.novos + ' clientes novos, ' + cont.completados + ' cadastros completados, ' +
+    cont.honorarios + ' honorários com ' + cont.parcelas + ' parcelas, ' + cont.processosLigados + ' processos ligados ao cliente, ' +
+    cont.processosNovos + ' processos novos, ' + pastas + ' pastas do Drive ligadas' +
+    (cont.substituidos ? ' (' + cont.substituidos + ' honorários provisórios da planilha de levantamento foram substituídos)' : '') + '.';
+}
+
+function apagado_(cab) {
+  var o = {};
+  cab.forEach(function (k) { o[k] = ''; });
+  return o;
 }
