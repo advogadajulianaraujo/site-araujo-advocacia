@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '4.0.0';
+var VERSAO = '4.1.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -93,6 +93,8 @@ function configurar() {
   var importados = importarCargaInicial_();
   var feriados = semearFeriados_();
   if (feriados) importados = (importados ? importados + ' ' : '') + feriados;
+  var gea = importarGEASeguro_(false);
+  if (gea) importados = (importados ? importados + '\n\n' : '') + gea;
   var codigo = config_('CODIGO_PRIMEIRO_ACESSO');
   if (!usuarios_().length && !codigo) codigo = gerarCodigoPrimeiroAcesso_();
   aviso_('Planilha configurada.' + (importados ? ' ' + importados : '') +
@@ -986,7 +988,13 @@ function instalarRobo() {
   return r;
 }
 
-function rodarRoboGatilho() { rodarRobo_('robô (6 em 6 h)'); }
+function rodarRoboGatilho() {
+  // Se o código novo foi colado mas a importação do GEA ainda não rodou, ela roda aqui sozinha.
+  var t0 = Date.now();
+  importarGEASeguro_(false);
+  if (Date.now() - t0 > 90 * 1000) return; // a importação demorou; o robô lê os avisos na próxima rodada
+  rodarRobo_('robô (6 em 6 h)');
+}
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
 function rodarRobo_(quem) {
@@ -2143,14 +2151,49 @@ var ESTADOS_CIVIS_GEA = { 'casado': 'casado(a)', 'solteiro': 'solteiro(a)', 'uni
 
 /** Menu/editor: importa clientes e honorários exportados do GEA. Pode rodar de novo sem duplicar. */
 function importarGEA() {
-  var pai = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
-  var achar = function (nome) { var it = pai.getFilesByName(nome); return it.hasNext() ? SpreadsheetApp.openById(it.next().getId()) : null; };
-  var cli = achar('GEA — clientes'), fin = achar('GEA — financeiro');
-  if (!cli && !fin) { aviso_('Não achei as planilhas "GEA — clientes" e "GEA — financeiro" na pasta do painel.'); return; }
-  var linhas = function (ss) { return ss ? ss.getSheets()[0].getDataRange().getDisplayValues() : []; };
-  var r = importarGEADados_(linhas(cli), linhas(fin));
+  var r = importarGEASeguro_(true);
   aviso_(r);
   return r;
+}
+
+/**
+ * Importa o GEA e grava o resultado (ou o erro) na aba Config.
+ * Roda sozinha no "configurar" e no robô enquanto GEA_IMPORTADO estiver vazio.
+ */
+function importarGEASeguro_(forcar) {
+  if (!forcar && config_('GEA_IMPORTADO')) return '';
+  var trava = LockService.getScriptLock();
+  if (!trava.tryLock(30000)) return 'Outra tarefa está rodando; a importação do GEA fica para a próxima vez.';
+  try {
+    var pai = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
+    var achar = function (nome) { var it = pai.getFilesByName(nome); return it.hasNext() ? SpreadsheetApp.openById(it.next().getId()) : null; };
+    var cli = achar('GEA — clientes'), fin = achar('GEA — financeiro');
+    if (!cli && !fin) throw new Error('Não achei as planilhas "GEA — clientes" e "GEA — financeiro" na pasta do painel.');
+    var linhas = function (ss) { return ss ? ss.getSheets()[0].getDataRange().getDisplayValues() : []; };
+    var r = importarGEADados_(linhas(cli), linhas(fin));
+    setConfig_('GEA_IMPORTADO', new Date().toISOString() + ' — ' + r, 'Resultado da importação do GEA (apague para importar de novo)');
+    setConfig_('GEA_ERRO', '', 'Último erro da importação do GEA');
+    return r;
+  } catch (e) {
+    var msg = 'Erro na importação do GEA: ' + (e && e.message) + (e && e.stack ? ' | ' + String(e.stack).slice(0, 800) : '');
+    try { setConfig_('GEA_ERRO', new Date().toISOString() + ' — ' + msg, 'Último erro da importação do GEA'); registrar_('sistema', 'erro importação GEA', msg.slice(0, 1000)); } catch (e2) { /* sem planilha */ }
+    return msg;
+  } finally {
+    trava.releaseLock();
+  }
+}
+
+/** "MARIA DA SILVA LTDA" → "Maria da Silva LTDA". */
+var SIGLAS_NOME = { ltda: 'LTDA', me: 'ME', epp: 'EPP', eireli: 'EIRELI', 'sa': 'SA', 's/a': 'S/A', 'mei': 'MEI', 'cia': 'Cia' };
+var MINUSCULAS_NOME = { da: 1, de: 1, do: 1, das: 1, dos: 1, e: 1, di: 1, du: 1 };
+function nomeProprio_(nome) {
+  var t = String(nome || '').trim().replace(/\s+/g, ' ');
+  if (!t || t !== t.toUpperCase()) return t; // já veio com maiúsculas e minúsculas
+  return t.toLowerCase().split(' ').map(function (w, i) {
+    if (SIGLAS_NOME[w]) return SIGLAS_NOME[w];
+    if (i > 0 && MINUSCULAS_NOME[w]) return w;
+    return w.replace(/(^|[-'])(\S)/g, function (m, a, b) { return a + b.toUpperCase(); });
+  }).join(' ');
 }
 
 function cabecalhoIdx_(cab, padroes) {
@@ -2205,7 +2248,7 @@ function importarGEADados_(rowsCli, rowsFin) {
       prof: /profiss/, end: /endereco/, tel: /telefone/, email: /e-?mail/, obs: /observa/ });
     for (var i = 1; i < rowsCli.length; i++) {
       var row = rowsCli[i];
-      var nome = String(row[ic.nome] || '').trim();
+      var nome = nomeProprio_(row[ic.nome]);
       if (!nome) continue;
       var doc = String(row[ic.doc] || '').trim();
       var dig = doc.replace(/\D/g, '');
@@ -2280,7 +2323,7 @@ function importarGEADados_(rowsCli, rowsFin) {
       if (jaGea[chaveGea]) return;
       var c = porNome[normalizar_(g.cliente)];
       if (!c) {
-        c = { id: novoId_('C'), nome: g.cliente, origem: 'GEA (financeiro)', situacao: 'importado — conferir', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
+        c = { id: novoId_('C'), nome: nomeProprio_(g.cliente), origem: 'GEA (financeiro)', situacao: 'importado — conferir', criado_em: agora, atualizado_em: agora, atualizado_por: 'importação GEA' };
         inserirLinha_(tabC, c); indexar(c); cont.novos++;
       }
       var proc = g.numero ? procPorNum[g.numero] : null;

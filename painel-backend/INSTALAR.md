@@ -66,6 +66,14 @@ Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
    "Honorários Araújo — levantamento e conciliação" e cria tudo como "importado — conferir".
 4. Implante uma nova versão (abaixo).
 
+## Importação do GEA
+
+1. Deixe as planilhas **GEA — clientes** e **GEA — financeiro** na pasta **00. PAINEL — DADOS**.
+2. Cole o `Code.gs` novo e salve.
+3. Rode **configurar**. A importação roda junto, uma vez só. Se ninguém rodar, o robô faz a importação sozinho na próxima rodada.
+4. O resultado fica na aba **Config**: em **GEA_IMPORTADO** quando deu certo, ou em **GEA_ERRO** quando deu erro.
+   Para importar de novo, apague o valor de GEA_IMPORTADO.
+
 ## Quando o programa for atualizado
 
 Cole o novo `Code.gs` por cima do antigo, salve e vá em
