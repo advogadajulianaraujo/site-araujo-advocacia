@@ -174,7 +174,7 @@
     ['processos', 'Processos'],
     ['prazos', 'Prazos'],
     ['agenda', 'Agenda'],
-    ['financeiro', 'Financeiro', 'etapa 3', 'financeiro'],
+    ['financeiro', 'Financeiro', null, 'financeiro'],
     ['usuarios', 'Usuários', null, 'usuarios']
   ];
 
@@ -404,12 +404,21 @@
         h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato, p.proximo_ato_data ? h('div', {}, etiquetaDias(p.proximo_ato_data)) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo ligado a este cliente.'));
 
+    let honsCli = null;
+    if (!novo && sessao.usuario.pode.financeiro) {
+      const hs = await api('fin.honorarios', { cliente_id: c.id }).catch(() => []);
+      honsCli = h('div', {}, h('div', { class: 'cab mt' }, h('h2', {}, 'Honorários'), botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
+        tabela(['Tipo', 'Descrição', 'Recebido', 'Em atraso', 'Situação'], hs, x => [
+          h('td', {}, TIPOS_HON[x.tipo] || x.tipo), h('td', {}, x.descricao), h('td', { class: 'num' }, reais(x.resumo.pago)),
+          h('td', { class: 'num' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'), h('td', {}, x.situacao)
+        ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
+    }
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo cliente' : c.nome),
         novo ? h('p', {}, 'Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES (ou liga a que já existir com o mesmo nome).')
           : h('p', {}, etiquetaSituacao(c.situacao), c.origem ? ` · origem: ${c.origem}` : ''))),
       c.situacao && c.situacao !== 'completo' && !novo ? h('div', { class: 'nota alerta' }, 'Cadastro importado: complete CPF, RG, endereço e contato antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
-      form, pasta, procs);
+      form, pasta, procs, honsCli);
   }
 
   /* ---------- processos ---------- */
@@ -855,6 +864,170 @@
     mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Novo compromisso'), h('p', {}, 'Vai direto para a agenda escolhida no Google Agenda do escritório.'))), form);
   }
 
+  /* ---------- financeiro ---------- */
+
+  const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+  const reais = v => BRL.format(+v || 0);
+  const TIPOS_HON = { parcelado: 'Parcelado', exito: 'Êxito', mensal: 'Mensal (assessoria)' };
+
+  function etiquetaParcela(p) {
+    const cls = { 'paga': 'ok', 'paga em parte': 'atencao', 'atrasada': 'urgente', 'a vencer': 'info' }[p.situacao] || '';
+    const extra = p.situacao === 'atrasada' ? ` há ${p.dias_atraso} dia${p.dias_atraso === 1 ? '' : 's'}` : '';
+    return h('span', { class: 'tag ' + cls }, p.situacao + extra);
+  }
+  function etiquetaCobranca(p) {
+    if (p.cobranca === 'acao') return h('span', { class: 'tag urgente' }, 'ação de cobrança');
+    if (p.cobranca === 'mensagem') return h('span', { class: 'tag atencao' }, 'mensagem enviada ' + dataBR(p.mensagem_em).slice(0, 5));
+    return p.situacao === 'atrasada' ? h('span', { class: 'tag' }, 'sem contato') : null;
+  }
+
+  function linkWhats(p) {
+    let tel = String(p.telefone || '').replace(/\D/g, '');
+    if (!tel) return null;
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = String(p.cliente || '').split(' ')[0];
+    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto a parcela ${p.numero} dos honorários, no valor de ${reais(p.saldo || p.valor)}, com vencimento em ${dataBR(p.vencimento)}. Se já pagou, por favor nos envie o comprovante. Qualquer dúvida, estamos à disposição.`;
+    return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
+  }
+
+  function acoesParcela(p, depois) {
+    const parar = fn => ev => { ev.stopPropagation(); fn(ev).catch(e => avisar(e.message, true)); };
+    const caixa = h('div', { class: 'mini-acoes' });
+    const wa = linkWhats(p);
+    const pagar = h('button', { type: 'button', class: 'btn mini', onclick: parar(async () => {
+      const f = h('form', { class: 'pagar', novalidate: true, onclick: e => e.stopPropagation() },
+        h('input', { type: 'date', name: 'data', value: hojeISO(), 'aria-label': 'Data do pagamento' }),
+        h('input', { name: 'valor', value: String(p.saldo || p.valor).replace('.', ','), inputmode: 'decimal', 'aria-label': 'Valor pago' }),
+        h('select', { name: 'forma', 'aria-label': 'Forma' }, ['Pix', 'Dinheiro', 'Transferência', 'Boleto', 'Cartão', 'Alvará'].map(x => h('option', {}, x))),
+        h('button', { type: 'submit', class: 'btn mini' }, 'Confirmar'), h('p', { class: 'erro' }));
+      aoEnviar(f, async fd => { await api('fin.parcela.pagar', { id: p.id, ...Object.fromEntries(fd.entries()) }); avisar('Pagamento registrado.'); depois(); });
+      caixa.replaceChildren(f);
+    }) }, 'Pago');
+    if (p.situacao === 'paga' || p.situacao === 'paga em parte') {
+      caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.pagar', { id: p.id, estornar: true }); avisar('Pagamento desfeito.'); depois(); }) }, 'Desfazer pagamento'));
+      return caixa;
+    }
+    caixa.append(pagar);
+    if (p.situacao === 'atrasada') {
+      caixa.append(wa
+        ? h('a', { class: 'btn mini sec', href: wa, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); api('fin.parcela.cobranca', { id: p.id, etapa: 'mensagem' }).then(depois).catch(() => {}); } }, 'WhatsApp')
+        : h('span', { class: 'peq' }, 'sem telefone'));
+      if (p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Marcado: ação de cobrança.'); depois(); }) }, 'Ação'));
+    }
+    return caixa;
+  }
+
+  function tabelaParcelas(lista, depois, vazio, comCliente) {
+    return tabela(comCliente ? ['Vencimento', 'Cliente', 'Parcela', 'Valor', 'Situação', ''] : ['Vencimento', 'Parcela', 'Valor', 'Situação', ''], lista, p => [
+      h('td', { class: 'num', 'data-r': 'Vencimento' }, dataBR(p.vencimento)),
+      comCliente ? h('td', { 'data-r': 'Cliente' }, p.cliente, p.telefone ? h('div', { class: 'peq' }, p.telefone) : h('div', { class: 'peq' }, 'sem telefone')) : null,
+      h('td', { 'data-r': 'Parcela' }, `${p.numero}ª`, p.honorario ? h('div', { class: 'peq' }, p.honorario) : null, p.observacoes ? h('div', { class: 'peq' }, p.observacoes) : null),
+      h('td', { class: 'num', 'data-r': 'Valor' }, reais(p.valor), p.pago_em ? h('div', { class: 'peq' }, `pago ${reais(p.valor_pago)} em ${dataBR(p.pago_em)}${p.forma ? ' · ' + p.forma : ''}`) : null),
+      h('td', { 'data-r': 'Situação' }, etiquetaParcela(p), h('div', {}, etiquetaCobranca(p))),
+      h('td', {}, acoesParcela(p, depois))
+    ], p => { location.hash = '#/honorario/' + p.honorario_id; }, vazio);
+  }
+
+  async function telaFinanceiro(params) {
+    carregando();
+    const busca = params.get('busca') || '';
+    const [r, hons] = await Promise.all([api('fin.resumo'), api('fin.honorarios', { busca })]);
+    const t = r.totais;
+    const form = h('form', { class: 'barra', role: 'search' },
+      h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar honorários por cliente', 'aria-label': 'Buscar honorários' }),
+      h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
+    form.addEventListener('submit', ev => { ev.preventDefault(); location.hash = '#/financeiro' + (form.busca.value.trim() ? '?busca=' + encodeURIComponent(form.busca.value.trim()) : ''); });
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Financeiro'), h('p', {}, 'Honorários, parcelas e cobranças. Só a administração vê esta área.')),
+        botao('Novo honorário', () => { location.hash = '#/honorario/novo'; })),
+      h('div', { class: 'numeros' },
+        h('div', { class: 'numero' + (t.atrasado ? ' destaque' : '') }, h('b', {}, reais(t.atrasado)), h('span', {}, `em atraso · ${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
+        h('div', { class: 'numero' }, h('b', {}, reais(t.aReceber30)), h('span', {}, 'a receber nos próximos 30 dias')),
+        h('div', { class: 'numero' }, h('b', {}, reais(t.recebidoMes)), h('span', {}, 'recebido neste mês')),
+        h('div', { class: 'numero' }, h('b', {}, r.aConferir), h('span', {}, 'honorários importados a conferir'))),
+      h('div', { class: 'faixas' }, r.faixas.map(f => h('div', { class: 'faixa' }, h('span', { class: 'peq' }, 'Atraso ' + f.nome), h('strong', {}, reais(f.valor)), h('span', { class: 'peq' }, f.qtd + ' parcela(s)')))),
+      h('h2', { class: 'mt' }, 'Em atraso'),
+      h('p', { class: 'peq' }, 'Fluxo: parcela atrasou → mensagem pelo WhatsApp (o painel já escreve o texto) → se não pagar, marque "Ação" e entre com a cobrança.'),
+      tabelaParcelas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉', true),
+      h('h2', { class: 'mt' }, 'Vencem nos próximos 30 dias'),
+      tabelaParcelas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.', true),
+      h('div', { class: 'cab mt' }, h('h2', {}, 'Honorários'), form),
+      tabela(['Cliente', 'Tipo', 'Contratado', 'Recebido', 'Em atraso', 'Situação'], hons, x => [
+        h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente), x.descricao ? h('div', { class: 'peq' }, x.descricao) : null),
+        h('td', { 'data-r': 'Tipo' }, TIPOS_HON[x.tipo] || x.tipo, x.tipo === 'exito' && x.percentual ? ` · ${x.percentual}%` : '', x.tipo === 'mensal' && x.valor_mensal ? ` · ${reais(x.valor_mensal)}/mês` : ''),
+        h('td', { class: 'num', 'data-r': 'Contratado' }, x.valor_total ? reais(x.valor_total) : reais(x.resumo.total)),
+        h('td', { class: 'num', 'data-r': 'Recebido' }, reais(x.resumo.pago)),
+        h('td', { class: 'num', 'data-r': 'Em atraso' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'),
+        h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (x.situacao === 'ativo' ? 'ok' : x.situacao === 'encerrado' ? '' : 'atencao') }, x.situacao))
+      ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
+  }
+
+  async function telaHonorario(id, params) {
+    carregando();
+    const novo = id === 'novo';
+    const [clientes, procs, dados] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}), novo ? null : api('fin.honorario', { id })]);
+    const x = novo ? { cliente_id: params.get('cliente') || '', tipo: 'parcelado', situacao: 'ativo' } : dados.honorario;
+    const recarregar = () => telaHonorario(id, params);
+    const opCli = [['', '— escolha o cliente —']].concat(clientes.map(c => [c.id, c.nome]));
+    const opProc = [['', '— sem processo —']].concat(procs.filter(p => p.numero).map(p => [p.id, p.numero + ' · ' + (p.cliente_nome || '')]));
+    const so = (tipos, el) => { el.dataset.tipos = tipos; return el; };
+    const form = h('form', { class: 'caixa', novalidate: true },
+      h('div', { class: 'campos' },
+        campo('cliente_id', 'Cliente', x.cliente_id, { opcoes: opCli }),
+        campo('processo_id', 'Processo (opcional)', x.processo_id, { opcoes: opProc }),
+        campo('tipo', 'Tipo', x.tipo, { opcoes: Object.entries(TIPOS_HON) }),
+        campo('descricao', 'Descrição', x.descricao, { max: 200, dica: 'Ex.: Ação trabalhista, Divórcio, Assessoria mensal' }),
+        so('parcelado', campo('valor_total', 'Valor total (R$)', x.valor_total ? String(x.valor_total).replace('.', ',') : '', { modo: 'decimal' })),
+        novo ? so('parcelado', campo('parcelas', 'Número de parcelas', '1', { modo: 'numeric', max: 3 })) : null,
+        novo ? so('parcelado', campo('primeiro_vencimento', '1º vencimento', hojeISO(), { tipo: 'date' })) : null,
+        so('exito', campo('percentual', 'Percentual do êxito (%)', x.percentual, { modo: 'decimal', max: 6 })),
+        so('mensal', campo('valor_mensal', 'Mensalidade (R$)', x.valor_mensal ? String(x.valor_mensal).replace('.', ',') : '', { modo: 'decimal' })),
+        so('mensal', campo('dia_vencimento', 'Dia do vencimento', x.dia_vencimento, { modo: 'numeric', max: 2 })),
+        so('mensal', campo('inicio', 'Início da assessoria', x.inicio || hojeISO(), { tipo: 'date' })),
+        campo('situacao', 'Situação', x.situacao, { opcoes: [['ativo', 'Ativo'], ['encerrado', 'Encerrado'], ['importado — conferir', 'Importado — conferir']] }),
+        campo('observacoes', 'Observações', x.observacoes, { area: true, largo: true })),
+      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, novo ? 'Cadastrar honorário' : 'Salvar'), h('a', { class: 'btn sec', href: '#/financeiro' }, 'Voltar')),
+      h('p', { class: 'erro' }));
+    const ajustar = () => form.querySelectorAll('[data-tipos]').forEach(el => { el.hidden = !el.dataset.tipos.split(',').includes(form.tipo.value); });
+    form.tipo.addEventListener('change', ajustar); ajustar();
+    aoEnviar(form, async fd => {
+      const d = Object.fromEntries(fd.entries());
+      if (!novo) d.id = x.id;
+      const r = await api('fin.honorario.salvar', { honorario: d });
+      avisar(novo ? 'Honorário cadastrado.' : 'Alterações salvas.');
+      if (novo) location.hash = '#/honorario/' + r.id; else recarregar();
+    });
+    let extras = [];
+    if (!novo) {
+      const nova = h('form', { class: 'barra', novalidate: true },
+        h('input', { type: 'date', name: 'vencimento', value: hojeISO(), 'aria-label': 'Vencimento' }),
+        h('input', { name: 'valor', placeholder: 'Valor (R$)', inputmode: 'decimal', 'aria-label': 'Valor' }),
+        h('button', { type: 'submit', class: 'btn sec' }, 'Acrescentar parcela'), h('p', { class: 'erro' }));
+      aoEnviar(nova, async fd => { await api('fin.parcela.salvar', { parcela: { honorario_id: x.id, ...Object.fromEntries(fd.entries()) } }); avisar('Parcela acrescentada.'); recarregar(); });
+      extras.push(h('h2', { class: 'mt' }, 'Parcelas'), tabelaParcelas(dados.parcelas.map(p => ({ ...p, telefone: x.telefone, cliente: x.cliente })), recarregar, 'Nenhuma parcela.', false), nova);
+      if (x.tipo === 'exito') {
+        const alv = h('form', { class: 'caixa', novalidate: true },
+          h('h3', {}, 'Lançar alvará ou depósito'),
+          h('div', { class: 'campos' },
+            campo('valor_bruto', 'Valor recebido no processo (R$)', '', { modo: 'decimal' }),
+            campo('percentual', 'Percentual (%)', x.percentual, { modo: 'decimal' }),
+            campo('data', 'Data', hojeISO(), { tipo: 'date' })),
+          h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular e lançar')), h('p', { class: 'erro' }));
+        aoEnviar(alv, async fd => {
+          const r = await api('fin.recebimento.salvar', { honorario_id: x.id, ...Object.fromEntries(fd.entries()) });
+          avisar(`Honorários ${reais(r.honorarios)} · repasse ao cliente ${reais(r.repasse_cliente)}.`); recarregar();
+        });
+        extras.push(alv, dados.recebimentos.length ? tabela(['Data', 'Recebido no processo', '%', 'Escritório', 'Repasse ao cliente'], dados.recebimentos, r => [
+          h('td', { class: 'num' }, dataBR(r.data)), h('td', { class: 'num' }, reais(r.valor_bruto)), h('td', {}, r.percentual + '%'),
+          h('td', { class: 'num' }, reais(r.honorarios)), h('td', { class: 'num' }, h('strong', {}, reais(r.repasse_cliente)))], () => {}, '') : null);
+      }
+    }
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo honorário' : (x.cliente || 'Honorário')),
+      novo ? null : h('p', {}, (TIPOS_HON[x.tipo] || x.tipo) + (x.origem ? ' · origem: ' + x.origem : '')))),
+      x.situacao === 'importado — conferir' ? h('div', { class: 'nota alerta' }, 'Importado da planilha de levantamento. Confira valores e vencimentos com os comprovantes e mude a situação para Ativo ou Encerrado.') : null,
+      form, ...extras);
+  }
+
   /* ---------- rotas ---------- */
 
   async function rota() {
@@ -865,7 +1038,7 @@
       if (tela === 'primeiro-acesso') telaPrimeiroAcesso(); else telaLogin();
       return;
     }
-    const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda' }[tela] || tela || 'inicio';
+    const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
     window.scrollTo(0, 0);
     try {
@@ -880,7 +1053,8 @@
         case 'compromisso': await telaCompromisso(params); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
-        case 'financeiro': telaEmBreve('Financeiro', 'etapa 3', 'Honorários, parcelas, vencimentos e atrasos, importados do GEA e conferidos com as planilhas de honorários.'); break;
+        case 'financeiro': await telaFinanceiro(params); break;
+        case 'honorario': await telaHonorario(id, params); break;
         default: await telaInicio();
       }
     } catch (e) {

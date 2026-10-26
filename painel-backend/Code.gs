@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '2.0.0';
+var VERSAO = '3.0.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -38,6 +38,12 @@ var ESQUEMA = {
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
+  Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
+    'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
+  Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
+    'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
+  Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
+    'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe']
 };
@@ -57,6 +63,7 @@ function onOpen() {
     .addItem('2. Vincular pastas existentes dos clientes', 'vincularPastasExistentes')
     .addItem('3. Ligar o robô de prazos (de 6 em 6 horas)', 'instalarRobo')
     .addItem('Rodar o robô agora', 'rodarRoboMenu')
+    .addItem('4. Importar honorários da planilha de levantamento', 'importarHonorariosPlanilha')
     .addItem('Gerar novo código de primeiro acesso', 'gerarCodigoPrimeiroAcesso')
     .addToUi();
 }
@@ -229,6 +236,14 @@ var ROTAS = {
   'agenda.criar': { fn: criarCompromisso_ },
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
+  'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
+  'fin.honorarios': { permissao: 'financeiro', fn: listarHonorarios_ },
+  'fin.honorario': { permissao: 'financeiro', fn: obterHonorario_ },
+  'fin.honorario.salvar': { permissao: 'financeiro', fn: salvarHonorario_ },
+  'fin.parcela.salvar': { permissao: 'financeiro', fn: salvarParcela_ },
+  'fin.parcela.pagar': { permissao: 'financeiro', fn: pagarParcela_ },
+  'fin.parcela.cobranca': { permissao: 'financeiro', fn: cobrancaParcela_ },
+  'fin.recebimento.salvar': { permissao: 'financeiro', fn: salvarRecebimento_ },
   'usuarios.listar': { permissao: 'usuarios', fn: listarUsuarios_ },
   'usuarios.salvar': { permissao: 'usuarios', fn: salvarUsuario_ },
   'senha.trocar': { fn: trocarSenha_ }
@@ -1404,4 +1419,405 @@ function criarCompromisso_(d, u) {
   });
   registrar_(u.usuario, 'compromisso criado', d.agenda + ' ' + d.data + ' ' + d.inicio + ' ' + titulo);
   return { id: ev.getId() };
+}
+
+/* ================================================================== */
+/* ETAPA 3 — Financeiro: honorários, parcelas, atrasos e alvarás       */
+/* ================================================================== */
+
+var TIPOS_HONORARIO = { parcelado: 'Parcelado', exito: 'Êxito', mensal: 'Mensal (assessoria)' };
+
+function dinheiro_(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return Math.round(v * 100) / 100;
+  var t = String(v).replace(/[R$\s]/g, '');
+  if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); // 1.234,56
+  var n = parseFloat(t);
+  return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+}
+function txtDinheiro_(n) { return (Math.round(n * 100) / 100).toFixed(2); }
+
+/** Situação da parcela no dia de hoje. */
+function situacaoParcela_(p, hoje) {
+  if (p.pago_em) return dinheiro_(p.valor_pago) && dinheiro_(p.valor_pago) < dinheiro_(p.valor) ? 'paga em parte' : 'paga';
+  if (p.vencimento && p.vencimento < hoje) return 'atrasada';
+  return 'a vencer';
+}
+
+function mapaClientes_() {
+  var m = {};
+  tabela_('Clientes').linhas.forEach(function (c) { m[c.id] = c; });
+  return m;
+}
+
+function parcelaPublica_(p, hoje, clientes, hons) {
+  var x = limpar_(p);
+  var c = clientes[p.cliente_id] || {};
+  var h = hons[p.honorario_id] || {};
+  x.situacao = situacaoParcela_(p, hoje);
+  x.dias_atraso = x.situacao === 'atrasada' ? diffDias_(hoje, p.vencimento) : 0;
+  x.cliente = c.nome || '';
+  x.telefone = c.telefone || '';
+  x.honorario = h.descricao || TIPOS_HONORARIO[h.tipo] || '';
+  x.saldo = x.situacao === 'paga' ? 0 : dinheiro_(p.valor) - dinheiro_(p.valor_pago);
+  return x;
+}
+
+/** Mensalistas: mantém as mensalidades geradas até 2 meses à frente. */
+function estenderMensais_() {
+  var hons = tabela_('Honorarios').linhas.filter(function (h) { return h.tipo === 'mensal' && h.situacao === 'ativo' && dinheiro_(h.valor_mensal); });
+  if (!hons.length) return;
+  var tab = tabela_('Parcelas');
+  var limite = somarDias_(hojeSP_(), 62);
+  hons.forEach(function (h) {
+    var ps = tab.linhas.filter(function (p) { return p.honorario_id === h.id; });
+    var ultimo = ps.reduce(function (m, p) { return p.vencimento > m ? p.vencimento : m; }, '');
+    var prox = ultimo ? mesSeguinte_(ultimo, h.dia_vencimento) : primeiroVencimento_(h.inicio || hojeSP_(), h.dia_vencimento);
+    var n = ps.length;
+    for (var i = 0; i < 24 && prox <= limite; i++) {
+      n++;
+      inserirLinha_(tab, novaParcela_(h, n, prox, dinheiro_(h.valor_mensal), 'sistema'));
+      prox = mesSeguinte_(prox, h.dia_vencimento);
+    }
+  });
+}
+
+function diaValido_(ano, mes, dia) {
+  var ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  return Math.min(dia, ultimo);
+}
+function mesSeguinte_(iso, dia) {
+  var a = +iso.slice(0, 4), m = +iso.slice(5, 7) + 1;
+  if (m > 12) { m = 1; a++; }
+  var d = diaValido_(a, m, parseInt(dia, 10) || +iso.slice(8, 10));
+  return a + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+function primeiroVencimento_(inicio, dia) {
+  dia = parseInt(dia, 10) || +inicio.slice(8, 10);
+  var a = +inicio.slice(0, 4), m = +inicio.slice(5, 7);
+  var v = a + '-' + ('0' + m).slice(-2) + '-' + ('0' + diaValido_(a, m, dia)).slice(-2);
+  return v >= inicio ? v : mesSeguinte_(v, dia);
+}
+
+function novaParcela_(h, numero, vencimento, valor, quem) {
+  var agora = new Date().toISOString();
+  return { id: novoId_('Q'), honorario_id: h.id, cliente_id: h.cliente_id, numero: String(numero), vencimento: vencimento,
+    valor: txtDinheiro_(valor), pago_em: '', valor_pago: '', forma: '', cobranca: '', mensagem_em: '', acao_processo_id: '',
+    observacoes: '', criado_em: agora, atualizado_em: agora, atualizado_por: quem };
+}
+
+function resumoFinanceiro_() {
+  comTrava_(estenderMensais_);
+  var hoje = hojeSP_();
+  var clientes = mapaClientes_();
+  var hons = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var parcelas = tabela_('Parcelas').linhas.map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); });
+  var atrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; })
+    .sort(function (a, b) { return b.dias_atraso - a.dias_atraso; });
+  var em30 = somarDias_(hoje, 30);
+  var proximas = parcelas.filter(function (p) { return p.situacao === 'a vencer' && p.vencimento <= em30; })
+    .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var mes = hoje.slice(0, 7);
+  var soma = function (l, f) { return Math.round(l.reduce(function (t, p) { return t + f(p); }, 0) * 100) / 100; };
+  var faixa = function (min, max) { return atrasadas.filter(function (p) { return p.dias_atraso >= min && p.dias_atraso <= max; }); };
+  var recebMes = tabela_('Parcelas').linhas.filter(function (p) { return (p.pago_em || '').slice(0, 7) === mes; });
+  return {
+    hoje: hoje,
+    totais: {
+      atrasado: soma(atrasadas, function (p) { return p.saldo; }), parcelasAtrasadas: atrasadas.length,
+      clientesAtrasados: Object.keys(atrasadas.reduce(function (m, p) { m[p.cliente_id] = 1; return m; }, {})).length,
+      aReceber30: soma(proximas, function (p) { return p.saldo; }),
+      recebidoMes: soma(recebMes, function (p) { return dinheiro_(p.valor_pago) || dinheiro_(p.valor); })
+    },
+    faixas: [
+      { nome: 'até 30 dias', valor: soma(faixa(1, 30), function (p) { return p.saldo; }), qtd: faixa(1, 30).length },
+      { nome: '31 a 90 dias', valor: soma(faixa(31, 90), function (p) { return p.saldo; }), qtd: faixa(31, 90).length },
+      { nome: 'mais de 90 dias', valor: soma(faixa(91, 100000), function (p) { return p.saldo; }), qtd: faixa(91, 100000).length }
+    ],
+    atrasadas: atrasadas.slice(0, 200),
+    proximas: proximas.slice(0, 100),
+    aConferir: tabela_('Honorarios').linhas.filter(function (h) { return h.situacao === 'importado — conferir'; }).length
+  };
+}
+
+function listarHonorarios_(d) {
+  var hoje = hojeSP_();
+  var clientes = mapaClientes_();
+  var busca = normalizar_(d.busca || '');
+  var porHon = {};
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var r = porHon[p.honorario_id] = porHon[p.honorario_id] || { total: 0, pago: 0, atrasado: 0, parcelas: 0 };
+    var sit = situacaoParcela_(p, hoje);
+    r.parcelas++;
+    r.total += dinheiro_(p.valor);
+    if (p.pago_em) r.pago += dinheiro_(p.valor_pago) || dinheiro_(p.valor);
+    if (sit === 'atrasada') r.atrasado += dinheiro_(p.valor) - dinheiro_(p.valor_pago);
+  });
+  return tabela_('Honorarios').linhas
+    .filter(function (h) { return !d.cliente_id || h.cliente_id === d.cliente_id; })
+    .map(function (h) {
+      var x = limpar_(h);
+      var c = clientes[h.cliente_id] || {};
+      x.cliente = c.nome || '';
+      x.resumo = porHon[h.id] || { total: 0, pago: 0, atrasado: 0, parcelas: 0 };
+      return x;
+    })
+    .filter(function (h) { return !busca || normalizar_(h.cliente + ' ' + h.descricao + ' ' + h.observacoes).indexOf(busca) >= 0; })
+    .sort(function (a, b) { return b.resumo.atrasado - a.resumo.atrasado || (normalizar_(a.cliente) < normalizar_(b.cliente) ? -1 : 1); });
+}
+
+function obterHonorario_(d) {
+  var h = tabela_('Honorarios').linhas.filter(function (r) { return r.id === d.id; })[0];
+  if (!h) throw falha_('Honorário não encontrado.');
+  var hoje = hojeSP_();
+  var clientes = mapaClientes_();
+  var hons = {}; hons[h.id] = h;
+  var x = limpar_(h);
+  x.cliente = (clientes[h.cliente_id] || {}).nome || '';
+  x.telefone = (clientes[h.cliente_id] || {}).telefone || '';
+  return {
+    honorario: x,
+    parcelas: tabela_('Parcelas').linhas.filter(function (p) { return p.honorario_id === h.id; })
+      .map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); })
+      .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }),
+    recebimentos: tabela_('Recebimentos').linhas.filter(function (r) { return r.honorario_id === h.id; }).map(limpar_)
+  };
+}
+
+/**
+ * Cria ou altera um honorário. Ao criar um parcelado, gera as parcelas (n, primeiro vencimento);
+ * ao criar um mensal, gera as mensalidades até 2 meses à frente.
+ */
+function salvarHonorario_(d, u) {
+  return comTrava_(function () {
+    var h = d.honorario || {};
+    var clientes = mapaClientes_();
+    if (!clientes[h.cliente_id]) throw falha_('Escolha o cliente.');
+    if (!TIPOS_HONORARIO[h.tipo]) throw falha_('Escolha o tipo de honorário.');
+    var tab = tabela_('Honorarios');
+    var agora = new Date().toISOString();
+    var dados = {
+      cliente_id: h.cliente_id, processo_id: h.processo_id || '', tipo: h.tipo, descricao: String(h.descricao || '').trim(),
+      valor_total: h.valor_total ? txtDinheiro_(dinheiro_(h.valor_total)) : '', percentual: h.percentual ? String(dinheiro_(h.percentual)) : '',
+      valor_mensal: h.valor_mensal ? txtDinheiro_(dinheiro_(h.valor_mensal)) : '', dia_vencimento: String(h.dia_vencimento || '').replace(/\D/g, ''),
+      inicio: h.inicio || '', situacao: h.situacao || 'ativo', observacoes: String(h.observacoes || '').trim(),
+      atualizado_em: agora, atualizado_por: u.usuario
+    };
+    if (dados.tipo === 'exito' && !(dinheiro_(dados.percentual) > 0)) throw falha_('Informe o percentual do êxito.');
+    if (dados.tipo === 'mensal' && !(dinheiro_(dados.valor_mensal) > 0)) throw falha_('Informe o valor da mensalidade.');
+    if (h.id) {
+      var linha = tab.linhas.filter(function (r) { return r.id === h.id; })[0];
+      if (!linha) throw falha_('Honorário não encontrado.');
+      atualizarLinha_(tab, linha, dados);
+      registrar_(u.usuario, 'honorário alterado', linha.id);
+      return { id: linha.id };
+    }
+    var n = parseInt(h.parcelas, 10) || 1;
+    var total = dinheiro_(dados.valor_total);
+    if (dados.tipo === 'parcelado') {
+      if (!(total > 0)) throw falha_('Informe o valor total.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(h.primeiro_vencimento || '')) throw falha_('Informe o vencimento da 1ª parcela.');
+      if (n < 1 || n > 120) throw falha_('Número de parcelas inválido.');
+    }
+    dados.id = novoId_('H');
+    dados.origem = 'painel';
+    dados.criado_em = agora;
+    inserirLinha_(tab, dados);
+    var parc = tabela_('Parcelas');
+    if (dados.tipo === 'parcelado') {
+      var base = Math.floor(total / n * 100) / 100;
+      var venc = h.primeiro_vencimento;
+      var dia = +venc.slice(8, 10);
+      for (var i = 1; i <= n; i++) {
+        var valor = i === n ? Math.round((total - base * (n - 1)) * 100) / 100 : base; // centavos na última
+        inserirLinha_(parc, novaParcela_(dados, i, venc, valor, u.usuario));
+        venc = mesSeguinte_(venc, dia);
+      }
+    }
+    registrar_(u.usuario, 'honorário criado', dados.id + ' ' + dados.tipo);
+    if (dados.tipo === 'mensal') estenderMensais_();
+    return { id: dados.id };
+  });
+}
+
+function parcelaPorId_(id) {
+  var tab = tabela_('Parcelas');
+  var p = tab.linhas.filter(function (r) { return r.id === id; })[0];
+  if (!p) throw falha_('Parcela não encontrada.');
+  return { tab: tab, p: p };
+}
+
+function salvarParcela_(d, u) {
+  return comTrava_(function () {
+    var x = d.parcela || {};
+    var agora = new Date().toISOString();
+    if (x.vencimento && !/^\d{4}-\d{2}-\d{2}$/.test(x.vencimento)) throw falha_('Vencimento inválido.');
+    if (!x.id) {
+      var h = tabela_('Honorarios').linhas.filter(function (r) { return r.id === x.honorario_id; })[0];
+      if (!h) throw falha_('Honorário não encontrado.');
+      if (!x.vencimento || !(dinheiro_(x.valor) > 0)) throw falha_('Informe vencimento e valor.');
+      var parc = tabela_('Parcelas');
+      var n = parc.linhas.filter(function (p) { return p.honorario_id === h.id; }).length + 1;
+      var nova = novaParcela_(h, n, x.vencimento, dinheiro_(x.valor), u.usuario);
+      nova.observacoes = String(x.observacoes || '');
+      inserirLinha_(parc, nova);
+      registrar_(u.usuario, 'parcela criada', nova.id);
+      return { id: nova.id };
+    }
+    var r = parcelaPorId_(x.id);
+    var m = { atualizado_em: agora, atualizado_por: u.usuario };
+    if (x.vencimento) m.vencimento = x.vencimento;
+    if (x.valor !== undefined && x.valor !== '') m.valor = txtDinheiro_(dinheiro_(x.valor));
+    if (x.observacoes !== undefined) m.observacoes = String(x.observacoes);
+    atualizarLinha_(r.tab, r.p, m);
+    registrar_(u.usuario, 'parcela alterada', x.id);
+    return { id: x.id };
+  });
+}
+
+function pagarParcela_(d, u) {
+  return comTrava_(function () {
+    var r = parcelaPorId_(d.id);
+    if (d.estornar) {
+      atualizarLinha_(r.tab, r.p, { pago_em: '', valor_pago: '', forma: '', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+      registrar_(u.usuario, 'pagamento estornado', d.id);
+      return { ok: true };
+    }
+    var data = d.data || hojeSP_();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw falha_('Data do pagamento inválida.');
+    var valor = d.valor ? dinheiro_(d.valor) : dinheiro_(r.p.valor);
+    if (!(valor > 0)) throw falha_('Valor pago inválido.');
+    atualizarLinha_(r.tab, r.p, { pago_em: data, valor_pago: txtDinheiro_(valor), forma: String(d.forma || ''),
+      atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    registrar_(u.usuario, 'parcela paga', d.id + ' R$ ' + txtDinheiro_(valor));
+    return { ok: true };
+  });
+}
+
+/** Etapas da cobrança: mensagem enviada ao cliente; ação de cobrança ajuizada. */
+function cobrancaParcela_(d, u) {
+  return comTrava_(function () {
+    var r = parcelaPorId_(d.id);
+    var m = { atualizado_em: new Date().toISOString(), atualizado_por: u.usuario };
+    if (d.etapa === 'mensagem') { m.cobranca = r.p.cobranca === 'acao' ? 'acao' : 'mensagem'; m.mensagem_em = hojeSP_(); }
+    else if (d.etapa === 'acao') { m.cobranca = 'acao'; m.acao_processo_id = d.processo_id || ''; }
+    else if (d.etapa === 'limpar') { m.cobranca = ''; m.mensagem_em = ''; m.acao_processo_id = ''; }
+    else throw falha_('Etapa inválida.');
+    atualizarLinha_(r.tab, r.p, m);
+    registrar_(u.usuario, 'cobrança: ' + d.etapa, d.id);
+    return { ok: true };
+  });
+}
+
+/** Alvará/depósito em processo com êxito: calcula honorários e repasse ao cliente e lança como parcela paga. */
+function salvarRecebimento_(d, u) {
+  return comTrava_(function () {
+    var h = tabela_('Honorarios').linhas.filter(function (r) { return r.id === d.honorario_id; })[0];
+    if (!h) throw falha_('Honorário não encontrado.');
+    var bruto = dinheiro_(d.valor_bruto);
+    if (!(bruto > 0)) throw falha_('Informe o valor recebido no processo.');
+    var pct = dinheiro_(d.percentual || h.percentual);
+    if (!(pct > 0 && pct <= 100)) throw falha_('Percentual inválido.');
+    var data = d.data || hojeSP_();
+    var hon = Math.round(bruto * pct) / 100;
+    var rec = { id: novoId_('R'), honorario_id: h.id, processo_id: h.processo_id, data: data, valor_bruto: txtDinheiro_(bruto),
+      percentual: String(pct), honorarios: txtDinheiro_(hon), repasse_cliente: txtDinheiro_(bruto - hon), repassado_em: '',
+      observacoes: String(d.observacoes || ''), criado_em: new Date().toISOString(), criado_por: u.usuario };
+    inserirLinha_(tabela_('Recebimentos'), rec);
+    var parc = tabela_('Parcelas');
+    var n = parc.linhas.filter(function (p) { return p.honorario_id === h.id; }).length + 1;
+    var p = novaParcela_(h, n, data, hon, u.usuario);
+    p.pago_em = data; p.valor_pago = txtDinheiro_(hon); p.forma = 'alvará'; p.observacoes = 'Êxito ' + pct + '% sobre R$ ' + txtDinheiro_(bruto);
+    inserirLinha_(parc, p);
+    registrar_(u.usuario, 'alvará lançado', h.id + ' bruto ' + txtDinheiro_(bruto));
+    return rec;
+  });
+}
+
+/* ---------- Importação da planilha "Honorários Araújo — levantamento e conciliação" ---------- */
+
+/**
+ * Lê as abas Cobranças e Mensalistas da planilha de levantamento (tirada do GEA) e cria honorários
+ * "importado — conferir". Não apaga nada; não importa duas vezes a mesma linha.
+ */
+function importarHonorariosPlanilha() {
+  var arqs = DriveApp.searchFiles("title contains 'Honorários Araújo' and mimeType = 'application/vnd.google-apps.spreadsheet'");
+  if (!arqs.hasNext()) { aviso_('Não achei a planilha "Honorários Araújo — levantamento e conciliação" no Drive.'); return; }
+  var origem = SpreadsheetApp.openById(arqs.next().getId());
+  var r = importarHonorarios_(origem);
+  aviso_(r);
+  return r;
+}
+
+function importarHonorarios_(origem) {
+  var jaImportadas = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { var m = /\[imp:([^\]]+)\]/.exec(h.observacoes); if (m) jaImportadas[m[1]] = true; });
+  var clientesTab = tabela_('Clientes');
+  var porNome = {};
+  clientesTab.linhas.forEach(function (c) { porNome[normalizar_(c.nome)] = c; });
+  var honTab = tabela_('Honorarios'), parcTab = tabela_('Parcelas');
+  var agora = new Date().toISOString();
+  var cont = { honorarios: 0, parcelas: 0, clientesNovos: 0 };
+  [['Cobranças', 'parcelado'], ['Mensalistas', 'mensal'], ['Parcelas GEA', 'parcelado']].forEach(function (cfg) {
+    var sh = origem.getSheetByName(cfg[0]);
+    if (!sh) return;
+    var vals = sh.getDataRange().getDisplayValues();
+    var ih = -1, col = {};
+    for (var i = 0; i < Math.min(vals.length, 15); i++) {
+      var linha = vals[i].map(function (v) { return normalizar_(v); });
+      if (linha.filter(String).length >= 3 && linha.some(function (v) { return /^(cliente|nome|referencia|devedor)/.test(v); })) { ih = i; break; }
+    }
+    if (ih < 0) return;
+    vals[ih].forEach(function (v, j) {
+      var n = normalizar_(v);
+      if (col.cliente === undefined && /^(cliente|nome|referencia|devedor)/.test(n)) col.cliente = j;
+      else if (col.venc === undefined && /venc/.test(n)) col.venc = j;
+      else if (col.valor === undefined && /(valor|saldo|mensal)/.test(n)) col.valor = j;
+      else if (col.sit === undefined && /(situa|status)/.test(n)) col.sit = j;
+      else if (col.proc === undefined && /processo/.test(n)) col.proc = j;
+    });
+    if (col.cliente === undefined) return;
+    for (var k = ih + 1; k < vals.length; k++) {
+      var row = vals[k];
+      var nome = String(row[col.cliente] || '').trim();
+      if (!nome || /^(total|araujo advocacia)/i.test(normalizar_(nome))) continue;
+      var chave = cfg[0] + ':' + k;
+      if (jaImportadas[chave]) continue;
+      var cli = porNome[normalizar_(nome)];
+      if (!cli) {
+        cli = { id: novoId_('C'), tipo: 'PF', nome: nome, origem: 'planilha de honorários', situacao: 'importado — conferir',
+          criado_em: agora, atualizado_em: agora, atualizado_por: 'importacao' };
+        inserirLinha_(clientesTab, cli); porNome[normalizar_(nome)] = cli; cont.clientesNovos++;
+      }
+      var valor = col.valor !== undefined ? dinheiro_(row[col.valor]) : 0;
+      var venc = col.venc !== undefined ? dataPlanilha_(row[col.venc]) : '';
+      var h = { id: novoId_('H'), cliente_id: cli.id, processo_id: '', tipo: cfg[1], descricao: 'Importado de ' + cfg[0],
+        valor_total: cfg[1] === 'parcelado' && valor ? txtDinheiro_(valor) : '', percentual: '',
+        valor_mensal: cfg[1] === 'mensal' && valor ? txtDinheiro_(valor) : '', dia_vencimento: venc ? String(+venc.slice(8)) : '',
+        inicio: '', situacao: 'importado — conferir',
+        observacoes: row.filter(String).join(' | ').slice(0, 1500) + ' [imp:' + chave + ']',
+        origem: 'planilha Honorários Araújo', criado_em: agora, atualizado_em: agora, atualizado_por: 'importacao' };
+      inserirLinha_(honTab, h); cont.honorarios++;
+      if (valor && cfg[1] === 'parcelado') {
+        var p = novaParcela_(h, 1, venc || hojeSP_(), valor, 'importacao');
+        var sit = col.sit !== undefined ? normalizar_(row[col.sit]) : '';
+        if (/pago|quitad|recebid/.test(sit) && !/parcial|nao/.test(sit)) { p.pago_em = venc || hojeSP_(); p.valor_pago = txtDinheiro_(valor); }
+        p.observacoes = 'Importado: conferir valor e vencimento.';
+        inserirLinha_(parcTab, p); cont.parcelas++;
+      }
+    }
+  });
+  registrar_('sistema', 'importação de honorários', JSON.stringify(cont));
+  return 'Importados ' + cont.honorarios + ' honorários e ' + cont.parcelas + ' parcelas' +
+    (cont.clientesNovos ? '; ' + cont.clientesNovos + ' clientes novos criados para conferir' : '') +
+    '. Tudo fica como "importado — conferir" no Financeiro.';
+}
+
+function dataPlanilha_(v) {
+  v = String(v || '').trim();
+  var m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(v);
+  if (m) return m[3] + '-' + m[2] + '-' + m[1];
+  m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  return m ? m[0] : '';
 }

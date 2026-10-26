@@ -58,6 +58,14 @@ Faça tudo logado na conta **advogadajulianaraujo@gmail.com**.
    O robô passa a rodar sozinho de 6 em 6 horas e já faz a primeira leitura (últimos 30 dias do Gmail e 15 do DJEN).
 3. Implante uma nova versão (abaixo).
 
+## Financeiro (etapa 3)
+
+1. Cole o `Code.gs` novo e salve.
+2. Rode a função **configurar** (cria as abas Honorarios, Parcelas e Recebimentos).
+3. Rode a função **importarHonorariosPlanilha**: lê as abas Cobranças, Mensalistas e Parcelas GEA da planilha
+   "Honorários Araújo — levantamento e conciliação" e cria tudo como "importado — conferir".
+4. Implante uma nova versão (abaixo).
+
 ## Quando o programa for atualizado
 
 Cole o novo `Code.gs` por cima do antigo, salve e vá em
