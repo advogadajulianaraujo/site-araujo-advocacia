@@ -163,3 +163,37 @@ details.caixa summary{cursor:pointer;font-weight:500}
 form.pagar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 form.pagar input,form.pagar select{min-height:34px;padding:4px 8px;width:auto;max-width:150px}
 a.btn.mini{text-decoration:none}
+
+/* Etapa 4: início, filtros, relatórios, documentos */
+.grade-inicio{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:900px){.grade-inicio{grid-template-columns:1fr}}
+.painel-bloco{background:var(--papel);border:1px solid var(--linha);padding:18px 18px 12px;min-width:0}
+.bloco-cab{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px}
+.bloco-cab h2{font-size:21px}
+.bloco-cab a{font-size:13px;color:var(--azul);white-space:nowrap}
+.mini-tab{width:100%;border-collapse:collapse;font-size:14px}
+.mini-tab td{padding:7px 6px;border-bottom:1px solid var(--linha);vertical-align:top}
+.mini-tab tr{cursor:pointer}
+.mini-tab tr:hover td{background:#fbfaf7}
+.mini-tab tr.hoje td{background:#f3f7fd}
+.lista-simples{list-style:none;margin:0;padding:0}
+.lista-simples li{padding:8px 4px;border-bottom:1px solid var(--linha);cursor:pointer}
+.lista-simples li:hover{background:#fbfaf7}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.chip-filtro{border:1px solid #cfcac0;background:#fff;padding:6px 12px;font-size:13px;cursor:pointer;border-radius:999px;min-height:34px}
+.chip-filtro:hover{border-color:var(--tinta)}
+.chip-filtro.ativo{background:var(--preto);color:#fff;border-color:var(--preto)}
+.duas-colunas{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;align-items:start}
+@media (max-width:1000px){.duas-colunas{grid-template-columns:1fr}}
+.relatorio h3{font-size:17px;margin-bottom:8px}
+.barra-cel{width:40%}
+.barrinha{display:block;height:8px;background:var(--azul);width:var(--w,0%);min-width:3px}
+.doc-linha{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:6px 0}
+.destaque-caixa{border:2px solid var(--azul);background:#f6f9fe}
+.resumo-caso p{margin:8px 0 0}
+.providencias{background:var(--amarelo-f);padding:8px 10px;border-left:3px solid var(--amarelo)}
+h4{font:500 13px/1.3 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--mudo);margin:18px 0 4px}
+.gerar input[name=objeto]{flex:1;min-width:220px}
+button.ordenar{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--tinta);cursor:pointer}
+button.ordenar:hover{text-decoration:underline}
+.ag-peri{border-color:#a1520e;background:#fbeee2}

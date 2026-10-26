@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '3.0.0';
+var VERSAO = '4.0.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -30,20 +30,22 @@ var ESQUEMA = {
   Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
-    'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por'],
+    'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
-    'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
+    'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
+    'cumprido_por', 'cumprido_em'],
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
     'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
+  Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe']
 };
@@ -74,9 +76,8 @@ function configurar() {
   Object.keys(ESQUEMA).forEach(function (nome) {
     var sh = ss.getSheetByName(nome) || ss.insertSheet(nome);
     var cab = ESQUEMA[nome];
-    if (sh.getLastRow() === 0) {
-      sh.getRange(1, 1, 1, cab.length).setValues([cab]);
-    }
+    // Escreve o cabeçalho completo; colunas novas entram sempre no fim, sem mexer nos dados.
+    sh.getRange(1, 1, 1, cab.length).setValues([cab]);
     sh.setFrozenRows(1);
     // Texto puro: impede o Sheets de transformar datas, CPFs e telefones.
     sh.getRange(1, 1, sh.getMaxRows(), cab.length).setNumberFormat('@');
@@ -234,6 +235,10 @@ var ROTAS = {
   'robo.rodar': { fn: function (d, u) { return rodarRobo_(u.usuario); } },
   'agenda.listar': { fn: listarAgenda_ },
   'agenda.criar': { fn: criarCompromisso_ },
+  'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
+  'clientes.documentos': { fn: documentosCliente_ },
+  'modelos.listar': { fn: listarModelos_ },
+  'documentos.gerar': { fn: gerarDocumentos_ },
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
   'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
@@ -442,7 +447,7 @@ function trocarSenha_(d, u) {
 /* Clientes                                                            */
 /* ------------------------------------------------------------------ */
 
-var CAMPOS_CLIENTE = ['tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
+var CAMPOS_CLIENTE = ['tipo_acao', 'resumo_caso', 'providencias', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
   'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'observacoes', 'situacao'];
 
 function listarClientes_(d) {
@@ -696,6 +701,9 @@ function resumo_(d, u) {
       processosSemCliente: procs.filter(function (p) { return !p.cliente_id; }).length
     },
     proximos: proximos,
+    clientesNovos: clientes.filter(function (c) { return (c.criado_em || '').slice(0, 10) >= somarDias_(hoje, -30) && !/levantamento|planilha/.test(c.origem || ''); })
+      .sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 8)
+      .map(function (c) { return { id: c.id, nome: c.nome, area: c.area, criado_em: c.criado_em, situacao: c.situacao }; }),
     prazos: resumoPrazos_(),
     robo: { ultima: config_('ROBO_ULTIMA_EXECUCAO'), resultado: config_('ROBO_ULTIMO_RESULTADO') }
   };
@@ -813,7 +821,7 @@ function horaCurta_(d) {
 
 var OAB_NUMERO = '54832';
 var OAB_UF = 'SC';
-var NOMES_AGENDAS = ['ATENDIMENTOS', 'AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'];
+var NOMES_AGENDAS = ['ATENDIMENTOS', 'AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO', 'PERÍCIAS'];
 var SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
 var TZ = 'America/Sao_Paulo';
 
@@ -1047,7 +1055,8 @@ function registrarIntimacao_(ctx, d) {
     partes_cliente: (d.nomes || []).join('; '), processo_id: proc.id, prazo_id: '', criado_em: agora
   };
   inserirLinha_(ctx.intim, intim);
-  if (!d.tipo) return { nova: true, prazo: false };
+  var marcado = detectarAudienciaPericia_(ctx, d, proc, intim);
+  if (!d.tipo) return { nova: true, prazo: marcado };
 
   // Confirmação de uma intimação já lançada como tácita: antecipa a ciência.
   var aberto = ctx.prazos.linhas.filter(function (z) {
@@ -1238,6 +1247,7 @@ function recalcularPrazosAbertos_(ctx) {
   tab.linhas.forEach(function (z) {
     // Só o robô recalcula; prazo conferido ou lançado à mão fica como está.
     if (z.origem !== 'robô' || z.situacao === 'conferido' || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return;
+    if (/^ato:/.test(z.observacoes || '')) return; // audiência/perícia: a data é a do ato
     var f = calcularFatal_(z.ciencia, z.dias, z.contagem, tribs[z.processo_id] || tribunalDoNumero_(z.numero), feriados);
     if (f !== z.fatal) atualizarLinha_(tab, z, { fatal: f });
   });
@@ -1329,8 +1339,11 @@ function mudarSituacaoPrazo_(d, u) {
     var z = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
     if (!z) throw falha_('Prazo não encontrado.');
     if (nova === 'calculado' && !z.fatal) nova = 'a definir';
-    atualizarLinha_(tab, z, { situacao: nova, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario,
-      conferido_por: nova === 'calculado' ? '' : z.conferido_por, conferido_em: nova === 'calculado' ? '' : z.conferido_em });
+    var agoraIso = new Date().toISOString();
+    atualizarLinha_(tab, z, { situacao: nova, atualizado_em: agoraIso, atualizado_por: u.usuario,
+      conferido_por: nova === 'calculado' ? '' : z.conferido_por, conferido_em: nova === 'calculado' ? '' : z.conferido_em,
+      cumprido_por: nova === 'cumprido' ? (u.nome || u.usuario) : (nova === 'cancelado' ? z.cumprido_por : ''),
+      cumprido_em: nova === 'cumprido' ? agoraIso : (nova === 'cancelado' ? z.cumprido_em : '') });
     registrar_(u.usuario, 'prazo ' + nova, z.id + ' ' + z.numero);
     return { ok: true };
   });
@@ -1368,6 +1381,7 @@ function agendas_() {
   NOMES_AGENDAS.forEach(function (n) {
     if (ids[n]) return;
     var c = CalendarApp.getCalendarsByName(n)[0];
+    if (!c && n === 'PERÍCIAS') { try { c = CalendarApp.createCalendar('PERÍCIAS', { color: CalendarApp.Color.PURPLE }); } catch (e) { c = CalendarApp.createCalendar('PERÍCIAS'); } }
     if (c) { ids[n] = c.getId(); faltou = true; }
   });
   if (faltou) setConfig_('AGENDAS', JSON.stringify(ids), 'Agendas do Google usadas pelo painel');
@@ -1820,4 +1834,293 @@ function dataPlanilha_(v) {
   if (m) return m[3] + '-' + m[2] + '-' + m[1];
   m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
   return m ? m[0] : '';
+}
+
+/* ================================================================== */
+/* ETAPA 4 — Audiências e perícias, relatórios, documentos e modelos   */
+/* ================================================================== */
+
+/**
+ * Procura audiência ou perícia marcada no texto da intimação (DJEN, eproc ou PJe).
+ * Se achar data, marca na agenda certa e cria um prazo-lembrete com a data do ato.
+ */
+function detectarAudienciaPericia_(ctx, d, proc, intim) {
+  var texto = [d.movimento, d.texto].join(' ');
+  var t = normalizar_(texto);
+  var ehPericia = /per[ií]cia|pericial|perito/.test(t) && /(designad|marcad|agendad|realizar|comparecer|data)/.test(t);
+  var ehAudiencia = /audiencia/.test(t) && /(designad|redesignad|marcad|agendad|pauta|comparecer|para o dia|realizar)/.test(t);
+  if (!ehPericia && !ehAudiencia) return false;
+  if (/cancelad|retirad[ao] de pauta|realizada|nao realizada|adiada sem/.test(t) && !/redesignad/.test(t)) return false;
+  var palavra = ehPericia ? /per[ií]cia|perito/i : /audi[eê]ncia/i;
+  var pos = texto.search(palavra);
+  var trecho = texto.slice(Math.max(0, pos), pos + 400);
+  var m = /(\d{2})\/(\d{2})\/(\d{4})(?:[^\d]{1,25}(\d{1,2})\s*(?:h|:)\s*(\d{2})?)?/.exec(trecho);
+  if (!m) return false;
+  var data = m[3] + '-' + m[2] + '-' + m[1];
+  var hora = m[4] ? ('0' + m[4]).slice(-2) + ':' + (m[5] || '00') : '';
+  if (data < hojeSP_()) return false;
+  var tipo = ehPericia ? 'perícia' : /instru/.test(t) ? 'audiência de instrução' : /inicial|una/.test(t) ? 'audiência inicial' : 'audiência de conciliação';
+  var agenda = ehPericia ? 'PERÍCIAS' : /instru/.test(t) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
+  var chave = 'ato|' + d.numero + '|' + tipo + '|' + data + '|' + hora;
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  if (ctx.eventos.linhas.some(function (e) { return e.chave === chave; })) return false;
+  var cliente = proc.cliente_id ? ((ctx.clientes.linhas.filter(function (c) { return c.id === proc.cliente_id; })[0] || {}).nome) : (proc.cliente_nome || '');
+  var titulo = (tipo.charAt(0).toUpperCase() + tipo.slice(1)) + (cliente ? ' — ' + cliente : '') + ' — ' + d.numero;
+  var evId = '';
+  try {
+    var ids = agendas_();
+    var cal = ids[agenda] && CalendarApp.getCalendarById(ids[agenda]);
+    if (cal) {
+      var ev = hora
+        ? cal.createEvent(titulo, new Date(data + 'T' + hora + ':00-03:00'), new Date(new Date(data + 'T' + hora + ':00-03:00').getTime() + 60 * 60000), { description: 'Marcado pelo robô a partir de: ' + d.fonte + '. ' + String(d.movimento || '').slice(0, 300) })
+        : cal.createAllDayEvent(titulo + ' (conferir horário)', new Date(data + 'T12:00:00-03:00'), { description: 'Horário não encontrado na intimação. Fonte: ' + d.fonte });
+      evId = ev.getId();
+    }
+  } catch (e) { evId = 'erro: ' + (e.message || e); }
+  var agora = new Date().toISOString();
+  var prazo = {
+    id: novoId_('Z'), processo_id: proc.id, numero: d.numero, intimacao_id: intim.id,
+    descricao: (ehPericia ? 'Perícia' : 'Audiência') + ' em ' + dataBR_(data) + (hora ? ' às ' + hora : '') + ': ' +
+      (ehPericia ? 'avisar o cliente e preparar quesitos/documentos' : 'preparar audiência, cliente e testemunhas'),
+    dias: '', contagem: 'corridos', ciencia: d.ciencia || '', ciencia_tipo: 'data do ato marcada pelo juízo', fatal: data,
+    situacao: 'calculado', conferido_por: '', conferido_em: '', origem: 'robô', observacoes: 'ato:' + tipo + ' | ' + d.fonte,
+    criado_em: agora, atualizado_em: agora, atualizado_por: 'robô', cumprido_por: '', cumprido_em: ''
+  };
+  inserirLinha_(ctx.prazos, prazo);
+  inserirLinha_(ctx.eventos, { chave: chave, tipo: tipo, numero: d.numero, data: data, hora: hora, agenda: agenda,
+    evento_id: evId, prazo_id: prazo.id, criado_em: agora });
+  if (!proc.proximo_ato_data || proc.proximo_ato_data < hojeSP_() || data < proc.proximo_ato_data) {
+    atualizarLinha_(ctx.procs, proc, { proximo_ato: tipo.charAt(0).toUpperCase() + tipo.slice(1) + (hora ? ' ' + hora : ''), proximo_ato_data: data });
+  }
+  return true;
+}
+
+/* ---------- Relatório de prazos cumpridos (aba Usuários) ---------- */
+
+function relatorioCumpridos_(d) {
+  var dias = Math.min(parseInt(d.dias, 10) || 30, 365);
+  var desde = somarDias_(hojeSP_(), -dias);
+  var procs = {}, nomes = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var lista = tabela_('Prazos').linhas
+    .filter(function (z) { return z.situacao === 'cumprido' && (z.cumprido_em || z.atualizado_em || '').slice(0, 10) >= desde; })
+    .map(function (z) {
+      var p = procs[z.processo_id] || {};
+      return { id: z.id, numero: z.numero, descricao: z.descricao, fatal: z.fatal, cliente: nomes[p.cliente_id] || p.cliente_nome || '',
+        quem: z.cumprido_por || z.atualizado_por || '', quando: z.cumprido_em || z.atualizado_em || '',
+        noPrazo: !z.fatal || (z.cumprido_em || z.atualizado_em || '').slice(0, 10) <= z.fatal };
+    })
+    .sort(function (a, b) { return a.quando < b.quando ? 1 : -1; });
+  var porPessoa = {};
+  lista.forEach(function (x) { var r = porPessoa[x.quem] = porPessoa[x.quem] || { quem: x.quem, total: 0, noPrazo: 0 }; r.total++; if (x.noPrazo) r.noPrazo++; });
+  return { dias: dias, lista: lista, porPessoa: Object.keys(porPessoa).map(function (k) { return porPessoa[k]; }) };
+}
+
+/* ---------- Documentos na pasta do cliente ---------- */
+
+function documentosCliente_(d) {
+  var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.id; })[0];
+  if (!c) throw falha_('Cliente não encontrado.');
+  if (!c.pasta_id) return { pasta_url: '', procuracao: [], contrato: [], outros: 0 };
+  var pasta = DriveApp.getFolderById(c.pasta_id);
+  var proc = [], cont = [], outros = 0;
+  var it = pasta.getFiles();
+  var n = 0;
+  while (it.hasNext() && n < 300) {
+    var f = it.next(); n++;
+    var nome = normalizar_(f.getName());
+    var item = { nome: f.getName(), url: f.getUrl(), data: f.getLastUpdated().toISOString() };
+    if (/procura/.test(nome)) proc.push(item);
+    else if (/contrato|honorar/.test(nome)) cont.push(item);
+    else outros++;
+  }
+  return { pasta_url: c.pasta_url, procuracao: proc, contrato: cont, outros: outros };
+}
+
+/* ---------- Modelos de procuração e contrato ---------- */
+
+var MODELOS = {
+  procuracao: { nome: 'Procuração ad judicia et extra', config: 'MODELO_PROCURACAO_ID' },
+  contrato: { nome: 'Contrato de honorários advocatícios', config: 'MODELO_CONTRATO_ID' }
+};
+
+var TEXTO_MODELOS = {
+  procuracao: [
+    ['t', 'PROCURAÇÃO AD JUDICIA ET EXTRA'],
+    ['p', 'OUTORGANTE: {{qualificacao}}.'],
+    ['p', 'OUTORGADA: JÚLIAN MARCELINO ARAÚJO, advogada inscrita na OAB/SC sob o nº 54.832, integrante da Araújo Sociedade Individual de Advocacia, com escritório na Rua Silvino Moreira Lima Sobrinho, nº 888, Sala 04, Humaitá, Tubarão/SC, CEP 88704-225, e-mail advogadajulianaraujo@gmail.com, telefone (48) 3626-2556.'],
+    ['p', 'PODERES: pelo presente instrumento, o(a) OUTORGANTE nomeia e constitui sua bastante procuradora a OUTORGADA, a quem confere amplos poderes para o foro em geral, com a cláusula ad judicia et extra, em qualquer juízo, instância ou tribunal, podendo propor contra quem de direito as ações competentes e defendê-lo(a) nas contrárias, seguindo umas e outras até final decisão, usando dos recursos legais e acompanhando-os, conferindo-lhe ainda poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber, dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça e assinar declaração de hipossuficiência econômica, representá-lo(a) perante repartições públicas federais, estaduais e municipais, autarquias, INSS e instituições financeiras, podendo ainda substabelecer esta a outrem, com ou sem reserva de iguais poderes (art. 105 do Código de Processo Civil).'],
+    ['p', 'FINALIDADE ESPECÍFICA: {{objeto}}.'],
+    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['a', '{{nome}}']
+  ],
+  contrato: [
+    ['t', 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS E HONORÁRIOS'],
+    ['p', 'CONTRATANTE: {{qualificacao}}.'],
+    ['p', 'CONTRATADA: ARAÚJO SOCIEDADE INDIVIDUAL DE ADVOCACIA, neste ato representada por JÚLIAN MARCELINO ARAÚJO, advogada inscrita na OAB/SC sob o nº 54.832, com escritório na Rua Silvino Moreira Lima Sobrinho, nº 888, Sala 04, Humaitá, Tubarão/SC, CEP 88704-225.'],
+    ['p', 'As partes acima identificadas têm entre si justo e contratado o presente contrato de prestação de serviços advocatícios, que se regerá pelas cláusulas seguintes e pelo Estatuto da Advocacia (Lei nº 8.906/1994) e pelo Código de Ética e Disciplina da OAB.'],
+    ['h', 'CLÁUSULA 1ª – DO OBJETO'],
+    ['p', 'A CONTRATADA prestará ao(à) CONTRATANTE serviços advocatícios consistentes em: {{objeto}}.'],
+    ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS'],
+    ['p', '{{clausula_honorarios}}'],
+    ['p', 'Os honorários de sucumbência eventualmente fixados pertencem exclusivamente à CONTRATADA (art. 23 da Lei nº 8.906/1994), sem prejuízo dos honorários aqui contratados.'],
+    ['h', 'CLÁUSULA 3ª – DAS DESPESAS'],
+    ['p', 'Custas processuais, emolumentos, perícias, diligências, cópias, deslocamentos e demais despesas necessárias ao andamento do serviço correm por conta do(a) CONTRATANTE, mediante prévia comunicação.'],
+    ['h', 'CLÁUSULA 4ª – DO ATRASO'],
+    ['p', 'O atraso no pagamento de qualquer parcela sujeitará o(a) CONTRATANTE a multa de 2% (dois por cento), juros de 1% (um por cento) ao mês e correção monetária, podendo a CONTRATADA promover a cobrança judicial dos valores devidos, servindo este instrumento como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
+    ['h', 'CLÁUSULA 5ª – DA RESCISÃO'],
+    ['p', 'A revogação do mandato ou a desistência pelo(a) CONTRATANTE não o(a) desobriga do pagamento dos honorários vencidos e dos proporcionais ao trabalho já realizado, nem dos honorários de êxito caso o proveito econômico venha a ser obtido em razão dos atos praticados pela CONTRATADA.'],
+    ['h', 'CLÁUSULA 6ª – DO FORO'],
+    ['p', 'Fica eleito o foro da Comarca de Tubarão/SC para dirimir quaisquer dúvidas oriundas deste contrato.'],
+    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente em duas vias de igual teor, na presença de duas testemunhas.'],
+    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['a', '{{nome}} — CONTRATANTE'],
+    ['a', 'ARAÚJO SOCIEDADE INDIVIDUAL DE ADVOCACIA — CONTRATADA'],
+    ['p', 'Testemunhas:'],
+    ['a', 'Nome: ______________________  CPF: ______________'],
+    ['a', 'Nome: ______________________  CPF: ______________']
+  ]
+};
+
+function pastaModelos_() {
+  var id = config_('PASTA_MODELOS_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* recria */ } }
+  var pai = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents();
+  var base = pai.hasNext() ? pai.next() : DriveApp.getRootFolder();
+  var pasta = base.createFolder('MODELOS (editáveis)');
+  setConfig_('PASTA_MODELOS_ID', pasta.getId(), 'Pasta dos modelos de documentos');
+  return pasta;
+}
+
+/** Garante que os modelos existam no Google Docs (cria a versão-base na primeira vez). */
+function modeloId_(chave) {
+  var cfg = MODELOS[chave];
+  var id = config_(cfg.config);
+  if (id) { try { DriveApp.getFileById(id); return id; } catch (e) { /* recria */ } }
+  var doc = DocumentApp.create('MODELO — ' + cfg.nome);
+  var corpo = doc.getBody();
+  corpo.clear();
+  TEXTO_MODELOS[chave].forEach(function (l) {
+    if (l[0] === 'a') {
+      corpo.appendParagraph('');
+      corpo.appendParagraph('_____________________________________________').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      corpo.appendParagraph(l[1]).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      return;
+    }
+    var par = corpo.appendParagraph(l[1]);
+    if (l[0] === 't') par.setHeading(DocumentApp.ParagraphHeading.HEADING1).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    else if (l[0] === 'h') par.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+    else par.setAlignment(DocumentApp.HorizontalAlignment.JUSTIFY);
+  });
+  doc.saveAndClose();
+  DriveApp.getFileById(doc.getId()).moveTo(pastaModelos_());
+  setConfig_(cfg.config, doc.getId(), 'Modelo: ' + cfg.nome);
+  return doc.getId();
+}
+
+function listarModelos_() {
+  return Object.keys(MODELOS).map(function (k) {
+    var id = modeloId_(k);
+    return { chave: k, nome: MODELOS[k].nome, url: DriveApp.getFileById(id).getUrl() };
+  });
+}
+
+function qualificacao_(c) {
+  var partes = [];
+  var end = [c.endereco, c.cidade && c.uf ? c.cidade + '/' + c.uf : c.cidade, c.cep ? 'CEP ' + c.cep : ''].filter(String).join(', ');
+  if (c.tipo === 'PJ') {
+    partes.push(String(c.nome).toUpperCase() + ', pessoa jurídica de direito privado');
+    if (c.cpf_cnpj) partes.push('inscrita no CNPJ sob o nº ' + c.cpf_cnpj);
+    if (end) partes.push('com sede em ' + end);
+    if (c.representante) partes.push('neste ato representada por ' + c.representante);
+  } else {
+    partes.push(String(c.nome).toUpperCase());
+    partes.push('brasileiro(a)');
+    if (c.estado_civil) partes.push(c.estado_civil);
+    if (c.profissao) partes.push(c.profissao);
+    if (c.rg) partes.push('portador(a) do RG nº ' + c.rg);
+    if (c.cpf_cnpj) partes.push('inscrito(a) no CPF sob o nº ' + c.cpf_cnpj);
+    if (end) partes.push('residente e domiciliado(a) em ' + end);
+  }
+  if (c.telefone) partes.push('telefone ' + c.telefone);
+  if (c.email) partes.push('e-mail ' + c.email);
+  return partes.join(', ');
+}
+
+function porExtensoData_(iso) {
+  var meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  return (+iso.slice(8, 10)) + ' de ' + meses[+iso.slice(5, 7) - 1] + ' de ' + iso.slice(0, 4);
+}
+
+function reaisTxt_(v) {
+  var n = dinheiro_(v);
+  var s = n.toFixed(2).split('.');
+  return 'R$ ' + s[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + s[1];
+}
+
+function clausulaHonorarios_(h, parcelas) {
+  if (!h) return 'Pelos serviços contratados, o(a) CONTRATANTE pagará à CONTRATADA honorários de __________________, na forma e nos vencimentos a seguir: __________________.';
+  if (h.tipo === 'exito') {
+    return 'Pelos serviços contratados, o(a) CONTRATANTE pagará à CONTRATADA honorários de êxito correspondentes a ' + h.percentual +
+      '% (por cento) sobre todo o proveito econômico obtido, inclusive valores recebidos em acordo, alvará ou depósito judicial, devidos no momento do recebimento, ficando a CONTRATADA autorizada a reter o seu percentual quando o valor transitar por sua conta.';
+  }
+  if (h.tipo === 'mensal') {
+    return 'Pelos serviços contratados, o(a) CONTRATANTE pagará à CONTRATADA honorários mensais de ' + reaisTxt_(h.valor_mensal) +
+      ', com vencimento todo dia ' + (h.dia_vencimento || '__') + ' de cada mês' + (h.inicio ? ', a partir de ' + dataBR_(h.inicio) : '') + '.';
+  }
+  var ps = (parcelas || []).slice().sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var txt = 'Pelos serviços contratados, o(a) CONTRATANTE pagará à CONTRATADA honorários no valor total de ' + reaisTxt_(h.valor_total);
+  if (ps.length > 1) txt += ', em ' + ps.length + ' parcelas, com vencimentos em ' + ps.map(function (p) { return dataBR_(p.vencimento) + ' (' + reaisTxt_(p.valor) + ')'; }).join(', ');
+  else if (ps.length === 1) txt += ', com vencimento em ' + dataBR_(ps[0].vencimento);
+  return txt + '.';
+}
+
+/**
+ * Gera procuração e/ou contrato a partir dos modelos, na pasta do cliente, em Google Docs e PDF.
+ * Contrato só para quem vê o financeiro (traz valores de honorários).
+ */
+function gerarDocumentos_(d, u) {
+  var quais = (d.modelos || []).filter(function (k) { return MODELOS[k]; });
+  if (!quais.length) throw falha_('Escolha procuração e/ou contrato.');
+  if (quais.indexOf('contrato') >= 0 && !PERFIS[u.perfil].financeiro) throw falha_('Só a administração gera contrato de honorários.');
+  var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
+  if (!c) throw falha_('Cliente não encontrado.');
+  if (!c.pasta_id) { criarPastaCliente_({ id: c.id }, u); c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0]; }
+  var faltando = [];
+  if (!c.cpf_cnpj) faltando.push('CPF/CNPJ');
+  if (!c.endereco) faltando.push('endereço');
+  if (c.tipo !== 'PJ' && !c.rg) faltando.push('RG');
+  var h = null, parcelas = [];
+  if (quais.indexOf('contrato') >= 0) {
+    var hons = tabela_('Honorarios').linhas.filter(function (x) { return x.cliente_id === c.id; });
+    h = hons.filter(function (x) { return x.id === d.honorario_id; })[0] || hons.filter(function (x) { return x.situacao === 'ativo'; }).pop() || null;
+    if (h) parcelas = tabela_('Parcelas').linhas.filter(function (p) { return p.honorario_id === h.id; });
+    if (!h) faltando.push('honorário cadastrado (a cláusula sai em branco)');
+  }
+  var objeto = String(d.objeto || '').trim() || c.tipo_acao || (h && h.descricao) || 'atuação em favor do(a) outorgante/contratante em ' + (c.area || 'matéria a definir');
+  var hoje = hojeSP_();
+  var valores = {
+    '{{qualificacao}}': qualificacao_(c), '{{nome}}': String(c.nome).toUpperCase(), '{{objeto}}': objeto,
+    '{{clausula_honorarios}}': clausulaHonorarios_(h, parcelas), '{{cidade_assinatura}}': 'Tubarão/SC', '{{data_extenso}}': porExtensoData_(hoje),
+    '{{cpf_cnpj}}': c.cpf_cnpj || '', '{{rg}}': c.rg || '', '{{endereco}}': c.endereco || '', '{{cidade}}': c.cidade || '', '{{uf}}': c.uf || '',
+    '{{cep}}': c.cep || '', '{{telefone}}': c.telefone || '', '{{email}}': c.email || '', '{{estado_civil}}': c.estado_civil || '',
+    '{{profissao}}': c.profissao || '', '{{representante}}': c.representante || ''
+  };
+  var pasta = DriveApp.getFolderById(c.pasta_id);
+  var gerados = [];
+  quais.forEach(function (k) {
+    var nomeArq = (k === 'procuracao' ? 'PROCURAÇÃO' : 'CONTRATO DE HONORÁRIOS') + ' — ' + nomePasta_(c.nome) + ' — ' + dataBR_(hoje).replace(/\//g, '-');
+    var copia = DriveApp.getFileById(modeloId_(k)).makeCopy(nomeArq, pasta);
+    var doc = DocumentApp.openById(copia.getId());
+    var corpo = doc.getBody();
+    Object.keys(valores).forEach(function (chave) {
+      corpo.replaceText(chave.replace(/[{}]/g, '\\$&'), String(valores[chave]).replace(/\$/g, '\\$'));
+    });
+    doc.saveAndClose();
+    var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
+    gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl() });
+  });
+  registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(','));
+  return { gerados: gerados, pasta_url: c.pasta_url, faltando: faltando };
 }

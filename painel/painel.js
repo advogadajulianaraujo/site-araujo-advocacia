@@ -172,8 +172,9 @@
     ['inicio', 'Início'],
     ['clientes', 'Clientes'],
     ['processos', 'Processos'],
-    ['prazos', 'Prazos'],
+    ['prazos', 'Intimações'],
     ['agenda', 'Agenda'],
+    ['modelos', 'Modelos'],
     ['financeiro', 'Financeiro', null, 'financeiro'],
     ['usuarios', 'Usuários', null, 'usuarios']
   ];
@@ -256,33 +257,52 @@
 
   async function telaInicio() {
     carregando();
-    const r = await api('resumo');
+    const hoje = hojeISO();
+    const iniSem = isoSoma(hoje, -((diaSem(hoje) + 6) % 7));
+    const [r, ag] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: iniSem, fim: isoSoma(iniSem, 6) }).catch(() => null)]);
     const t = r.totais;
     r.prazos = r.prazos || { vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [] };
+    const semana = [];
+    if (ag) for (let d = iniSem; d <= isoSoma(iniSem, 6); d = isoSoma(d, 1)) itensDoDia(ag, d).forEach(it => semana.push({ ...it, dia: d }));
+    const blocoSemana = h('section', { class: 'painel-bloco' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Agenda da semana'), h('a', { href: '#/agenda?visao=semana' }, 'abrir agenda →')),
+      semana.length
+        ? h('table', { class: 'mini-tab' }, h('tbody', {}, semana.slice(0, 12).map(it => h('tr', { class: it.dia === hoje ? 'hoje' : '', onclick: () => { location.hash = it.id ? '#/prazo/' + it.id : '#/agenda?visao=dia&data=' + it.dia; } },
+            h('td', { class: 'num' }, nomeDia(it.dia).replace('.', '')), h('td', { class: 'num' }, it.hora),
+            h('td', {}, h('span', { class: 'chip ' + it.cls }, it.rotulo)), h('td', {}, it.titulo)))))
+        : h('p', { class: 'peq' }, ag ? 'Nada marcado nesta semana.' : 'Agenda indisponível no momento.'),
+      semana.length > 12 ? h('p', { class: 'peq' }, `+ ${semana.length - 12} compromissos na semana`) : null);
+    const blocoPrazos = h('section', { class: 'painel-bloco' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Prazos que vão vencer'), h('a', { href: '#/prazos' }, 'ver intimações →')),
+      r.prazos.proximos.filter(z => z.fatal).length
+        ? h('table', { class: 'mini-tab' }, h('tbody', {}, r.prazos.proximos.filter(z => z.fatal).slice(0, 8).map(z => h('tr', { onclick: () => { location.hash = '#/prazo/' + z.id; } },
+            h('td', { class: 'num' }, dataBR(z.fatal).slice(0, 5)), h('td', {}, etiquetaContagem(z.fatal)),
+            h('td', {}, h('div', {}, z.descricao), h('div', { class: 'peq' }, (z.cliente || 'cliente a identificar') + ' · ' + z.numero))))))
+        : h('p', { class: 'peq' }, 'Nenhum prazo com data fatal à frente.'),
+      r.prazos.aDefinir ? h('p', {}, h('a', { class: 'tag urgente', href: '#/prazos' }, `${r.prazos.aDefinir} intimação(ões) com prazo a definir`)) : null);
+    const novos = r.clientesNovos || [];
+    const blocoClientes = h('section', { class: 'painel-bloco' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Clientes novos'), h('a', { href: '#/cliente/novo' }, '+ novo cliente')),
+      novos.length
+        ? h('ul', { class: 'lista-simples' }, novos.map(c => h('li', { onclick: () => { location.hash = '#/cliente/' + c.id; } },
+            h('strong', {}, c.nome), h('span', { class: 'peq' }, ` · ${c.area || 'área a definir'} · ${new Date(c.criado_em).toLocaleDateString('pt-BR')}`))))
+        : h('p', { class: 'peq' }, 'Nenhum cliente cadastrado nos últimos 30 dias.'));
+    const blocoAtos = h('section', { class: 'painel-bloco' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Audiências e atos (14 dias)'), h('a', { href: '#/processos' }, 'processos →')),
+      r.proximos.length
+        ? h('table', { class: 'mini-tab' }, h('tbody', {}, r.proximos.slice(0, 8).map(p => h('tr', { onclick: () => { location.hash = '#/processo/' + p.id; } },
+            h('td', { class: 'num' }, dataBR(p.proximo_ato_data).slice(0, 5)), h('td', {}, etiquetaDias(p.proximo_ato_data)),
+            h('td', {}, h('div', {}, p.proximo_ato), h('div', { class: 'peq' }, p.cliente || 'cliente a identificar'))))))
+        : h('p', { class: 'peq' }, 'Nada marcado para os próximos 14 dias.'));
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`), h('p', {}, hojeExtenso()))),
-      h('div', { class: 'nota' }, linhaRobo(r.robo)),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`), h('p', { class: 'cap' }, hojeExtenso()))),
       h('div', { class: 'numeros' },
         h('a', { class: 'numero' + (r.prazos.vencendo ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.vencendo), h('span', {}, 'prazos vencem em até 5 dias')),
-        h('a', { class: 'numero' + (r.prazos.aDefinir ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.aDefinir), h('span', {}, 'prazos a definir')),
-        h('a', { class: 'numero', href: '#/prazos' }, h('b', {}, r.prazos.aConferir), h('span', {}, 'prazos a conferir')),
-        h('a', { class: 'numero', href: '#/agenda?visao=dia' }, h('b', {}, '→'), h('span', {}, 'agenda de hoje'))),
-      r.prazos.proximos.length ? h('div', {}, h('h2', {}, 'Próximos prazos'), tabelaPrazos(r.prazos.proximos, '')) : null,
-      h('h2', { class: 'mt' }, 'Cadastro'),
-      h('div', { class: 'numeros' },
+        h('a', { class: 'numero' + (r.prazos.aDefinir ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.aDefinir), h('span', {}, 'intimações com prazo a definir')),
         h('a', { class: 'numero', href: '#/clientes' }, h('b', {}, t.clientes), h('span', {}, 'clientes')),
-        h('a', { class: 'numero', href: '#/processos' }, h('b', {}, t.processos), h('span', {}, 'processos ativos')),
-        h('a', { class: 'numero', href: '#/clientes?conferir=1' }, h('b', {}, t.clientesConferir), h('span', {}, 'cadastros a conferir')),
-        h('a', { class: 'numero', href: '#/processos?semcliente=1' }, h('b', {}, t.processosSemCliente), h('span', {}, 'processos sem cliente'))),
-      h('h2', { class: 'mt' }, 'Audiências e atos dos próximos 14 dias'),
-      h('p', { class: 'peq' }, 'Audiências e atos marcados nos processos.'),
-      tabela(['Data', 'Ato', 'Cliente', 'Processo', 'Órgão'], r.proximos, p => [
-        h('td', { class: 'num', 'data-r': 'Data' }, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)),
-        h('td', { 'data-r': 'Ato' }, p.proximo_ato),
-        h('td', { 'data-r': 'Cliente' }, p.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero, h('div', {}, acessoTribunal(p.numero))),
-        h('td', { 'data-r': 'Órgão' }, p.orgao)
-      ], p => { location.hash = '#/processo/' + p.id; }, 'Nada marcado para os próximos 14 dias.'));
+        h('a', { class: 'numero', href: '#/processos' }, h('b', {}, t.processos), h('span', {}, 'processos ativos'))),
+      h('div', { class: 'grade-inicio' }, blocoSemana, blocoPrazos, blocoAtos, blocoClientes),
+      h('p', { class: 'peq mt' }, linhaRobo(r.robo)));
   }
 
   function saudacao() { const hr = new Date().getHours(); return hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite'; }
@@ -304,26 +324,40 @@
     carregando();
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
-    let lista = await api('clientes.listar', { busca });
+    const area = params.get('area') || '';
+    const [todos, procs] = await Promise.all([api('clientes.listar', { busca }), api('processos.listar', {})]);
+    let lista = todos;
     if (soConferir) lista = lista.filter(c => c.situacao !== 'completo');
+    if (area) lista = lista.filter(c => (c.area || 'Sem área') === area);
+    const porArea = {};
+    todos.forEach(c => { const a = c.area || 'Sem área'; porArea[a] = (porArea[a] || 0) + 1; });
+    const comProc = todos.filter(c => c.processos > 0).length;
+    const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const form = h('form', { class: 'barra', role: 'search' },
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar por nome, CPF, telefone ou cidade', 'aria-label': 'Buscar clientes' }),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'conferir', checked: soConferir }), 'Só a conferir'),
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
-    form.addEventListener('submit', ev => {
-      ev.preventDefault();
-      const q = new URLSearchParams();
-      if (form.busca.value.trim()) q.set('busca', form.busca.value.trim());
-      if (form.conferir.checked) q.set('conferir', '1');
+    const ir = (mud) => {
+      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', ...mud });
+      [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
-    });
+    };
+    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), conferir: form.conferir.checked ? '1' : '' }); });
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', {}, `${lista.length} encontrado${lista.length === 1 ? '' : 's'}`)),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', {}, `${todos.length} clientes · ${comProc} com processo · ${procs.length} processos no total`)),
         botao('Novo cliente', () => { location.hash = '#/cliente/novo'; })),
+      h('div', { class: 'numeros' },
+        h('div', { class: 'numero' }, h('b', {}, todos.length), h('span', {}, 'clientes cadastrados')),
+        h('div', { class: 'numero' }, h('b', {}, comProc), h('span', {}, 'com processo ativo')),
+        h('div', { class: 'numero' }, h('b', {}, procs.length), h('span', {}, 'processos')),
+        h('a', { class: 'numero' + (aConferir ? ' destaque' : ''), href: '#/clientes?conferir=1' }, h('b', {}, aConferir), h('span', {}, 'cadastros a completar'))),
+      h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todas as áreas (${todos.length})`),
+        Object.keys(porArea).sort().map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
-      tabela(['Nome', 'CPF/CNPJ', 'Telefone', 'Área', 'Processos', 'Cadastro'], lista, c => [
-        h('td', { 'data-r': 'Nome' }, h('strong', {}, c.nome), c.cidade ? h('div', { class: 'peq' }, c.cidade) : null),
-        h('td', { class: 'num', 'data-r': 'CPF/CNPJ' }, c.cpf_cnpj),
+      h('p', { class: 'peq' }, `${lista.length} na lista`),
+      tabela(['Nome', 'Tipo de ação', 'Telefone', 'Área', 'Processos', 'Cadastro'], lista, c => [
+        h('td', { 'data-r': 'Nome' }, h('strong', {}, c.nome), c.cpf_cnpj ? h('div', { class: 'peq' }, c.cpf_cnpj) : null),
+        h('td', { 'data-r': 'Tipo de ação' }, c.tipo_acao || h('span', { class: 'peq' }, '—')),
         h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone),
         h('td', { 'data-r': 'Área' }, c.area),
         h('td', { 'data-r': 'Processos' }, String(c.processos)),
@@ -335,13 +369,51 @@
     ['divorciado(a)', 'Divorciado(a)'], ['separado(a)', 'Separado(a)'], ['viúvo(a)', 'Viúvo(a)']];
   const AREAS = ['', 'Trabalhista', 'Previdenciário', 'Cível', 'Consumidor', 'Família', 'Criminal', 'Empresarial', 'Federal', 'Cobrança de honorários'].map(a => [a, a || '—']);
 
-  async function telaCliente(id) {
+  /** Caixa de documentos: mostra se a pasta tem procuração e contrato e gera os que faltam. */
+  function caixaDocumentos(c, destacar) {
+    const caixa = h('section', { class: 'caixa' + (destacar ? ' destaque-caixa' : '') }, h('h3', {}, 'Documentos e pasta no Drive'), h('p', { class: 'peq' }, 'Verificando a pasta…'));
+    const pode = sessao.usuario.pode;
+    (async () => {
+      let d;
+      try { d = await api('clientes.documentos', { id: c.id }); } catch (e) { caixa.lastChild.textContent = e.message; return; }
+      const linha = (rotulo, itens) => h('div', { class: 'doc-linha' },
+        itens.length ? h('span', { class: 'tag ok' }, '✓ ' + rotulo) : h('span', { class: 'tag urgente' }, '✗ ' + rotulo + ' não encontrada'),
+        itens.slice(0, 4).map(f => h('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer', class: 'peq' }, f.nome)));
+      const gerar = h('form', { class: 'barra gerar', novalidate: true },
+        h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'procuracao', checked: true }), 'Procuração'),
+        pode.financeiro ? h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'contrato', checked: true }), 'Contrato de honorários') : null,
+        h('input', { name: 'objeto', value: c.tipo_acao || '', placeholder: 'Finalidade / objeto (ex.: reclamatória trabalhista contra Empresa X)', 'aria-label': 'Finalidade' }),
+        h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF'), h('p', { class: 'erro' }));
+      aoEnviar(gerar, async fd => {
+        const modelos = ['procuracao', 'contrato'].filter(k => fd.get(k));
+        const r = await api('documentos.gerar', { cliente_id: c.id, modelos, objeto: fd.get('objeto') });
+        avisar('Documentos gerados na pasta do cliente.' + (r.faltando.length ? ' Faltou no cadastro: ' + r.faltando.join(', ') + '.' : ''), !!r.faltando.length);
+        telaCliente(c.id);
+      });
+      caixa.replaceChildren(h('h3', {}, 'Documentos e pasta no Drive'),
+        d.pasta_url ? h('p', {}, h('a', { class: 'btn sec', href: d.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta no Google Drive'), h('span', { class: 'peq' }, `  ${d.outros} outro(s) arquivo(s)`)) : null,
+        linha('Procuração', d.procuracao), linha('Contrato de honorários', d.contrato),
+        h('h4', {}, 'Gerar a partir dos modelos'),
+        h('p', { class: 'peq' }, 'Preenche com os dados deste cadastro e salva na pasta do cliente em Google Docs e PDF. Os modelos podem ser editados na aba Modelos.'),
+        gerar);
+    })();
+    return caixa;
+  }
+
+  async function telaCliente(id, params) {
     carregando();
+    params = params || new URLSearchParams();
     const novo = id === 'novo';
     const r = novo ? { cliente: { tipo: 'PF', situacao: 'completo' }, processos: [] } : await api('clientes.obter', { id });
     const c = r.cliente;
     const pf = (c.tipo || 'PF') === 'PF';
     const form = h('form', { class: 'caixa', novalidate: true },
+      h('fieldset', {}, h('legend', {}, 'O caso'),
+        h('div', { class: 'campos' },
+          campo('tipo_acao', 'Tipo de ação', c.tipo_acao, { max: 200, dica: 'Ex.: Reclamatória trabalhista, Aposentadoria, Divórcio' }),
+          campo('area', 'Área', c.area, { opcoes: AREAS.some(a => a[0] === (c.area || '')) ? AREAS : AREAS.concat([[c.area, c.area]]) }),
+          campo('resumo_caso', 'Descrição do caso', c.resumo_caso, { area: true, largo: true }),
+          campo('providencias', 'O que tem que fazer (próximas providências)', c.providencias, { area: true, largo: true }))),
       h('fieldset', {}, h('legend', {}, 'Identificação'),
         h('div', { class: 'campos' },
           campo('tipo', 'Tipo', c.tipo || 'PF', { opcoes: [['PF', 'Pessoa física'], ['PJ', 'Pessoa jurídica']] }),
@@ -362,7 +434,6 @@
           campo('uf', 'UF', c.uf, { max: 2 }))),
       h('fieldset', {}, h('legend', {}, 'Escritório'),
         h('div', { class: 'campos' },
-          campo('area', 'Área', c.area, { opcoes: AREAS.some(a => a[0] === (c.area || '')) ? AREAS : AREAS.concat([[c.area, c.area]]) }),
           campo('origem', 'Como chegou ao escritório', c.origem, { max: 120, dica: 'Indicação, Instagram, site…' }),
           campo('situacao', 'Cadastro', c.situacao, { opcoes: [['completo', 'Completo'], ['importado — conferir', 'Importado — conferir'], ['incompleto', 'Incompleto']] }),
           campo('observacoes', 'Observações', c.observacoes, { area: true, largo: true }))),
@@ -376,23 +447,18 @@
       if (!novo) dados.id = c.id;
       const res = await api('clientes.salvar', { cliente: dados });
       if (res.avisoPasta) avisar(res.avisoPasta, true);
-      else avisar(novo ? (res.pasta && res.pasta.existente ? 'Cliente cadastrado e ligado à pasta que já existia.' : 'Cliente cadastrado e pasta criada no Drive.') : 'Alterações salvas.');
-      if (novo) location.hash = '#/cliente/' + res.id; else telaCliente(c.id);
+      else avisar(novo ? 'Cliente cadastrado. Agora você pode gerar a procuração e o contrato.' : 'Alterações salvas.');
+      if (novo) location.hash = '#/cliente/' + res.id + '?gerar=1'; else telaCliente(c.id);
     });
 
-    const pasta = novo ? null : h('div', { class: 'caixa' }, h('h3', {}, 'Pasta no Drive'),
-      c.pasta_url
-        ? h('p', {}, h('a', { href: c.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta do cliente em 02. CLIENTES'))
-        : h('div', {}, h('p', { class: 'peq' }, 'Este cliente ainda não tem pasta ligada.'),
-          botao('Criar ou ligar pasta', async ev => {
-            ev.target.disabled = true;
-            try {
-              const p = await api('clientes.criarPasta', { id: c.id });
-              avisar(p.existente ? 'Pasta existente ligada ao cliente.' : 'Pasta criada no Drive.');
-              telaCliente(c.id);
-            } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
-          }, 'sec')),
-      h('p', { class: 'peq' }, 'Procuração e contrato de honorários serão gerados aqui na etapa 4, a partir deste cadastro.'));
+    const resumo = novo ? null : h('section', { class: 'caixa resumo-caso' },
+      h('div', { class: 'linha-info' },
+        h('div', {}, h('div', { class: 'peq' }, 'Tipo de ação'), h('strong', {}, c.tipo_acao || '—')),
+        h('div', {}, h('div', { class: 'peq' }, 'Área'), h('strong', {}, c.area || '—')),
+        h('div', {}, h('div', { class: 'peq' }, 'Processos'), h('strong', {}, String(r.processos.length))),
+        h('div', {}, h('div', { class: 'peq' }, 'Telefone'), h('strong', {}, c.telefone || '—'))),
+      c.resumo_caso ? h('p', {}, h('span', { class: 'peq' }, 'Descrição: '), c.resumo_caso) : null,
+      c.providencias ? h('p', { class: 'providencias' }, h('strong', {}, 'O que fazer: '), c.providencias) : h('p', { class: 'peq' }, 'Sem providências anotadas. Preencha "O que tem que fazer" abaixo.'));
 
     const procs = novo ? null : h('div', {},
       h('div', { class: 'cab' }, h('h2', {}, 'Processos'), botao('Novo processo', () => { location.hash = '#/processo/novo?cliente=' + encodeURIComponent(c.id); }, 'sec')),
@@ -415,10 +481,10 @@
     }
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo cliente' : c.nome),
-        novo ? h('p', {}, 'Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES (ou liga a que já existir com o mesmo nome).')
+        novo ? h('p', {}, 'Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES (ou liga a que já existir com o mesmo nome). Depois você gera a procuração e o contrato.')
           : h('p', {}, etiquetaSituacao(c.situacao), c.origem ? ` · origem: ${c.origem}` : ''))),
-      c.situacao && c.situacao !== 'completo' && !novo ? h('div', { class: 'nota alerta' }, 'Cadastro importado: complete CPF, RG, endereço e contato antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
-      form, pasta, procs, honsCli);
+      c.situacao && c.situacao !== 'completo' && !novo ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: preencha CPF, RG, endereço e contato antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
+      resumo, novo ? null : caixaDocumentos(c, params.get('gerar') === '1'), procs, honsCli, form);
   }
 
   /* ---------- processos ---------- */
@@ -427,29 +493,48 @@
     carregando();
     const busca = params.get('busca') || '';
     const semCliente = params.get('semcliente') === '1';
-    const lista = await api('processos.listar', { busca, semCliente });
+    const area = params.get('area') || '';
+    const todos = await api('processos.listar', { busca, semCliente });
+    const nomeArea = p => p.area || 'Sem área';
+    const lista = area ? todos.filter(p => nomeArea(p) === area) : todos;
+    const porArea = {}, porTrib = {};
+    todos.forEach(p => { porArea[nomeArea(p)] = (porArea[nomeArea(p)] || 0) + 1; const t = p.tribunal || '—'; porTrib[t] = (porTrib[t] || 0) + 1; });
+    const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
+    const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
+    const ir = mud => {
+      const q = new URLSearchParams({ busca, area, semcliente: semCliente ? '1' : '', ...mud });
+      [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
+      location.hash = '#/processos' + (q.toString() ? '?' + q : '');
+    };
     const form = h('form', { class: 'barra', role: 'search' },
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar por número, cliente, parte contrária ou vara', 'aria-label': 'Buscar processos' }),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'semcliente', checked: semCliente }), 'Só sem cliente'),
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
-    form.addEventListener('submit', ev => {
-      ev.preventDefault();
-      const q = new URLSearchParams();
-      if (form.busca.value.trim()) q.set('busca', form.busca.value.trim());
-      if (form.semcliente.checked) q.set('semcliente', '1');
-      location.hash = '#/processos' + (q.toString() ? '?' + q : '');
-    });
-    mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, `${lista.length} encontrado${lista.length === 1 ? '' : 's'}`)),
-        botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
+    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), semcliente: form.semcliente.checked ? '1' : '' }); });
+    const relatorio = h('aside', { class: 'caixa relatorio' },
+      h('h3', {}, 'Quantas ações por área'),
+      h('table', { class: 'mini-tab' }, h('tbody', {}, areas.map(a => h('tr', { onclick: () => ir({ area: a }) },
+        h('td', {}, a), h('td', { class: 'num' }, h('strong', {}, String(porArea[a]))),
+        h('td', { class: 'barra-cel' }, h('span', { class: 'barrinha', 'data-w': Math.round(porArea[a] / todos.length * 100) })))))),
+      h('h3', { class: 'mt' }, 'Por tribunal'),
+      h('table', { class: 'mini-tab' }, h('tbody', {}, Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]).map(t => h('tr', {}, h('td', {}, t), h('td', { class: 'num' }, String(porTrib[t])))))));
+    const principal = h('div', { class: 'col-principal' },
+      h('div', { class: 'chips' },
+        h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todos (${todos.length})`),
+        areas.map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
       tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero)), p.status === 'arquivado' ? h('div', {}, h('span', { class: 'tag' }, 'arquivado')) : null),
-        h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, 'a identificar')),
+        h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('div', { class: 'peq' }, p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
         h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato, p.proximo_ato_data ? h('div', {}, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.'));
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''}`)),
+        botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
+      h('div', { class: 'duas-colunas' }, principal, relatorio));
+    document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
   }
 
   async function telaProcesso(id, params) {
@@ -530,7 +615,25 @@
         h('td', { 'data-r': 'Último acesso' }, u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR') : '—')
       ], u => editarUsuario(u), 'Nenhum usuário.'),
       h('div', { id: 'editar-usuario' }),
-      form);
+      form,
+      await relatorioCumpridos());
+  }
+
+  async function relatorioCumpridos() {
+    const r = await api('relatorio.cumpridos', { dias: 30 }).catch(e => ({ erro: e.message, lista: [], porPessoa: [] }));
+    return h('section', { class: 'mt' },
+      h('h2', {}, 'Prazos cumpridos — últimos 30 dias'),
+      r.erro ? h('p', { class: 'erro' }, r.erro) : null,
+      h('div', { class: 'numeros' }, r.porPessoa.length ? r.porPessoa.map(x => h('div', { class: 'numero' }, h('b', {}, x.total),
+        h('span', {}, `${x.quem} · ${x.noPrazo} no prazo${x.total - x.noPrazo ? ' · ' + (x.total - x.noPrazo) + ' depois do fatal' : ''}`))) : h('p', { class: 'peq' }, 'Ninguém marcou prazo como cumprido nos últimos 30 dias.')),
+      tabela(['Quando', 'Quem cumpriu', 'Processo', 'Cliente', 'Prazo', 'Fatal'], r.lista, x => [
+        h('td', { class: 'num', 'data-r': 'Quando' }, new Date(x.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })),
+        h('td', { 'data-r': 'Quem cumpriu' }, h('strong', {}, x.quem)),
+        h('td', { class: 'num', 'data-r': 'Processo' }, x.numero),
+        h('td', { 'data-r': 'Cliente' }, x.cliente),
+        h('td', { 'data-r': 'Prazo' }, x.descricao),
+        h('td', { 'data-r': 'Fatal' }, x.fatal ? dataBR(x.fatal) : '—', ' ', x.noPrazo ? h('span', { class: 'tag ok' }, 'no prazo') : h('span', { class: 'tag urgente' }, 'depois do fatal'))
+      ], x => { location.hash = '#/prazo/' + x.id; }, 'Sem registros.'));
   }
 
   function editarUsuario(u) {
@@ -635,8 +738,11 @@
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
 
-  function tabelaPrazos(lista, vazio) {
-    return tabela(['Fatal', 'Processo', 'Cliente', 'Prazo', 'Situação', ''], lista, z => [
+  function tabelaPrazos(lista, vazio, ordem) {
+    const cabFatal = ordem
+      ? h('button', { type: 'button', class: 'ordenar', title: 'Ordenar pela data fatal', onclick: () => ordem.mudar(ordem.dir === 'asc' ? 'desc' : 'asc') }, 'Fatal ', ordem.dir === 'asc' ? '▼' : '▲')
+      : 'Fatal';
+    return tabela([cabFatal, 'Processo', 'Cliente', 'Prazo', 'Situação', ''], lista, z => [
       h('td', { class: 'num', 'data-r': 'Fatal' }, z.fatal ? h('strong', {}, dataBR(z.fatal)) : '—', h('div', {}, etiquetaContagem(z.fatal))),
       h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
       h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
@@ -656,16 +762,20 @@
     carregando();
     const encerrados = params.get('encerrados') === '1';
     const [lista, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
+    const dir = params.get('ordem') === 'desc' ? 'desc' : 'asc';
     const aDefinir = lista.filter(z => z.situacao === 'a definir');
-    const comData = lista.filter(z => z.situacao !== 'a definir');
+    // ▼ (asc): vencidos, hoje, 1 dia, 2 dias… ▲ (desc): o mais distante primeiro
+    const comData = lista.filter(z => z.situacao !== 'a definir')
+      .sort((a, b) => { const x = a.fatal || '9999', y = b.fatal || '9999'; return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'asc' ? 1 : -1); });
+    const ordem = { dir, mudar: d => { const q = new URLSearchParams(params); q.set('ordem', d); location.hash = '#/prazos?' + q; } };
     const btnRobo = botao('Atualizar agora', async ev => {
       ev.target.disabled = true; ev.target.textContent = 'Lendo intimações…';
       try { const r = await api('robo.rodar'); avisar(r.resumo.replace(/^Robô em [^:]+: /, '')); rota(); }
       catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Atualizar agora'; }
     }, 'sec');
-    const filtro = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => { location.hash = '#/prazos' + (e.target.checked ? '?encerrados=1' : ''); } }), 'Mostrar cumpridos e cancelados (30 dias)');
+    const filtro = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => { const q = new URLSearchParams(params); if (e.target.checked) q.set('encerrados', '1'); else q.delete('encerrados'); location.hash = '#/prazos?' + q; } }), 'Mostrar cumpridos e cancelados (30 dias)');
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Prazos'), h('p', {}, linhaRobo(resumo.robo))),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações e prazos'), h('p', {}, linhaRobo(resumo.robo))),
         h('div', { class: 'barra' }, btnRobo, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' }, h('b', {}, resumo.prazos.vencendo), h('span', {}, 'vencem em até 5 dias')),
@@ -675,7 +785,7 @@
       h('div', { class: 'nota' }, 'O robô calcula a data fatal a partir da ciência: confirmada no dia em que a intimação é aberta, ou tácita 10 dias após a expedição; no DJEN, no dia útil seguinte à disponibilização. Conta dias úteis com feriados e o recesso de 20/12 a 20/01. Todo prazo do robô precisa ser conferido pela advogada no eproc ou no PJe.'),
       aDefinir.length ? h('div', {}, h('h2', {}, 'A definir'), h('p', { class: 'peq' }, 'Intimações recebidas em que o robô não sabe quantos dias tem o prazo. Abra no sistema do tribunal, veja o prazo e preencha.'), tabelaPrazos(aDefinir, '')) : null,
       h('div', { class: 'cab mt' }, h('h2', {}, 'Por data fatal'), filtro),
-      tabelaPrazos(comData, 'Nenhum prazo com data fatal.'),
+      tabelaPrazos(comData, 'Nenhum prazo com data fatal.', ordem),
       blocoIntimacoes(),
       sessao.usuario.pode.usuarios ? blocoFeriados() : null);
   }
@@ -758,8 +868,19 @@
 
   /* ---------- agenda ---------- */
 
-  const CORES_AGENDA = { 'ATENDIMENTOS': 'ag-atend', 'AUDIÊNCIA CONCILIAÇÃO': 'ag-conc', 'AUDIÊNCIA INSTRUÇÃO': 'ag-instr' };
-  const NOME_CURTO = { 'ATENDIMENTOS': 'Atendimento', 'AUDIÊNCIA CONCILIAÇÃO': 'Conciliação', 'AUDIÊNCIA INSTRUÇÃO': 'Instrução' };
+  const CORES_AGENDA = { 'ATENDIMENTOS': 'ag-atend', 'AUDIÊNCIA CONCILIAÇÃO': 'ag-conc', 'AUDIÊNCIA INSTRUÇÃO': 'ag-instr', 'PERÍCIAS': 'ag-peri' };
+  const NOME_CURTO = { 'ATENDIMENTOS': 'Atendimento', 'AUDIÊNCIA CONCILIAÇÃO': 'Conciliação', 'AUDIÊNCIA INSTRUÇÃO': 'Instrução', 'PERÍCIAS': 'Perícia' };
+  // Filtros da agenda: o que cada visão mostra
+  const FILTROS_AGENDA = {
+    tudo: { nome: 'Tudo', agendas: null, prazos: true },
+    dra: { nome: 'Dra. Júlian', agendas: ['ATENDIMENTOS', 'AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'], prazos: true },
+    clientes: { nome: 'Clientes (audiências e perícias)', agendas: ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO', 'PERÍCIAS'], prazos: false },
+    audiencias: { nome: 'Só audiências', agendas: ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'], prazos: false }
+  };
+  function filtrarAgenda(dados, ver) {
+    const f = FILTROS_AGENDA[ver] || FILTROS_AGENDA.tudo;
+    return { ...dados, eventos: dados.eventos.filter(e => !f.agendas || f.agendas.includes(e.agenda)), prazos: f.prazos ? dados.prazos : [] };
+  }
 
   function isoSoma(iso, n) { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); }
   function diaSem(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); }
@@ -790,8 +911,9 @@
     const visao = ['dia', 'semana', 'mes'].includes(params.get('visao')) ? params.get('visao') : 'semana';
     const data = /^\d{4}-\d{2}-\d{2}$/.test(params.get('data') || '') ? params.get('data') : hojeISO();
     const [ini, fim] = periodo(visao, data);
-    const dados = await api('agenda.listar', { inicio: ini, fim });
-    const ir = (v, d) => { location.hash = `#/agenda?visao=${v}&data=${d}`; };
+    const ver = FILTROS_AGENDA[params.get('ver')] ? params.get('ver') : 'tudo';
+    const dados = filtrarAgenda(await api('agenda.listar', { inicio: ini, fim }), ver);
+    const ir = (v, d, f) => { location.hash = `#/agenda?visao=${v}&data=${d}&ver=${f || ver}`; };
     const passo = visao === 'dia' ? 1 : visao === 'semana' ? 7 : 0;
     const mover = n => passo ? ir(visao, isoSoma(data, n * passo)) : ir(visao, isoSoma(data.slice(0, 8) + '15', n * 30).slice(0, 8) + '01');
     const titulo = visao === 'dia' ? nomeDia(data, true) : visao === 'semana' ? `Semana de ${dataBR(ini)} a ${dataBR(fim)}`
@@ -800,6 +922,7 @@
       h('div', { class: 'grupo' }, botao('◀', () => mover(-1), 'sec'), botao('Hoje', () => ir(visao, hojeISO()), 'sec'), botao('▶', () => mover(1), 'sec')),
       h('div', { class: 'grupo' }, ['dia', 'semana', 'mes'].map(v => h('button', { type: 'button', class: 'btn ' + (v === visao ? '' : 'sec'), onclick: () => ir(v, data) }, { dia: 'Dia', semana: 'Semana', mes: 'Mês' }[v]))),
       botao('Novo compromisso', () => { location.hash = '#/compromisso/novo?data=' + data; }));
+    const filtros = h('div', { class: 'chips' }, Object.keys(FILTROS_AGENDA).map(k => h('button', { type: 'button', class: 'chip-filtro' + (k === ver ? ' ativo' : ''), onclick: () => ir(visao, data, k) }, FILTROS_AGENDA[k].nome)));
     const legenda = h('div', { class: 'legenda' }, Object.keys(CORES_AGENDA).map(n => h('span', { class: 'chip ' + CORES_AGENDA[n] }, NOME_CURTO[n])), h('span', { class: 'chip ag-prazo' }, 'Prazo fatal'));
     let corpo;
     if (visao === 'mes') {
@@ -837,7 +960,7 @@
     }
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Agenda'), h('p', { class: 'cap' }, titulo))),
-      barra, legenda,
+      barra, filtros, legenda,
       dados.avisos.length ? h('div', { class: 'nota alerta' }, dados.avisos.join(' ')) : null,
       corpo);
   }
@@ -1028,6 +1151,43 @@
       form, ...extras);
   }
 
+  /* ---------- modelos ---------- */
+
+  async function telaModelos(params) {
+    carregando();
+    const [mods, clientes] = await Promise.all([api('modelos.listar'), api('clientes.listar', {})]);
+    const pode = sessao.usuario.pode;
+    const form = h('form', { class: 'caixa', novalidate: true },
+      h('h2', {}, 'Gerar para um cliente'),
+      h('div', { class: 'campos' },
+        campo('cliente_id', 'Cliente', params.get('cliente') || '', { opcoes: [['', '— escolha o cliente —']].concat(clientes.map(c => [c.id, c.nome + (c.situacao !== 'completo' ? ' (cadastro a completar)' : '')])), largo: true }),
+        campo('objeto', 'Finalidade / objeto', '', { max: 300, largo: true, dica: 'Ex.: propor reclamatória trabalhista contra Empresa X (se vazio, usa o "tipo de ação" do cadastro)' })),
+      h('div', { class: 'barra' },
+        h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'procuracao', checked: true }), 'Procuração'),
+        pode.financeiro ? h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'contrato', checked: true }), 'Contrato de honorários') : null),
+      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
+      h('p', { class: 'erro' }), h('div', { id: 'gerados' }));
+    aoEnviar(form, async fd => {
+      if (!fd.get('cliente_id')) throw new Error('Escolha o cliente.');
+      const modelos = ['procuracao', 'contrato'].filter(k => fd.get(k));
+      const r = await api('documentos.gerar', { cliente_id: fd.get('cliente_id'), modelos, objeto: fd.get('objeto') });
+      document.getElementById('gerados').replaceChildren(
+        r.faltando.length ? h('div', { class: 'nota alerta' }, 'Atenção, faltou no cadastro: ' + r.faltando.join(', ') + '. Os campos saíram em branco; complete o cadastro e gere de novo.') : null,
+        h('ul', { class: 'lista-int' }, r.gerados.map(g => h('li', {}, h('strong', {}, g.modelo), ' · ',
+          h('a', { href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'abrir PDF'), ' · ',
+          h('a', { href: g.doc, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))),
+        h('p', {}, h('a', { class: 'btn sec', href: r.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta do cliente')));
+      avisar('Documentos gerados na pasta do cliente.');
+    });
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'), h('p', {}, 'Procuração e contrato de honorários preenchidos com o cadastro do cliente, salvos na pasta dele em Google Docs e PDF.'))),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Modelos do escritório'),
+        h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas — {{qualificacao}}, {{nome}}, {{objeto}}, {{clausula_honorarios}}, {{data_extenso}} — que o painel preenche sozinho.'),
+        h('ul', { class: 'lista-int' }, mods.map(m => h('li', {}, h('strong', {}, m.nome), ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'abrir e editar no Google Docs'))))),
+      form,
+      h('div', { class: 'nota' }, 'Os modelos iniciais foram redigidos pelo Claude como ponto de partida. A Dra. Júlian deve revisar o texto antes do primeiro uso.'));
+  }
+
   /* ---------- rotas ---------- */
 
   async function rota() {
@@ -1044,7 +1204,8 @@
     try {
       switch (tela) {
         case 'clientes': await telaClientes(params); break;
-        case 'cliente': await telaCliente(id); break;
+        case 'cliente': await telaCliente(id, params); break;
+        case 'modelos': await telaModelos(params); break;
         case 'processos': await telaProcessos(params); break;
         case 'processo': await telaProcesso(id, params); break;
         case 'usuarios': await telaUsuarios(); break;
