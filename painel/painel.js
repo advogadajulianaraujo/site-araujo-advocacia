@@ -220,7 +220,11 @@
         document.getElementById('primeiro').replaceChildren(
           h('a', { href: '#/primeiro-acesso' }, 'Primeiro acesso: criar o administrador'));
       }
-    } catch (e) { /* mostra só o login */ }
+    } catch (e) {
+      document.getElementById('primeiro').replaceChildren(
+        h('p', { class: 'erro' }, e.message),
+        h('a', { href: '#/primeiro-acesso' }, 'Primeiro acesso: criar o administrador'));
+    }
   }
 
   function telaPrimeiroAcesso() {
@@ -549,7 +553,7 @@
   /* ---------- rotas ---------- */
 
   async function rota() {
-    const [caminho, qs] = (location.hash.slice(2) || '').split('?');
+    const [caminho, qs] = (location.hash.slice(2) || '').replace(/[.,;\s]+$/, '').split('?');
     const params = new URLSearchParams(qs || '');
     const [tela, id] = caminho.split('/');
     if (!sessao) {
