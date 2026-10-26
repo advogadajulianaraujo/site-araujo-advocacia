@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '4.2.0';
+var VERSAO = '4.3.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -620,6 +620,29 @@ function vincularPastas_() {
     var r = casarPastas_(pastas, tab.linhas);
     r.ligar.forEach(function (x) { atualizarLinha_(tab, x.cliente, { pasta_id: x.pasta.id, pasta_url: x.pasta.url }); aprox++; });
     duvidas = r.duvidas;
+    // 3) quem ainda está sem pasta: procura no Drive inteiro (outras pastas, subpastas, compartilhadas)
+    var fora = [];
+    try {
+      var semPasta = tab.linhas.filter(function (c) { return !c.pasta_id; });
+      if (semPasta.length) {
+        var dentro = {};
+        pastas.forEach(function (p) { dentro[p.id] = true; });
+        var excluir = {};
+        excluir[raiz.getId()] = true;
+        try { excluir[DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next().getId()] = true; } catch (e) { /* sem pasta */ }
+        var todas = todasPastasDrive_().filter(function (p) {
+          return !dentro[p.id] && !excluir[p.id] && !(p.pais || []).some(function (x) { return excluir[x] && x !== raiz.getId(); });
+        });
+        var r3 = casarPastas_(todas, tab.linhas);
+        r3.ligar.forEach(function (x) {
+          atualizarLinha_(tab, x.cliente, { pasta_id: x.pasta.id, pasta_url: x.pasta.url });
+          fora.push([seguro_(x.pasta.nome), x.pasta.url, 'ligada fora de 02. CLIENTES — conferir', seguro_(x.cliente.nome)]);
+        });
+      }
+    } catch (e) {
+      fora.push(['(busca no Drive inteiro falhou)', '', seguro_(String(e && e.message || e).slice(0, 300)), '']);
+    }
+    aprox += fora.filter(function (l) { return l[1]; }).length;
     regravarMudadas_(tab);
     // 3) relatório: pastas que não ficaram com nenhum cliente
     var usadas = {};
@@ -629,6 +652,7 @@ function vincularPastas_() {
     var linhas = pastas.filter(function (p) { return !usadas[p.id]; })
       .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; })
       .map(function (p) { return [seguro_(p.nome), p.url, mapaDuv[p.id] ? 'mais de um cliente possível' : 'nenhum cliente com esse nome', seguro_(mapaDuv[p.id] || '')]; });
+    linhas = fora.concat(linhas);
     var sh = aba_('PastasConferir');
     var cab = ESQUEMA.PastasConferir;
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, cab.length).clearContent();
@@ -636,6 +660,26 @@ function vincularPastas_() {
   });
   registrar_('sistema', 'pastas vinculadas', n + ' pelo nome igual, ' + aprox + ' pelo nome parecido, ' + duvidas.length + ' em dúvida');
   return n + aprox;
+}
+
+/** Todas as pastas que a conta enxerga e onde pode gravar (Drive REST: 1000 por página, bem mais rápido que DriveApp). */
+function todasPastasDrive_() {
+  var lista = [], pagina = '', voltas = 0;
+  var q = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+  do {
+    var url = 'https://www.googleapis.com/drive/v3/files?q=' + q + '&pageSize=1000&corpora=allDrives&includeItemsFromAllDrives=true' +
+      '&supportsAllDrives=true&fields=' + encodeURIComponent('nextPageToken,files(id,name,parents,capabilities/canAddChildren)') +
+      (pagina ? '&pageToken=' + encodeURIComponent(pagina) : '');
+    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) throw new Error('Drive respondeu ' + resp.getResponseCode() + ': ' + resp.getContentText().slice(0, 200));
+    var j = JSON.parse(resp.getContentText());
+    (j.files || []).forEach(function (f) {
+      if (f.capabilities && f.capabilities.canAddChildren === false) return; // só pastas onde o escritório pode gravar
+      lista.push({ id: f.id, nome: f.name, pais: f.parents || [], url: 'https://drive.google.com/drive/folders/' + f.id });
+    });
+    pagina = j.nextPageToken || '';
+  } while (pagina && ++voltas < 50);
+  return lista;
 }
 
 /* ---------- Casamento aproximado de pastas com clientes ----------
@@ -721,13 +765,13 @@ function casarPastas_(pastas, clientes) {
   var tokDe = {};
   clientes.forEach(function (c, i) { tokDe[c.id] = tk[i]; });
   var primeiras = Object.keys(porPrimeira);
-  var ligar = [], duvidas = [], jaLigado = {};
+  var ligar = [], duvidas = [], jaLigado = {}, memoPrimeira = {};
   pastas.forEach(function (p) {
     if (usadas[p.id]) return;
     partesPasta_(p.nome).forEach(function (parte) {
       var cand = [];
-      primeiras.forEach(function (w) {
-        if (!palavraParecida_(parte[0], w)) return;
+      var parecidas = memoPrimeira[parte[0]] || (memoPrimeira[parte[0]] = primeiras.filter(function (w) { return palavraParecida_(parte[0], w); }));
+      parecidas.forEach(function (w) {
         porPrimeira[w].forEach(function (c) {
           var ct = tokDe[c.id];
           var inteiro = parte.length === ct.length && contidoEm_(parte, ct);
