@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '5.0.0';
+var VERSAO = '5.1.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -33,7 +33,7 @@ var ESQUEMA = {
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
@@ -68,6 +68,7 @@ function onOpen() {
     .addItem('3. Ligar o robô de prazos (de 6 em 6 horas)', 'instalarRobo')
     .addItem('Rodar o robô agora', 'rodarRoboMenu')
     .addItem('4. Importar tudo do GEA (clientes e financeiro)', 'importarGEA')
+    .addItem('5. Buscar processos antigos e arquivados no Gmail', 'buscarProcessosAntigos')
     .addItem('Gerar novo código de primeiro acesso', 'gerarCodigoPrimeiroAcesso')
     .addToUi();
 }
@@ -101,6 +102,11 @@ function configurar() {
   var gea = importarGEASeguro_(false);
   try { var lig = vincularPastas_(); if (lig) gea = (gea ? gea + '\n' : '') + lig + ' clientes ligados às pastas do Drive (veja a aba PastasConferir).'; } catch (e) { /* pasta 02. CLIENTES não configurada */ }
   try { var areas = classificarAreas_(Math.max(0, 300000 - (Date.now() - inicioConfig))); if (areas) gea = (gea ? gea + '\n' : '') + areas + ' processos ganharam área (conferir).'; } catch (e) { /* sem Gmail */ }
+  try { var def = definirPendentes_(); if (def) gea = (gea ? gea + '\n' : '') + def + ' prazos sem data foram definidos (conferir).'; } catch (e) { /* segue */ }
+  try {
+    var resto = 330000 - (Date.now() - inicioConfig);
+    if (resto > 40000) { var hist = importarHistoricoGmail_(resto - 30000); if (hist.novos) gea = (gea ? gea + '\n' : '') + hist.novos + ' processos antigos encontrados no Gmail.'; }
+  } catch (e) { /* continua no robô */ }
   var nomes = corrigirNomesMaiusculos_();
   if (nomes) gea = (gea ? gea + '\n' : '') + nomes + ' nomes do GEA passaram de MAIÚSCULAS para o formato normal.';
   if (gea) importados = (importados ? importados + '\n\n' : '') + gea;
@@ -633,7 +639,11 @@ function vincularPastas_() {
     });
     // 2) nome parecido (erros de digitação, nome incompleto, complementos)
     var r = casarPastas_(pastas, tab.linhas);
-    r.ligar.forEach(function (x) { atualizarLinha_(tab, x.cliente, { pasta_id: x.pasta.id, pasta_url: x.pasta.url }); aprox++; });
+    var umaPal = [];
+    r.ligar.forEach(function (x) {
+      atualizarLinha_(tab, x.cliente, { pasta_id: x.pasta.id, pasta_url: x.pasta.url }); aprox++;
+      if (x.umaPalavra) umaPal.push([seguro_(x.pasta.nome), x.pasta.url, 'ligada pelo primeiro nome da pasta — conferir', seguro_(x.cliente.nome)]);
+    });
     duvidas = r.duvidas;
     // 3) quem ainda está sem pasta: procura no Drive inteiro (outras pastas, subpastas, compartilhadas)
     var fora = [];
@@ -667,7 +677,7 @@ function vincularPastas_() {
     var linhas = pastas.filter(function (p) { return !usadas[p.id]; })
       .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; })
       .map(function (p) { return [seguro_(p.nome), p.url, mapaDuv[p.id] ? 'mais de um cliente possível' : 'nenhum cliente com esse nome', seguro_(mapaDuv[p.id] || '')]; });
-    linhas = fora.concat(linhas);
+    linhas = fora.concat(umaPal, linhas);
     var sh = aba_('PastasConferir');
     var cab = ESQUEMA.PastasConferir;
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, cab.length).clearContent();
@@ -760,8 +770,14 @@ function partesPasta_(nome) {
   // nome entre parênteses só vale se bater por inteiro (pode ser outra pessoa: "LIANA (KELLY CRISTINA)")
   t.replace(/\(([^)]*)\)/g, function (m, dentro) { var tk = tokensNome_(dentro, true); tk.soInteiro = true; partes.push(tk); return ''; });
   t = t.replace(/\([^)]*\)/g, ' ');
-  t.split(/\s+[-–]\s+|\s+x\s+|,|\s+e\s+|\.\s/i).forEach(function (p) { partes.push(tokensNome_(p, true)); });
-  return partes.filter(function (tk) { return tk.length >= 2; });
+  var pedacos = t.split(/\s+[-–]\s+|\s+x\s+|,|\s+e\s+|\.\s/i);
+  pedacos.forEach(function (p, i) {
+    var tk = tokensNome_(p, true);
+    // "Oditur - Fiscal - Dano Moral": a primeira palavra sozinha vale se só um cliente começa com ela
+    if (tk.length === 1 && i === 0 && pedacos.length > 1 && tk[0].length >= 5) tk.umaPalavra = true;
+    partes.push(tk);
+  });
+  return partes.filter(function (tk) { return tk.length >= 2 || tk.umaPalavra; });
 }
 
 /**
@@ -784,6 +800,11 @@ function casarPastas_(pastas, clientes) {
   pastas.forEach(function (p) {
     if (usadas[p.id]) return;
     partesPasta_(p.nome).forEach(function (parte) {
+      if (parte.umaPalavra) {
+        var so = (porPrimeira[parte[0]] || []);
+        if (so.length === 1 && !so[0].pasta_id && !jaLigado[so[0].id]) { jaLigado[so[0].id] = true; ligar.push({ cliente: so[0], pasta: p, umaPalavra: true }); }
+        return;
+      }
       var cand = [];
       var parecidas = memoPrimeira[parte[0]] || (memoPrimeira[parte[0]] = primeiras.filter(function (w) { return palavraParecida_(parte[0], w); }));
       parecidas.forEach(function (w) {
@@ -1179,23 +1200,153 @@ function contagemPadrao_(proc) {
   return proc && proc.area === 'Criminal' ? 'corridos' : 'uteis';
 }
 
-/** Sugestão de dias pelo tipo de ato. Sem sugestão segura, devolve 0 (prazo a definir). */
+/**
+ * Prazo pelo tipo de ato. Regra do escritório: prazo NUNCA fica sem data.
+ * Quando o aviso não diz o ato (no PJe vem "documento sigiloso"), usa o prazo provisório de 5 dias
+ * (o mínimo do art. 218, § 3º, do CPC; corridos no criminal), sempre marcado para a advogada conferir.
+ * Na dúvida, o robô escolhe o prazo MAIS CURTO possível, para nunca perder prazo.
+ */
 function sugerirPrazo_(texto, proc, tribunal, segundoGrauAviso) {
   var t = normalizar_(texto || '');
-  var m = /prazo\s+(?:comum\s+)?(?:de\s+)?(\d{1,3})\s*(?:\([^)]*\)\s*)?dias?(\s+(?:uteis|corridos))?/.exec(t);
+  var criminal = proc && proc.area === 'Criminal';
+  var trab = /^TRT/.test(tribunal || '');
+  var contagem = contagemPadrao_(proc);
+  var m = /prazo\s+(?:comum\s+)?(?:de\s+)?(\d{1,3})\s*(?:\([^)]*\)\s*)?(dias?|horas?)(\s+(?:uteis|corridos))?/.exec(t);
   if (m) {
-    return { dias: +m[1], contagem: /corridos/.test(m[2] || '') ? 'corridos' : contagemPadrao_(proc), descricao: 'Prazo indicado na intimação' };
+    if (/hora/.test(m[2])) return { dias: Math.max(1, Math.ceil(+m[1] / 24)), contagem: 'corridos', descricao: 'Prazo de ' + m[1] + ' horas indicado na intimação' };
+    return { dias: +m[1], contagem: /corridos/.test(m[3] || '') ? 'corridos' : contagem, descricao: 'Prazo indicado na intimação' };
   }
-  var segundoGrau = segundoGrauAviso || /\.0000$/.test((proc && proc.numero) || '') || /2º grau/i.test((proc && proc.orgao) || '');
-  if (/julgamento|sentenca/.test(t) && !segundoGrau) {
-    if (/^TRT/.test(tribunal || '')) return { dias: 8, contagem: 'uteis', descricao: 'Recurso ordinário contra a sentença (sugestão)' };
-    if (proc && proc.area === 'Criminal') return { dias: 5, contagem: 'corridos', descricao: 'Apelação criminal contra a sentença (sugestão)' };
-    if (/juizado|jec|jef/i.test((proc && proc.orgao) || '') || /\.4\.04\.72/.test((proc && proc.numero) || '')) {
-      return { dias: 10, contagem: 'uteis', descricao: 'Recurso inominado contra a sentença (sugestão)' };
+  var segundoGrau = segundoGrauAviso || /\.0000$/.test((proc && proc.numero) || '') || /2º grau/i.test((proc && proc.orgao) || '') || /2o grau|2º grau/.test(t);
+  var juizado = /juizado|jec|jef/i.test((proc && proc.orgao) || '') || /\.4\.04\.72/.test((proc && proc.numero) || '');
+  if (/julgamento|sentenca|acordao/.test(t)) {
+    if (segundoGrau) {
+      if (criminal) return { dias: 2, contagem: 'corridos', descricao: 'Acórdão: embargos de declaração criminais (2 dias) — conferir se cabe recurso especial (15 dias)' };
+      return { dias: 5, contagem: 'uteis', descricao: 'Acórdão: embargos de declaração (5 dias) — conferir se cabe recurso especial/revista (8 a 15 dias)' };
     }
-    return { dias: 15, contagem: 'uteis', descricao: 'Apelação contra a sentença (sugestão)' };
+    if (trab) return { dias: 8, contagem: 'uteis', descricao: 'Sentença: recurso ordinário (8 dias) — embargos de declaração em 5 dias' };
+    if (criminal) return { dias: 5, contagem: 'corridos', descricao: 'Sentença: apelação criminal (5 dias)' };
+    if (juizado) return { dias: 10, contagem: 'uteis', descricao: 'Sentença: recurso inominado (10 dias) — embargos de declaração em 5 dias' };
+    return { dias: 15, contagem: 'uteis', descricao: 'Sentença: apelação (15 dias) — embargos de declaração em 5 dias' };
   }
-  return { dias: 0, contagem: contagemPadrao_(proc), descricao: 'Intimação recebida: definir o prazo' };
+  if (/contrarraz/.test(t)) {
+    if (trab) return { dias: 8, contagem: 'uteis', descricao: 'Contrarrazões (8 dias)' };
+    if (criminal) return { dias: 8, contagem: 'corridos', descricao: 'Contrarrazões criminais (8 dias)' };
+    if (juizado) return { dias: 10, contagem: 'uteis', descricao: 'Contrarrazões ao recurso inominado (10 dias)' };
+    return { dias: 15, contagem: 'uteis', descricao: 'Contrarrazões (15 dias)' };
+  }
+  if (/vista ao mp|ministerio publico para parecer/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Vista ao Ministério Público (em regra sem prazo para o escritório) — PROVISÓRIO: conferir', provisorio: true };
+  if (/audiencia/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Intimação de audiência — PROVISÓRIO: conferir data, testemunhas e providências', provisorio: true };
+  if (/requisicao|rpv|precatorio/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Requisição de pagamento (RPV/precatório): manifestar em 5 dias — conferir' };
+  if (/laudo|pericia/.test(t)) return { dias: trab ? 5 : 15, contagem: contagem, descricao: trab ? 'Manifestação sobre o laudo (5 dias) — conferir' : 'Manifestação sobre o laudo pericial (15 dias) — conferir' };
+  if (/despacho|decisao/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Despacho/decisão — PROVISÓRIO: 5 dias (art. 218, § 3º, CPC), conferir no sistema', provisorio: true };
+  return { dias: 5, contagem: contagem, descricao: 'PROVISÓRIO: 5 dias (prazo mínimo) — o aviso não informa o ato; abrir no sistema e conferir', provisorio: true };
+}
+
+/** Situação de arquivo pela movimentação. */
+function statusPeloMovimento_(mov) {
+  var t = normalizar_(mov || '');
+  if (/desarquiv/.test(t)) return 'ativo';
+  if (/arquivad|arquivamento definitivo|baixa definitiva|remetidos? os autos .*arquivo|autos arquivados/.test(t)) return 'arquivado';
+  return '';
+}
+
+/** Guarda a última movimentação do processo e ajusta ativo/arquivado. */
+function atualizarMovimento_(tab, proc, mov, quando) {
+  if (!mov || !quando) return;
+  if (proc.ultimo_movimento_em && quando < proc.ultimo_movimento_em) return;
+  var m = { ultimo_movimento: String(mov).slice(0, 200), ultimo_movimento_em: quando };
+  var st = statusPeloMovimento_(mov);
+  if (st === 'arquivado' && proc.status !== 'arquivado') m.status = 'arquivado';
+  else if (proc.status === 'arquivado' && st !== 'arquivado' && !/decorrid|certid|juntad|baixa|transit/.test(normalizar_(mov))) m.status = 'ativo';
+  atualizarLinha_(tab, proc, m);
+}
+
+/**
+ * Prazos que ficaram "a definir" (versões antigas do robô): define agora pelo tipo de ato.
+ * Roda no configurar e em toda execução do robô.
+ */
+function definirPendentes_(ctx) {
+  var tabZ = ctx ? ctx.prazos : tabela_('Prazos');
+  var intims = {};
+  (ctx ? ctx.intim : tabela_('Intimacoes')).linhas.forEach(function (i) { intims[i.id] = i; });
+  var procs = {};
+  (ctx ? ctx.procs : tabela_('Processos')).linhas.forEach(function (p) { procs[p.id] = p; });
+  var feriados = ctx ? ctx.feriados : mapaFeriados_();
+  var n = 0;
+  tabZ.linhas.forEach(function (z) {
+    if (z.situacao !== 'a definir' || +z.dias || /^ato:/.test(z.observacoes || '')) return;
+    var i = intims[z.intimacao_id] || {};
+    var proc = procs[z.processo_id] || { numero: z.numero };
+    var tribunal = proc.tribunal || tribunalDoNumero_(z.numero);
+    var sug = sugerirPrazo_([i.movimento, i.texto, z.observacoes].join(' '), proc, tribunal, /2º grau/.test(i.movimento || ''));
+    var fatal = calcularFatal_(z.ciencia || hojeSP_(), sug.dias, sug.contagem, tribunal, feriados);
+    atualizarLinha_(tabZ, z, { dias: String(sug.dias), contagem: sug.contagem, descricao: sug.descricao, situacao: 'calculado', fatal: fatal,
+      observacoes: (z.observacoes ? z.observacoes + ' | ' : '') + 'Prazo definido automaticamente em ' + dataBR_(hojeSP_()) + ' pelo tipo de ato: conferir.',
+      atualizado_em: new Date().toISOString(), atualizado_por: 'robô' });
+    n++;
+  });
+  if (!ctx && n) registrar_('sistema', 'prazos definidos', n + ' prazos que estavam sem data');
+  return n;
+}
+
+/* ---------- Histórico do Gmail: processos antigos, arquivados e baixados ---------- */
+
+/**
+ * Lê os avisos antigos do eproc e do PJe (do mais novo para o mais antigo) e cadastra os processos
+ * que ainda não estão no painel, com a última movimentação e a situação (ativo ou arquivado).
+ * Continua de onde parou em cada execução até chegar ao começo da caixa de entrada.
+ */
+function importarHistoricoGmail_(limiteMs) {
+  if (config_('HIST_GMAIL_FIM') === 'sim') return { novos: 0, fim: true };
+  var t0 = Date.now();
+  if (limiteMs === undefined) limiteMs = 200000;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { novos: 0 };
+  var ctx, novos = 0, lidas = 0, cursor = parseInt(config_('HIST_GMAIL_ATE'), 10) || Date.now(), fim = false;
+  try {
+    ctx = contextoRobo_();
+    ctx.procs.adiar = true;
+    var antes = Object.keys(ctx.porNumero).length;
+    while (Date.now() - t0 < limiteMs) {
+      var q = 'from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br OR trt4.jus.br OR trt9.jus.br) before:' + Math.floor(cursor / 1000);
+      var threads = GmailApp.search(q, 0, 50);
+      if (!threads.length) { fim = true; break; }
+      var msgs = [];
+      threads.forEach(function (th) { th.getMessages().forEach(function (m) { if (m.getDate().getTime() < cursor) msgs.push(m); }); });
+      msgs.sort(function (a, b) { return b.getDate().getTime() - a.getDate().getTime(); });
+      if (!msgs.length) { cursor -= 1000; continue; }
+      for (var i = 0; i < msgs.length && Date.now() - t0 < limiteMs; i++) {
+        var msg = msgs[i];
+        var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
+        itens.forEach(function (it) {
+          var existia = !!ctx.porNumero[it.numero];
+          var proc = processoDoNumero_(ctx, it.numero, it.tribunal, it.sistema, it.nomes, it.partes);
+          if (!existia) {
+            proc.origem = 'histórico Gmail';
+            proc.observacoes = 'Encontrado no histórico de avisos do Gmail (' + dataBR_(dataSP_(msg.getDate())) + '). Conferir.';
+          }
+          atualizarMovimento_(ctx.procs, proc, it.movimento, it.recebido_em);
+        });
+        lidas++;
+        cursor = msg.getDate().getTime();
+      }
+    }
+    regravarMudadas_(ctx.procs);
+    gravarLote_(ctx.procs);
+    novos = Object.keys(ctx.porNumero).length - antes;
+    setConfig_('HIST_GMAIL_ATE', String(cursor), 'Histórico do Gmail lido até esta data (ms), do mais novo para o mais antigo');
+    if (fim) setConfig_('HIST_GMAIL_FIM', 'sim', 'Histórico do Gmail lido por completo');
+    registrar_('sistema', 'histórico do Gmail', lidas + ' avisos lidos, ' + novos + ' processos novos' + (fim ? ' (fim do histórico)' : ' (continua na próxima rodada)'));
+  } finally {
+    lock.releaseLock();
+  }
+  return { novos: novos, lidas: lidas, fim: fim };
+}
+
+/** Menu: continua a busca de processos antigos no Gmail. */
+function buscarProcessosAntigos() {
+  var r = importarHistoricoGmail_(300000);
+  aviso_(r.fim ? 'Histórico do Gmail lido até o fim. ' + r.novos + ' processos novos nesta rodada.' : r.lidas + ' avisos lidos, ' + r.novos + ' processos novos. Rode de novo para continuar (o robô também continua sozinho).');
 }
 
 /* ---------- Robô ---------- */
@@ -1241,6 +1392,8 @@ function rodarRoboGatilho() {
   // processos ainda sem área: classifica pelos avisos do Gmail no tempo que sobrar
   var resta = 300000 - (Date.now() - t0);
   if (resta > 60000) { try { classificarAreas_(Math.min(resta - 30000, 120000)); } catch (e) { /* tenta na próxima */ } }
+  resta = 300000 - (Date.now() - t0);
+  if (resta > 60000) { try { importarHistoricoGmail_(resta - 30000); } catch (e) { /* tenta na próxima */ } }
 }
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
@@ -1254,6 +1407,7 @@ function rodarRobo_(quem) {
     catch (e) { erros.push('Gmail: ' + (e.message || e)); }
     try { if (!ctx.gmailParcial) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
     catch (e2) { erros.push('DJEN: ' + (e2.message || e2)); }
+    definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
     [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
     if (ctx.gmailParcial) erros.push('Gmail: leitura parcial por causa do limite de tempo do Google; o resto vem na próxima rodada (ou clique em Atualizar agora).');
@@ -1369,12 +1523,13 @@ function registrarIntimacao_(ctx, d) {
     partes_cliente: (d.nomes || []).join('; '), processo_id: proc.id, prazo_id: '', criado_em: agora
   };
   inserirLinha_(ctx.intim, intim);
+  atualizarMovimento_(ctx.procs, proc, d.movimento, d.recebido_em);
   var marcado = detectarAudienciaPericia_(ctx, d, proc, intim);
   if (!d.tipo) return { nova: true, prazo: marcado };
 
   // Confirmação de uma intimação já lançada como tácita: antecipa a ciência.
   var aberto = ctx.prazos.linhas.filter(function (z) {
-    return z.numero === d.numero && z.origem === 'robô' && z.situacao !== 'conferido' &&
+    return z.numero === d.numero && z.origem === 'robô' && z.situacao !== 'conferido' && !/^ato:/.test(z.observacoes || '') &&
       SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.ciencia && Math.abs(diffDias_(z.ciencia, d.ciencia)) <= 12;
   })[0];
   var sug = sugerirPrazo_([d.movimento, d.texto].join(' '), proc, proc.tribunal, d.segundoGrau);
@@ -1390,7 +1545,7 @@ function registrarIntimacao_(ctx, d) {
   var prazo = {
     id: novoId_('Z'), processo_id: proc.id, numero: d.numero, intimacao_id: intim.id, descricao: sug.descricao,
     dias: sug.dias ? String(sug.dias) : '', contagem: sug.contagem, ciencia: d.ciencia, ciencia_tipo: d.ciencia_tipo,
-    fatal: '', situacao: sug.dias ? 'calculado' : 'a definir', conferido_por: '', conferido_em: '', origem: 'robô',
+    fatal: '', situacao: 'calculado', conferido_por: '', conferido_em: '', origem: 'robô',
     observacoes: d.fonte + ': ' + d.movimento, criado_em: agora, atualizado_em: agora, atualizado_por: 'robô'
   };
   prazo.fatal = calcularFatal_(prazo.ciencia, prazo.dias, prazo.contagem, proc.tribunal, ctx.feriados);

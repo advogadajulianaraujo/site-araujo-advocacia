@@ -751,7 +751,10 @@
     const busca = params.get('busca') || '';
     const semCliente = params.get('semcliente') === '1';
     const area = params.get('area') || '';
-    const todos = await api('processos.listar', { busca, semCliente });
+    const sit = params.get('sit') || 'ativo';
+    const todosSit = await api('processos.listar', { busca, semCliente });
+    const nAtivos = todosSit.filter(p => p.status !== 'arquivado').length, nArq = todosSit.length - nAtivos;
+    const todos = sit === 'todos' ? todosSit : todosSit.filter(p => (p.status === 'arquivado') === (sit === 'arquivado'));
     const nomeArea = p => p.area || 'Sem área';
     const lista = area ? todos.filter(p => nomeArea(p) === area) : todos;
     const porArea = {}, porTrib = {};
@@ -759,7 +762,7 @@
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, sit: sit === 'ativo' ? '' : sit, semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
@@ -776,19 +779,23 @@
       h('h3', { class: 'mt' }, 'Por tribunal'),
       h('table', { class: 'mini-tab' }, h('tbody', {}, Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]).map(t => h('tr', {}, h('td', {}, t), h('td', { class: 'num' }, String(porTrib[t])))))));
     const principal = h('div', { class: 'col-principal' },
+      h('div', { class: 'chips chips-sit' },
+        [['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`], ['todos', `Todos (${todosSit.length})`]]
+          .map(([v, t]) => h('button', { type: 'button', class: 'chip-filtro' + (sit === v ? ' ativo' : ''), onclick: () => ir({ sit: v === 'ativo' ? '' : v, area: '' }) }, t))),
       h('div', { class: 'chips' },
         h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todos (${todos.length})`),
         areas.map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
-      tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
+      tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato / último movimento'], lista, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero)), p.status === 'arquivado' ? h('div', {}, h('span', { class: 'tag' }, 'arquivado')) : null),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('div', { class: 'peq' }, p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
-        h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato, p.proximo_ato_data ? h('div', {}, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null)
+        h('td', { 'data-r': 'Último movimento' }, p.proximo_ato ? h('div', {}, p.proximo_ato, p.proximo_ato_data ? h('div', {}, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null) : null,
+          p.ultimo_movimento ? h('div', { class: 'peq' }, p.ultimo_movimento_em ? new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR') + ' · ' : '', p.ultimo_movimento) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.'));
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''}`)),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
       h('div', { class: 'duas-colunas' }, principal, relatorio));
     document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
@@ -969,7 +976,9 @@
   function etiquetaPrazo(z) {
     if (z.situacao === 'a definir') return h('span', { class: 'tag urgente' }, 'prazo a definir');
     if (z.situacao === 'conferido') return h('span', { class: 'tag ok', title: z.conferido_em ? new Date(z.conferido_em).toLocaleString('pt-BR') : '' }, 'conferido' + (z.conferido_por ? ' por ' + z.conferido_por : ''));
-    if (z.situacao === 'calculado') return h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir');
+    if (z.situacao === 'calculado') return h('span', {},
+      /PROVISÓRIO/i.test(z.descricao || '') ? h('span', { class: 'tag urgente', title: 'O aviso não diz qual é o ato. O robô usou o prazo mais curto: confira no sistema do tribunal.' }, 'provisório · conferir') : null,
+      ' ', h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir'));
     return h('span', { class: 'tag' }, z.situacao);
   }
   function textoDias(z) {
@@ -1062,10 +1071,13 @@
     const passa = z => ver === 'todos' ? true : ver === 'conferir' ? z.situacao === 'calculado' : faixaPrazo(z) === ver;
     const nConferir = lista.filter(z => z.situacao === 'calculado').length;
 
-    const filtrada = lista.filter(passa);
-    const aDefinir = filtrada.filter(z => z.situacao === 'a definir');
-    const comData = filtrada.filter(z => z.situacao !== 'a definir')
-      .sort((a, b) => { const x = a.fatal || '9999', y = b.fatal || '9999'; return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'asc' ? 1 : -1); });
+    // Uma tabela só: sem data fatal vai sempre no topo (é o mais perigoso); o resto pela data fatal
+    const todosOrdenados = lista.filter(passa)
+      .sort((a, b) => {
+        if (!a.fatal !== !b.fatal) return a.fatal ? 1 : -1;
+        const x = a.fatal || '', y = b.fatal || ''; return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'asc' ? 1 : -1);
+      });
+    const nProv = lista.filter(z => SITUACOES_ABERTAS.includes(z.situacao) && /PROVISÓRIO/i.test(z.descricao || '')).length;
 
     const kpi = (n, rotulo, cls, f) => h('button', { type: 'button', class: 'kpi ' + cls + (ver === f ? ' ativo' : ''), onclick: () => ir({ ver: ver === f ? '' : f }) },
       h('b', {}, String(n)), h('span', {}, rotulo));
@@ -1085,11 +1097,11 @@
         h('div', { class: 'barra' },
           h('button', { type: 'button', class: 'chip-filtro ordem', onclick: () => ordem.mudar(dir === 'asc' ? 'desc' : 'asc') }, dir === 'asc' ? '▼ Mais urgentes primeiro' : '▲ Mais distantes primeiro'),
           h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => ir({ encerrados: e.target.checked ? '1' : '' }) }), 'Mostrar cumpridos (30 dias)'))),
-      aDefinir.length ? h('section', { class: 'bloco-prazos' }, h('h2', {}, `A definir (${aDefinir.length})`),
-        h('p', { class: 'peq' }, 'Intimações em que o robô não sabe quantos dias tem o prazo. Abra no sistema do tribunal, veja o prazo e preencha.'), tabelaPrazos(aDefinir, '')) : null,
-      h('section', { class: 'bloco-prazos' }, h('h2', {}, 'Por data fatal'),
+      nProv ? h('div', { class: 'nota alerta' }, h('strong', {}, `${nProv} prazo${nProv === 1 ? '' : 's'} provisório${nProv === 1 ? '' : 's'}.`),
+        ' O aviso do tribunal não informa o ato (no PJe vem "documento sigiloso"), então o robô usou o prazo mais curto (5 dias). Abra no sistema, confira o ato e clique em Conferir ou corrija os dias.') : null,
+      h('section', { class: 'bloco-prazos' }, h('h2', {}, `Prazos (${todosOrdenados.length})`),
         h('div', { class: 'legenda-prazos peq' }, h('span', { class: 'lg vencido' }, 'vencido'), h('span', { class: 'lg urgente' }, 'até 2 dias'), h('span', { class: 'lg atencao' }, '3 a 5 dias'), h('span', { class: 'lg tranquilo' }, 'mais de 5 dias')),
-        tabelaPrazos(comData, ver === 'todos' ? 'Nenhum prazo com data fatal.' : 'Nenhum prazo neste filtro.', ordem)),
+        tabelaPrazos(todosOrdenados, ver === 'todos' ? 'Nenhum prazo em aberto.' : 'Nenhum prazo neste filtro.', ordem)),
       h('details', { class: 'caixa' }, h('summary', {}, 'Como o robô calcula os prazos'),
         h('p', {}, 'A ciência é a data em que a intimação é aberta (confirmada) ou, se ninguém abrir, a tácita: 10 dias após a expedição. No DJEN, é o dia útil seguinte à disponibilização. A contagem usa dias úteis, os feriados cadastrados e o recesso de 20/12 a 20/01, até as 23h59 do dia fatal.'),
         h('p', {}, 'O robô roda sozinho de 6 em 6 horas (0h, 6h, 12h, 18h, aproximadamente) e recalcula os prazos em aberto. Todo prazo calculado pelo robô fica marcado até a advogada conferir no eproc ou no PJe.')),
