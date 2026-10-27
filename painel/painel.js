@@ -920,7 +920,7 @@
 
   async function telaUsuarios() {
     carregando();
-    const lista = await api('usuarios.listar');
+    const [lista, seg] = await Promise.all([api('usuarios.listar'), api('seguranca').catch(() => null)]);
     const form = h('form', { class: 'caixa', novalidate: true },
       h('h2', {}, 'Novo usuário'),
       h('p', { class: 'peq' }, 'Depois de 5 senhas erradas seguidas, o usuário fica bloqueado por 15 minutos.'),
@@ -936,8 +936,19 @@
       avisar('Usuário criado.');
       telaUsuarios();
     });
+    const caixaSeg = seg ? h('section', { class: 'caixa seguranca' }, h('h2', {}, 'Segurança dos dados'),
+      h('ul', { class: 'lista-seg' },
+        h('li', { class: seg.backup && seg.backupRecente ? 'ok' : 'alerta' }, h('strong', {}, 'Cópia de segurança diária: '),
+          seg.backup ? `última em ${new Date(seg.backup).toLocaleString('pt-BR')} (guarda os últimos 30 dias)` : 'ainda não foi feita',
+          seg.backupUrl ? h('span', {}, ' · ', h('a', { href: seg.backupUrl, target: '_blank', rel: 'noopener noreferrer' }, 'abrir pasta das cópias')) : null),
+        h('li', { class: seg.planilhaPrivada ? 'ok' : 'alerta' }, h('strong', {}, 'Planilha de dados: '), seg.planilhaPrivada ? 'privada, só a conta do escritório acessa' : 'ATENÇÃO: compartilhada com ' + seg.compartilhadaCom.join(', ')),
+        h('li', { class: 'ok' }, h('strong', {}, 'Senhas: '), 'guardadas embaralhadas com chave secreta; ninguém consegue ler, nem na planilha'),
+        h('li', { class: 'ok' }, h('strong', {}, 'Sessões: '), 'caem após 30 minutos parado no painel, 6 horas sem uso ou 12 horas no total; trocar a senha derruba as outras'),
+        h('li', { class: seg.falhasRecentes ? 'alerta' : 'ok' }, h('strong', {}, 'Tentativas de entrada erradas (7 dias): '), String(seg.falhasRecentes)),
+        h('li', { class: 'ok' }, h('strong', {}, 'Registro: '), 'todo login, alteração e acesso negado fica na aba Log da planilha'))) : null;
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Usuários'), h('p', {}, 'Quem pode entrar no painel e o que cada um vê.'))),
+      caixaSeg,
       tabela(['Nome', 'Usuário', 'Perfil', 'Situação', 'Último acesso'], lista, u => [
         h('td', { 'data-r': 'Nome' }, u.nome),
         h('td', { 'data-r': 'Usuário' }, u.usuario),
@@ -1000,8 +1011,9 @@
       h('p', { class: 'erro' }));
     aoEnviar(form, async fd => {
       if (fd.get('nova') !== fd.get('nova2')) throw new Error('As senhas novas não conferem.');
-      await api('senha.trocar', { atual: fd.get('atual'), nova: fd.get('nova') });
-      avisar('Senha trocada.');
+      const r = await api('senha.trocar', { atual: fd.get('atual'), nova: fd.get('nova') });
+      if (r && r.token) { sessao.token = r.token; guardar('painel_sessao', sessao); } // as outras sessões abertas caem
+      avisar('Senha trocada. Se você estava logado em outro computador, entre de novo lá.');
       location.hash = '#/inicio';
     });
     mostrar(form);
@@ -1707,6 +1719,17 @@
   }
 
   window.addEventListener('hashchange', rota);
+
+  // Segurança: o painel nunca abre dentro de outro site (evita golpe de "clique escondido")
+  if (window.top !== window.self) { document.body.replaceChildren(); window.top.location = window.self.location.href; }
+
+  // Segurança: 30 minutos sem mexer no painel encerram a sessão
+  const INATIVO_MS = 30 * 60 * 1000;
+  let ultimoUso = Date.now();
+  ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'].forEach(ev => window.addEventListener(ev, () => { ultimoUso = Date.now(); }, { passive: true }));
+  setInterval(() => {
+    if (sessao && Date.now() - ultimoUso > INATIVO_MS) { sair(false); avisar('Você ficou 30 minutos sem usar o painel. Por segurança, entre de novo.', true); }
+  }, 60 * 1000);
 
   // Início e Intimações se atualizam sozinhos a cada 10 minutos (o robô lê de 6 em 6 horas)
   setInterval(() => {

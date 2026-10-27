@@ -351,3 +351,10 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 .filtros-proc label{display:flex;flex-direction:column;gap:4px;margin:0;font-size:12px}
 .filtros-proc select{min-width:180px;padding:8px 10px}
 .filtros-proc label.marcar{flex-direction:row;font-size:14px;align-self:center}
+
+/* Segurança */
+.lista-seg{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.lista-seg li{padding-left:24px;position:relative;font-size:14.5px}
+.lista-seg li::before{position:absolute;left:0;top:0;font-weight:600}
+.lista-seg li.ok::before{content:"✓";color:var(--verde)}
+.lista-seg li.alerta::before{content:"!";color:var(--vermelho)}

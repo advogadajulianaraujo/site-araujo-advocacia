@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '5.2.0';
+var VERSAO = '6.0.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -27,7 +27,7 @@ var PERFIS = {
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
   Config: ['chave', 'valor', 'descricao'],
-  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso'],
+  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias'],
@@ -54,7 +54,10 @@ var ESQUEMA = {
 
 var TENTATIVAS_MAX = 5;
 var BLOQUEIO_MIN = 15;
-var SESSAO_SEG = 6 * 60 * 60; // 6 horas (limite do Google)
+var SESSAO_SEG = 6 * 60 * 60; // 6 horas sem uso derrubam a sessão (limite do Google)
+var SESSAO_MAX_MS = 12 * 60 * 60 * 1000; // e nenhuma sessão passa de 12 horas, mesmo em uso
+var LOGIN_FALHAS_GLOBAL = 30; // mais que isso em 15 minutos (qualquer usuário) trava todos os logins por 15 minutos
+var PEDIDO_MAX = 200000; // tamanho máximo de um pedido (caracteres)
 var ITERACOES_HASH = 1000;
 
 /* ------------------------------------------------------------------ */
@@ -69,6 +72,7 @@ function onOpen() {
     .addItem('Rodar o robô agora', 'rodarRoboMenu')
     .addItem('4. Importar tudo do GEA (clientes e financeiro)', 'importarGEA')
     .addItem('5. Buscar processos antigos e arquivados no Gmail', 'buscarProcessosAntigos')
+    .addItem('Fazer cópia de segurança agora', 'backupDiario')
     .addItem('Gerar novo código de primeiro acesso', 'gerarCodigoPrimeiroAcesso')
     .addToUi();
 }
@@ -99,6 +103,8 @@ function configurar() {
   if (feriados) importados = (importados ? importados + ' ' : '') + feriados;
   try { semearAdvogados_(); } catch (e) { /* aba nova */ }
   try { garantirGatilho_(); } catch (e) { /* sem permissão de gatilho ainda */ }
+  try { protegerAbas_(); } catch (e) { /* segue */ }
+  try { if (!config_('BACKUP_ULTIMO')) backupDiario(); } catch (e) { /* tenta no gatilho */ }
   var gea = importarGEASeguro_(false);
   try { var lig = vincularPastas_(); if (lig) gea = (gea ? gea + '\n' : '') + lig + ' clientes ligados às pastas do Drive (veja a aba PastasConferir).'; } catch (e) { /* pasta 02. CLIENTES não configurada */ }
   try { var areas = classificarAreas_(Math.max(0, 300000 - (Date.now() - inicioConfig))); if (areas) gea = (gea ? gea + '\n' : '') + areas + ' processos ganharam área (conferir).'; } catch (e) { /* sem Gmail */ }
@@ -223,8 +229,11 @@ function doGet() {
 
 function doPost(e) {
   var req;
+  var bruto = (e && e.postData && e.postData.contents) || '{}';
+  if (bruto.length > PEDIDO_MAX) return json_({ ok: false, erro: 'Pedido grande demais.' });
   try {
-    req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    req = JSON.parse(bruto);
+    if (!req || typeof req !== 'object' || typeof req.acao !== 'string') throw new Error('formato');
   } catch (err) {
     return json_({ ok: false, erro: 'Pedido inválido.' });
   }
@@ -287,16 +296,26 @@ var ROTAS = {
   'fin.recebimento.salvar': { permissao: 'financeiro', fn: salvarRecebimento_ },
   'usuarios.listar': { permissao: 'usuarios', fn: listarUsuarios_ },
   'usuarios.salvar': { permissao: 'usuarios', fn: salvarUsuario_ },
-  'senha.trocar': { fn: trocarSenha_ }
+  'senha.trocar': { fn: trocarSenha_ },
+  'seguranca': { permissao: 'usuarios', fn: estadoSeguranca_ }
 };
+
+var MEMO_LEITURA = null;
+var LEITURAS_RAPIDAS = { 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1 };
 
 function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
   if (!rota) throw falha_('Ação desconhecida.');
   if (rota.publica) return rota.fn(dados, null);
   var u = usuarioDaSessao_(token);
-  if (rota.permissao && !PERFIS[u.perfil][rota.permissao]) throw falha_('Seu perfil não tem acesso a esta área.');
-  return rota.fn(dados, u, token);
+  if (rota.permissao && !PERFIS[u.perfil][rota.permissao]) {
+    registrar_(u.usuario, 'acesso negado', acao);
+    throw falha_('Seu perfil não tem acesso a esta área.');
+  }
+  // Rotas só de leitura: cada aba da planilha é lida uma vez só por pedido (mais rápido)
+  MEMO_LEITURA = LEITURAS_RAPIDAS[acao] ? {} : null;
+  try { return rota.fn(dados, u, token); } finally { MEMO_LEITURA = null; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -317,12 +336,43 @@ function validarUsuarioNome_(usuario) {
   return usuario;
 }
 
-function hashSenha_(senha, salt) {
+/** Versão antiga (sem a chave secreta). Só para conferir senhas criadas antes da versão 6. */
+function hashSenhaV1_(senha, salt) {
   var h = salt + '|' + senha;
   for (var i = 0; i < ITERACOES_HASH; i++) {
     h = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + '|' + salt, Utilities.Charset.UTF_8));
   }
   return h;
+}
+
+/**
+ * Chave secreta ("pepper") das senhas. Fica nas Propriedades do script, que não aparecem na planilha:
+ * mesmo quem abrir a aba Usuarios não consegue testar senhas fora do painel.
+ */
+function chaveSecreta_() {
+  var props = PropertiesService.getScriptProperties();
+  var k = props.getProperty('CHAVE_SENHAS');
+  if (!k) {
+    k = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('CHAVE_SENHAS', k);
+  }
+  return k;
+}
+
+/** Senha → "v2$" + HMAC-SHA256 com a chave secreta, repetido 1.000 vezes com o salt do usuário. */
+function hashSenha_(senha, salt) {
+  var chave = chaveSecreta_();
+  var h = salt + '|' + senha;
+  for (var i = 0; i < ITERACOES_HASH; i++) {
+    h = Utilities.base64Encode(Utilities.computeHmacSha256Signature(h + '|' + salt, chave, Utilities.Charset.UTF_8));
+  }
+  return 'v2$' + h;
+}
+
+function senhaConfere_(senha, linha) {
+  var guardado = String(linha.hash || '');
+  if (/^v2\$/.test(guardado)) return iguais_(hashSenha_(senha, linha.salt), guardado);
+  return iguais_(hashSenhaV1_(senha, linha.salt), guardado);
 }
 
 function iguais_(a, b) {
@@ -348,13 +398,21 @@ function primeiroAcesso_(d) {
 }
 
 function login_(d) {
-  var usuario = String(d.usuario || '').trim().toLowerCase();
-  var senha = String(d.senha || '');
+  var usuario = String(d.usuario || '').trim().toLowerCase().slice(0, 40);
+  var senha = String(d.senha || '').slice(0, 200);
+  var cache = CacheService.getScriptCache();
+  var falhas = parseInt(cache.get('login_falhas') || '0', 10);
+  if (falhas >= LOGIN_FALHAS_GLOBAL) {
+    registrar_(usuario, 'login recusado', 'trava geral: muitas tentativas erradas no painel');
+    throw falha_('Muitas tentativas de entrada erradas no painel. Por segurança, o login está travado por 15 minutos.');
+  }
+  var contarFalha = function () { cache.put('login_falhas', String(falhas + 1), 15 * 60); };
   return comTrava_(function () {
     var tab = tabela_('Usuarios');
     var linha = tab.linhas.filter(function (r) { return String(r.usuario).toLowerCase() === usuario; })[0];
     var generico = 'Usuário ou senha incorretos.';
     if (!linha || linha.ativo !== 'sim') {
+      contarFalha();
       registrar_(usuario, 'login recusado', 'usuário inexistente ou inativo');
       throw falha_(generico);
     }
@@ -362,7 +420,8 @@ function login_(d) {
     if (linha.bloqueado_ate && new Date(linha.bloqueado_ate) > agora) {
       throw falha_('Muitas tentativas erradas. Tente de novo depois das ' + horaCurta_(new Date(linha.bloqueado_ate)) + '.');
     }
-    if (!iguais_(hashSenha_(senha, linha.salt), linha.hash)) {
+    if (!senhaConfere_(senha, linha)) {
+      contarFalha();
       var t = (parseInt(linha.tentativas, 10) || 0) + 1;
       var mudanca = { tentativas: String(t) };
       if (t >= TENTATIVAS_MAX) {
@@ -373,9 +432,11 @@ function login_(d) {
       registrar_(linha.usuario, 'login recusado', 'senha errada (' + t + ')');
       throw falha_(t >= TENTATIVAS_MAX ? 'Muitas tentativas erradas. Usuário bloqueado por ' + BLOQUEIO_MIN + ' minutos.' : generico);
     }
-    atualizarLinha_(tab, linha, { tentativas: '0', bloqueado_ate: '', ultimo_acesso: agora.toISOString() });
-    var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
-    CacheService.getScriptCache().put('sessao_' + token, linha.id, SESSAO_SEG);
+    var mud = { tentativas: '0', bloqueado_ate: '', ultimo_acesso: agora.toISOString() };
+    if (!/^v2\$/.test(linha.hash)) { var salt2 = Utilities.getUuid(); mud.salt = salt2; mud.hash = hashSenha_(senha, salt2); } // atualiza senhas antigas
+    atualizarLinha_(tab, linha, mud);
+    var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    cache.put('sessao_' + token, [linha.id, linha.sessao_versao || '0', Date.now()].join('|'), SESSAO_SEG);
     registrar_(linha.usuario, 'login', '');
     try { garantirGatilho_(); } catch (e) { /* o login não depende do robô */ }
     return { token: token, usuario: publicoUsuario_(linha) };
@@ -391,14 +452,19 @@ function logout_(d, u, token) {
 function usuarioDaSessao_(token) {
   if (!token || typeof token !== 'string') throw falha_('Sua sessão terminou. Entre de novo.', true);
   var cache = CacheService.getScriptCache();
-  var id = cache.get('sessao_' + token);
-  if (!id) throw falha_('Sua sessão terminou. Entre de novo.', true);
+  if (!/^[0-9a-f]{96}$/.test(token)) throw falha_('Sua sessão terminou. Entre de novo.', true);
+  var valor = cache.get('sessao_' + token);
+  if (!valor) throw falha_('Sua sessão terminou. Entre de novo.', true);
+  var partes = valor.split('|');
+  var id = partes[0], versao = partes[1], criada = +partes[2] || 0;
+  if (Date.now() - criada > SESSAO_MAX_MS) { cache.remove('sessao_' + token); throw falha_('Sua sessão terminou (12 horas). Entre de novo.', true); }
   var u = tabela_('Usuarios').linhas.filter(function (r) { return r.id === id; })[0];
   if (!u || u.ativo !== 'sim' || !PERFIS[u.perfil]) {
     cache.remove('sessao_' + token);
     throw falha_('Seu acesso foi desativado.', true);
   }
-  cache.put('sessao_' + token, id, SESSAO_SEG); // renova enquanto estiver em uso
+  if ((u.sessao_versao || '0') !== versao) { cache.remove('sessao_' + token); throw falha_('Sua senha ou seu acesso mudou. Entre de novo.', true); }
+  cache.put('sessao_' + token, valor, SESSAO_SEG); // renova enquanto estiver em uso (até 12 horas no total)
   return u;
 }
 
@@ -462,6 +528,8 @@ function salvarUsuario_(d, u) {
       m.tentativas = '0';
       m.bloqueado_ate = '';
     }
+    // senha nova, perfil novo ou desativação: derruba as sessões abertas dessa pessoa
+    if (m.hash || (m.perfil && m.perfil !== linha.perfil) || m.ativo === 'nao') m.sessao_versao = String((parseInt(linha.sessao_versao, 10) || 0) + 1);
     atualizarLinha_(tab, linha, m);
     registrar_(u.usuario, 'usuário alterado', linha.usuario + ' ' + Object.keys(m).filter(function (k) { return k !== 'hash' && k !== 'salt'; }).join(','));
     return { id: linha.id };
@@ -470,13 +538,17 @@ function salvarUsuario_(d, u) {
 
 function trocarSenha_(d, u) {
   return comTrava_(function () {
-    if (!iguais_(hashSenha_(String(d.atual || ''), u.salt), u.hash)) throw falha_('A senha atual não confere.');
+    if (!senhaConfere_(String(d.atual || ''), u)) throw falha_('A senha atual não confere.');
     var tab = tabela_('Usuarios');
     var linha = tab.linhas.filter(function (r) { return r.id === u.id; })[0];
     var salt = Utilities.getUuid();
-    atualizarLinha_(tab, linha, { salt: salt, hash: hashSenha_(validarSenha_(d.nova, u.usuario), salt) });
-    registrar_(u.usuario, 'senha trocada', '');
-    return { trocada: true };
+    var versao = String((parseInt(linha.sessao_versao, 10) || 0) + 1);
+    atualizarLinha_(tab, linha, { salt: salt, hash: hashSenha_(validarSenha_(d.nova, u.usuario), salt), sessao_versao: versao });
+    registrar_(u.usuario, 'senha trocada', 'outras sessões encerradas');
+    // nova sessão para quem trocou (as outras caem)
+    var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    CacheService.getScriptCache().put('sessao_' + token, [linha.id, versao, Date.now()].join('|'), SESSAO_SEG);
+    return { trocada: true, token: token };
   });
 }
 
@@ -995,6 +1067,13 @@ function aba_(nome) {
 }
 
 function tabela_(nome) {
+  if (MEMO_LEITURA && MEMO_LEITURA[nome]) return MEMO_LEITURA[nome];
+  var t = lerTabela_(nome);
+  if (MEMO_LEITURA) MEMO_LEITURA[nome] = t;
+  return t;
+}
+
+function lerTabela_(nome) {
   var sh = aba_(nome);
   var cab = ESQUEMA[nome];
   var n = sh.getLastRow() - 1;
@@ -1383,14 +1462,88 @@ function instalarRobo() {
   return r;
 }
 
-/** Confere se o gatilho de 6 em 6 horas existe; se sumiu, recria (sem rodar agora). */
+/** Confere se os gatilhos (robô de 6 em 6 horas e cópia de segurança diária) existem; se sumiram, recria. */
 function garantirGatilho_() {
-  var tem = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'rodarRoboGatilho'; });
-  if (!tem) {
+  var nomes = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  var faltava = false;
+  if (nomes.indexOf('rodarRoboGatilho') < 0) {
     ScriptApp.newTrigger('rodarRoboGatilho').timeBased().everyHours(6).create();
     registrar_('sistema', 'robô religado', 'o gatilho de 6 em 6 horas não existia e foi criado de novo');
+    faltava = true;
   }
-  return !tem;
+  if (nomes.indexOf('backupDiario') < 0) {
+    ScriptApp.newTrigger('backupDiario').timeBased().everyDays(1).atHour(3).inTimezone(TZ).create();
+    registrar_('sistema', 'cópia de segurança ligada', 'todo dia por volta das 3h');
+  }
+  return faltava;
+}
+
+/** Quadro "Segurança dos dados" (só administrador). */
+function estadoSeguranca_() {
+  var r = { backup: config_('BACKUP_ULTIMO'), backupUrl: '', backupRecente: false, planilhaPrivada: true, compartilhadaCom: [], falhasRecentes: 0 };
+  r.backupRecente = !!r.backup && Date.now() - Date.parse(r.backup) < 2 * 86400000;
+  if (config_('PASTA_BACKUPS_ID')) r.backupUrl = 'https://drive.google.com/drive/folders/' + config_('PASTA_BACKUPS_ID');
+  try {
+    var f = DriveApp.getFileById(SpreadsheetApp.getActive().getId());
+    var dono = Session.getEffectiveUser().getEmail();
+    f.getEditors().concat(f.getViewers()).forEach(function (p) { var e = p.getEmail(); if (e && e !== dono) r.compartilhadaCom.push(e); });
+    if (f.getSharingAccess() !== DriveApp.Access.PRIVATE) r.compartilhadaCom.push('qualquer pessoa com o link');
+    r.planilhaPrivada = !r.compartilhadaCom.length;
+  } catch (e) { /* sem como conferir */ }
+  var desde = new Date(Date.now() - 7 * 86400000).toISOString();
+  try {
+    r.falhasRecentes = tabela_('Log').linhas.filter(function (l) { return l.acao === 'login recusado' && l.quando >= desde; }).length;
+  } catch (e) { /* sem log */ }
+  return r;
+}
+
+/* ---------- Cópia de segurança ---------- */
+
+var BACKUPS_MANTER = 30; // dias de cópias guardadas
+
+function pastaBackups_() {
+  var id = config_('PASTA_BACKUPS_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* recria */ } }
+  var pai = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents();
+  var base = pai.hasNext() ? pai.next() : DriveApp.getRootFolder();
+  var pasta = base.createFolder('BACKUPS DO PAINEL (não compartilhar)');
+  setConfig_('PASTA_BACKUPS_ID', pasta.getId(), 'Pasta das cópias de segurança diárias da planilha');
+  return pasta;
+}
+
+/**
+ * Gatilho diário: copia a planilha inteira para a pasta de backups e apaga as cópias com mais de 30 dias.
+ * Se algo der errado no painel, basta abrir a cópia do dia anterior.
+ */
+function backupDiario() {
+  var hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  var pasta = pastaBackups_();
+  var nome = 'BACKUP PAINEL ' + hoje;
+  if (pasta.getFilesByName(nome).hasNext()) return 'Já existe a cópia de hoje.';
+  DriveApp.getFileById(SpreadsheetApp.getActive().getId()).makeCopy(nome, pasta);
+  var limite = Date.now() - BACKUPS_MANTER * 86400000, apagadas = 0;
+  var it = pasta.getFiles();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (/^BACKUP PAINEL \d{4}-\d{2}-\d{2}$/.test(f.getName()) && f.getDateCreated().getTime() < limite) { f.setTrashed(true); apagadas++; }
+  }
+  setConfig_('BACKUP_ULTIMO', new Date().toISOString(), 'Última cópia de segurança da planilha');
+  registrar_('sistema', 'cópia de segurança', nome + (apagadas ? ' (' + apagadas + ' antigas na lixeira)' : ''));
+  return nome;
+}
+
+/**
+ * Protege as abas contra edição acidental direto na planilha: quem tentar editar recebe um aviso.
+ * O painel continua gravando normalmente (o programa roda como dona da planilha).
+ */
+function protegerAbas_() {
+  var ss = SpreadsheetApp.getActive();
+  Object.keys(ESQUEMA).forEach(function (nome) {
+    var sh = ss.getSheetByName(nome);
+    if (!sh) return;
+    if (sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) return;
+    sh.protect().setDescription('Dados do painel: edite pelo painel, não direto aqui').setWarningOnly(true);
+  });
 }
 
 /** Última e próxima leitura do robô e se ele está atrasado. */
