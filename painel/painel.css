@@ -197,3 +197,74 @@ h4{font:500 13px/1.3 var(--sans);letter-spacing:.1em;text-transform:uppercase;co
 button.ordenar{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--tinta);cursor:pointer}
 button.ordenar:hover{text-decoration:underline}
 .ag-peri{border-color:#a1520e;background:#fbeee2}
+
+/* Intimações e prazos */
+.robo-cartao{display:flex;align-items:center;gap:14px;background:var(--papel);border:1px solid var(--linha);border-left:4px solid var(--verde);padding:14px 16px;margin-bottom:16px;flex-wrap:wrap}
+.robo-cartao .robo-txt{flex:1;min-width:220px}
+.robo-cartao .ponto{width:12px;height:12px;border-radius:50%;background:var(--verde);box-shadow:0 0 0 4px var(--verde-f);flex:none}
+.robo-cartao.parado{border-left-color:var(--vermelho);background:#fffaf9}
+.robo-cartao.parado .ponto{background:var(--vermelho);box-shadow:0 0 0 4px var(--vermelho-f)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--papel);border:1px solid var(--linha);border-top:4px solid var(--linha);padding:12px 14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.kpi b{font:400 32px/1.05 var(--display);color:var(--tinta)}
+.kpi span{font-size:12.5px;color:var(--mudo)}
+.kpi:hover{border-color:var(--tinta)}
+.kpi.ativo{outline:2px solid var(--tinta);outline-offset:-2px}
+.k-vencido{border-top-color:#5c0f09}
+.k-urgente{border-top-color:var(--vermelho)}
+.k-atencao{border-top-color:#d39b14}
+.k-definir{border-top-color:#6b3fa0}
+.k-conferir{border-top-color:var(--azul)}
+.barra-filtros{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.barra-filtros .chips,.barra-filtros .barra{margin-bottom:8px}
+.chip-filtro.ordem{font-weight:500}
+.bloco-prazos{margin-bottom:22px}
+.bloco-prazos h2{margin-bottom:6px}
+.legenda-prazos{display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px}
+.legenda-prazos .lg{display:inline-flex;align-items:center;gap:6px}
+.legenda-prazos .lg::before{content:"";width:12px;height:12px;display:inline-block}
+.lg.vencido::before{background:#5c0f09}.lg.urgente::before{background:var(--vermelho)}.lg.atencao::before{background:#d39b14}.lg.tranquilo::before{background:var(--verde)}
+.tabela tr[class^=linha-] td:first-child{border-left:5px solid transparent}
+.tabela tr.linha-vencido td:first-child{border-left-color:#5c0f09}
+.tabela tr.linha-vencido td{background:#fdf1ef}
+.tabela tr.linha-urgente td:first-child{border-left-color:var(--vermelho)}
+.tabela tr.linha-urgente td{background:#fff8f7}
+.tabela tr.linha-atencao td:first-child{border-left-color:#d39b14}
+.tabela tr.linha-tranquilo td:first-child{border-left-color:var(--verde)}
+.tabela tr.linha-definir td:first-child{border-left-color:#6b3fa0}
+.tabela tr.linha-encerrado td{opacity:.7}
+.data-fatal{font-size:16px}
+.desc-prazo{font-weight:500}
+.ordenar .seta{font-size:13px}
+
+/* Ficha do cliente e documentos */
+.ficha-resumo .linha-info{gap:26px}
+.docs-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:12px}
+.doc-item{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--linha);padding:10px 12px;background:#fff;min-width:0}
+.doc-item.tem{border-left:4px solid var(--verde)}
+.doc-item.falta{border-left:4px solid var(--vermelho);background:#fffafa}
+.doc-ico{font-weight:600;font-size:16px;line-height:1.3}
+.doc-item.tem .doc-ico{color:var(--verde)}
+.doc-item.falta .doc-ico{color:var(--vermelho)}
+.doc-arqs{display:flex;flex-direction:column;gap:2px;font-size:12.5px;min-width:0}
+.doc-arqs a{color:var(--azul);overflow-wrap:anywhere}
+.mt-p{margin-top:12px}
+.passo-ok{background:var(--verde-f);color:var(--verde);padding:10px 12px;margin:-4px 0 14px;border-left:3px solid var(--verde)}
+details.editar-cad > summary{font-family:var(--display);font-size:21px;color:var(--tinta)}
+details.editar-cad[open] > summary{margin-bottom:12px}
+details.editar-cad .form-cliente{border:0;padding:0;margin:0}
+
+/* Gerador de documentos */
+.gerador h4{margin-top:20px}
+.docs-escolha{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.grupo-docs{display:flex;flex-direction:column;gap:6px}
+.grupo-tit{font:500 11px/1.3 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--mudo)}
+.caixa-int{border:1px solid var(--linha);background:#fbfaf7;padding:14px;margin-top:16px}
+.caixa-int legend{padding:0 6px;margin:0}
+.formas{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.opcao{display:inline-flex;align-items:center;gap:6px;border:1px solid #cfcac0;background:#fff;padding:6px 10px;font-size:13.5px;color:var(--texto);cursor:pointer;margin:0}
+.opcao input{width:auto;min-height:0;margin:0}
+.opcao:has(input:checked){border-color:var(--preto);background:var(--preto);color:#fff}
+.nota.ok{background:var(--verde-f);border-left-color:var(--verde)}
+.modelos-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.gerador .campos{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}

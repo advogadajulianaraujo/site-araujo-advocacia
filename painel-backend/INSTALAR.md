@@ -81,6 +81,16 @@ primeiro pelo nome igual, depois pelo nome parecido (erro de digitação, nome i
 pasta com duas pessoas). Só liga quando há um único cliente possível. As pastas que sobraram ficam na aba
 **PastasConferir**; para ligar à mão, abra a ficha do cliente no painel → Editar → cole o link da pasta.
 
+## Modelos e advogados (versão 5)
+
+Ao rodar **configurar**, o painel cria a aba **Advogados** com a Dra. Júlian como padrão. Outros advogados são
+cadastrados na aba Modelos do painel (só administrador). Na primeira vez que alguém abre a aba Modelos, o painel cria
+os oito modelos na pasta **MODELOS (editáveis)**; os dois modelos antigos ficam renomeados como "ANTIGO — ...".
+
+O **configurar** também classifica a área dos processos que estão sem área, lendo os avisos do eproc no Gmail
+(fica anotado "Área definida pelo sistema: conferir" nas observações do processo). O robô continua a classificação
+nas rodadas seguintes, se sobrar algum.
+
 ## Quando o programa for atualizado
 
 Cole o novo `Code.gs` por cima do antigo, salve e vá em
