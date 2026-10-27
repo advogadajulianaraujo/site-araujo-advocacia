@@ -79,8 +79,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Layout
 
-- No topo ficam só os tópicos (Início, Clientes, Processos, Intimações, Agenda, Modelos, Financeiro). Usuários, Trocar senha e Sair
-  ficam no menu que abre ao clicar no nome.
+- No topo ficam só os tópicos (Início, Clientes, Processos, Intimações, Tarefas, Agenda, Modelos, Financeiro). Relatórios, Usuários,
+  Trocar senha e Sair ficam no menu que abre ao clicar no nome.
 - Início: atalhos para todos os tópicos (com números), e três quadros pequenos: Prazos (vencidos primeiro), Audiências e perícias
   (agenda + audiências dos processos, sem repetir) e Hoje.
 - Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.
@@ -129,6 +129,29 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 - Agenda em grade de horários (estilo Google Agenda) nas visões dia e semana. O filtro "Dra. Júlian" nunca mostra prazos fatais.
 - Observações do cliente: cada anotação guarda data, hora e autor (`anotarCliente_`); não editar pelo formulário do cadastro.
+
+## Tarefas, caixa, relatórios, e-mail, IA e andamentos (versão 6.7)
+
+- Tarefas (aba no topo): quadro A fazer → Fazendo → Pronto para revisar → Protocolado → Conferido e concluído. Junta as
+  tarefas da aba Tarefas e os prazos abertos (coluna `responsavel` e `etapa` em Prazos). Prazo em "Protocolado" = cumprido;
+  voltar para trás reabre. Só quem confere prazos passa para "Conferido e concluído". Pontos: tarefa no prazo vale o peso
+  (1 a 5), prazo processual no prazo vale 3 (`PESO_PRAZO`); atrasada não pontua. Responsável automático por sistema
+  (Config RESP_PJE / RESP_EPROC, `atribuirResponsaveis_` no robô).
+- Financeiro › Caixa e contas a pagar (`caixa_`, aba Despesas): despesas mensais fixas geradas 2 meses à frente
+  (`estenderDespesas_`), "cobrar do cliente" para custas adiantadas, fluxo de 12 meses e previsão de 3.
+- Relatórios (menu do nome, só administração; `relatorio.geral`): gráficos em SVG feitos no próprio painel (a CSP não deixa
+  biblioteca de fora). Clientes/processos importados (GEA, histórico do Gmail) não contam como novos.
+- Resumo do dia por e-mail: gatilho `resumoDiarioGatilho` às 7h, só dias úteis, para usuários com e-mail (coluna `email`,
+  `resumo_email`). Usa GmailApp.sendEmail (escopo já existente).
+- IA: Gemini (Google), nunca Claude. Chave só nas Propriedades do script (GEMINI_CHAVE), nunca na planilha. `anonimizar_`
+  tira CPF/CNPJ/RG/telefone/e-mail/CEP/conta antes de enviar. A IA só escreve `resumo_ia` (Intimações e Prazos); NUNCA muda
+  prazo. Recomendar chave com faturamento (plano gratuito pode usar os dados).
+- Andamentos: DataJud (API pública do CNJ), gatilho `andamentosGatilho` de 4 em 4 h, em lotes (`UrlFetchApp.fetchAll`).
+  Guarda os 25 últimos em Processos.andamentos (JSON; "-" = não achado: segredo de justiça ou não enviado). A chave pública
+  vem do wiki do CNJ sozinha (`chaveDatajud_`); Config DATAJUD_CHAVE força uma. `processos.listar` não devolve andamentos
+  (rota própria `processos.andamentos`). Gmail e DJEN só trazem intimações; por isso os andamentos vêm do DataJud.
+- Abas novas da planilha são criadas sozinhas na primeira leitura (`aba_`), sem precisar rodar o configurar.
+- Painel: leitura pedida por uma tela que já foi trocada não desenha por cima da tela nova (`rotaN`/`vezAtual` em painel.js).
 
 ## Segurança (versão 6)
 

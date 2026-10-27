@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.6.0';
+var VERSAO = '6.7.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -27,19 +27,19 @@ var PERFIS = {
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
   Config: ['chave', 'valor', 'descricao'],
-  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao'],
+  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
     'acesso_hash', 'acesso_criado_em'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
-    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em'],
+    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
-    'cumprido_por', 'cumprido_em'],
+    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia'],
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
@@ -50,7 +50,11 @@ var ESQUEMA = {
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
-  Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em']
+  Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
+  Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
+    'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+  Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
+    'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
 
 var TENTATIVAS_MAX = 5;
@@ -305,12 +309,24 @@ var ROTAS = {
   'usuarios.listar': { permissao: 'usuarios', fn: listarUsuarios_ },
   'usuarios.salvar': { permissao: 'usuarios', fn: salvarUsuario_ },
   'senha.trocar': { fn: trocarSenha_ },
-  'seguranca': { permissao: 'usuarios', fn: estadoSeguranca_ }
+  'seguranca': { permissao: 'usuarios', fn: estadoSeguranca_ },
+  'tarefas.listar': { fn: listarTarefas_ },
+  'tarefas.salvar': { fn: salvarTarefa_ },
+  'tarefas.mover': { fn: moverTarefa_ },
+  'tarefas.atribuir': { fn: atribuirTarefa_ },
+  'tarefas.config': { permissao: 'usuarios', fn: configTarefas_ },
+  'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
+  'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
+  'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
+  'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
+  'resumo.email.testar': { fn: testarResumoEmail_ },
+  'ia.config': { permissao: 'usuarios', fn: configIA_ },
+  'processos.andamentos': { fn: andamentosProcesso_ }
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
-  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1 };
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
@@ -333,7 +349,7 @@ function rotear_(acao, token, dados) {
  * Memória do servidor para as listas grandes: a resposta fica guardada por até 10 minutos e é jogada fora
  * na hora em que qualquer coisa é gravada na planilha (pelo painel, pelo robô ou pelo configurar).
  */
-var ROTAS_GUARDADAS = { 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1 };
+var ROTAS_GUARDADAS = { 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 function versaoDados_() {
   var c = CacheService.getScriptCache(), v = c.get('versao_dados');
   if (!v) { v = String(Date.now()); c.put('versao_dados', v, 21600); }
@@ -534,7 +550,8 @@ function criarUsuario_(d) {
   var salt = Utilities.getUuid();
   var linha = {
     id: novoId_('U'), usuario: usuario, nome: nome, perfil: d.perfil, hash: hashSenha_(senha, salt), salt: salt,
-    ativo: 'sim', tentativas: '0', bloqueado_ate: '', criado_em: new Date().toISOString(), ultimo_acesso: ''
+    ativo: 'sim', tentativas: '0', bloqueado_ate: '', criado_em: new Date().toISOString(), ultimo_acesso: '',
+    email: validarEmail_(d.email), resumo_email: 'sim'
   };
   inserirLinha_(tab, linha);
   return linha;
@@ -542,7 +559,7 @@ function criarUsuario_(d) {
 
 function listarUsuarios_() {
   return tabela_('Usuarios').linhas.map(function (r) {
-    return { id: r.id, usuario: r.usuario, nome: r.nome, perfil: r.perfil, ativo: r.ativo, ultimo_acesso: r.ultimo_acesso,
+    return { id: r.id, usuario: r.usuario, nome: r.nome, perfil: r.perfil, ativo: r.ativo, ultimo_acesso: r.ultimo_acesso, email: r.email || '', resumo_email: r.resumo_email || '',
       bloqueado: !!(r.bloqueado_ate && new Date(r.bloqueado_ate) > new Date()) };
   });
 }
@@ -564,6 +581,8 @@ function salvarUsuario_(d, u) {
       m.perfil = d.perfil;
     }
     if (d.ativo !== undefined) m.ativo = d.ativo === 'sim' ? 'sim' : 'nao';
+    if (d.email !== undefined) m.email = validarEmail_(d.email);
+    if (d.resumo_email !== undefined) m.resumo_email = d.resumo_email === 'nao' ? 'nao' : 'sim';
     var perdeAdmin = linha.perfil === 'administrador' && ((m.perfil && m.perfil !== 'administrador') || m.ativo === 'nao');
     if (perdeAdmin) {
       var admins = tab.linhas.filter(function (r) { return r.perfil === 'administrador' && r.ativo === 'sim'; });
@@ -583,6 +602,12 @@ function salvarUsuario_(d, u) {
     registrar_(u.usuario, d.desconectar ? 'usuário desconectado' : 'usuário alterado', linha.usuario + ' ' + Object.keys(m).filter(function (k) { return k !== 'hash' && k !== 'salt'; }).join(','));
     return { id: linha.id };
   });
+}
+
+function validarEmail_(e) {
+  e = String(e || '').trim().toLowerCase();
+  if (e && !/^[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}$/.test(e)) throw falha_('E-mail inválido.');
+  return e;
 }
 
 function trocarSenha_(d, u) {
@@ -1276,7 +1301,7 @@ function listarProcessos_(d) {
   var nomes = {};
   tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
   return tabela_('Processos').linhas
-    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; return x; })
+    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; return x; })
     .filter(function (p) {
       if (d.semCliente && p.cliente_id) return false;
       if (!busca) return true;
@@ -1369,7 +1394,8 @@ function resumo_(d, u) {
       .sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 8)
       .map(function (c) { return { id: c.id, nome: c.nome, area: c.area, criado_em: c.criado_em, situacao: c.situacao }; }),
     prazos: resumoPrazos_(),
-    robo: estadoRobo_()
+    robo: estadoRobo_(),
+    tarefas: minhasTarefas_(u)
   };
 }
 
@@ -1378,7 +1404,13 @@ function resumo_(d, u) {
 /* ------------------------------------------------------------------ */
 
 function aba_(nome) {
-  var sh = SpreadsheetApp.getActive().getSheetByName(nome);
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(nome);
+  if (!sh && ESQUEMA[nome] && ss.getSheetByName('Config')) { // aba nova de uma versão nova: cria sozinha
+    sh = ss.insertSheet(nome);
+    sh.getRange(1, 1, 1, ESQUEMA[nome].length).setValues([ESQUEMA[nome]]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), ESQUEMA[nome].length).setNumberFormat('@');
+  }
   if (!sh) throw falha_('A planilha não está configurada. Abra-a e use o menu Painel → Configurar planilha.');
   return sh;
 }
@@ -1821,6 +1853,14 @@ function garantirGatilho_() {
     ScriptApp.newTrigger('backupDiario').timeBased().everyDays(1).atHour(3).inTimezone(TZ).create();
     registrar_('sistema', 'cópia de segurança ligada', 'todo dia por volta das 3h');
   }
+  if (nomes.indexOf('resumoDiarioGatilho') < 0) {
+    ScriptApp.newTrigger('resumoDiarioGatilho').timeBased().everyDays(1).atHour(7).inTimezone(TZ).create();
+    registrar_('sistema', 'resumo por e-mail ligado', 'dias úteis, por volta das 7h');
+  }
+  if (nomes.indexOf('andamentosGatilho') < 0) {
+    ScriptApp.newTrigger('andamentosGatilho').timeBased().everyHours(4).create();
+    registrar_('sistema', 'andamentos (DataJud) ligado', 'de 4 em 4 horas');
+  }
   return faltava;
 }
 
@@ -1897,6 +1937,7 @@ function estadoRobo_() {
   var ultima = config_('ROBO_ULTIMA_EXECUCAO');
   var r = { ultima: ultima, resultado: config_('ROBO_ULTIMO_RESULTADO'), proxima: '', atrasado: false,
     djen: { ultima: config_('DJEN_NAVEGADOR_ULTIMA') || '', erro: config_('DJEN_NAVEGADOR_ERRO') || '' } };
+  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; } catch (e) { /* segue */ }
   if (ultima) {
     var t = Date.parse(ultima);
     r.proxima = new Date(t + 6 * 3600000).toISOString();
@@ -1918,6 +1959,8 @@ function rodarRoboGatilho() {
   if (resta > 90000) { try { processarWhatsapp_('', Math.min(resta - 60000, 120000)); } catch (e) { /* tenta na próxima */ } }
   resta = 300000 - (Date.now() - t0);
   if (resta > 60000) { try { importarHistoricoGmail_(resta - 30000); } catch (e) { /* tenta na próxima */ } }
+  resta = 300000 - (Date.now() - t0);
+  if (resta > 45000) { try { resumirIntimacoes_(Math.min(resta - 30000, 90000), 30); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
 }
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
@@ -1935,6 +1978,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
+    try { ctx.prazos.adiar = true; atribuirResponsaveis_(ctx.prazos, ctx.procs); regravarMudadas_(ctx.prazos); } catch (e3) { ctx.prazos.adiar = false; }
     [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
     if (ctx.gmailParcial) erros.push('Gmail: leitura parcial por causa do limite de tempo do Google; o resto vem na próxima rodada (ou clique em Atualizar agora).');
     var agora = new Date();
@@ -4614,4 +4658,826 @@ function apagado_(cab) {
   var o = {};
   cab.forEach(function (k) { o[k] = ''; });
   return o;
+}
+
+/* ================================================================== */
+/* ETAPA 5 — Tarefas da equipe, caixa, relatórios, resumo por e-mail,  */
+/* resumo das intimações por IA (Gemini) e andamentos (DataJud/CNJ)    */
+/* ================================================================== */
+
+/* ---------- Tarefas da equipe (controladoria) ---------- */
+
+// Etapas do quadro. Para prazos processuais: "protocolado" marca o prazo como cumprido.
+var ETAPAS_TAREFA = ['afazer', 'fazendo', 'revisar', 'protocolado', 'concluido'];
+var NOMES_ETAPA = { afazer: 'A fazer', fazendo: 'Fazendo', revisar: 'Pronto para revisar', protocolado: 'Protocolado', concluido: 'Conferido e concluído' };
+var PESO_PRAZO = 3; // pontos de um prazo processual entregue no prazo (tarefa comum vale o peso dela, 1 por padrão)
+
+function etapaDoPrazo_(z) {
+  if (z.situacao === 'cumprido') return z.etapa === 'concluido' ? 'concluido' : 'protocolado';
+  var e = z.etapa || 'afazer';
+  return e === 'protocolado' || e === 'concluido' ? 'afazer' : e; // reaberto volta para "a fazer"
+}
+
+function nomesUsuarios_() {
+  var m = {};
+  usuarios_().forEach(function (u) { m[u.usuario] = u.nome || u.usuario; });
+  return m;
+}
+
+/** Quem cuida do prazo quando ninguém foi escolhido: PJe (trabalhista) e eproc (cível/federal) têm cada um o seu responsável. */
+function responsavelPadrao_(proc, numero) {
+  var sis = normalizar_((proc && proc.sistema) || '');
+  var trib = (proc && proc.tribunal) || tribunalDoNumero_(numero);
+  var pje = /pje/.test(sis) || (!/eproc/.test(sis) && (/^TRT|^TST/.test(trib || '') || /\.5\.\d{2}\.\d{4}$/.test(numero || '')));
+  return config_(pje ? 'RESP_PJE' : 'RESP_EPROC') || config_('RESP_PADRAO') || '';
+}
+
+function atribuirResponsaveis_(tabZ, tabP) {
+  if (!config_('RESP_PJE') && !config_('RESP_EPROC') && !config_('RESP_PADRAO')) return 0;
+  var procs = {};
+  tabP.linhas.forEach(function (p) { procs[p.id] = p; });
+  var n = 0;
+  tabZ.linhas.forEach(function (z) {
+    if (z.responsavel || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return;
+    var r = responsavelPadrao_(procs[z.processo_id], z.numero);
+    if (r) { atualizarLinha_(tabZ, z, { responsavel: r }); n++; }
+  });
+  return n;
+}
+
+function itemPrazo_(z, procs, nomesCli, hoje) {
+  var p = procs[z.processo_id] || {};
+  var etapa = etapaDoPrazo_(z);
+  var fim = /protocolado|concluido/.test(etapa);
+  var entregue = (z.cumprido_em || '').slice(0, 10);
+  return { tipo: 'prazo', id: z.id, titulo: z.descricao || 'Prazo', numero: z.numero, processo_id: z.processo_id,
+    cliente: nomesCli[p.cliente_id] || p.cliente_nome || '', cliente_id: p.cliente_id || '', responsavel: z.responsavel || '',
+    vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''),
+    atrasada: !fim && !!z.fatal && z.fatal < hoje, concluida_em: z.cumprido_em || '', concluida_por: z.cumprido_por || '',
+    no_prazo: fim ? (!z.fatal || !entregue || entregue <= z.fatal) : null, situacao_prazo: z.situacao, resumo_ia: z.resumo_ia || '' };
+}
+
+function itemTarefa_(t, nomesCli, hoje) {
+  var fim = /protocolado|concluido/.test(t.etapa);
+  var entregue = (t.concluida_em || '').slice(0, 10);
+  return { tipo: 'tarefa', id: t.id, titulo: t.titulo, descricao: t.descricao, numero: t.numero, processo_id: t.processo_id,
+    cliente: nomesCli[t.cliente_id] || '', cliente_id: t.cliente_id || '', responsavel: t.responsavel || '', vence_em: t.vence_em || '',
+    etapa: t.etapa || 'afazer', peso: parseInt(t.peso, 10) || 1, atrasada: !fim && !!t.vence_em && t.vence_em < hoje,
+    concluida_em: t.concluida_em || '', concluida_por: t.concluida_por || '', criado_por: t.criado_por || '',
+    no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '' };
+}
+
+/** Pontos e entregas por pessoa (tarefas e prazos concluídos no período). */
+function pontosPorPessoa_(itens, desde, nomesU) {
+  var porNome = {};
+  Object.keys(nomesU).forEach(function (k) { porNome[normalizar_(nomesU[k])] = k; });
+  var r = {};
+  itens.forEach(function (x) {
+    if (!x.concluida_em || x.concluida_em.slice(0, 10) < desde) return;
+    var quem = x.tipo === 'tarefa' ? (x.concluida_por || x.responsavel) : (x.responsavel || porNome[normalizar_(x.concluida_por)] || x.concluida_por);
+    if (!quem) quem = '(sem responsável)';
+    var p = r[quem] = r[quem] || { usuario: quem, nome: nomesU[quem] || quem, entregues: 0, no_prazo: 0, atrasadas: 0, pontos: 0, abertas: 0, vencidas: 0 };
+    p.entregues++;
+    if (x.no_prazo) { p.no_prazo++; p.pontos += x.peso; } else p.atrasadas++;
+  });
+  itens.forEach(function (x) {
+    if (/protocolado|concluido/.test(x.etapa) || !x.responsavel) return;
+    var p = r[x.responsavel] = r[x.responsavel] || { usuario: x.responsavel, nome: nomesU[x.responsavel] || x.responsavel, entregues: 0, no_prazo: 0, atrasadas: 0, pontos: 0, abertas: 0, vencidas: 0 };
+    p.abertas++; if (x.atrasada) p.vencidas++;
+  });
+  return Object.keys(r).map(function (k) { return r[k]; }).sort(function (a, b) { return b.pontos - a.pontos || b.entregues - a.entregues; });
+}
+
+/** Para o Início: quantas tarefas e prazos estão com a pessoa e quantos atrasaram. */
+function minhasTarefas_(u) {
+  var hoje = hojeSP_(), r = { abertas: 0, atrasadas: 0 };
+  try {
+    tabela_('Prazos').linhas.forEach(function (z) {
+      if (z.responsavel !== u.usuario || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return;
+      r.abertas++; if (z.fatal && z.fatal < hoje) r.atrasadas++;
+    });
+    tabela_('Tarefas').linhas.forEach(function (t) {
+      if (t.responsavel !== u.usuario || t.situacao === 'cancelada' || /protocolado|concluido/.test(t.etapa)) return;
+      r.abertas++; if (t.vence_em && t.vence_em < hoje) r.atrasadas++;
+    });
+  } catch (e) { /* aba nova ainda não criada */ }
+  return r;
+}
+
+function listarTarefas_(d, u) {
+  var hoje = hojeSP_(), dias = Math.min(parseInt(d.dias, 10) || 30, 365), desde = somarDias_(hoje, -dias);
+  var procs = {}, nomesCli = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { nomesCli[c.id] = c.nome; });
+  var itens = [];
+  tabela_('Prazos').linhas.forEach(function (z) {
+    if (z.situacao === 'cancelado') return;
+    if (z.situacao === 'cumprido' && (z.cumprido_em || z.atualizado_em || '').slice(0, 10) < desde) return;
+    if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 && z.situacao !== 'cumprido') return;
+    itens.push(itemPrazo_(z, procs, nomesCli, hoje));
+  });
+  tabela_('Tarefas').linhas.forEach(function (t) {
+    if (t.situacao === 'cancelada') return;
+    if (/protocolado|concluido/.test(t.etapa) && (t.concluida_em || '').slice(0, 10) < desde) return;
+    itens.push(itemTarefa_(t, nomesCli, hoje));
+  });
+  itens.sort(function (a, b) { return (a.vence_em || '9999') < (b.vence_em || '9999') ? -1 : (a.vence_em || '9999') > (b.vence_em || '9999') ? 1 : 0; });
+  var nomesU = nomesUsuarios_();
+  return {
+    hoje: hoje, dias: dias, eu: u.usuario, etapas: ETAPAS_TAREFA.map(function (e) { return { id: e, nome: NOMES_ETAPA[e] }; }),
+    usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome }; }),
+    itens: itens, pontos: pontosPorPessoa_(itens, desde, nomesU),
+    responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '' }
+  };
+}
+
+function validarResponsavel_(r) {
+  r = String(r || '').trim();
+  if (!r) return '';
+  if (!usuarios_().some(function (x) { return x.usuario === r && x.ativo === 'sim'; })) throw falha_('Responsável não encontrado entre os usuários ativos.');
+  return r;
+}
+
+function historicoMais_(antes, u, texto) {
+  var linha = Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' ' + (u.nome || u.usuario) + ': ' + texto;
+  return (linha + (antes ? '\n' + antes : '')).slice(0, 1500);
+}
+
+function salvarTarefa_(d, u) {
+  return comTrava_(function () {
+    var t = d.tarefa || {};
+    var titulo = String(t.titulo || '').trim().slice(0, 200);
+    if (!titulo) throw falha_('Escreva o que precisa ser feito.');
+    if (t.vence_em && !/^\d{4}-\d{2}-\d{2}$/.test(t.vence_em)) throw falha_('Data de entrega inválida.');
+    var proc = null;
+    if (t.processo_id) proc = tabela_('Processos').linhas.filter(function (p) { return p.id === t.processo_id; })[0] || null;
+    var agora = new Date().toISOString();
+    var dados = { titulo: titulo, descricao: String(t.descricao || '').trim().slice(0, 2000), responsavel: validarResponsavel_(t.responsavel),
+      vence_em: t.vence_em || '', peso: String(Math.min(Math.max(parseInt(t.peso, 10) || 1, 1), 5)),
+      processo_id: proc ? proc.id : '', numero: proc ? proc.numero : '', cliente_id: proc ? proc.cliente_id : String(t.cliente_id || ''),
+      atualizado_em: agora, atualizado_por: u.usuario };
+    var tab = tabela_('Tarefas');
+    if (t.id) {
+      var l = tab.linhas.filter(function (x) { return x.id === t.id; })[0];
+      if (!l) throw falha_('Tarefa não encontrada.');
+      if (t.cancelar) dados = { situacao: 'cancelada', historico: historicoMais_(l.historico, u, 'cancelou'), atualizado_em: agora, atualizado_por: u.usuario };
+      else dados.historico = historicoMais_(l.historico, u, 'editou');
+      atualizarLinha_(tab, l, dados);
+      registrar_(u.usuario, t.cancelar ? 'tarefa cancelada' : 'tarefa alterada', l.id);
+      return { id: l.id };
+    }
+    dados.id = novoId_('T'); dados.etapa = 'afazer'; dados.situacao = 'ativa'; dados.criado_em = agora; dados.criado_por = u.usuario;
+    dados.historico = historicoMais_('', u, 'criou' + (dados.responsavel ? ' para ' + dados.responsavel : ''));
+    inserirLinha_(tab, dados);
+    registrar_(u.usuario, 'tarefa criada', dados.id + ' ' + titulo);
+    return { id: dados.id };
+  });
+}
+
+/** Move no quadro (tarefa ou prazo). Conferir e concluir é da controladoria (quem confere prazos). */
+function moverTarefa_(d, u) {
+  var etapa = String(d.etapa || '');
+  if (ETAPAS_TAREFA.indexOf(etapa) < 0) throw falha_('Etapa inválida.');
+  if (etapa === 'concluido' && !PERFIS[u.perfil].conferePrazos) throw falha_('Só a advogada ou a administração conferem e concluem.');
+  return comTrava_(function () {
+    var agora = new Date().toISOString(), fim = /protocolado|concluido/.test(etapa);
+    if (d.tipo === 'prazo') {
+      var tabZ = tabela_('Prazos');
+      var z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!z) throw falha_('Prazo não encontrado.');
+      var m = { etapa: etapa, atualizado_em: agora, atualizado_por: u.usuario };
+      if (fim && z.situacao !== 'cumprido') { m.situacao = 'cumprido'; m.cumprido_por = u.nome || u.usuario; m.cumprido_em = agora; }
+      if (!fim && z.situacao === 'cumprido') { m.situacao = z.fatal ? 'calculado' : 'a definir'; m.cumprido_por = ''; m.cumprido_em = ''; m.conferido_por = ''; m.conferido_em = ''; }
+      if (!z.responsavel && !fim) m.responsavel = u.usuario;
+      atualizarLinha_(tabZ, z, m);
+      registrar_(u.usuario, 'prazo: ' + NOMES_ETAPA[etapa], z.id + ' ' + z.numero);
+      return { ok: true };
+    }
+    var tab = tabela_('Tarefas');
+    var t = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!t) throw falha_('Tarefa não encontrada.');
+    if (t.etapa === etapa) return { ok: true, repetido: true };
+    var mt = { etapa: etapa, atualizado_em: agora, atualizado_por: u.usuario, historico: historicoMais_(t.historico, u, NOMES_ETAPA[etapa]) };
+    if (fim && !t.concluida_em) { mt.concluida_em = agora; mt.concluida_por = t.responsavel || u.usuario; }
+    if (!fim) { mt.concluida_em = ''; mt.concluida_por = ''; }
+    if (!t.responsavel && !fim) mt.responsavel = u.usuario;
+    atualizarLinha_(tab, t, mt);
+    return { ok: true };
+  });
+}
+
+function atribuirTarefa_(d, u) {
+  return comTrava_(function () {
+    var resp = validarResponsavel_(d.responsavel);
+    var tab = tabela_(d.tipo === 'prazo' ? 'Prazos' : 'Tarefas');
+    var l = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!l) throw falha_('Não encontrado.');
+    var m = { responsavel: resp, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario };
+    if (d.tipo !== 'prazo') m.historico = historicoMais_(l.historico, u, resp ? 'passou para ' + resp : 'tirou o responsável');
+    atualizarLinha_(tab, l, m);
+    registrar_(u.usuario, 'responsável', l.id + ' → ' + (resp || '—'));
+    return { ok: true };
+  });
+}
+
+/** Responsáveis automáticos dos prazos (PJe / eproc). Ao salvar, distribui os prazos abertos sem responsável. */
+function configTarefas_(d, u) {
+  return comTrava_(function () {
+    if (d.salvar) {
+      setConfig_('RESP_PJE', validarResponsavel_(d.pje), 'Quem recebe os prazos novos do PJe (trabalhista)');
+      setConfig_('RESP_EPROC', validarResponsavel_(d.eproc), 'Quem recebe os prazos novos do eproc (cível e federal)');
+      setConfig_('RESP_PADRAO', validarResponsavel_(d.padrao), 'Responsável pelos prazos quando o sistema não é conhecido');
+      var tz = tabela_('Prazos'); tz.adiar = true;
+      var n = atribuirResponsaveis_(tz, tabela_('Processos')); regravarMudadas_(tz);
+      registrar_(u.usuario, 'responsáveis automáticos', 'PJe ' + (d.pje || '—') + ', eproc ' + (d.eproc || '—') + '; ' + n + ' prazos distribuídos');
+      return { distribuidos: n };
+    }
+    return { pje: config_('RESP_PJE'), eproc: config_('RESP_EPROC'), padrao: config_('RESP_PADRAO') };
+  });
+}
+
+/* ---------- Contas a pagar e fluxo de caixa ---------- */
+
+var CATEGORIAS_DESPESA = ['Aluguel e condomínio', 'Salários e pró-labore', 'Impostos e taxas', 'Contador', 'Sistemas, internet e telefone',
+  'Energia e água', 'Material de escritório', 'Marketing', 'OAB e anuidades', 'Custas processuais (adiantadas)', 'Perícias e diligências',
+  'Deslocamento', 'Outros'];
+
+function despesaPublica_(x, hoje, clientes) {
+  var o = limpar_(x);
+  o.valor_num = dinheiro_(x.valor);
+  o.situacao_conta = x.situacao === 'cancelada' ? 'cancelada' : x.pago_em ? 'paga' : (x.vencimento && x.vencimento < hoje ? 'atrasada' : 'a pagar');
+  o.cliente = (clientes[x.cliente_id] || {}).nome || '';
+  return o;
+}
+
+/** Despesas mensais fixas: mantém as próximas geradas até 2 meses à frente. */
+function estenderDespesas_() {
+  var tab = tabela_('Despesas'), limite = somarDias_(hojeSP_(), 62), series = {};
+  tab.linhas.forEach(function (x) {
+    if (x.recorrente !== 'mensal' || !x.serie_id || x.situacao === 'cancelada') return;
+    if (!series[x.serie_id] || x.vencimento > series[x.serie_id].vencimento) series[x.serie_id] = x;
+  });
+  var n = 0;
+  Object.keys(series).forEach(function (k) {
+    var ult = series[k], prox = mesSeguinte_(ult.vencimento, +ult.vencimento.slice(8, 10));
+    for (var i = 0; i < 24 && prox <= limite; i++) {
+      var agora = new Date().toISOString();
+      inserirLinha_(tab, { id: novoId_('D'), descricao: ult.descricao, categoria: ult.categoria, valor: ult.valor, vencimento: prox, pago_em: '', valor_pago: '',
+        forma: '', cliente_id: '', processo_id: '', reembolsavel: 'nao', reembolsado_em: '', recorrente: 'mensal', serie_id: k, situacao: 'ativa',
+        observacoes: '', criado_em: agora, atualizado_em: agora, atualizado_por: 'sistema' });
+      prox = mesSeguinte_(prox, +ult.vencimento.slice(8, 10)); n++;
+    }
+  });
+  return n;
+}
+
+function salvarDespesa_(d, u) {
+  return comTrava_(function () {
+    var x = d.despesa || {};
+    var descricao = String(x.descricao || '').trim().slice(0, 200);
+    if (!descricao) throw falha_('Descreva a despesa.');
+    var valor = dinheiro_(x.valor);
+    if (!(valor > 0)) throw falha_('Informe o valor.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(x.vencimento || '')) throw falha_('Informe a data de vencimento.');
+    if (x.pago_em && !/^\d{4}-\d{2}-\d{2}$/.test(x.pago_em)) throw falha_('Data do pagamento inválida.');
+    var cat = CATEGORIAS_DESPESA.indexOf(x.categoria) >= 0 ? x.categoria : 'Outros';
+    var reemb = x.reembolsavel === 'sim' ? 'sim' : 'nao';
+    if (reemb === 'sim' && !x.cliente_id) throw falha_('Para cobrar do cliente depois, escolha o cliente.');
+    var agora = new Date().toISOString();
+    var dados = { descricao: descricao, categoria: cat, valor: txtDinheiro_(valor), vencimento: x.vencimento, cliente_id: String(x.cliente_id || ''),
+      processo_id: String(x.processo_id || ''), reembolsavel: reemb, observacoes: String(x.observacoes || '').trim().slice(0, 1000),
+      atualizado_em: agora, atualizado_por: u.usuario };
+    if (x.pago_em !== undefined) { dados.pago_em = x.pago_em || ''; dados.valor_pago = x.pago_em ? txtDinheiro_(dinheiro_(x.valor_pago) || valor) : ''; dados.forma = String(x.forma || ''); }
+    var tab = tabela_('Despesas');
+    if (x.id) {
+      var l = tab.linhas.filter(function (r) { return r.id === x.id; })[0];
+      if (!l) throw falha_('Despesa não encontrada.');
+      atualizarLinha_(tab, l, dados);
+      registrar_(u.usuario, 'despesa alterada', l.id + ' R$ ' + dados.valor);
+      return { id: l.id };
+    }
+    dados.id = novoId_('D'); dados.situacao = 'ativa'; dados.criado_em = agora; dados.reembolsado_em = '';
+    dados.recorrente = x.recorrente === 'mensal' ? 'mensal' : ''; dados.serie_id = dados.recorrente ? dados.id : '';
+    inserirLinha_(tab, dados);
+    if (dados.recorrente) estenderDespesas_();
+    registrar_(u.usuario, 'despesa lançada', dados.id + ' ' + descricao + ' R$ ' + dados.valor);
+    return { id: dados.id };
+  });
+}
+
+/** Pagar / estornar / reembolsado pelo cliente / cancelar (uma ou a série mensal inteira). */
+function acaoDespesa_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Despesas');
+    var l = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!l) throw falha_('Despesa não encontrada.');
+    var agora = new Date().toISOString(), m = { atualizado_em: agora, atualizado_por: u.usuario };
+    if (d.acao === 'pagar') {
+      var data = d.data || hojeSP_();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw falha_('Data inválida.');
+      m.pago_em = data; m.valor_pago = txtDinheiro_(dinheiro_(d.valor) || dinheiro_(l.valor)); m.forma = String(d.forma || '');
+    } else if (d.acao === 'estornar') { m.pago_em = ''; m.valor_pago = ''; m.forma = ''; }
+    else if (d.acao === 'reembolsado') { m.reembolsado_em = d.data || hojeSP_(); }
+    else if (d.acao === 'nao_reembolsado') { m.reembolsado_em = ''; }
+    else if (d.acao === 'cancelar') {
+      m.situacao = 'cancelada';
+      if (d.serie && l.serie_id) {
+        tab.linhas.forEach(function (r) {
+          if (r.serie_id !== l.serie_id) return;
+          if (!r.pago_em && r.vencimento >= l.vencimento) atualizarLinha_(tab, r, { situacao: 'cancelada', recorrente: '', atualizado_em: agora, atualizado_por: u.usuario });
+          else if (r.recorrente) atualizarLinha_(tab, r, { recorrente: '' });
+        });
+        registrar_(u.usuario, 'despesa mensal encerrada', l.serie_id);
+        return { ok: true };
+      }
+    } else throw falha_('Ação inválida.');
+    atualizarLinha_(tab, l, m);
+    registrar_(u.usuario, 'despesa: ' + d.acao, l.id);
+    return { ok: true };
+  });
+}
+
+function mesesAtras_(hoje, n) {
+  var a = +hoje.slice(0, 4), m = +hoje.slice(5, 7), r = [];
+  for (var i = n - 1; i >= 0; i--) {
+    var mm = m - i, aa = a;
+    while (mm < 1) { mm += 12; aa--; }
+    r.push(aa + '-' + ('0' + mm).slice(-2));
+  }
+  return r;
+}
+function mesesAFrente_(hoje, n) {
+  var a = +hoje.slice(0, 4), m = +hoje.slice(5, 7), r = [];
+  for (var i = 0; i < n; i++) {
+    var mm = m + i, aa = a;
+    while (mm > 12) { mm -= 12; aa++; }
+    r.push(aa + '-' + ('0' + mm).slice(-2));
+  }
+  return r;
+}
+
+/** Entradas (parcelas recebidas) e saídas (despesas pagas) mês a mês. */
+function fluxoMensal_(meses) {
+  var r = {};
+  meses.forEach(function (m) { r[m] = { mes: m, entradas: 0, saidas: 0, saldo: 0 }; });
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var k = (p.pago_em || '').slice(0, 7);
+    if (r[k]) r[k].entradas += dinheiro_(p.valor_pago) || dinheiro_(p.valor);
+  });
+  tabela_('Despesas').linhas.forEach(function (x) {
+    var k = (x.pago_em || '').slice(0, 7);
+    if (r[k] && x.situacao !== 'cancelada') r[k].saidas += dinheiro_(x.valor_pago) || dinheiro_(x.valor);
+  });
+  return meses.map(function (m) {
+    var o = r[m]; o.entradas = Math.round(o.entradas * 100) / 100; o.saidas = Math.round(o.saidas * 100) / 100;
+    o.saldo = Math.round((o.entradas - o.saidas) * 100) / 100; return o;
+  });
+}
+
+function caixa_(d) {
+  comTrava_(function () { estenderDespesas_(); estenderMensais_(); });
+  var hoje = hojeSP_(), clientes = mapaClientes_();
+  var mes = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : hoje.slice(0, 7);
+  var desp = tabela_('Despesas').linhas.filter(function (x) { return x.situacao !== 'cancelada'; }).map(function (x) { return despesaPublica_(x, hoje, clientes); });
+  var em30 = somarDias_(hoje, 30);
+  var abertas = desp.filter(function (x) { return !x.pago_em; });
+  var futuro = mesesAFrente_(hoje, 3), prev = {};
+  futuro.forEach(function (m) { prev[m] = { mes: m, entradas: 0, saidas: 0 }; });
+  var hons = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var h = hons[p.honorario_id] || {};
+    if (p.pago_em || ['cancelado', 'encerrado', 'quitado'].indexOf(h.situacao) >= 0) return;
+    var k = (p.vencimento || '').slice(0, 7);
+    if (prev[k]) prev[k].entradas += dinheiro_(p.valor) - dinheiro_(p.valor_pago);
+  });
+  abertas.forEach(function (x) { var k = x.vencimento.slice(0, 7); if (prev[k]) prev[k].saidas += x.valor_num; });
+  var reemb = {};
+  desp.forEach(function (x) {
+    if (x.reembolsavel !== 'sim' || !x.pago_em || x.reembolsado_em) return;
+    var g = reemb[x.cliente_id] = reemb[x.cliente_id] || { cliente_id: x.cliente_id, cliente: x.cliente, total: 0, itens: [] };
+    g.total = Math.round((g.total + (dinheiro_(x.valor_pago) || x.valor_num)) * 100) / 100; g.itens.push(x);
+  });
+  var r2 = function (v) { return Math.round(v * 100) / 100; };
+  var soma = function (l) { return r2(l.reduce(function (t, x) { return t + x.valor_num; }, 0)); };
+  var atrasadas = abertas.filter(function (x) { return x.vencimento < hoje; }).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var proximas = abertas.filter(function (x) { return x.vencimento >= hoje && x.vencimento <= em30; }).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var doMes = desp.filter(function (x) { return x.vencimento.slice(0, 7) === mes || (x.pago_em || '').slice(0, 7) === mes; })
+    .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var porCat = {};
+  doMes.forEach(function (x) { porCat[x.categoria] = r2((porCat[x.categoria] || 0) + x.valor_num); });
+  var fluxo = fluxoMensal_(mesesAtras_(hoje, 12));
+  return {
+    hoje: hoje, mes: mes, categorias: CATEGORIAS_DESPESA, fluxo: fluxo,
+    previsao: futuro.map(function (m) { var o = prev[m]; o.entradas = r2(o.entradas); o.saidas = r2(o.saidas); o.saldo = r2(o.entradas - o.saidas); return o; }),
+    atrasadas: atrasadas, proximas: proximas, doMes: doMes,
+    porCategoria: Object.keys(porCat).map(function (k) { return { categoria: k, valor: porCat[k] }; }).sort(function (a, b) { return b.valor - a.valor; }),
+    reembolsar: Object.keys(reemb).map(function (k) { return reemb[k]; }).sort(function (a, b) { return b.total - a.total; }),
+    totais: { atrasado: soma(atrasadas), proximos30: soma(proximas), mesEntradas: (fluxo.filter(function (f) { return f.mes === mes; })[0] || {}).entradas || 0,
+      mesSaidas: (fluxo.filter(function (f) { return f.mes === mes; })[0] || {}).saidas || 0 }
+  };
+}
+
+/* ---------- Relatórios (administração) ---------- */
+
+function relatorioGeral_(d) {
+  var hoje = hojeSP_(), meses = mesesAtras_(hoje, 12), idx = {};
+  meses.forEach(function (m, i) { idx[m] = i; });
+  var serie = function () { return meses.map(function () { return 0; }); };
+  var importado = /hist|GEA|carga|levantamento|planilha|importa/i;
+  var clientesNovos = serie(), processosNovos = serie(), intimacoes = serie(), prazosEntregues = serie(), prazosNoPrazo = serie();
+  var areasNovas = {};
+  tabela_('Clientes').linhas.forEach(function (c) {
+    var k = (c.criado_em || '').slice(0, 7);
+    if (idx[k] !== undefined && !importado.test(c.origem || '') && !importado.test(c.atualizado_por || '')) clientesNovos[idx[k]]++;
+  });
+  var porArea = {};
+  tabela_('Processos').linhas.forEach(function (p) {
+    var a = p.area || 'Sem área';
+    var o = porArea[a] = porArea[a] || { area: a, ativos: 0, arquivados: 0 };
+    if (p.status === 'arquivado') o.arquivados++; else o.ativos++;
+    var k = (p.criado_em || '').slice(0, 7);
+    if (idx[k] !== undefined && !importado.test(p.origem || '')) { processosNovos[idx[k]]++; areasNovas[a] = (areasNovas[a] || 0) + 1; }
+  });
+  tabela_('Intimacoes').linhas.forEach(function (i) { var k = (i.recebido_em || '').slice(0, 7); if (idx[k] !== undefined) intimacoes[idx[k]]++; });
+  var abertosVencidos = 0;
+  tabela_('Prazos').linhas.forEach(function (z) {
+    if (z.situacao === 'cumprido') {
+      var q = (z.cumprido_em || z.atualizado_em || '').slice(0, 10), k = q.slice(0, 7);
+      if (idx[k] !== undefined) { prazosEntregues[idx[k]]++; if (!z.fatal || q <= z.fatal) prazosNoPrazo[idx[k]]++; }
+    } else if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje) abertosVencidos++;
+  });
+  var ent = prazosEntregues.reduce(function (a, b) { return a + b; }, 0), np = prazosNoPrazo.reduce(function (a, b) { return a + b; }, 0);
+  var t = listarTarefas_({ dias: Math.min(parseInt(d.dias, 10) || 90, 365) }, { usuario: '' });
+  var fluxo = fluxoMensal_(meses);
+  return {
+    hoje: hoje, meses: meses, clientesNovos: clientesNovos, processosNovos: processosNovos, intimacoes: intimacoes,
+    prazosEntregues: prazosEntregues, prazosNoPrazo: prazosNoPrazo, percentualNoPrazo: ent ? Math.round(np * 100 / ent) : null, prazosVencidosAbertos: abertosVencidos,
+    porArea: Object.keys(porArea).map(function (k) { return porArea[k]; }).sort(function (a, b) { return b.ativos - a.ativos; }),
+    areasNovas: Object.keys(areasNovas).map(function (k) { return { area: k, n: areasNovas[k] }; }).sort(function (a, b) { return b.n - a.n; }),
+    entradas: fluxo.map(function (f) { return f.entradas; }), saidas: fluxo.map(function (f) { return f.saidas; }),
+    produtividade: t.pontos, diasProdutividade: t.dias
+  };
+}
+
+/* ---------- Resumo do dia por e-mail (7h) ---------- */
+
+function esc_(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+/** Monta o e-mail do dia para uma pessoa: prazos de hoje e amanhã, vencidos, audiências e perícias, tarefas dela e (admin) cobranças. */
+function montarResumoDia_(u, base) {
+  var hoje = base.hoje, amanha = base.amanha;
+  var lin = function (z) { return '<li><b>' + esc_(dataBR_(z.fatal)) + '</b> · ' + esc_(z.descricao) + ' · ' + esc_(z.cliente || 'cliente a identificar') + ' · ' + esc_(z.numero) +
+    (z.responsavel ? ' · <i>' + esc_(base.nomes[z.responsavel] || z.responsavel) + '</i>' : '') + '</li>'; };
+  var bloco = function (titulo, itens, cor) { return itens.length ? '<h3 style="margin:18px 0 6px;font-size:15px;color:' + (cor || '#1f2a44') + '">' + titulo + '</h3><ul style="margin:0;padding-left:18px">' + itens.join('') + '</ul>' : ''; };
+  var minhas = base.tarefas.filter(function (x) { return x.responsavel === u.usuario && !/protocolado|concluido/.test(x.etapa) && x.vence_em && x.vence_em <= amanha; });
+  var html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:640px">' +
+    '<h2 style="margin:0 0 4px;font-size:18px">Bom dia, ' + esc_(String(u.nome || u.usuario).split(' ')[0]) + '!</h2>' +
+    '<p style="margin:0 0 10px;color:#555">Resumo do painel para ' + esc_(dataBR_(hoje)) + '.</p>' +
+    bloco('Prazos vencidos sem baixa (' + base.vencidos.length + ')', base.vencidos.slice(0, 15).map(lin), '#b42318') +
+    bloco('Prazos que vencem HOJE (' + base.fHoje.length + ')', base.fHoje.map(lin), '#b42318') +
+    bloco('Prazos que vencem amanhã (' + base.fAmanha.length + ')', base.fAmanha.map(lin), '#b54708') +
+    bloco('Audiências, perícias e compromissos de hoje', base.atos.map(function (a) { return '<li><b>' + esc_(a.hora || '') + '</b> ' + esc_(a.titulo) + (a.extra ? ' · ' + esc_(a.extra) : '') + '</li>'; })) +
+    bloco('Suas tarefas para hoje e amanhã (' + minhas.length + ')', minhas.map(function (x) { return '<li><b>' + esc_(dataBR_(x.vence_em)) + '</b> · ' + esc_(x.titulo) + (x.cliente ? ' · ' + esc_(x.cliente) : '') + (x.atrasada ? ' <b style="color:#b42318">(atrasada)</b>' : '') + '</li>'; }));
+  if (PERFIS[u.perfil] && PERFIS[u.perfil].financeiro && base.fin) {
+    html += bloco('Financeiro', ['<li>Parcelas vencendo hoje: <b>' + base.fin.hoje + '</b></li>', '<li>Em atraso: <b>R$ ' + esc_(txtDinheiro_(base.fin.atrasado).replace('.', ',')) + '</b> (' + base.fin.qtd + ' parcela(s))</li>',
+      base.fin.contas ? '<li>Contas do escritório vencendo hoje ou atrasadas: <b>' + base.fin.contas + '</b></li>' : '']);
+  }
+  var vazio = !base.vencidos.length && !base.fHoje.length && !base.fAmanha.length && !base.atos.length && !minhas.length;
+  if (vazio) html += '<p>Nada urgente para hoje. 🎉</p>';
+  html += '<p style="margin-top:20px"><a href="https://araujoadvocaciasc.com.br/painel/" style="background:#1f2a44;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none">Abrir o painel</a></p>' +
+    '<p style="color:#888;font-size:12px">E-mail automático do painel da Araújo Advocacia (dias úteis, por volta das 7h). Para parar de receber, peça à administração (Usuários › Editar).</p></div>';
+  var assunto = 'Painel · ' + dataBR_(hoje) + ': ' + (base.fHoje.length ? base.fHoje.length + ' prazo(s) hoje' : 'nenhum prazo hoje') +
+    (base.vencidos.length ? ', ' + base.vencidos.length + ' vencido(s)' : '') + (base.atos.length ? ', ' + base.atos.length + ' compromisso(s)' : '');
+  return { assunto: assunto, html: html };
+}
+
+function baseResumoDia_() {
+  var hoje = hojeSP_(), amanha = somarDias_(hoje, 1);
+  var dsem = new Date(hoje + 'T12:00:00Z').getUTCDay();
+  if (dsem === 5) amanha = somarDias_(hoje, 3); // sexta: "amanhã" = até segunda
+  var prazos = listarPrazos_({});
+  var base = { hoje: hoje, amanha: amanha, nomes: nomesUsuarios_(),
+    vencidos: prazos.filter(function (z) { return z.fatal && z.fatal < hoje; }),
+    fHoje: prazos.filter(function (z) { return z.fatal === hoje; }),
+    fAmanha: prazos.filter(function (z) { return z.fatal > hoje && z.fatal <= amanha; }), atos: [], tarefas: [] };
+  try {
+    var ag = listarAgenda_({ inicio: hoje, fim: hoje });
+    base.atos = ag.eventos.sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; })
+      .map(function (e) { return { hora: e.diaTodo ? 'dia todo' : e.inicio.slice(11, 16), titulo: e.titulo, extra: NOMES_CURTOS_AGENDA_[e.agenda] || e.agenda }; });
+  } catch (e) { /* sem agenda */ }
+  var vistos = {};
+  base.atos.forEach(function (a) { vistos[normalizar_(a.titulo)] = 1; });
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (p.proximo_ato_data !== hoje || p.status === 'arquivado') return;
+    var t = (p.proximo_ato || 'Ato') + ' · ' + p.numero;
+    if (!Object.keys(vistos).some(function (k) { return k.indexOf(p.numero) >= 0; })) base.atos.push({ hora: '', titulo: t, extra: 'processo' });
+  });
+  try { base.tarefas = listarTarefas_({ dias: 1 }, { usuario: '' }).itens; } catch (e) { /* sem tarefas */ }
+  try {
+    var hojeP = 0, atr = 0, q = 0;
+    tabela_('Parcelas').linhas.forEach(function (p) {
+      if (p.pago_em) return;
+      if (p.vencimento === hoje) hojeP++;
+      else if (p.vencimento && p.vencimento < hoje) { atr += dinheiro_(p.valor) - dinheiro_(p.valor_pago); q++; }
+    });
+    var contas = tabela_('Despesas').linhas.filter(function (x) { return x.situacao !== 'cancelada' && !x.pago_em && x.vencimento && x.vencimento <= hoje; }).length;
+    base.fin = { hoje: hojeP, atrasado: atr, qtd: q, contas: contas };
+  } catch (e) { /* sem financeiro */ }
+  return base;
+}
+var NOMES_CURTOS_AGENDA_ = { 'ATENDIMENTOS': 'Atendimento', 'AUDIÊNCIA CONCILIAÇÃO': 'Audiência de conciliação', 'AUDIÊNCIA INSTRUÇÃO': 'Audiência de instrução', 'PERÍCIAS': 'Perícia' };
+
+function enviarResumo_(u, base) {
+  if (!u.email) return false;
+  var m = montarResumoDia_(u, base);
+  GmailApp.sendEmail(u.email, m.assunto, 'Abra este e-mail num programa que mostre HTML, ou entre no painel: https://araujoadvocaciasc.com.br/painel/',
+    { htmlBody: m.html, name: 'Painel Araújo Advocacia' });
+  return true;
+}
+
+/** Gatilho diário (7h): manda o resumo para quem tem e-mail cadastrado. Só em dias úteis. */
+function resumoDiarioGatilho() {
+  var hoje = hojeSP_();
+  var dsem = new Date(hoje + 'T12:00:00Z').getUTCDay();
+  if (dsem === 0 || dsem === 6) return 'fim de semana';
+  if (config_('RESUMO_EMAIL_DIA') === hoje) return 'já enviado hoje';
+  var base = baseResumoDia_(), n = 0, erros = [];
+  usuarios_().forEach(function (u) {
+    if (u.ativo !== 'sim' || !u.email || u.resumo_email === 'nao') return;
+    try { if (enviarResumo_(u, base)) n++; } catch (e) { erros.push(u.usuario + ': ' + (e.message || e)); }
+  });
+  setConfig_('RESUMO_EMAIL_DIA', hoje, 'Último dia em que o resumo das 7h foi enviado');
+  registrar_('sistema', 'resumo do dia por e-mail', n + ' enviado(s)' + (erros.length ? '; erros: ' + erros.join(' | ') : ''));
+  return n + ' enviado(s)';
+}
+
+function testarResumoEmail_(d, u) {
+  var linha = tabela_('Usuarios').linhas.filter(function (r) { return r.id === u.id; })[0];
+  if (!linha || !linha.email) throw falha_('Cadastre o seu e-mail em Usuários (Editar) antes de testar.');
+  enviarResumo_(linha, baseResumoDia_());
+  registrar_(u.usuario, 'resumo por e-mail (teste)', linha.email);
+  return { enviado: linha.email };
+}
+
+/* ---------- Resumo das intimações por IA (Gemini, do Google) ---------- */
+
+var IA_MODELO_PADRAO = 'gemini-2.5-flash-lite';
+
+/** Tira CPF, CNPJ, RG, telefones, e-mails, CEP e contas bancárias antes de mandar o texto para a IA. */
+function anonimizar_(t) {
+  return String(t || '')
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, '[CNPJ]')
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[CPF]')
+    .replace(/\bRG\s*(n[º°o.]*\s*)?[\dXx.\-\/]{5,}/gi, 'RG [RG]')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[E-MAIL]')
+    .replace(/\(?\b\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g, '[TELEFONE]')
+    .replace(/\b\d{5}-\d{3}\b/g, '[CEP]')
+    .replace(/\b(ag[êe]ncia|conta|c\/c|pix)\s*(n[º°o.]*)?\s*[:\-]?\s*[\d.\-\/xX]{4,}/gi, '$1 [DADO BANCÁRIO]');
+}
+
+function chaveIA_() { return PropertiesService.getScriptProperties().getProperty('GEMINI_CHAVE') || ''; }
+
+function pedidoGemini_(texto, chave, modelo) {
+  var prompt = 'Você ajuda um escritório de advocacia brasileiro. Leia a intimação/publicação abaixo e responda SOMENTE em JSON com as chaves: ' +
+    '"resumo" (até 2 frases, em português simples: o que o juiz/tribunal decidiu ou determinou), "ato" (uma palavra: sentença, acórdão, decisão, despacho, ' +
+    'audiência, perícia, citação, intimação, edital ou outro), "providencia" (o que o advogado provavelmente precisa fazer, curto) e "prazo_dias" ' +
+    '(número de dias do prazo SE estiver escrito no texto; senão null). Não invente nada que não esteja no texto.\n\nTEXTO:\n' + texto.slice(0, 6000);
+  return {
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelo) + ':generateContent',
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': chave },
+    payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 400, responseMimeType: 'application/json' } })
+  };
+}
+
+function lerRespostaGemini_(resp) {
+  var code = resp.getResponseCode();
+  var j = {};
+  try { j = JSON.parse(resp.getContentText()); } catch (e) { /* resposta estranha */ }
+  if (code !== 200) throw new Error('Gemini respondeu ' + code + (j.error && j.error.message ? ': ' + String(j.error.message).slice(0, 160) : ''));
+  var txt = (((j.candidates || [])[0] || {}).content || {}).parts;
+  txt = txt && txt[0] && txt[0].text || '';
+  var o;
+  try { o = JSON.parse(String(txt).replace(/^```(json)?|```$/g, '').trim()); } catch (e) { o = { resumo: String(txt).slice(0, 300) }; }
+  var partes = [String(o.resumo || '').trim()];
+  if (o.providencia) partes.push('Providência: ' + String(o.providencia).trim());
+  if (o.prazo_dias) partes.push('Prazo citado no texto: ' + parseInt(o.prazo_dias, 10) + ' dias (conferir)');
+  return ('IA: ' + partes.filter(String).join(' · ')).slice(0, 700);
+}
+
+/** Resume as intimações novas que têm texto (DJEN e avisos com conteúdo). Nunca muda prazos: só escreve o resumo. */
+function resumirIntimacoes_(limiteMs, max) {
+  var chave = chaveIA_();
+  if (!chave || config_('IA_LIGADA') === 'nao') return { feitas: 0, motivo: 'desligada' };
+  var modelo = config_('IA_MODELO') || IA_MODELO_PADRAO, t0 = Date.now();
+  var tabI = tabela_('Intimacoes'), tabZ = tabela_('Prazos');
+  var desde = new Date(Date.now() - 60 * 86400000).toISOString();
+  var fila = tabI.linhas.filter(function (i) {
+    if (i.resumo_ia || (i.recebido_em || '') < desde) return false;
+    var t = String(i.texto || '').replace(/\s+/g, ' ');
+    return t.length >= 120 && !/^\W*(documento sigiloso|conteúdo sigiloso)/i.test(t);
+  }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, max || 30);
+  if (!fila.length) return { feitas: 0 };
+  var prazos = {};
+  tabZ.linhas.forEach(function (z) { prazos[z.id] = z; });
+  tabI.adiar = true; tabZ.adiar = true;
+  var feitas = 0, erro = '';
+  for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 60000); i += 5) {
+    var lote = fila.slice(i, i + 5);
+    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n')), chave, modelo); }));
+    for (var k = 0; k < lote.length; k++) {
+      try {
+        var res = lerRespostaGemini_(resps[k]);
+        atualizarLinha_(tabI, lote[k], { resumo_ia: res });
+        var z = prazos[lote[k].prazo_id];
+        if (z && !z.resumo_ia) atualizarLinha_(tabZ, z, { resumo_ia: res });
+        feitas++;
+      } catch (e) { erro = String(e.message || e); }
+    }
+    if (erro && !feitas) break; // chave errada ou sem saldo: não insiste
+  }
+  regravarMudadas_(tabI); regravarMudadas_(tabZ);
+  setConfig_('IA_ULTIMA', new Date().toISOString() + ' · ' + feitas + ' resumo(s)', 'Última rodada do resumo por IA');
+  setConfig_('IA_ERRO', erro, 'Último problema do resumo por IA');
+  return { feitas: feitas, erro: erro };
+}
+
+/** Configuração da IA (só administração). A chave vai para as Propriedades do script, nunca para a planilha. */
+function configIA_(d, u) {
+  var props = PropertiesService.getScriptProperties();
+  if (d.chave !== undefined) {
+    var k = String(d.chave || '').trim();
+    if (k && !/^[A-Za-z0-9_\-]{20,80}$/.test(k)) throw falha_('A chave não parece uma chave do Google AI Studio (começa com "AIza…").');
+    if (k) props.setProperty('GEMINI_CHAVE', k); else props.deleteProperty('GEMINI_CHAVE');
+    registrar_(u.usuario, 'chave da IA', k ? 'cadastrada' : 'apagada');
+  }
+  if (d.modelo !== undefined) setConfig_('IA_MODELO', /^[a-z0-9.\-]{3,60}$/.test(d.modelo) ? d.modelo : IA_MODELO_PADRAO, 'Modelo do Gemini usado nos resumos');
+  if (d.ligada !== undefined) setConfig_('IA_LIGADA', d.ligada ? 'sim' : 'nao', 'Resumo das intimações por IA ligado?');
+  var r = { temChave: !!chaveIA_(), modelo: config_('IA_MODELO') || IA_MODELO_PADRAO, ligada: config_('IA_LIGADA') !== 'nao',
+    ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') };
+  if (d.testar) {
+    if (!r.temChave) throw falha_('Cadastre a chave primeiro.');
+    var ped = pedidoGemini_('Intimação: fica a parte autora intimada para, no prazo de 15 (quinze) dias, apresentar réplica à contestação.', chaveIA_(), r.modelo);
+    try { r.teste = lerRespostaGemini_(UrlFetchApp.fetch(ped.url, ped)); }
+    catch (e) { throw falha_('O teste falhou: ' + (e.message || e)); }
+  }
+  if (d.rodar) r.rodada = resumirIntimacoes_(120000, 40);
+  return r;
+}
+
+/* ---------- Andamentos completos pelo DataJud (API pública do CNJ) ---------- */
+
+// Chave pública que o CNJ divulga em https://datajud-wiki.cnj.jus.br/api-publica/acesso (pode mudar; o robô busca a nova sozinho).
+var DATAJUD_CHAVE_PADRAO = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';
+var ESTADUAIS_DATAJUD = ['', 'tjac', 'tjal', 'tjap', 'tjam', 'tjba', 'tjce', 'tjdft', 'tjes', 'tjgo', 'tjma', 'tjmt', 'tjms', 'tjmg', 'tjpa', 'tjpb', 'tjpr',
+  'tjpe', 'tjpi', 'tjrj', 'tjrn', 'tjrs', 'tjro', 'tjrr', 'tjsc', 'tjse', 'tjsp', 'tjto'];
+var UFS_TRE = ['', 'ac', 'al', 'ap', 'am', 'ba', 'ce', 'dft', 'es', 'go', 'ma', 'mt', 'ms', 'mg', 'pa', 'pb', 'pr', 'pe', 'pi', 'rj', 'rn', 'rs', 'ro', 'rr', 'sc', 'se', 'sp', 'to'];
+
+/** Índice do DataJud pelo número CNJ (J = segmento da Justiça, TR = tribunal). */
+function aliasDatajud_(numero) {
+  var m = String(numero || '').match(/^\d{7}-\d{2}\.\d{4}\.(\d)\.(\d{2})\.\d{4}$/);
+  if (!m) return '';
+  var j = m[1], tr = +m[2];
+  if (j === '8') return ESTADUAIS_DATAJUD[tr] || '';
+  if (j === '5') return tr === 0 ? 'tst' : 'trt' + tr;
+  if (j === '4') return tr >= 1 && tr <= 6 ? 'trf' + tr : '';
+  if (j === '3') return 'stj';
+  if (j === '6') return UFS_TRE[tr] ? 'tre-' + UFS_TRE[tr] : (tr === 0 ? 'tse' : '');
+  if (j === '7') return 'stm';
+  return '';
+}
+
+function chaveDatajud_(renovar, falhou) {
+  var manual = config_('DATAJUD_CHAVE');
+  if (manual && !renovar) return manual;
+  var props = PropertiesService.getScriptProperties();
+  var auto = props.getProperty('DATAJUD_CHAVE_AUTO');
+  if (auto && !renovar) return auto;
+  var wiki = '';
+  try {
+    var html = UrlFetchApp.fetch('https://datajud-wiki.cnj.jus.br/api-publica/acesso', { muteHttpExceptions: true }).getContentText();
+    var m = html.match(/APIKey\s+([A-Za-z0-9+\/=_\-]{20,200})/);
+    if (m) wiki = m[1];
+  } catch (e) { /* usa a conhecida */ }
+  var k = [wiki, DATAJUD_CHAVE_PADRAO, auto].filter(function (x) { return x && x !== falhou; })[0] || DATAJUD_CHAVE_PADRAO;
+  props.setProperty('DATAJUD_CHAVE_AUTO', k);
+  return k;
+}
+
+function pedidoDatajud_(numero, chave) {
+  return { url: 'https://api-publica.datajud.cnj.jus.br/api_publica_' + aliasDatajud_(numero) + '/_search', method: 'post',
+    contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'APIKey ' + chave },
+    payload: JSON.stringify({ query: { match: { numeroProcesso: String(numero).replace(/\D/g, '') } }, size: 10 }) };
+}
+
+function dataDatajud_(v) {
+  var s = String(v || '');
+  if (/^\d{14}$/.test(s)) s = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) + 'T' + s.slice(8, 10) + ':' + s.slice(10, 12) + ':' + s.slice(12, 14) + '-03:00';
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
+/** Lê a resposta do DataJud: movimentos de todos os graus, do mais novo para o mais antigo. */
+function lerDatajud_(texto) {
+  var j = JSON.parse(texto || '{}');
+  var hits = ((j.hits || {}).hits || []).map(function (h) { return h._source || {}; });
+  if (!hits.length) return null;
+  var movs = [], vistos = {};
+  hits.forEach(function (s) {
+    (s.movimentos || []).forEach(function (mv) {
+      var quando = dataDatajud_(mv.dataHora);
+      var comp = (mv.complementosTabelados || []).map(function (c) { return c.nome || c.descricao || ''; }).filter(String).join(', ');
+      var nome = String(mv.nome || '').trim() + (comp ? ' (' + comp + ')' : '');
+      var k = quando + '|' + nome;
+      if (!quando || !nome || vistos[k]) return;
+      vistos[k] = 1;
+      movs.push({ d: quando, n: nome.slice(0, 160), g: s.grau || '' });
+    });
+  });
+  movs.sort(function (a, b) { return a.d < b.d ? 1 : -1; });
+  var principal = hits.filter(function (s) { return s.grau === 'G1'; })[0] || hits[0];
+  return { movs: movs, classe: (principal.classe || {}).nome || '', orgao: (principal.orgaoJulgador || {}).nome || '',
+    assuntos: (principal.assuntos || []).map(function (a) { return a.nome; }).filter(String).slice(0, 3).join(', '),
+    atualizado: dataDatajud_(principal.dataHoraUltimaAtualizacao) };
+}
+
+function guardarAndamentos_(tab, p, r) {
+  var agora = new Date().toISOString();
+  if (!r) { atualizarLinha_(tab, p, { datajud_em: agora, andamentos: p.andamentos && p.andamentos !== '-' ? p.andamentos : '-' }); return false; }
+  var lista = r.movs.slice(0, 25), txt = JSON.stringify(lista);
+  while (txt.length > 4800 && lista.length > 3) { lista.pop(); txt = JSON.stringify(lista); }
+  var m = { datajud_em: agora, andamentos: txt, classe: r.classe || p.classe };
+  if (!p.orgao && r.orgao) m.orgao = r.orgao;
+  atualizarLinha_(tab, p, m);
+  if (lista[0]) atualizarMovimento_(tab, p, lista[0].n, lista[0].d);
+  return true;
+}
+
+/**
+ * Robô dos andamentos: consulta o DataJud em lotes, começando pelos processos que estão há mais tempo sem conferir.
+ * Arquivados só de 15 em 15 dias. Processos em segredo de justiça não aparecem no DataJud.
+ */
+function atualizarAndamentos_(limiteMs, maximo) {
+  var t0 = Date.now(), tab = tabela_('Processos'), agora = Date.now();
+  var fila = tab.linhas.filter(function (p) {
+    if (!aliasDatajud_(p.numero)) return false;
+    var ult = p.datajud_em ? Date.parse(p.datajud_em) : 0;
+    if (p.status === 'arquivado') return agora - ult > 15 * 86400000;
+    return agora - ult > 20 * 3600000;
+  }).sort(function (a, b) {
+    return (a.status === 'arquivado') - (b.status === 'arquivado') || ((a.datajud_em || '') < (b.datajud_em || '') ? -1 : 1);
+  }).slice(0, maximo || 400);
+  if (!fila.length) return { lidos: 0, achados: 0 };
+  tab.adiar = true;
+  var chave = chaveDatajud_(false), renovou = false, lidos = 0, achados = 0, erro = '';
+  for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 120000); i += 10) {
+    var lote = fila.slice(i, i + 10);
+    var resps = UrlFetchApp.fetchAll(lote.map(function (p) { return pedidoDatajud_(p.numero, chave); }));
+    var negado = resps.every(function (r) { return r.getResponseCode() === 401 || r.getResponseCode() === 403; });
+    if (negado) {
+      if (renovou) { erro = 'o CNJ recusou a chave pública (código ' + resps[0].getResponseCode() + ')'; break; }
+      chave = chaveDatajud_(true, chave); renovou = true; i -= 10; continue;
+    }
+    for (var k = 0; k < lote.length; k++) {
+      var code = resps[k].getResponseCode();
+      if (code !== 200) { erro = 'DataJud respondeu ' + code; continue; }
+      try { if (guardarAndamentos_(tab, lote[k], lerDatajud_(resps[k].getContentText()))) achados++; lidos++; }
+      catch (e) { erro = String(e.message || e); }
+    }
+  }
+  regravarMudadas_(tab);
+  setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · ' + lidos + ' consultado(s), ' + achados + ' com andamentos', 'Última leitura do DataJud');
+  setConfig_('DATAJUD_ERRO', erro, 'Último problema do DataJud');
+  return { lidos: lidos, achados: achados, erro: erro };
+}
+
+function andamentosGatilho() {
+  try { atualizarAndamentos_(270000, 600); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+}
+
+/** Andamentos de um processo (e, se pedido, consulta o DataJud agora). */
+function andamentosProcesso_(d, u) {
+  var tab = tabela_('Processos');
+  var p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!p) throw falha_('Processo não encontrado.');
+  var erro = '';
+  if (d.atualizar) {
+    if (!aliasDatajud_(p.numero)) throw falha_('Este número não é de um tribunal que está no DataJud.');
+    var ped = pedidoDatajud_(p.numero, chaveDatajud_(false));
+    var resp = UrlFetchApp.fetch(ped.url, ped);
+    if (resp.getResponseCode() === 401 || resp.getResponseCode() === 403) { ped = pedidoDatajud_(p.numero, chaveDatajud_(true, ped.headers.Authorization.slice(7))); resp = UrlFetchApp.fetch(ped.url, ped); }
+    if (resp.getResponseCode() === 200) comTrava_(function () { guardarAndamentos_(tab, p, lerDatajud_(resp.getContentText())); });
+    else erro = 'O DataJud não respondeu agora (código ' + resp.getResponseCode() + '). Tente mais tarde.';
+  }
+  var lista = [];
+  try { lista = p.andamentos && p.andamentos !== '-' ? JSON.parse(p.andamentos) : []; } catch (e) { lista = []; }
+  return { lista: lista, em: p.datajud_em || '', classe: p.classe || '', naoEncontrado: p.andamentos === '-', noDatajud: !!aliasDatajud_(p.numero), erro: erro };
+}
+
+function estadoExtras_() {
+  return { datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
+    ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
+    email: { ultimo: config_('RESUMO_EMAIL_DIA') } };
 }
