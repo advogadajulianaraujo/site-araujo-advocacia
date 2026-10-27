@@ -42,6 +42,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Ao gerar, `preencherColchetes_` troca pelo contexto do parágrafo: [VARA]/[NÚMERO]/[CIDADE/UF] na linha "AO JUÍZO",
   [NÚMERO] em "Processo nº", [NOME] nas linhas de partes, [NOME DA PARTE]/[NOME DO(A) RECLAMANTE] etc., CPF, RG,
   endereço e "[CIDADE/UF], [DATA]". Colchetes de conteúdo ([DESCREVER…]) ficam para a advogada.
+- Modelos do Drive escondidos a pedido da usuária (`MODELOS_DRIVE_OCULTOS`): apelação criminal, cumprimento de sentença,
+  reclamação trabalhista, petição inicial, réplica, juntada de documentos e declaração de residência (o painel já tem as suas).
+  Modelos do Drive que são petições dentro do processo (pesquisa de endereço, emenda etc.) vão para o grupo "Petições" e exigem o nº.
+- O contrato gerado de novo não lança outra vez o mesmo honorário (mesmo tipo, percentual e valor).
+
+## Layout
+
+- No topo ficam só os tópicos (Início, Clientes, Processos, Intimações, Agenda, Modelos, Financeiro). Usuários, Trocar senha e Sair
+  ficam no menu que abre ao clicar no nome.
+- Início: atalhos para todos os tópicos (com números), e três quadros pequenos: Prazos (vencidos primeiro), Audiências e perícias
+  (agenda + audiências dos processos, sem repetir) e Hoje.
+- Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos").
 
 ## Agenda e clientes
 

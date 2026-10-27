@@ -242,6 +242,12 @@
     telaLogin();
   }
 
+  const quemBtn = document.getElementById('quem-btn'), quemMenu = document.getElementById('quem-menu');
+  const menuQuem = abrir => { quemMenu.hidden = !abrir; quemBtn.setAttribute('aria-expanded', String(abrir)); };
+  quemBtn.addEventListener('click', ev => { ev.stopPropagation(); menuQuem(quemMenu.hidden); });
+  document.addEventListener('click', ev => { if (!quemMenu.hidden && !quemMenu.contains(ev.target)) menuQuem(false); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !quemMenu.hidden) { menuQuem(false); quemBtn.focus(); } });
+  quemMenu.addEventListener('click', () => menuQuem(false));
   document.getElementById('btn-sair').addEventListener('click', () => sair(false));
   document.getElementById('btn-senha').addEventListener('click', () => { location.hash = '#/senha'; });
 
@@ -252,8 +258,7 @@
     ['prazos', 'Intimações'],
     ['agenda', 'Agenda'],
     ['modelos', 'Modelos'],
-    ['financeiro', 'Financeiro', null, 'financeiro'],
-    ['usuarios', 'Usuários', null, 'usuarios']
+    ['financeiro', 'Financeiro', null, 'financeiro']
   ];
 
   function montarTopo() {
@@ -261,6 +266,7 @@
     abasEl.replaceChildren(...ABAS.filter(a => !a[3] || pode[a[3]]).map(([id, nome, breve]) =>
       h('a', { href: '#/' + id, 'data-aba': id }, nome, breve ? h('span', { class: 'breve' }, breve) : null)));
     document.getElementById('quem-nome').textContent = `${sessao.usuario.nome} · ${sessao.usuario.perfilNome}`;
+    document.getElementById('menu-usuarios').hidden = !pode.usuarios;
     abasEl.hidden = false;
     quemEl.hidden = false;
   }
@@ -336,51 +342,82 @@
   async function telaInicio() {
     carregando();
     const hoje = hojeISO();
-    const iniSem = isoSoma(hoje, -((diaSem(hoje) + 6) % 7));
-    const [r, ag] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: iniSem, fim: isoSoma(iniSem, 6) }).catch(() => null)]);
-    const t = r.totais;
-    r.prazos = r.prazos || { vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [] };
-    const semana = [];
-    if (ag) for (let d = iniSem; d <= isoSoma(iniSem, 6); d = isoSoma(d, 1)) itensDoDia(ag, d).forEach(it => semana.push({ ...it, dia: d }));
-    const blocoSemana = h('section', { class: 'painel-bloco' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Agenda da semana'), h('a', { href: '#/agenda?visao=semana' }, 'abrir agenda →')),
-      semana.length
-        ? h('table', { class: 'mini-tab' }, h('tbody', {}, semana.slice(0, 12).map(it => h('tr', { class: it.dia === hoje ? 'hoje' : '', onclick: () => { location.hash = it.id ? '#/prazo/' + it.id : '#/agenda?visao=dia&data=' + it.dia; } },
-            h('td', { class: 'num' }, nomeDia(it.dia).replace('.', '')), h('td', { class: 'num' }, it.hora),
-            h('td', {}, h('span', { class: 'chip ' + it.cls }, it.rotulo)), h('td', {}, it.titulo)))))
-        : h('p', { class: 'peq' }, ag ? 'Nada marcado nesta semana.' : 'Agenda indisponível no momento.'),
-      semana.length > 12 ? h('p', { class: 'peq' }, `+ ${semana.length - 12} compromissos na semana`) : null);
-    const blocoPrazos = h('section', { class: 'painel-bloco' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Prazos que vão vencer'), h('a', { href: '#/prazos' }, 'ver intimações →')),
-      r.prazos.proximos.filter(z => z.fatal).length
-        ? h('table', { class: 'mini-tab' }, h('tbody', {}, r.prazos.proximos.filter(z => z.fatal).slice(0, 8).map(z => h('tr', { onclick: () => { location.hash = '#/prazo/' + z.id; } },
-            h('td', { class: 'num' }, dataBR(z.fatal).slice(0, 5)), h('td', {}, etiquetaContagem(z.fatal)),
-            h('td', {}, h('div', {}, z.descricao), h('div', { class: 'peq' }, (z.cliente || 'cliente a identificar') + ' · ' + z.numero))))))
-        : h('p', { class: 'peq' }, 'Nenhum prazo com data fatal à frente.'),
-      r.prazos.aDefinir ? h('p', {}, h('a', { class: 'tag urgente', href: '#/prazos' }, `${r.prazos.aDefinir} intimação(ões) com prazo a definir`)) : null);
-    const novos = r.clientesNovos || [];
-    const blocoClientes = h('section', { class: 'painel-bloco' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Clientes novos'), h('a', { href: '#/cliente/novo' }, '+ novo cliente')),
-      novos.length
-        ? h('ul', { class: 'lista-simples' }, novos.map(c => h('li', { onclick: () => { location.hash = '#/cliente/' + c.id; } },
-            h('strong', {}, c.nome), h('span', { class: 'peq' }, ` · ${c.area || 'área a definir'} · ${new Date(c.criado_em).toLocaleDateString('pt-BR')}`))))
-        : h('p', { class: 'peq' }, 'Nenhum cliente cadastrado nos últimos 30 dias.'));
-    const blocoAtos = h('section', { class: 'painel-bloco' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Audiências e atos (14 dias)'), h('a', { href: '#/processos' }, 'processos →')),
-      r.proximos.length
-        ? h('table', { class: 'mini-tab' }, h('tbody', {}, r.proximos.slice(0, 8).map(p => h('tr', { onclick: () => { location.hash = '#/processo/' + p.id; } },
-            h('td', { class: 'num' }, dataBR(p.proximo_ato_data).slice(0, 5)), h('td', {}, etiquetaDias(p.proximo_ato_data)),
-            h('td', {}, h('div', {}, p.proximo_ato), h('div', { class: 'peq' }, p.cliente || 'cliente a identificar'))))))
-        : h('p', { class: 'peq' }, 'Nada marcado para os próximos 14 dias.'));
+    const [r, ag] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }).catch(() => null)]);
+    const t = r.totais, pode = sessao.usuario.pode;
+    const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
+    const eventos = ag ? ag.eventos.slice().sort((a, b) => a.inicio < b.inicio ? -1 : 1) : [];
+    const deHoje = eventos.filter(e => e.inicio.slice(0, 10) === hoje);
+    const hora = e => e.diaTodo ? 'dia todo' : e.inicio.slice(11, 16);
+    const mes = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'short' }).replace('.', '');
+    const selo = (iso, cls) => h('div', { class: 'selo-data ' + (cls || '') }, h('b', {}, iso.slice(8, 10)), h('span', {}, mes(iso)));
+    const vazio = txt => h('p', { class: 'ini-vazio' }, txt);
+    const item = (onclick, lado, titulo, sub, extra) => h('li', { tabindex: 0, onclick, onkeydown: e => { if (e.key === 'Enter') onclick(); } },
+      lado, h('div', { class: 'ini-txt' }, h('div', { class: 'ini-tit' }, titulo), sub ? h('div', { class: 'peq' }, sub) : null), extra || null);
+    const bloco = (titulo, link, rotuloLink, corpo) => h('section', { class: 'ini-bloco' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, titulo), link ? h('a', { href: link }, rotuloLink) : null), corpo);
+
+    const semAcento = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const evAtos = eventos.filter(e => e.agenda !== 'ATENDIMENTOS');
+    const jaNaAgenda = p => evAtos.some(e => e.inicio.slice(0, 10) === p.proximo_ato_data &&
+      (semAcento(e.titulo + ' ' + e.descricao).includes(semAcento(p.numero)) || (p.cliente && semAcento(e.titulo).includes(semAcento(primeiroNome(p.cliente))))));
+    const nHoje = deHoje.length + (r.proximos || []).filter(p => p.proximo_ato_data === hoje && !jaNaAgenda(p)).length;
+
+    // atalhos para todos os tópicos
+    const atalho = (href, nome, numero, legenda, cls) => h('a', { class: 'atalho ' + (cls || ''), href },
+      h('span', { class: 'atalho-nome' }, nome), numero !== null ? h('b', {}, String(numero)) : h('b', { class: 'seta' }, '→'), h('span', { class: 'atalho-leg' }, legenda));
+    const atalhos = h('nav', { class: 'atalhos', 'aria-label': 'Tópicos do painel' },
+      atalho('#/prazos', 'Intimações', pz.vencidos || pz.vencendo, pz.vencidos ? 'prazo(s) vencido(s) — ver já' : 'prazo(s) vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
+      atalho('#/agenda?visao=dia', 'Agenda', nHoje, nHoje === 1 ? 'compromisso hoje' : 'compromissos hoje'),
+      atalho('#/clientes', 'Clientes', t.clientes, (r.clientesNovos || []).length ? `${r.clientesNovos.length} novo(s) em 30 dias` : 'cadastrados'),
+      atalho('#/processos', 'Processos', t.processos, 'em andamento'),
+      atalho('#/modelos', 'Modelos', null, 'procurações, contratos e petições'),
+      pode.financeiro ? atalho('#/financeiro', 'Financeiro', null, 'honorários e parcelas') : null);
+
+    // prazos: vencidos primeiro, depois os próximos pela data fatal
+    const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).slice(0, 7);
+    const blocoPrazos = bloco('Prazos', '#/prazos', 'ver todos →',
+      h('div', {},
+        listaPrazos.length ? h('ul', { class: 'ini-lista' }, listaPrazos.map(z => item(() => { location.hash = '#/prazo/' + z.id; },
+          selo(z.fatal, 'faixa-' + faixaPrazo(z)), z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
+          : vazio('Nenhum prazo em aberto com data fatal.'),
+        pz.aDefinir ? h('a', { class: 'ini-alerta', href: '#/prazos' }, `${pz.aDefinir} intimação(ões) com prazo a definir`) : null,
+        pz.aConferir ? h('a', { class: 'ini-aviso', href: '#/prazos' }, `${pz.aConferir} prazo(s) calculado(s) pelo robô a conferir`) : null));
+
+    // audiências e perícias dos próximos 14 dias
+    const atos = evAtos.map(e => ({ data: e.inicio.slice(0, 10), hora: hora(e), el: item(
+      () => { location.hash = '#/agenda?visao=dia&data=' + e.inicio.slice(0, 10); },
+      selo(e.inicio.slice(0, 10)), e.titulo, [hora(e), e.local].filter(Boolean).join(' · '),
+      h('span', { class: 'chip ' + (CORES_AGENDA[e.agenda] || '') }, NOME_CURTO[e.agenda] || e.agenda)) }))
+      .concat((r.proximos || []).filter(p => !jaNaAgenda(p)).map(p => ({ data: p.proximo_ato_data, hora: '', el: item(
+        () => { location.hash = '#/processo/' + p.id; },
+        selo(p.proximo_ato_data), p.proximo_ato, [p.cliente || 'cliente a identificar', p.orgao || p.numero].filter(Boolean).join(' · '),
+        etiquetaDias(p.proximo_ato_data)) })))
+      .sort((a, b) => (a.data + a.hora) < (b.data + b.hora) ? -1 : 1).slice(0, 8).map(x => x.el);
+    const blocoAtos = bloco('Audiências e perícias', '#/agenda?visao=semana', 'agenda →',
+      atos.length ? h('ul', { class: 'ini-lista' }, atos) : vazio('Nenhuma audiência ou perícia nos próximos 14 dias.'));
+
+    // hoje
+    const fataisHoje = pz.proximos.filter(z => z.fatal === hoje);
+    const hojeItens = fataisHoje.map(z => item(() => { location.hash = '#/prazo/' + z.id; }, h('div', { class: 'ini-hora prazo' }, '23h59'), 'Prazo fatal: ' + z.descricao, (z.cliente || '') + ' · ' + z.numero))
+      .concat((r.proximos || []).filter(p => p.proximo_ato_data === hoje && !jaNaAgenda(p)).map(p => item(() => { location.hash = '#/processo/' + p.id; },
+        h('div', { class: 'ini-hora' }, (/(\d{1,2})h(\d{2})?|(\d{1,2}):(\d{2})/.exec(p.proximo_ato) || [''])[0] || 'hoje'), p.proximo_ato, [p.cliente || 'cliente a identificar', p.orgao || p.numero].filter(Boolean).join(' · '))))
+      .concat(deHoje.map(e => item(() => { location.hash = '#/agenda?visao=dia&data=' + hoje; }, h('div', { class: 'ini-hora' }, hora(e)), e.titulo,
+        [NOME_CURTO[e.agenda] || e.agenda, e.local].filter(Boolean).join(' · '))));
+    const novos = (r.clientesNovos || []).slice(0, 4);
+    const blocoHoje = bloco('Hoje', '#/agenda?visao=dia', 'dia →',
+      h('div', {},
+        hojeItens.length ? h('ul', { class: 'ini-lista' }, hojeItens) : vazio(ag ? 'Nada marcado para hoje.' : 'Agenda indisponível no momento.'),
+        novos.length ? h('div', { class: 'ini-novos' }, h('h3', {}, 'Clientes novos'),
+          h('ul', { class: 'lista-simples' }, novos.map(c => h('li', { onclick: () => { location.hash = '#/cliente/' + c.id; } },
+            h('strong', {}, c.nome), h('span', { class: 'peq' }, ' · ' + new Date(c.criado_em).toLocaleDateString('pt-BR')))))) : null));
+
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`), h('p', { class: 'cap' }, hojeExtenso()))),
-      h('div', { class: 'numeros' },
-        h('a', { class: 'numero' + (r.prazos.vencendo ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.vencendo), h('span', {}, 'prazos vencem em até 5 dias')),
-        h('a', { class: 'numero' + (r.prazos.aDefinir ? ' destaque' : ''), href: '#/prazos' }, h('b', {}, r.prazos.aDefinir), h('span', {}, 'intimações com prazo a definir')),
-        h('a', { class: 'numero', href: '#/clientes' }, h('b', {}, t.clientes), h('span', {}, 'clientes')),
-        h('a', { class: 'numero', href: '#/processos' }, h('b', {}, t.processos), h('span', {}, 'processos ativos'))),
-      h('div', { class: 'grade-inicio' }, blocoSemana, blocoPrazos, blocoAtos, blocoClientes),
-      h('p', { class: 'peq mt' }, linhaRobo(r.robo)));
+      h('div', { class: 'ini-topo' },
+        h('div', {}, h('p', { class: 'cap' }, hojeExtenso().replace(/^./, c => c.toUpperCase())), h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`)),
+        h('a', { class: 'btn', href: '#/cliente/novo' }, '+ Novo cliente')),
+      atalhos,
+      h('div', { class: 'ini-grade' }, blocoPrazos, blocoAtos, blocoHoje),
+      h('p', { class: 'peq mt ini-robo' }, linhaRobo(r.robo)));
   }
 
   function saudacao() { const hr = new Date().getHours(); return hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite'; }
@@ -504,7 +541,9 @@
     const grupos = {};
     info.modelos.forEach(m => { (grupos[m.grupo] = grupos[m.grupo] || []).push(m); });
     const marcados = opc.marcar || ['procuracao', 'contrato'];
-    const docs = h('div', { class: 'docs-escolha' }, Object.keys(grupos).map(g => h('div', { class: 'grupo-docs' },
+    const ORDEM_GRUPOS = ['Procuração e declarações', 'Petições (precisam do nº do processo)', 'Contratos, recibos e cobrança', 'Modelos do escritório (Drive)'];
+    const posGrupo = g => { const i = ORDEM_GRUPOS.indexOf(g); return i < 0 ? 99 : i; };
+    const docs = h('div', { class: 'docs-escolha' }, Object.keys(grupos).sort((a, b) => posGrupo(a) - posGrupo(b)).map(g => h('div', { class: 'grupo-docs' },
       h('div', { class: 'grupo-tit' }, g),
       grupos[g].map(m => h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'doc', value: m.chave, checked: marcados.includes(m.chave) }), m.nome)))));
 
@@ -851,6 +890,8 @@
       h('div', { class: 'filtros-proc' },
         h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
           [['todos', `Todos (${todosSit.length})`], ['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`]].map(([v, t]) => h('option', { value: v, selected: sit === v }, t)))),
+        h('label', {}, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
+          h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, `${a} (${porArea[a]})`)))),
         h('label', {}, 'Tribunal', h('select', { onchange: e => ir({ trib: e.target.value, area: '' }) },
           h('option', { value: '' }, 'Todos'), tribunais.map(t => h('option', { value: t, selected: trib === t }, t)))),
         h('label', {}, 'Cliente', h('select', { onchange: e => ir({ cli: e.target.value }) },

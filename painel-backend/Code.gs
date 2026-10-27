@@ -2078,6 +2078,7 @@ function resumoPrazos_() {
     aConferir: lista.filter(function (z) { return z.situacao === 'calculado'; }).length,
     vencendo: lista.filter(function (z) { return z.fatal && z.fatal >= hoje && z.fatal <= em5; }).length,
     vencidos: lista.filter(function (z) { return z.fatal && z.fatal < hoje; }).length,
+    atrasados: lista.filter(function (z) { return z.fatal && z.fatal < hoje; }).slice(0, 6),
     proximos: lista.filter(function (z) { return z.fatal && z.fatal >= hoje; }).slice(0, 8)
       .concat(lista.filter(function (z) { return z.situacao === 'a definir'; }).slice(0, 4))
   };
@@ -3029,7 +3030,23 @@ function qualificacaoAdvogado_(a) {
 // Todo Google Docs colocado nela aparece sozinho na aba Modelos.
 var PASTA_MODELOS_ESCRITORIO = '1BYDfDiNV6WHKLHZXwOyjY8BripbcbYt0';
 
+/** Modelos da pasta do Drive que a usuária pediu para não aparecer no painel (o painel já tem os seus). */
+var MODELOS_DRIVE_OCULTOS = [/^apela[cç][aã]o criminal/i, /^cumprimento de senten[cç]a/i, /^reclama[cç][aã]o trabalhista/i,
+  /^peti[cç][aã]o inicial/i, /^r[eé]plica/i, /^juntada de documentos/i, /^declara[cç][aã]o de resid[eê]ncia/i];
+
+/** Modelos do Drive que são petições dentro de um processo (exigem o nº do processo). */
+function modeloDrivePrecisaProcesso_(nome) {
+  return /pesquisa de endere|emenda|juntada|manifesta|contrarraz|impugna|embargos|recurso|r[eé]plica|alega[cç]|habilita/i.test(nomeModeloDrive_(nome));
+}
+
 function modelosDrive_() {
+  return modelosDriveTodos_().filter(function (m) {
+    var n = nomeModeloDrive_(m.nome);
+    return !MODELOS_DRIVE_OCULTOS.some(function (re) { return re.test(n); });
+  });
+}
+
+function modelosDriveTodos_() {
   var cache = CacheService.getScriptCache();
   var guardado = cache.get('modelos_drive');
   if (guardado) return JSON.parse(guardado);
@@ -3214,16 +3231,17 @@ function montarPadraoVisual_(doc, linhas) {
 function listarModelos_(d, u) {
   var pode = PERFIS[u.perfil];
   var doDrive = modelosDrive_().map(function (m) {
-    return { chave: 'drive:' + m.id, nome: nomeModeloDrive_(m.nome), grupo: 'Modelos do escritório (Drive)', escritorio: true,
-      processo: false, url: 'https://docs.google.com/document/d/' + m.id + '/edit' };
+    var precisa = modeloDrivePrecisaProcesso_(m.nome);
+    return { chave: 'drive:' + m.id, nome: nomeModeloDrive_(m.nome), grupo: precisa ? 'Petições (precisam do nº do processo)' : 'Modelos do escritório (Drive)', escritorio: true,
+      processo: precisa, url: 'https://docs.google.com/document/d/' + m.id + '/edit' };
   });
   return {
     pastaEscritorio: 'https://drive.google.com/drive/folders/' + (config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO),
-    modelos: doDrive.concat(Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
+    modelos: [].concat(Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
       var m = MODELOS[k];
       return { chave: k, nome: m.nome, grupo: m.grupo, honorarios: !!m.honorarios, mensal: !!m.mensal, recibo: !!m.recibo, processo: !!m.processo, cobranca: !!m.cobranca,
         url: 'https://docs.google.com/document/d/' + modeloId_(k) + '/edit' };
-    })),
+    }), doDrive),
     tipos: Object.keys(TIPOS_ACAO).map(function (k) { return { chave: k, nome: TIPOS_ACAO[k].nome, area: TIPOS_ACAO[k].area }; }),
     advogados: advogados_()
   };
@@ -3425,7 +3443,7 @@ function gerarDocumentos_(d, u) {
   var doDrive = {};
   modelosDrive_().forEach(function (m) { doDrive['drive:' + m.id] = m; });
   var quais = (d.modelos || []).map(function (k) { return k === 'procuracao_antiga' ? 'procuracao' : k; }).filter(function (k) { return MODELOS[k] || doDrive[k]; });
-  var M = function (k) { return MODELOS[k] || {}; };
+  var M = function (k) { return MODELOS[k] || (doDrive[k] ? { processo: modeloDrivePrecisaProcesso_(doDrive[k].nome) } : {}); };
   if (!quais.length) throw falha_('Escolha pelo menos um documento.');
   if (quais.some(function (k) { return M(k).financeiro; }) && !pode.financeiro) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
