@@ -892,6 +892,39 @@
   }
 
   /** Seção que abre e fecha pela seta (como "Editar cadastro"). Carrega o conteúdo só ao abrir. */
+  /** Código para o cliente acompanhar os processos no site (araujoadvocaciasc.com.br/acompanhe). */
+  function caixaAcesso(c) {
+    const saida = h('div', {});
+    const estado = h('p', {}, c.acesso_ativo
+      ? h('span', {}, h('span', { class: 'tag ok' }, 'acesso ativo'), c.acesso_criado_em ? ` desde ${new Date(c.acesso_criado_em).toLocaleDateString('pt-BR')}` : '')
+      : h('span', { class: 'tag' }, 'sem acesso'));
+    const gerar = botao(c.acesso_ativo ? 'Gerar código novo' : 'Gerar código de acesso', async ev => {
+      if (c.acesso_ativo && !confirm('O código antigo deixa de funcionar. Gerar um novo?')) return;
+      ev.target.disabled = true;
+      try {
+        const r = await api('clientes.acesso', { id: c.id, acao: 'gerar' });
+        let tel = String(c.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+        const nome = nomeProprioJS(String(c.nome || '').split(' ')[0]);
+        const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Agora você pode acompanhar seu processo pelo nosso site: ${r.link}\nDigite seu CPF e este código: ${r.codigo}\nGuarde o código e não o compartilhe. Qualquer dúvida, estamos à disposição.`;
+        saida.replaceChildren(h('div', { class: 'nota ok' },
+          h('p', {}, 'Código do cliente: ', h('strong', { class: 'codigo-acesso' }, r.codigo)),
+          h('p', { class: 'peq' }, 'Ele aparece só agora. Mande para o cliente; se perder, gere um novo (o antigo deixa de valer).'),
+          tel ? h('a', { class: 'btn sec wa', href: 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener noreferrer' }, 'Mandar no WhatsApp') : h('p', { class: 'peq' }, 'Cliente sem telefone: copie o código e o link ' + r.link)));
+        estado.replaceChildren(h('span', { class: 'tag ok' }, 'acesso ativo'), ' desde hoje');
+        c.acesso_ativo = true;
+      } catch (e) { avisar(e.message, true); }
+      ev.target.disabled = false;
+    });
+    const revogar = botao('Desativar acesso', async () => {
+      if (!confirm('O cliente não vai mais conseguir consultar pelo site. Desativar?')) return;
+      try { await api('clientes.acesso', { id: c.id, acao: 'revogar' }); c.acesso_ativo = false; estado.replaceChildren(h('span', { class: 'tag' }, 'sem acesso')); saida.replaceChildren(); avisar('Acesso desativado.'); }
+      catch (e) { avisar(e.message, true); }
+    }, 'sec');
+    return h('div', {},
+      h('p', {}, 'Com o CPF e um código, o cliente vê no site a situação dos processos dele, a vara, a próxima audiência e a data da última movimentação. Ele não vê prazos internos, valores nem observações do escritório.'),
+      estado, h('div', { class: 'acoes' }, gerar, revogar), saida);
+  }
+
   /** WhatsApp → PDF: instruções, pasta de entrada e botão para converter agora. */
   function caixaWhats(c) {
     const saida = h('div', {});
@@ -1021,6 +1054,7 @@
       descricao,
       secao('Observações', notas, true),
       secao('Pasta do cliente', pasta, false),
+      secao('Acesso do cliente ao site (acompanhar processo)', () => caixaAcesso(c), false),
       secao('Fotos e conversas do WhatsApp', () => caixaWhats(c), false),
       secao(`Processos (${r.processos.length})`, procs, false),
       sessao.usuario.pode.financeiro ? secao('Honorários', hons, false) : null,
@@ -1778,6 +1812,23 @@
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
   }
 
+  /** Caixa com o recibo recém-gerado: abrir/imprimir o PDF e mandar ao cliente pelo WhatsApp. */
+  function mostrarRecibo(rec) {
+    const caixa = document.getElementById('recibo-pronto') || document.body.appendChild(h('div', { id: 'recibo-pronto', class: 'ag-detalhe recibo-pronto', role: 'dialog', 'aria-modal': 'false' }));
+    let tel = String(rec.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(String(rec.cliente || '').split(' ')[0]);
+    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Recebemos o pagamento ${rec.numero ? 'da ' + rec.numero + 'ª parcela ' : ''}dos honorários${rec.honorario ? ' (' + rec.honorario + ')' : ''}, no valor de ${reais(rec.valor)}, em ${dataBR(rec.data)}. Segue o recibo. Obrigado!`;
+    caixa.replaceChildren(
+      h('button', { type: 'button', class: 'fechar', 'aria-label': 'Fechar', onclick: () => { caixa.hidden = true; } }, '×'),
+      h('span', { class: 'chip ag-conc' }, 'Recibo pronto'),
+      h('h3', {}, `${rec.cliente} · ${reais(rec.valor)}`),
+      h('p', { class: 'peq' }, 'Salvo em PDF na pasta do cliente. Para mandar no WhatsApp: baixe o PDF, abra a conversa pelo botão abaixo e anexe o arquivo.'),
+      h('div', { class: 'acoes' },
+        h('a', { class: 'btn', href: rec.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir / imprimir recibo'),
+        tel ? h('a', { class: 'btn sec wa', href: 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener noreferrer' }, 'Mandar no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')));
+    caixa.hidden = false;
+  }
+
   function acoesParcela(p, depois) {
     const parar = fn => ev => { ev.stopPropagation(); fn(ev).catch(e => avisar(e.message, true)); };
     const caixa = h('div', { class: 'mini-acoes' });
@@ -1788,7 +1839,13 @@
         h('input', { name: 'valor', value: String(p.saldo || p.valor).replace('.', ','), inputmode: 'decimal', 'aria-label': 'Valor pago' }),
         h('select', { name: 'forma', 'aria-label': 'Forma' }, ['Pix', 'Dinheiro', 'Transferência', 'Boleto', 'Cartão', 'Alvará'].map(x => h('option', {}, x))),
         h('button', { type: 'submit', class: 'btn mini' }, 'Confirmar'), h('p', { class: 'erro' }));
-      aoEnviar(f, async fd => { await api('fin.parcela.pagar', { id: p.id, ...Object.fromEntries(fd.entries()) }); avisar('Pagamento registrado.'); depois(); });
+      aoEnviar(f, async fd => {
+        const btnC = f.querySelector('button[type=submit]'); if (btnC) btnC.textContent = 'Registrando e gerando recibo…';
+        const r = await api('fin.parcela.pagar', { id: p.id, ...Object.fromEntries(fd.entries()) });
+        avisar(r.recibo ? 'Pagamento registrado e recibo gerado.' : 'Pagamento registrado.' + (r.recibo_erro ? ' (O recibo não saiu: ' + r.recibo_erro + ')' : ''), !!r.recibo_erro);
+        await depois();
+        if (r.recibo) mostrarRecibo(r.recibo);
+      });
       caixa.replaceChildren(f);
     }) }, 'Pago');
     if (p.situacao === 'paga' || p.situacao === 'paga em parte') {

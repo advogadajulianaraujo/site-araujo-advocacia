@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.5.0';
+var VERSAO = '6.6.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -30,7 +30,8 @@ var ESQUEMA = {
   Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
-    'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero'],
+    'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
+    'acesso_hash', 'acesso_criado_em'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em'],
@@ -268,6 +269,8 @@ var ROTAS = {
   'clientes.obter': { fn: obterCliente_ },
   'clientes.salvar': { fn: salvarCliente_ },
   'clientes.whatsapp': { fn: whatsappCliente_ },
+  'clientes.acesso': { fn: acessoCliente_ },
+  'consulta.processos': { publica: true, fn: consultaCliente_ },
   'whatsapp.entrada': { fn: function () { var e = pastaEntradaWhats_(); return { url: e.getUrl(), pendentes: config_('WHATSAPP_SEM_CLIENTE') || '' }; } },
   'clientes.criarPasta': { fn: criarPastaCliente_ },
   'clientes.nota': { fn: anotarCliente_ },
@@ -627,7 +630,8 @@ function obterCliente_(d) {
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.id; })[0];
   if (!c) throw falha_('Cliente não encontrado.');
   var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === c.id; });
-  return { cliente: limpar_(c), processos: procs.map(limpar_) };
+  var cli = limpar_(c); cli.acesso_ativo = !!c.acesso_hash; delete cli.acesso_hash;
+  return { cliente: cli, processos: procs.map(limpar_) };
 }
 
 function salvarCliente_(d, u) {
@@ -991,6 +995,73 @@ function acharPasta_(raiz, nome) {
 
 function nomePasta_(nome) {
   return String(nome).trim().replace(/\s+/g, ' ').replace(/[\/\\]/g, '-').toUpperCase();
+}
+
+/* ------------------------------------------------------------------ */
+/* "Acompanhe seu processo" (site): o cliente vê os próprios processos  */
+/* ------------------------------------------------------------------ */
+/*
+ * O escritório gera na ficha um código de 8 letras/números para o cliente (mostrado uma vez só, guardado embaralhado
+ * como as senhas). No site, com CPF + código, o cliente vê seus processos: situação, vara, próximo ato e a data da
+ * última movimentação. Nada de prazos internos, valores ou dados de outros clientes. Erros são limitados.
+ */
+var LETRAS_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function acessoCliente_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Clientes');
+    var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!c) throw falha_('Cliente não encontrado.');
+    if (d.acao === 'revogar') {
+      atualizarLinha_(tab, c, { acesso_hash: '', acesso_criado_em: '' });
+      registrar_(u.usuario, 'acesso do cliente desativado', c.id);
+      return { ok: true };
+    }
+    if (String(c.cpf_cnpj || '').replace(/\D/g, '').length < 11) throw falha_('Cadastre o CPF do cliente antes de gerar o código.');
+    var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid(), Utilities.Charset.UTF_8);
+    var codigo = '';
+    for (var i = 0; i < 8; i++) codigo += LETRAS_CODIGO.charAt((bytes[i] & 255) % LETRAS_CODIGO.length);
+    atualizarLinha_(tab, c, { acesso_hash: hashSenha_(codigo, 'acesso|' + c.id), acesso_criado_em: new Date().toISOString() });
+    registrar_(u.usuario, 'código de acesso do cliente gerado', c.id);
+    return { codigo: codigo, link: 'https://araujoadvocaciasc.com.br/acompanhe/' };
+  });
+}
+
+function consultaCliente_(d) {
+  var cache = CacheService.getScriptCache();
+  var cpf = String(d.cpf || '').replace(/\D/g, '');
+  var codigo = String(d.codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  var erro = 'CPF ou código incorretos. Confira e tente de novo, ou fale com o escritório.';
+  if ((parseInt(cache.get('cons_falhas'), 10) || 0) >= 100) throw falha_('Muitas tentativas no momento. Tente de novo em 15 minutos.');
+  if (cpf.length !== 11 && cpf.length !== 14) throw falha_(erro);
+  var kCpf = 'cons_cpf_' + cpf;
+  if ((parseInt(cache.get(kCpf), 10) || 0) >= 5) throw falha_('Muitas tentativas para este CPF. Tente de novo em 15 minutos ou fale com o escritório.');
+  var falhou = function () {
+    cache.put(kCpf, String((parseInt(cache.get(kCpf), 10) || 0) + 1), 900);
+    cache.put('cons_falhas', String((parseInt(cache.get('cons_falhas'), 10) || 0) + 1), 900);
+    throw falha_(erro);
+  };
+  if (codigo.length !== 8) falhou();
+  var cli = tabela_('Clientes').linhas.filter(function (c) {
+    return c.acesso_hash && String(c.cpf_cnpj || '').replace(/\D/g, '') === cpf && iguais_(hashSenha_(codigo, 'acesso|' + c.id), c.acesso_hash);
+  })[0];
+  if (!cli) falhou();
+  var hoje = hojeSP_();
+  var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === cli.id && p.numero; }).map(function (p) {
+    var ato = p.proximo_ato_data && p.proximo_ato_data >= hoje ? { ato: String(p.proximo_ato || '').slice(0, 120), data: p.proximo_ato_data } : null;
+    return {
+      numero: p.numero, area: p.area || '', tribunal: p.tribunal || tribunalDoNumero_(p.numero), orgao: p.orgao || '',
+      situacao: p.status === 'arquivado' ? 'Arquivado / baixado' : 'Em andamento', proximo: ato,
+      movimentacao: p.ultimo_movimento_em ? String(p.ultimo_movimento_em).slice(0, 10) : '',
+      ultimo: String(p.ultimo_movimento || '').replace(/\s+/g, ' ').slice(0, 160)
+    };
+  }).sort(function (a, b) {
+    if (a.situacao !== b.situacao) return a.situacao === 'Em andamento' ? -1 : 1;
+    return a.movimentacao < b.movimentacao ? 1 : a.movimentacao > b.movimentacao ? -1 : 0;
+  });
+  cache.remove(kCpf);
+  registrar_('site', 'consulta do cliente', cli.id + ' (' + procs.length + ' processo(s))');
+  return { nome: nomeProprio_(String(cli.nome || '').split(' ')[0]), processos: procs, atualizado: config_('ROBO_ULTIMA_EXECUCAO') || '' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -2797,6 +2868,27 @@ function salvarParcela_(d, u) {
 }
 
 function pagarParcela_(d, u) {
+  var res = registrarPagamento_(d, u);
+  // recibo automático (fora da trava, porque gera documento no Drive)
+  if (!d.estornar && d.recibo !== false) {
+    try { res.recibo = reciboDaParcela_(res, u); } catch (e) { res.recibo_erro = String(e.message || e); }
+  }
+  return res;
+}
+
+/** Gera o recibo da parcela paga na pasta do cliente (modelo "Recibo de honorários"). */
+function reciboDaParcela_(pg, u) {
+  var h = tabela_('Honorarios').linhas.filter(function (x) { return x.id === pg.honorario_id; })[0] || {};
+  var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === pg.cliente_id; })[0];
+  if (!c) throw falha_('Cliente da parcela não encontrado.');
+  var referente = (pg.numero ? pg.numero + 'ª parcela dos ' : '') + 'honorários advocatícios' + (h.descricao ? ' (' + h.descricao + ')' : '') +
+    ', paga em ' + dataBR_(pg.data) + (pg.forma ? ' por ' + pg.forma : '');
+  var g = gerarDocumentos_({ cliente_id: c.id, modelos: ['recibo'], recibo: { valor: pg.valor, referente: referente } }, u);
+  var doc = g.gerados[0] || {};
+  return { pdf: doc.pdf, doc: doc.doc, cliente: c.nome, telefone: c.telefone || '', valor: pg.valor, numero: pg.numero, data: pg.data, honorario: h.descricao || '' };
+}
+
+function registrarPagamento_(d, u) {
   return comTrava_(function () {
     var r = parcelaPorId_(d.id);
     if (d.estornar) {
@@ -2811,7 +2903,7 @@ function pagarParcela_(d, u) {
     atualizarLinha_(r.tab, r.p, { pago_em: data, valor_pago: txtDinheiro_(valor), forma: String(d.forma || ''),
       atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, 'parcela paga', d.id + ' R$ ' + txtDinheiro_(valor));
-    return { ok: true };
+    return { ok: true, cliente_id: r.p.cliente_id, honorario_id: r.p.honorario_id, numero: r.p.numero, valor: valor, data: data, forma: String(d.forma || '') };
   });
 }
 

@@ -475,3 +475,5 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
   a{text-decoration:none;color:#000}
   tr{break-inside:avoid}
 }
+.recibo-pronto .acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.codigo-acesso{font:600 22px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;background:#fff;padding:4px 10px;border:1px dashed var(--tinta)}

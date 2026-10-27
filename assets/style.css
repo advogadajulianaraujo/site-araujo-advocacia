@@ -333,3 +333,34 @@ footer.site{background:var(--black);color:#9e9a92;font-size:14px;padding:90px 0 
 /* Botão ENTRAR do painel interno, no canto do cabeçalho */
 .nav > a.entrar-site{gap:8px}
 .nav > a.entrar-site .ico{width:15px;height:15px}
+/* Área do cliente: acompanhe seu processo */
+.acomp-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:56px;align-items:start}
+@media (max-width:860px){.acomp-grid{grid-template-columns:1fr;gap:36px}}
+.acomp-form{background:var(--paper);border:1px solid var(--line);padding:36px;display:flex;flex-direction:column;gap:8px}
+.acomp-form h2{font:400 32px/1.1 var(--display);margin:0 0 14px}
+.acomp-form label{font:500 12px/1.4 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:10px}
+.acomp-form input{font:400 18px/1.3 var(--sans);padding:14px 16px;border:1px solid #cfcac0;background:#fff;color:var(--ink);width:100%}
+.acomp-form input:focus{outline:2px solid var(--black);outline-offset:1px}
+.acomp-form .btn{margin-top:18px}
+.acomp-form .btn[disabled]{opacity:.6;cursor:wait}
+.acomp-erro{color:#b42318;min-height:1.4em;margin:6px 0 0;font-size:15px}
+.acomp-peq{font-size:14px;color:var(--muted);line-height:1.6;margin:6px 0 0}
+.acomp-peq a,.acomp-info a{text-decoration:underline;text-underline-offset:3px}
+.acomp-info h3{font:400 26px/1.2 var(--display);margin:0 0 14px}
+.acomp-info ul{margin:0 0 18px;padding-left:20px;line-height:1.9}
+.acomp-info p{line-height:1.7;margin:0 0 26px}
+.acomp-resultado:empty{display:none}
+.acomp-cab{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px;margin:0 0 26px}
+.acomp-cab h2{font:400 clamp(30px,3vw,40px)/1.1 var(--display);margin:0}
+.acomp-cab p{margin:0;flex:1;min-width:220px;color:var(--muted)}
+.acomp-card{border:1px solid var(--line);border-left:4px solid var(--black);background:var(--paper);padding:22px 26px;margin:0 0 16px}
+.acomp-topo{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}
+.acomp-num{font:500 18px/1.3 var(--sans);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.acomp-tag{font:500 11.5px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--muted);color:var(--muted);padding:7px 12px}
+.acomp-tag.ativo{border-color:#1f7a3f;color:#1f7a3f}
+.acomp-orgao{color:var(--muted);margin:8px 0 0}
+.acomp-prox{margin:16px 0 0;padding:14px 16px;background:var(--ivory);display:flex;flex-direction:column;gap:4px}
+.acomp-prox span{font:500 11.5px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.acomp-prox strong{font:500 18px/1.4 var(--sans)}
+.acomp-mov{margin:14px 0 0;font-size:15px;line-height:1.6}
+.acomp-grid[hidden],.acomp-form[hidden]{display:none}

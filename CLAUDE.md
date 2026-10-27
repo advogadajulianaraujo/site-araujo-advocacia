@@ -95,6 +95,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   na pasta do cliente. Também aceita subpasta da entrada com o nome do cliente. Zip acima de 48 MB não abre (limite do Google).
 - Financeiro › "A receber": lista por cliente/honorário com parcelas pagas/total, valor total, recebido, falta receber,
   atrasado e próxima parcela (`aReceber_`, rota `fin.areceber`), atrasados primeiro, com botão de imprimir e de WhatsApp.
+- Ao marcar uma parcela como paga, o recibo sai sozinho em PDF na pasta do cliente (`reciboDaParcela_`) e o painel abre
+  uma caixa com "Abrir / imprimir recibo" e "Mandar no WhatsApp" (o PDF é anexado à mão; não tornamos o arquivo público).
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade
@@ -107,6 +109,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   é apagada ao sair, ao cair a sessão e ao fechar o navegador.
 - Contratos: CONTRATADA qualificada com o(a) advogado(a) só pela OAB (sem repetir endereço); assinaturas com nome em
   negrito e o papel embaixo ("NOME|CONTRATANTE" no texto do modelo); testemunhas com nome e CPF.
+
+## Site público
+
+- /acompanhe/ ("Acompanhe seu processo"): o cliente entra com CPF + código de 8 caracteres gerado na ficha
+  ("Acesso do cliente ao site"). O código aparece uma vez só e é guardado embaralhado (`acesso_hash`, nunca vai ao painel).
+  Rota pública `consulta.processos` devolve só número, área, vara, situação, próximo ato e data/resumo da última
+  movimentação. 5 erros por CPF bloqueiam 15 min; 100 erros no total travam a consulta 15 min. Nada fica no navegador.
+- SEO: páginas de área com 6 a 8 perguntas frequentes (texto e schema FAQPage iguais) e BreadcrumbList. Conteúdo
+  informativo, citando a lei, sem promessas nem preços (Provimento 205/2021 da OAB).
 
 ## Login
 
