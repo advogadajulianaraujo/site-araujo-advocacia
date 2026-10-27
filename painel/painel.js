@@ -60,7 +60,26 @@
     Object.keys(dados || {}).sort().forEach(k => { const v = dados[k]; if (v !== '' && v !== null && v !== undefined && v !== false) d[k] = v; });
     return acao + '|' + JSON.stringify(d);
   }
-  function esquecerTudo() { memoria.clear(); geracao++; }
+  function esquecerTudo() { memoria.clear(); geracao++; salvarMemoria(); }
+  /* A memória sobrevive ao F5 (só nesta aba; some ao sair ou fechar o navegador): as telas abrem na hora e são conferidas por trás. */
+  let salvarTimer = null;
+  function salvarMemoria() {
+    clearTimeout(salvarTimer);
+    salvarTimer = setTimeout(() => {
+      try {
+        if (!sessao) { sessionStorage.removeItem('painel_memoria'); return; }
+        const obj = {};
+        for (const [k, m] of memoria) if ('txt' in m && m.txt.length < 1500000) obj[k] = m.txt;
+        sessionStorage.setItem('painel_memoria', JSON.stringify(obj));
+      } catch (e) { try { sessionStorage.removeItem('painel_memoria'); } catch (e2) { /* sem espaço */ } }
+    }, 800);
+  }
+  function recuperarMemoria() {
+    try {
+      const obj = JSON.parse(sessionStorage.getItem('painel_memoria') || '{}');
+      Object.entries(obj).forEach(([k, txt]) => { if (!memoria.has(k)) memoria.set(k, { t: 0, txt }); });
+    } catch (e) { /* começa vazia */ }
+  }
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
     clientes: ['clientes', 'processos', 'resumo', 'modelos'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
@@ -76,6 +95,7 @@
       if (lista.includes(k.split('|')[0].split('.')[0])) memoria.delete(k);
       else if ('txt' in m) m.t = 0; else memoria.delete(k);
     }
+    salvarMemoria();
   }
 
   const GRAVANDO = new Map();
@@ -99,7 +119,7 @@
     if (m && m.promessa) return m.promessa.then(v => JSON.parse(JSON.stringify(v)));
     const g = geracao;
     const promessa = chamar(acao, dados).then(v => {
-      if (g === geracao) memoria.set(k, { t: Date.now(), txt: JSON.stringify(v) }); else memoria.delete(k);
+      if (g === geracao) { memoria.set(k, { t: Date.now(), txt: JSON.stringify(v) }); salvarMemoria(); } else memoria.delete(k);
       return JSON.parse(JSON.stringify(v));
     }, e => { memoria.delete(k); throw e; });
     memoria.set(k, { promessa });
@@ -113,7 +133,7 @@
       const txt = JSON.stringify(v);
       const mudou = txt !== m.txt;
       memoria.set(k, { t: Date.now(), txt });
-      if (mudou) pedirRedesenho();
+      if (mudou) { pedirRedesenho(); salvarMemoria(); }
     }, () => { m.promessa = null; });
   }
 
@@ -135,7 +155,67 @@
     const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['modelos.listar', {}]];
     if (pode.financeiro) lista.push(['fin.resumo'], ['fin.honorarios', {}]);
     lista.forEach(([a, d]) => api(a, d).catch(() => {}));
+    setTimeout(() => lerDjenNavegador(false), 4000);
   }
+  /* ---------- DJEN pelo navegador do escritório ----------
+     O CNJ recusa os servidores do Google (403). Daqui, com a internet do escritório, o painel busca as
+     comunicações das OABs cadastradas a cada 2 horas enquanto estiver aberto e manda para a planilha. */
+  const DJEN_API = 'https://comunicaapi.pje.jus.br/api/v1/comunicacao';
+  const espera = ms => new Promise(r => setTimeout(r, ms));
+  let djenRodando = null;
+  function djenLinkPublico(oab, uf, ini, fim) {
+    return `https://comunica.pje.jus.br/consulta?numeroOab=${encodeURIComponent(oab)}&ufOab=${encodeURIComponent(uf)}&dataDisponibilizacaoInicio=${ini}&dataDisponibilizacaoFim=${fim}`;
+  }
+  function lerDjenNavegador(forcar) {
+    if (!sessao || djenRodando) return djenRodando;
+    let ult = 0;
+    try { ult = +localStorage.getItem('djen_ultimo') || 0; } catch (e) { /* sem memória do navegador */ }
+    if (!forcar && Date.now() - ult < 2 * 3600e3) return null;
+    try { localStorage.setItem('djen_ultimo', String(Date.now())); } catch (e) { /* idem */ }
+    djenRodando = (async () => {
+      try {
+        const cfg = await chamar('djen.config', {});
+        const itens = [];
+        for (const o of cfg.oabs) {
+          let tentativas = 0;
+          for (let pg = 1; pg <= 20; pg++) {
+            const url = `${DJEN_API}?numeroOab=${encodeURIComponent(o.numero)}&ufOab=${encodeURIComponent(o.uf)}&dataDisponibilizacaoInicio=${cfg.desde}&dataDisponibilizacaoFim=${cfg.hoje}&pagina=${pg}&itensPorPagina=100`;
+            const resp = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+            if (resp.status === 429 && tentativas++ < 3) { await espera(4000 * tentativas); pg--; continue; }
+            if (!resp.ok) throw new Error('o CNJ respondeu com o código ' + resp.status);
+            const j = await resp.json();
+            const lista = j.items || j.itens || [];
+            lista.forEach(it => itens.push({
+              id: it.id, hash: it.hash, numeroprocessocommascara: it.numeroprocessocommascara, numero_processo: it.numero_processo,
+              data_disponibilizacao: it.data_disponibilizacao || it.dataDisponibilizacao, siglaTribunal: it.siglaTribunal,
+              tipoComunicacao: it.tipoComunicacao, nomeOrgao: it.nomeOrgao, texto: String(it.texto || '').slice(0, 20000)
+            }));
+            if (lista.length < 100) break;
+            await espera(500);
+          }
+        }
+        // manda em lotes (o servidor recusa pedidos muito grandes)
+        let novas = 0, prazos = 0, lote = [], tam = 0;
+        const enviar = async fim => { const r = await api('djen.importar', { itens: lote, fim }); novas += r.novas || 0; prazos += r.prazos || 0; lote = []; tam = 0; };
+        for (const it of itens) {
+          const t = JSON.stringify(it).length;
+          if (lote.length && (tam + t > 140000 || lote.length >= 150)) await enviar(false);
+          lote.push(it); tam += t;
+        }
+        await enviar(true);
+        if (novas) { avisar(`DJEN: ${novas} comunicação(ões) nova(s), ${prazos} prazo(s) novo(s).`); if (/^#\/(inicio|prazos)?$/.test(location.hash.split('?')[0] || '#/')) pedirRedesenho(); }
+        return { ok: true, total: itens.length, novas, prazos };
+      } catch (e) {
+        const msg = e instanceof TypeError ? 'o navegador não conseguiu falar com o site do CNJ (bloqueio de acesso ou internet)' : e.message;
+        chamar('djen.importar', { erro: msg }).catch(() => {});
+        try { localStorage.setItem('djen_ultimo', String(Date.now() - 1.5 * 3600e3)); } catch (e2) { /* tenta de novo em 30 min */ }
+        return { ok: false, erro: msg };
+      } finally { djenRodando = null; }
+    })();
+    return djenRodando;
+  }
+  setInterval(() => { if (sessao) lerDjenNavegador(false); }, 30 * 60e3);
+
   /** Ao passar o mouse (ou encostar o dedo) numa aba, já começa a buscar o que ela mostra. */
   const LEITURAS_DA_ABA = {
     inicio: () => [['resumo'], ['agenda.listar', { inicio: hojeISO(), fim: isoSoma(hojeISO(), 14) }]],
@@ -269,6 +349,7 @@
     const token = sessao && sessao.token;
     sessao = null;
     esquecerTudo();
+    try { sessionStorage.removeItem('painel_memoria'); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
     abasEl.hidden = true;
@@ -1275,7 +1356,7 @@
   function cartaoRobo(robo) {
     const atrasado = !robo || !robo.ultima || robo.atrasado;
     const status = h('div', { class: 'robo-txt' },
-      h('strong', {}, atrasado ? 'Robô atrasado: atualizando agora…' : 'Robô ligado · lê Gmail e DJEN de 6 em 6 horas'),
+      h('strong', {}, atrasado ? 'Robô atrasado: atualizando agora…' : 'Robô ligado · lê o Gmail de 6 em 6 horas e o DJEN de 2 em 2 horas'),
       h('div', { class: 'peq' }, robo && robo.ultima ? `Última leitura: ${quando(robo.ultima)}` + (robo.proxima ? ` · próxima: ${quando(robo.proxima)}` : '') : 'Ainda não houve leitura.'),
       robo && robo.resultado ? h('div', { class: 'peq' }, robo.resultado.replace(/^Robô em [^:]+: /, '')) : null);
     const rodar = async btn => {
@@ -1284,6 +1365,21 @@
       catch (e) { avisar(e.message, true); if (btn) { btn.disabled = false; btn.textContent = 'Atualizar agora'; } }
     };
     const btn = botao('Atualizar agora', ev => rodar(ev.target), 'sec');
+    const dj = (robo && robo.djen) || {};
+    const hojeD = hojeISO();
+    const linkDjen = djenLinkPublico('54832', 'SC', isoSoma(hojeD, -7), hojeD);
+    const linhaDjen = h('div', { class: 'peq djen-linha' + (dj.erro ? ' erro' : '') },
+      h('strong', {}, 'DJEN: '),
+      dj.ultima ? `lido pelo computador do escritório em ${quando(dj.ultima)} (de 2 em 2 horas com o painel aberto)` : 'ainda não foi lido pelo navegador',
+      dj.erro ? h('span', {}, ' · último problema: ' + dj.erro) : null,
+      ' · ', h('button', { type: 'button', class: 'link escuro', onclick: async ev => {
+        ev.target.disabled = true; ev.target.textContent = 'lendo o DJEN…';
+        const r = await lerDjenNavegador(true);
+        if (r && r.ok) { avisar(`DJEN lido: ${r.total} comunicação(ões) no período, ${r.novas} nova(s).`); rota(); }
+        else { avisar('Não consegui ler o DJEN: ' + ((r && r.erro) || 'tente de novo') + '. Use o link "ver no site do DJEN".', true); ev.target.disabled = false; ev.target.textContent = 'ler o DJEN agora'; }
+      } }, 'ler o DJEN agora'),
+      ' · ', h('a', { href: linkDjen, target: '_blank', rel: 'noopener noreferrer' }, 'ver no site do DJEN'));
+    status.append(linhaDjen);
     const cartao = h('div', { class: 'robo-cartao ' + (atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto', 'aria-hidden': 'true' }), status, btn);
     if (atrasado && !ler('robo_auto')) { guardar('robo_auto', Date.now()); setTimeout(() => rodar(btn), 300); }
     return cartao;
@@ -1908,6 +2004,7 @@
   }, 10 * 60 * 1000);
 
   sessao = ler('painel_sessao');
+  if (sessao) recuperarMemoria();
   if (sessao) montarTopo();
   rota().then(() => { if (sessao) preaquecer(); });
 })();

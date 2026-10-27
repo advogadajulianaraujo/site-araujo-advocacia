@@ -11,6 +11,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   contrarrazões 15/10/8; laudo 15 (TRT 5); despacho/decisão 5 (art. 218, § 3º, CPC).
 - `definirPendentes_` define qualquer prazo antigo que tenha ficado "a definir"; roda no `configurar` e em toda rodada do robô.
 - Prazo de audiência ou perícia (observações começando com "ato:") usa a data do ato e nunca é recalculado.
+- DJEN: a consulta do CNJ recusa os servidores do Google (403). O painel aberto no computador do escritório lê o DJEN
+  pelo navegador (`lerDjenNavegador` em painel.js → rotas `djen.config`/`djen.importar`) a cada 2 h, para todas as OABs
+  da aba Advogados, e manda para a planilha; se o navegador leu nas últimas 36 h, o robô do servidor nem tenta.
+  Se o CNJ recusar também o navegador, o cartão do robô mostra o problema e o link "ver no site do DJEN".
 - Ao revisar prazos, procure em tudo que tiver acesso: avisos do eproc e do PJe no Gmail (conta advogadajulianaraujo),
   DJEN (a consulta pública recusa o Google e esta nuvem, código 403) e a agenda. Nunca invente o conteúdo de um ato.
 
@@ -63,7 +67,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   antecipado após 30 dias de atraso, sigilo/LGPD). Antes, v4: cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
   despesas (perícias, custas, diligências fora da comarca, deslocamento acima de 100 km), obrigações do cliente (documentos,
   mudança de telefone/endereço), vedado acordo sem anuência, obrigação de meio, desistência = 2 salários mínimos,
-  descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (hoje MODELO5_ → MODELO6_)
+  descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (hoje MODELO6_ → MODELO7_)
   para o Google Docs do modelo ser recriado.
 
 ## Layout
@@ -89,6 +93,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Servidor guarda por até 10 min as listas grandes (clientes, processos, prazos, intimações, honorários) em `comMemoria_`;
   toda gravação na planilha chama `marcarMudanca_` e a memória é descartada na hora. Toda escrita nova deve passar
   pelos helpers (`inserirLinha_`, `atualizarLinha_`, `gravarLote_`, `regravarMudadas_`), que já marcam a mudança.
+
+- No navegador, a memória das telas também fica na aba (sessionStorage `painel_memoria`) para o F5 abrir na hora;
+  é apagada ao sair, ao cair a sessão e ao fechar o navegador.
+- Contratos: CONTRATADA qualificada com o(a) advogado(a) só pela OAB (sem repetir endereço); assinaturas com nome em
+  negrito e o papel embaixo ("NOME|CONTRATANTE" no texto do modelo); testemunhas com nome e CPF.
 
 ## Login
 
