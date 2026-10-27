@@ -2033,6 +2033,7 @@ function conferirPrazo_(d, u) {
     var z = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
     if (!z) throw falha_('Prazo não encontrado.');
     if (!z.fatal) throw falha_('Defina os dias e a data de ciência antes de conferir.');
+    if (z.situacao === 'conferido') return { ok: true, repetido: true };
     atualizarLinha_(tab, z, { situacao: 'conferido', conferido_por: u.nome || u.usuario, conferido_em: new Date().toISOString(),
       atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, 'prazo conferido', z.id + ' ' + z.numero + ' fatal ' + z.fatal);
@@ -2048,6 +2049,7 @@ function mudarSituacaoPrazo_(d, u) {
     var z = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
     if (!z) throw falha_('Prazo não encontrado.');
     if (nova === 'calculado' && !z.fatal) nova = 'a definir';
+    if (z.situacao === nova) return { ok: true, repetido: true };
     var agoraIso = new Date().toISOString();
     atualizarLinha_(tab, z, { situacao: nova, atualizado_em: agoraIso, atualizado_por: u.usuario,
       conferido_por: nova === 'calculado' ? '' : z.conferido_por, conferido_em: nova === 'calculado' ? '' : z.conferido_em,
@@ -3384,20 +3386,34 @@ function clausulaHonorarios_(h, parcelas) {
 /** Lança no Financeiro o que foi contratado no formulário. */
 function lancarHonorariosForm_(f, c, descricao, u) {
   var ids = [];
+  // não lança de novo o mesmo honorário (contrato gerado mais de uma vez)
+  var num = function (v) { return v === '' || v == null ? 0 : Math.round((dinheiro_(v) || 0) * 100); };
+  var existentes = tabela_('Honorarios').linhas.filter(function (h) { return h.cliente_id === c.id && ['cancelado', 'encerrado', 'quitado'].indexOf(h.situacao) < 0; });
+  var salvarHonorario = function (dados, usuario) {
+    var n = dados.honorario;
+    var igual = existentes.filter(function (h) {
+      return h.tipo === n.tipo && num(h.percentual) === num(n.percentual) && num(h.valor_total) === num(n.valor_total) &&
+        num(h.valor_mensal) === num(n.valor_mensal);
+    })[0];
+    if (igual) { ids.repetidos = (ids.repetidos || 0) + 1; return { id: null }; }
+    return salvarHonorario_(dados, usuario);
+  };
   var base = { cliente_id: c.id, descricao: descricao, observacoes: 'Lançado ao gerar o contrato pelo painel.' };
   var fixo = function () {
     var n = f.forma === 'avista' ? 1 : Math.max(1, parseInt(f.parcelas, 10) || 1);
-    ids.push(salvarHonorario_({ honorario: Object.assign({}, base, { tipo: 'parcelado', valor_total: f.valor_total, parcelas: n, primeiro_vencimento: f.primeiro_vencimento }) }, u).id);
+    ids.push(salvarHonorario({ honorario: Object.assign({}, base, { tipo: 'parcelado', valor_total: f.valor_total, parcelas: n, primeiro_vencimento: f.primeiro_vencimento }) }, u).id);
   };
   if (f.forma === 'avista' || f.forma === 'parcelado') fixo();
   if (f.forma === 'percentual' || f.forma === 'misto') {
     if (f.forma === 'misto') fixo();
-    ids.push(salvarHonorario_({ honorario: Object.assign({}, base, { tipo: 'exito', percentual: f.percentual }) }, u).id);
+    ids.push(salvarHonorario({ honorario: Object.assign({}, base, { tipo: 'exito', percentual: f.percentual }) }, u).id);
   }
   if (f.forma === 'mensal') {
-    ids.push(salvarHonorario_({ honorario: Object.assign({}, base, { tipo: 'mensal', valor_mensal: f.valor_mensal, dia_vencimento: f.dia_vencimento || '10', inicio: f.primeiro_vencimento || hojeSP_() }) }, u).id);
+    ids.push(salvarHonorario({ honorario: Object.assign({}, base, { tipo: 'mensal', valor_mensal: f.valor_mensal, dia_vencimento: f.dia_vencimento || '10', inicio: f.primeiro_vencimento || hojeSP_() }) }, u).id);
   }
-  return ids;
+  var novos = ids.filter(function (x) { return x; });
+  novos.repetidos = ids.repetidos || 0;
+  return novos;
 }
 
 /**
@@ -3553,7 +3569,7 @@ function gerarDocumentos_(d, u) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
-  return { gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), faltando: faltando, lancados: lancados.length };
+  return { gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
 }
 
 /* ================================================================== */

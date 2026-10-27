@@ -62,9 +62,17 @@
   }
   function esquecerTudo() { memoria.clear(); geracao++; }
 
+  const GRAVANDO = new Map();
   async function api(acao, dados) {
     if (!LEITURAS.has(acao)) {
-      try { return await chamar(acao, dados); } finally { if (acao !== 'situacao') esquecerTudo(); }
+      // clique duplo: o mesmo pedido de gravação em andamento não é enviado de novo
+      const kg = chaveDe(acao, dados);
+      if (GRAVANDO.has(kg)) return GRAVANDO.get(kg);
+      const p = (async () => {
+        try { return await chamar(acao, dados); } finally { GRAVANDO.delete(kg); if (acao !== 'situacao') esquecerTudo(); }
+      })();
+      GRAVANDO.set(kg, p);
+      return p;
     }
     const k = chaveDe(acao, dados);
     const m = memoria.get(k);
@@ -569,7 +577,7 @@
       form.querySelector('.gerados').replaceChildren(...[
         r.faltando.length ? h('div', { class: 'nota alerta' }, 'Atenção, faltou no cadastro: ' + r.faltando.join(', ') + '. Esses campos saíram em branco; complete o cadastro e gere de novo.') : null,
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
-          r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : ''),
+          r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
         h('ul', { class: 'lista-int' }, r.gerados.map(g => h('li', {}, h('strong', {}, g.modelo), ' · ',
           h('a', { href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'abrir PDF'), ' · ',
           h('a', { href: g.doc, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))),
@@ -1073,7 +1081,7 @@
 
   function botoesPrazo(z) {
     const pode = sessao.usuario.pode;
-    const parar = fn => ev => { ev.stopPropagation(); fn().catch(e => avisar(e.message, true)); };
+    const parar = fn => ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; fn().catch(e => { b.disabled = false; avisar(e.message, true); }); };
     return h('div', { class: 'mini-acoes' },
       pode.conferePrazos && z.situacao === 'calculado'
         ? h('button', { type: 'button', class: 'btn mini', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Prazo conferido.')) }, 'Conferir') : null,
