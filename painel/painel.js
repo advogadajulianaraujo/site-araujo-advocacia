@@ -599,6 +599,7 @@
         campoF('valor_total', 'Valor total (R$)', '', { modo: 'decimal', max: 20, dica: 'Ex.: 3.000,00' }, ['avista', 'parcelado', 'misto']),
         campoF('parcelas', 'Nº de parcelas', '', { modo: 'numeric', max: 3, dica: 'Ex.: 10' }, ['parcelado', 'misto']),
         campoF('primeiro_vencimento', 'Vencimento (1ª parcela / à vista)', '', { tipo: 'date' }, ['avista', 'parcelado', 'misto', 'mensal']),
+        campoF('dia_demais', 'Demais parcelas: todo dia', '', { modo: 'numeric', max: 2, dica: 'Vazio = mesmo dia da 1ª' }, ['parcelado', 'misto']),
         campoF('valor_mensal', 'Mensalidade (R$)', '', { modo: 'decimal', max: 20 }, ['mensal']),
         campoF('dia_vencimento', 'Dia do vencimento', '10', { modo: 'numeric', max: 2 }, ['mensal'])),
       h('p', { class: 'peq', 'data-formas': 'cadastrado' }, 'A cláusula usa o honorário ativo deste cliente na aba Financeiro.'),
@@ -607,6 +608,17 @@
       h('div', { class: 'campos' }, campo('recibo_valor', 'Valor recebido (R$)', '', { modo: 'decimal', max: 20 }),
         campo('recibo_referente', 'Referente a', '', { max: 200, dica: 'Ex.: 1ª parcela dos honorários da reclamatória trabalhista' })));
 
+    const linhaMenor = () => h('div', { class: 'linha-menor' },
+      h('input', { name: 'menor_nome', placeholder: 'Nome completo do(a) filho(a)', 'aria-label': 'Nome do(a) filho(a)', maxlength: 160 }),
+      h('input', { name: 'menor_cpf', placeholder: 'CPF (se tiver)', inputmode: 'numeric', 'aria-label': 'CPF', maxlength: 14 }),
+      h('input', { name: 'menor_nasc', type: 'date', 'aria-label': 'Data de nascimento' }),
+      h('select', { name: 'menor_sexo', 'aria-label': 'Sexo' }, h('option', { value: '' }, '— pelo nome —'), h('option', { value: 'feminino' }, 'Feminino'), h('option', { value: 'masculino' }, 'Masculino')));
+    const listaMenores = h('div', { class: 'lista-menores' }, linhaMenor());
+    const menoresBox = h('fieldset', { class: 'caixa-int' }, h('legend', {}, 'Filhos menores (outorgantes)'),
+      h('p', { class: 'peq' }, 'O cliente escolhido acima é quem representa (pai, mãe, tutor ou guardião). Até 15 anos sai "representado"; de 16 e 17 anos, "assistido".'),
+      campo('representacao', 'O cliente é', 'genitor', { opcoes: [['genitor', 'Pai / mãe'], ['tutor', 'Tutor(a)'], ['guardiao', 'Guardião / guardiã']] }),
+      listaMenores,
+      botao('+ outro filho(a)', () => listaMenores.append(linhaMenor()), 'sec mini'));
     const notaCobranca = h('div', { class: 'nota' }, 'A notificação de cobrança lista sozinha as parcelas em atraso deste cliente na aba Financeiro e dá 5 dias para pagar.');
     const form = h('form', { class: 'gerador', novalidate: true },
       h('div', { class: 'campos' },
@@ -614,7 +626,7 @@
         campo('advogado_id', 'Advogado(a) outorgado(a)', padrao, { opcoes: advs.map(a => [a.id, `${a.nome} — OAB/${a.uf} ${a.oab}`]) }),
         campo('tipo_acao', 'Tipo de ação', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
         campoProc, campoVara, campoComarca),
-      h('h4', {}, 'Quais documentos'), docs, notaCobranca, hon, rec,
+      h('h4', {}, 'Quais documentos'), docs, notaCobranca, menoresBox, hon, rec,
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
       h('p', { class: 'erro' }), h('div', { class: 'gerados' }));
 
@@ -623,6 +635,7 @@
       const comHon = escolhidos.some(m => m && (m.honorarios || m.mensal));
       hon.hidden = !comHon;
       rec.hidden = !escolhidos.some(m => m && m.recibo);
+      menoresBox.hidden = !escolhidos.some(m => m && m.menores);
       if (comHon && !escolhidos.some(m => m.honorarios) && escolhidos.some(m => m.mensal)) {
         const r = form.querySelector('input[name=forma][value=mensal]'); if (r && !r.checked && form.dataset.mexeu !== '1') r.checked = true;
       }
@@ -651,14 +664,17 @@
         cliente_id: fd.get('cliente_id'), modelos, advogado_id: fd.get('advogado_id'), tipo_acao: fd.get('tipo_acao'),
         numero_processo: (fd.get('numero_processo') || '').trim(), vara: fd.get('vara'), comarca: fd.get('comarca'),
         honorarios: hon.hidden ? null : { forma: fd.get('forma'), percentual: fd.get('percentual'), valor_total: fd.get('valor_total'),
-          parcelas: fd.get('parcelas'), primeiro_vencimento: fd.get('primeiro_vencimento'), valor_mensal: fd.get('valor_mensal'),
+          parcelas: fd.get('parcelas'), primeiro_vencimento: fd.get('primeiro_vencimento'), dia_demais: fd.get('dia_demais'), valor_mensal: fd.get('valor_mensal'),
           dia_vencimento: fd.get('dia_vencimento'), lancar: !!fd.get('lancar') },
-        recibo: rec.hidden ? null : { valor: fd.get('recibo_valor'), referente: fd.get('recibo_referente') }
+        recibo: rec.hidden ? null : { valor: fd.get('recibo_valor'), referente: fd.get('recibo_referente') },
+        representacao: fd.get('representacao'),
+        menores: menoresBox.hidden ? [] : fd.getAll('menor_nome').map((nome, i) => ({ nome: nome.trim(), cpf: fd.getAll('menor_cpf')[i], nascimento: fd.getAll('menor_nasc')[i], genero: fd.getAll('menor_sexo')[i] })).filter(m => m.nome)
       };
       const r = await api('documentos.gerar', dados);
       form.querySelector('.gerados').replaceChildren(...[
         r.faltando.length ? h('div', { class: 'nota alerta' }, 'Atenção, faltou no cadastro: ' + r.faltando.join(', ') + '. Esses campos saíram em branco; complete o cadastro e gere de novo.') : null,
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
+          r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
           r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
         h('ul', { class: 'lista-int' }, r.gerados.map(g => h('li', {}, h('strong', {}, g.modelo), ' · ',
           h('a', { href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'abrir PDF'), ' · ',
@@ -679,7 +695,7 @@
       const docItem = (rotulo, lista, falta) => h('div', { class: 'doc-item ' + (lista.length ? 'tem' : 'falta') },
         h('span', { class: 'doc-ico', 'aria-hidden': 'true' }, lista.length ? '✓' : '✗'),
         h('div', {}, h('strong', {}, rotulo),
-          lista.length ? h('div', { class: 'doc-arqs' }, lista.slice(0, 3).map(f => h('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer' }, f.nome)),
+          lista.length ? h('div', { class: 'doc-arqs' }, lista.slice(0, 3).map(f => h('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer' }, f.nome, f.assinar ? h('span', { class: 'tag atencao mini-tag' }, 'a assinar') : null)),
             lista.length > 3 ? h('span', { class: 'peq' }, `e mais ${lista.length - 3}`) : null)
             : h('div', { class: 'peq' }, falta)));
       const hon = d.honorarios
@@ -694,6 +710,8 @@
           d.pasta_url ? h('a', { class: 'btn sec', href: d.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta no Google Drive')
             : botao('Criar pasta no Drive', async ev => { ev.target.disabled = true; try { await api('clientes.criarPasta', { id: c.id }); avisar('Pasta criada.'); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec')),
         d.erroPasta ? h('div', { class: 'nota alerta' }, d.erroPasta) : null,
+        d.para_assinar ? h('div', { class: 'nota' }, h('strong', {}, `${d.para_assinar} arquivo(s) esperando assinatura`), ' na subpasta "DOCUMENTOS PARA ASSINAR". ',
+          h('a', { href: d.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'abrir'), '. Depois de assinados, salve os escaneados na pasta principal.') : null,
         h('div', { class: 'docs-grade' },
           docItem('Procuração', d.procuracao, 'não encontrada na pasta'),
           docItem('Contrato de honorários', d.contrato, 'não encontrado na pasta'),
@@ -1730,6 +1748,7 @@
         so('parcelado', campo('valor_total', 'Valor total (R$)', x.valor_total ? String(x.valor_total).replace('.', ',') : '', { modo: 'decimal' })),
         novo ? so('parcelado', campo('parcelas', 'Número de parcelas', '1', { modo: 'numeric', max: 3 })) : null,
         novo ? so('parcelado', campo('primeiro_vencimento', '1º vencimento', hojeISO(), { tipo: 'date' })) : null,
+        novo ? so('parcelado', campo('dia_demais', 'Demais parcelas: todo dia', '', { modo: 'numeric', max: 2, dica: 'Vazio = mesmo dia da 1ª' })) : null,
         so('exito', campo('percentual', 'Percentual do êxito (%)', x.percentual, { modo: 'decimal', max: 6 })),
         so('mensal', campo('valor_mensal', 'Mensalidade (R$)', x.valor_mensal ? String(x.valor_mensal).replace('.', ',') : '', { modo: 'decimal' })),
         so('mensal', campo('dia_vencimento', 'Dia do vencimento', x.dia_vencimento, { modo: 'numeric', max: 2 })),

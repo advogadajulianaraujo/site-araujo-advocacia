@@ -49,10 +49,21 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Gênero nos documentos: nunca "brasileiro(a)" quando dá para saber. Nos textos use {{c:o|a}} (cliente), {{adv:o|a}} (advogado(a))
   e {{sub:o|a}} (quem substabelece); `resolverGenero_` escolhe. O gênero vem do campo "Sexo" do cadastro ou do primeiro nome
   (`generoPeloNome_`); sem certeza sai "o(a)" e o painel avisa. Endereço com preposição certa ("na Rua", "no Loteamento").
-- Contrato de honorários (modelos v4): cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
+- Documentos que o cliente assina (procurações, declarações, termo LGPD, contratos, notas promissórias: `assinaCliente`)
+  vão para a subpasta "DOCUMENTOS PARA ASSINAR" dentro da pasta do cliente (criada se não existir). Petições, recibo e
+  notificação ficam na pasta principal. A ficha mostra quantos arquivos esperam assinatura.
+- Procuração, procuração de filhos menores, hipossuficiência e residência cabem em UMA folha (`umaFolha`: margens e logo
+  menores, espaçamento 1,1, qualificação sem telefone/e-mail). Petições e contratos não precisam.
+- Procuração de filhos menores: o cliente é quem representa (pai/mãe, tutor, guardião); até 15 anos "representado",
+  16 e 17 "assistido" (pela data de nascimento, obrigatória).
+- Notas promissórias: uma por parcela, duas por folha, geradas do valor fixo do formulário ou das parcelas em aberto.
+- Parcelado: 1ª parcela numa data e as demais "todo dia X" (`dia_demais`).
+- Modelo do Drive "Cobrança de honorários — procedimento comum" escondido a pedido da usuária.
+- Contrato de honorários (modelos v5, com cláusulas do contrato antigo do escritório: notas promissórias, PIX, vencimento
+  antecipado após 30 dias de atraso, sigilo/LGPD). Antes, v4: cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
   despesas (perícias, custas, diligências fora da comarca, deslocamento acima de 100 km), obrigações do cliente (documentos,
   mudança de telefone/endereço), vedado acordo sem anuência, obrigação de meio, desistência = 2 salários mínimos,
-  descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (MODELO4_ → MODELO5_)
+  descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (hoje MODELO5_ → MODELO6_)
   para o Google Docs do modelo ser recriado.
 
 ## Layout
@@ -72,6 +83,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   nome ou telefone, faz o PDF das fotos (uma por página, com data), a conversa em PDF e guarda vídeos/áudios numa subpasta
   na pasta do cliente. Também aceita subpasta da entrada com o nome do cliente. Zip acima de 48 MB não abre (limite do Google).
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
+
+## Velocidade
+
+- Servidor guarda por até 10 min as listas grandes (clientes, processos, prazos, intimações, honorários) em `comMemoria_`;
+  toda gravação na planilha chama `marcarMudanca_` e a memória é descartada na hora. Toda escrita nova deve passar
+  pelos helpers (`inserirLinha_`, `atualizarLinha_`, `gravarLote_`, `regravarMudadas_`), que já marcam a mudança.
 
 ## Login
 

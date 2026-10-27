@@ -444,3 +444,6 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 .tabela.compacta .tag{font-size:11px;padding:1px 7px}
 .tabela.compacta .col-fatal .data-fatal{font-size:15px}
 .tabela.compacta td .tag + .tag{margin-left:4px}
+.lista-menores{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.linha-menor{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px}
+@media (max-width:720px){.linha-menor{grid-template-columns:1fr 1fr}}
