@@ -259,6 +259,7 @@ var ROTAS = {
   'clientes.obter': { fn: obterCliente_ },
   'clientes.salvar': { fn: salvarCliente_ },
   'clientes.criarPasta': { fn: criarPastaCliente_ },
+  'clientes.nota': { fn: anotarCliente_ },
   'processos.listar': { fn: listarProcessos_ },
   'processos.salvar': { fn: salvarProcesso_ },
   'prazos.listar': { fn: listarPrazos_ },
@@ -572,6 +573,27 @@ function salvarCliente_(d, u) {
     catch (e) { resultado.avisoPasta = e.publico ? e.message : 'Cliente salvo, mas a pasta no Drive não foi criada. Use "Criar pasta" na ficha.'; }
   }
   return resultado;
+}
+
+/**
+ * Acrescenta uma observação ao cliente, com data, hora e quem escreveu (a mais nova fica em cima).
+ * Formato guardado: "[27/10/2026 14:05 — Julian] texto", uma por linha.
+ */
+function anotarCliente_(d, u) {
+  var texto = String(d.texto || '').replace(/\s+/g, ' ').trim();
+  if (!texto) throw falha_('Escreva a observação.');
+  if (texto.length > 2000) throw falha_('Observação longa demais (até 2.000 letras).');
+  return comTrava_(function () {
+    var tab = tabela_('Clientes');
+    var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!c) throw falha_('Cliente não encontrado.');
+    var carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+    var nova = '[' + carimbo + ' — ' + (u.nome || u.usuario) + '] ' + texto;
+    var obs = (nova + (c.observacoes ? '\n' + c.observacoes : '')).slice(0, 45000);
+    atualizarLinha_(tab, c, { observacoes: obs, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    registrar_(u.usuario, 'observação no cliente', c.id);
+    return { observacoes: obs };
+  });
 }
 
 /** Liga o cliente à pasta que já existe em 02. CLIENTES ou cria uma nova, com a ficha dentro. */
@@ -2827,6 +2849,15 @@ function juizoDoProcesso_(p, numero) {
   return 'AO JUÍZO DA ___ VARA DA COMARCA DE __________/SC';
 }
 
+/** Juízo do cabeçalho: usa vara e comarca do formulário (ou do cadastro do processo). */
+function juizoTexto_(j, p, numero) {
+  if (!j || (!j.vara && !j.comarca)) return juizoDoProcesso_(p, numero);
+  if (/\.0000$/.test(numero || '')) return juizoDoProcesso_(p, numero);
+  var vara = String(j.vara || '___ VARA').toUpperCase(), com = String(j.comarca || '__________/SC').toUpperCase();
+  if (/TRABALHO|FEDERAL|CEJUSC/.test(vara)) return 'AO JUÍZO DA ' + vara + ' DE ' + com;
+  return 'AO JUÍZO DA ' + vara + ' DA COMARCA DE ' + com;
+}
+
 function qualificacaoAdvogado_(a) {
   var esc = escritorio_();
   var nac = a.tratamento === 'advogado' ? 'brasileiro, advogado inscrito' : 'brasileira, advogada inscrita';
@@ -2835,6 +2866,95 @@ function qualificacaoAdvogado_(a) {
   if (a.email) txt += ', e-mail ' + a.email;
   if (a.telefone) txt += ', telefone ' + a.telefone;
   return txt;
+}
+
+/* ---------- Modelos do escritório na pasta do Drive ---------- */
+
+// Pasta com os modelos-base do escritório ("01. Declaração de residência", "05. Emenda à petição inicial"...).
+// Todo Google Docs colocado nela aparece sozinho na aba Modelos.
+var PASTA_MODELOS_ESCRITORIO = '1BYDfDiNV6WHKLHZXwOyjY8BripbcbYt0';
+
+function modelosDrive_() {
+  var cache = CacheService.getScriptCache();
+  var guardado = cache.get('modelos_drive');
+  if (guardado) return JSON.parse(guardado);
+  var lista = [];
+  try {
+    var pasta = DriveApp.getFolderById(config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO);
+    var it = pasta.getFilesByType(MimeType.GOOGLE_DOCS);
+    while (it.hasNext()) { var f = it.next(); lista.push({ id: f.getId(), nome: f.getName() }); }
+  } catch (e) { /* pasta inacessível: segue só com os modelos do painel */ }
+  lista.sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
+  cache.put('modelos_drive', JSON.stringify(lista), 600);
+  return lista;
+}
+
+/** "05. Emenda à petição inicial — Cível — Araújo Advocacia" → "Emenda à petição inicial — Cível". */
+function nomeModeloDrive_(nome) {
+  return String(nome).replace(/^\d+\s*[.)-]\s*/, '').replace(/\s*[—-]\s*Araújo Advocacia\s*$/i, '').trim();
+}
+
+/** "2ª VT Tubarão" → { numero: '2ª', vara: '2ª Vara do Trabalho', cidade: 'Tubarão/SC' }. */
+function orgaoPartes_(orgao) {
+  var o = String(orgao || '').trim();
+  if (!o) return { numero: '', vara: '', cidade: '' };
+  var num = (/(\d+)\s*[ªaº]?/.exec(o) || [])[1];
+  var numero = num ? num + 'ª' : '';
+  var tipo = /\bVT\b|trabalho/i.test(o) ? 'Vara do Trabalho' : /federal|JEF/i.test(o) ? 'Vara Federal' : /JEC|juizado/i.test(o) ? 'Juizado Especial Cível'
+    : /fam[ií]lia/i.test(o) ? 'Vara da Família' : /criminal/i.test(o) ? 'Vara Criminal' : /c[ií]vel/i.test(o) ? 'Vara Cível' : /CEJUSC/i.test(o) ? 'CEJUSC' : 'Vara';
+  var cidade = o.replace(/\d+\s*[ªaº]?/, '').replace(/\b(VT|Vara|Varas|do|da|de|dos|Trabalho|C[ií]vel|Federal|Criminal|Fam[ií]lia|JEC|JEF|Juizado|Especial|CEJUSC|Unidade|Regional|Única|Unica|-|JT)\b/gi, ' ')
+    .replace(/[\/-]\s*[A-Z]{2}\s*$/, '').replace(/\s+/g, ' ').trim();
+  return { numero: numero, vara: (numero ? numero + ' ' : '') + tipo, cidade: cidade ? cidade + '/SC' : '' };
+}
+
+/**
+ * Preenche os campos entre colchetes dos modelos do escritório, olhando o contexto de cada parágrafo:
+ * "AO JUÍZO DA [VARA] DA COMARCA DE [CIDADE/UF]", "Processo nº [NÚMERO]", "Reclamante: [NOME]",
+ * "[NOME DA PARTE]", CPF, RG, endereço e a linha "[CIDADE/UF], [DATA]". O resto fica para a advogada.
+ */
+function preencherColchetes_(corpo, x) {
+  var esc = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+  var todas = function (par, alvo, valor) { if (valor) par.editAsText().replaceText(esc(alvo), String(valor).replace(/\$/g, '\\$')); };
+  var primeira = function (par, alvo, valor) {
+    if (!valor) return;
+    var r = par.findText(esc(alvo));
+    if (!r) return;
+    var el = r.getElement().asText();
+    el.deleteText(r.getStartOffset(), r.getEndOffsetInclusive());
+    el.insertText(r.getStartOffset(), String(valor));
+  };
+  var RE_NOME_CLIENTE = /\[NOME (COMPLETO )?(DA PARTE( RECLAMANTE| AUTORA| REQUERENTE| EXEQUENTE)?|DO\(A\) (RECLAMANTE|DECLARANTE|RESIDENTE|TITULAR DO CRÉDITO|AUTOR\(A\)|REQUERENTE|EXEQUENTE|CLIENTE|OUTORGANTE|CONTRATANTE|APELANTE))\]/g;
+  var n = 0;
+  corpo.getParagraphs().forEach(function (par) {
+    var t = par.getText();
+    if (t.indexOf('[') < 0) return;
+    var nt = normalizar_(t);
+    if (/ao juizo|excelentissim|egregio/.test(nt)) {
+      todas(par, '[VARA CÍVEL]', x.vara); todas(par, '[VARA]', x.vara); todas(par, '[NÚMERO]', x.varaNumero); todas(par, '[CIDADE/UF]', x.comarca);
+      n++; return;
+    }
+    if (/^processo n/.test(nt)) { todas(par, '[NÚMERO]', x.numero); n++; return; }
+    if (/^(autor|reclamante|requerente|exequente|apelante|agravante|embargante|impetrante|recorrente|querelante)/.test(nt)) { todas(par, '[NOME]', x.ativo); todas(par, '[NOME(S)]', x.ativo); n++; return; }
+    if (/^(reu|re\(|reclamad|requerid|executad|apelad|agravad|embargad|impetrad|recorrid|querelad)/.test(nt)) { todas(par, '[NOME]', x.passivo); todas(par, '[NOME(S)]', x.passivo); n++; return; }
+    if (/^\[cidade\/uf\], \[(data|dia)\]/.test(nt)) {
+      todas(par, '[CIDADE/UF]', x.cidadeAss); todas(par, '[DATA]', x.dataExtenso); todas(par, '[DIA]', x.dia); todas(par, '[MÊS]', x.mes); todas(par, '[ANO]', x.ano);
+      n++; return;
+    }
+    var nomes = t.match(RE_NOME_CLIENTE) || [];
+    var doCliente = nomes.length || /^(cpf:|contato do\(a\) declarante)/.test(nt);
+    nomes.forEach(function (m) { todas(par, m, x.nome); });
+    if (!doCliente) { todas(par, '[NOME DA PARTE]', x.nome); return; }
+    n++;
+    primeira(par, '[QUALIFICAÇÃO COMPLETA, CPF/CNPJ, E-MAIL E ENDEREÇO]', x.qualificacao);
+    primeira(par, '[QUALIFICAÇÃO COMPLETA]', x.qualificacaoBasica);
+    todas(par, '[NACIONALIDADE]', 'brasileiro(a)'); todas(par, '[ESTADO CIVIL]', x.estadoCivil); todas(par, '[PROFISSÃO]', x.profissao);
+    todas(par, '[CPF]', x.cpf); todas(par, '[RG/ÓRGÃO EXPEDIDOR]', x.rg); todas(par, '[RG]', x.rg);
+    primeira(par, 'CPF nº [NÚMERO]', x.cpf ? 'CPF nº ' + x.cpf : '');
+    primeira(par, '[E-MAIL]', x.email); primeira(par, '[ENDEREÇO COMPLETO]', x.endereco);
+    todas(par, '[LOGRADOURO, NÚMERO, COMPLEMENTO, BAIRRO, CIDADE/UF E CEP]', x.endereco);
+    todas(par, '[TELEFONE OU E-MAIL]', x.telefone || x.email);
+  });
+  return n;
 }
 
 /* ---------- Pasta e Google Docs dos modelos ---------- */
@@ -2938,12 +3058,17 @@ function montarPadraoVisual_(doc, linhas) {
 
 function listarModelos_(d, u) {
   var pode = PERFIS[u.perfil];
+  var doDrive = modelosDrive_().map(function (m) {
+    return { chave: 'drive:' + m.id, nome: nomeModeloDrive_(m.nome), grupo: 'Modelos do escritório (Drive)', escritorio: true,
+      processo: false, url: 'https://docs.google.com/document/d/' + m.id + '/edit' };
+  });
   return {
-    modelos: Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
+    pastaEscritorio: 'https://drive.google.com/drive/folders/' + (config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO),
+    modelos: doDrive.concat(Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
       var m = MODELOS[k];
       return { chave: k, nome: m.nome, grupo: m.grupo, honorarios: !!m.honorarios, mensal: !!m.mensal, recibo: !!m.recibo, processo: !!m.processo, cobranca: !!m.cobranca,
         url: 'https://docs.google.com/document/d/' + modeloId_(k) + '/edit' };
-    }),
+    })),
     tipos: Object.keys(TIPOS_ACAO).map(function (k) { return { chave: k, nome: TIPOS_ACAO[k].nome, area: TIPOS_ACAO[k].area }; }),
     advogados: advogados_()
   };
@@ -3128,9 +3253,12 @@ function lancarHonorariosForm_(f, c, descricao, u) {
  */
 function gerarDocumentos_(d, u) {
   var pode = PERFIS[u.perfil];
-  var quais = (d.modelos || []).map(function (k) { return k === 'procuracao_antiga' ? 'procuracao' : k; }).filter(function (k) { return MODELOS[k]; });
+  var doDrive = {};
+  modelosDrive_().forEach(function (m) { doDrive['drive:' + m.id] = m; });
+  var quais = (d.modelos || []).map(function (k) { return k === 'procuracao_antiga' ? 'procuracao' : k; }).filter(function (k) { return MODELOS[k] || doDrive[k]; });
+  var M = function (k) { return MODELOS[k] || {}; };
   if (!quais.length) throw falha_('Escolha pelo menos um documento.');
-  if (quais.some(function (k) { return MODELOS[k].financeiro; }) && !pode.financeiro) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
+  if (quais.some(function (k) { return M(k).financeiro; }) && !pode.financeiro) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
   if (!c) throw falha_('Escolha o cliente.');
   var adv = advogados_().filter(function (a) { return a.id === d.advogado_id; })[0] ||
@@ -3138,7 +3266,7 @@ function gerarDocumentos_(d, u) {
   var tipo = TIPOS_ACAO[d.tipo_acao] || null;
   var numProc = String(d.numero_processo || '').trim();
   if (numProc && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numProc)) throw falha_('Número do processo fora do padrão (0000000-00.0000.0.00.0000).');
-  if (!numProc && quais.some(function (k) { return MODELOS[k].processo; })) throw falha_('Informe o número do processo: as petições e o substabelecimento precisam dele.');
+  if (!numProc && quais.some(function (k) { return M(k).processo; })) throw falha_('Informe o número do processo: as petições e o substabelecimento precisam dele.');
   var proc = numProc ? tabela_('Processos').linhas.filter(function (x) { return x.numero === numProc; })[0] || { numero: numProc } : null;
   var contra = String(d.parte_contraria || (proc && proc.parte_contraria) || '').trim();
   var detalhes = String(d.objeto || '').trim();
@@ -3155,8 +3283,8 @@ function gerarDocumentos_(d, u) {
 
   var f = d.honorarios || {};
   var clausula = '';
-  if (quais.some(function (k) { return MODELOS[k].honorarios || MODELOS[k].mensal; })) {
-    if (quais.indexOf('assessoria') >= 0 && f.forma !== 'mensal' && !quais.some(function (k) { return MODELOS[k].honorarios; })) f.forma = 'mensal';
+  if (quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
+    if (quais.indexOf('assessoria') >= 0 && f.forma !== 'mensal' && !quais.some(function (k) { return M(k).honorarios; })) f.forma = 'mensal';
     var h = null, parcelas = [];
     if (!f.forma || f.forma === 'cadastrado') {
       var hons = tabela_('Honorarios').linhas.filter(function (x) { return x.cliente_id === c.id; });
@@ -3197,12 +3325,15 @@ function gerarDocumentos_(d, u) {
   var hoje = hojeSP_();
   var poderes = tipo && tipo.poderes ? tipo.poderes : '';
   var nomeCli = String(c.nome).toUpperCase();
+  var partesOrg = orgaoPartes_(proc && proc.orgao);
+  var juizoInfo = { vara: String(d.vara || '').trim() || partesOrg.vara, comarca: String(d.comarca || '').trim() || partesOrg.cidade };
+  juizoInfo.numero = (/(\d+)\s*[ªaº]?/.exec(juizoInfo.vara) || [])[1] ? (/(\d+)/.exec(juizoInfo.vara)[1] + 'ª') : '';
   var outra = contra ? contra.split(';')[0].trim().toUpperCase() : '__________';
   var valores = {
     '{{qualificacao_resto}}': qualificacaoResto_(c), '{{qualificacao_resto_sem_endereco}}': qualificacaoResto_(c, true), '{{advogado_qualificacao}}': qualificacaoAdvogadoResto_(adv),
     '{{advogado_assinatura}}': nomeAssinatura_(adv.nome),
     '{{escritorio_qualificacao}}': 'sociedade de advogados inscrita no CNPJ sob o nº ' + esc.cnpj + ' e registrada na OAB/SC sob o nº ' + esc.oab + ', com sede na ' + esc.endereco,
-    '{{juizo}}': numProc ? juizoDoProcesso_(proc, numProc) : '', '{{numero_processo}}': numProc,
+    '{{juizo}}': numProc ? juizoTexto_(juizoInfo, proc, numProc) : '', '{{numero_processo}}': numProc,
     '{{rotulo_ativo}}': trabalhista ? 'Reclamante' : 'Requerente', '{{rotulo_passivo}}': trabalhista ? 'Reclamada' : 'Requerida',
     '{{parte_ativa}}': ativo ? nomeCli : outra, '{{parte_passiva}}': ativo ? outra : nomeCli,
     '{{procurador_tratamento}}': adv.tratamento === 'advogado' ? 'seu procurador' : 'sua procuradora',
@@ -3230,7 +3361,28 @@ function gerarDocumentos_(d, u) {
     recibo: 'RECIBO DE HONORÁRIOS' };
   var pasta = DriveApp.getFolderById(c.pasta_id);
   var gerados = [];
-  quais.forEach(function (k) {
+  var hojeIso = hojeSP_();
+  var mesesX = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  var ctxColchetes = {
+    vara: juizoInfo.vara.toUpperCase(), varaNumero: juizoInfo.numero, comarca: juizoInfo.comarca.toUpperCase(), numero: numProc,
+    ativo: ativo ? nomeCli : (contra ? outra : ''), passivo: ativo ? (contra ? outra : '') : nomeCli,
+    cidadeAss: esc.cidade, dataExtenso: porExtensoData_(hojeIso), dia: String(+hojeIso.slice(8, 10)), mes: mesesX[+hojeIso.slice(5, 7) - 1], ano: hojeIso.slice(0, 4),
+    nome: nomeCli, qualificacao: qualificacaoResto_(c),
+    qualificacaoBasica: ['brasileiro(a)', c.estado_civil, c.profissao, c.rg ? 'portador(a) do RG nº ' + c.rg : ''].filter(String).join(', '),
+    estadoCivil: c.estado_civil || '', profissao: c.profissao || '', cpf: c.cpf_cnpj || '', rg: c.rg || '', email: c.email || '',
+    telefone: c.telefone || '', endereco: enderecoCompleto_(c)
+  };
+  quais.filter(function (k) { return doDrive[k]; }).forEach(function (k) {
+    var m = doDrive[k];
+    var nomeArq = nomeModeloDrive_(m.nome).toUpperCase() + ' — ' + nomePasta_(c.nome) + ' — ' + dataBR_(hoje).replace(/\//g, '-');
+    var copia = DriveApp.getFileById(m.id).makeCopy(nomeArq, pasta);
+    var doc = DocumentApp.openById(copia.getId());
+    preencherColchetes_(doc.getBody(), ctxColchetes);
+    doc.saveAndClose();
+    var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
+    gerados.push({ modelo: nomeModeloDrive_(m.nome), doc: copia.getUrl(), pdf: pdf.getUrl() });
+  });
+  quais.filter(function (k) { return MODELOS[k]; }).forEach(function (k) {
     var nomeArq = NOMES_ARQ[k] + (k === 'procuracao' && tipo && d.tipo_acao !== 'outro' ? ' (' + tipo.nome.replace(/\s*\(.*\)$/, '').toUpperCase() + ')' : '') +
       ' — ' + nomePasta_(c.nome) + ' — ' + dataBR_(hoje).replace(/\//g, '-');
     var copia = DriveApp.getFileById(modeloId_(k, true)).makeCopy(nomeArq, pasta);
@@ -3244,7 +3396,7 @@ function gerarDocumentos_(d, u) {
     gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl() });
   });
   var lancados = [];
-  if (f.lancar && pode.financeiro && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return MODELOS[k].honorarios || MODELOS[k].mensal; })) {
+  if (f.lancar && pode.financeiro && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));

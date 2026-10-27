@@ -477,11 +477,15 @@
     const rotProc = h('label', { for: 'f-numero_processo' }, 'Número do processo (opcional)');
     const avisoProc = h('div', { class: 'peq' }, 'Escolha um processo do cliente ou digite o número. Puxa o juízo e a parte contrária do cadastro do processo.');
     const campoProc = h('div', {}, rotProc, h('input', { id: 'f-numero_processo', name: 'numero_processo', list: 'dl-processos', inputmode: 'numeric', autocomplete: 'off', placeholder: '0000000-00.0000.0.00.0000', maxlength: 25 }), dlProc, avisoProc);
+    const orgaos = {};
+    const campoVara = campo('vara', 'Vara / juízo (opcional)', '', { max: 120, dica: 'Ex.: 2ª Vara Cível, 1ª Vara do Trabalho' });
+    const campoComarca = campo('comarca', 'Comarca (cidade/UF)', '', { max: 80, dica: 'Ex.: Tubarão/SC' });
     const carregarProcessos = async id => {
       dlProc.replaceChildren();
       if (!id) return;
       try {
         const r = await api('clientes.obter', { id });
+        r.processos.forEach(p => { orgaos[p.numero] = p.orgao || ''; });
         dlProc.replaceChildren(...r.processos.filter(p => p.numero).map(p => h('option', { value: p.numero }, [p.area, p.orgao, p.parte_contraria].filter(Boolean).join(' · '))));
         avisoProc.textContent = r.processos.length ? `${r.processos.length} processo(s) deste cliente na lista.` : 'Este cliente não tem processo cadastrado; digite o número, se houver.';
       } catch (e) { /* digita à mão */ }
@@ -519,7 +523,7 @@
         blocoCliente,
         campo('advogado_id', 'Advogado(a) outorgado(a)', padrao, { opcoes: advs.map(a => [a.id, `${a.nome} — OAB/${a.uf} ${a.oab}`]) }),
         campo('tipo_acao', 'Tipo de ação', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
-        campoProc),
+        campoProc, campoVara, campoComarca),
       h('h4', {}, 'Quais documentos'), docs, notaCobranca, hon, rec,
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
       h('p', { class: 'erro' }), h('div', { class: 'gerados' }));
@@ -540,6 +544,12 @@
       notaCobranca.hidden = !escolhidos.some(m => m && m.cobranca);
     };
     form.addEventListener('change', ev => { if (ev.target.name === 'forma') form.dataset.mexeu = '1'; atualizar(); });
+    // ao escolher o processo, mostra a vara cadastrada (o painel completa o que ficar vazio)
+    form.numero_processo.addEventListener('input', () => {
+      const o = orgaos[form.numero_processo.value.trim()];
+      form.vara.placeholder = o ? 'do processo: ' + o : 'Ex.: 2ª Vara Cível, 1ª Vara do Trabalho';
+      form.comarca.placeholder = o ? 'do processo (deixe vazio para usar)' : 'Ex.: Tubarão/SC';
+    });
     atualizar();
 
     aoEnviar(form, async fd => {
@@ -549,7 +559,7 @@
       if (!(fd.get('numero_processo') || '').trim() && modelos.some(k => (info.modelos.find(m => m.chave === k) || {}).processo)) throw new Error('Informe o número do processo: as petições e o substabelecimento precisam dele.');
       const dados = {
         cliente_id: fd.get('cliente_id'), modelos, advogado_id: fd.get('advogado_id'), tipo_acao: fd.get('tipo_acao'),
-        numero_processo: (fd.get('numero_processo') || '').trim(),
+        numero_processo: (fd.get('numero_processo') || '').trim(), vara: fd.get('vara'), comarca: fd.get('comarca'),
         honorarios: hon.hidden ? null : { forma: fd.get('forma'), percentual: fd.get('percentual'), valor_total: fd.get('valor_total'),
           parcelas: fd.get('parcelas'), primeiro_vencimento: fd.get('primeiro_vencimento'), valor_mensal: fd.get('valor_mensal'),
           dia_vencimento: fd.get('dia_vencimento'), lancar: !!fd.get('lancar') },
@@ -635,7 +645,6 @@
           campo('tipo_acao', 'Tipo de ação', c.tipo_acao, { max: 200 }),
           campo('area', 'Área', c.area, { opcoes: AREAS.some(a => a[0] === (c.area || '')) ? AREAS : AREAS.concat([[c.area, c.area]]) }),
           campo('situacao', 'Cadastro', c.situacao, { opcoes: [['completo', 'Completo'], ['importado — conferir', 'Importado — conferir'], ['incompleto', 'Incompleto']] }),
-          campo('observacoes', 'Observações', c.observacoes, { area: true, largo: true }),
           campo('pasta_link', 'Pasta no Google Drive (link)', c.pasta_url, { max: 300, largo: true, dica: 'Se a pasta estiver errada ou faltando, abra a pasta certa no Drive, copie o endereço e cole aqui.' }))),
       h('div', { class: 'acoes' },
         h('button', { type: 'submit', class: 'btn' }, novo ? 'Cadastrar e criar pasta' : 'Salvar alterações'),
@@ -727,8 +736,30 @@
         item('Como chegou', c.origem),
         item('Tipo de ação', c.tipo_acao),
         item('Área', c.area),
-        item('Endereço', endereco, true),
-        c.observacoes ? item('Observações', c.observacoes, true) : null));
+        item('Endereço', endereco, true)));
+
+    // Observações: escreve aqui e vê depois, com data e quem escreveu
+    const notas = () => {
+      const lista = h('ul', { class: 'notas' });
+      const desenhar = obs => {
+        const linhas = String(obs || '').split('\n').map(l => l.trim()).filter(Boolean)
+          .flatMap(l => /^\[\d{2}\/\d{2}\/\d{4}/.test(l) ? [l] : l.split(' | '));
+        lista.replaceChildren(...(linhas.length ? linhas.map(l => {
+          const m = /^\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}) — ([^\]]+)\] (.*)$/.exec(l);
+          return m ? h('li', {}, h('div', { class: 'nota-cab' }, h('strong', {}, m[2]), ' · ', m[1]), h('div', {}, m[3]))
+            : h('li', { class: 'antiga' }, h('div', { class: 'nota-cab' }, 'registro antigo'), h('div', {}, l));
+        }) : [h('li', { class: 'vazia' }, 'Nenhuma observação ainda.')]));
+      };
+      desenhar(c.observacoes);
+      const f = h('form', { class: 'nota-form', novalidate: true },
+        h('textarea', { name: 'texto', rows: 3, maxlength: 2000, placeholder: 'Escreva uma observação sobre o cliente (atendimento, combinado, pendência…)', 'aria-label': 'Nova observação' }),
+        h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação')), h('p', { class: 'erro' }));
+      aoEnviar(f, async fd => {
+        const r = await api('clientes.nota', { id: c.id, texto: fd.get('texto') });
+        c.observacoes = r.observacoes; f.reset(); desenhar(r.observacoes); avisar('Observação salva.');
+      });
+      return h('div', {}, f, lista);
+    };
 
     const procs = () => h('div', {},
       h('div', { class: 'acoes-sec' }, botao('Novo processo', () => { location.hash = '#/processo/novo?cliente=' + encodeURIComponent(c.id); }, 'sec')),
@@ -759,7 +790,8 @@
         h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos')),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
       descricao,
-      secao('Pasta do cliente', pasta, true),
+      secao('Observações', notas, true),
+      secao('Pasta do cliente', pasta, false),
       secao(`Processos (${r.processos.length})`, procs, false),
       sessao.usuario.pode.financeiro ? secao('Honorários', hons, false) : null,
       h('details', { class: 'caixa secao editar-cad', open: incompleto }, h('summary', {}, 'Editar cadastro'), formCliente(c, false)));
@@ -772,10 +804,18 @@
     const busca = params.get('busca') || '';
     const semCliente = params.get('semcliente') === '1';
     const area = params.get('area') || '';
-    const sit = params.get('sit') || 'ativo';
+    const sit = params.get('sit') || 'todos';
+    const trib = params.get('trib') || '';
+    const cli = params.get('cli') || '';
+    const ato = params.get('ato') === '1';
     const todosSit = await api('processos.listar', { busca, semCliente });
     const nAtivos = todosSit.filter(p => p.status !== 'arquivado').length, nArq = todosSit.length - nAtivos;
-    const todos = sit === 'todos' ? todosSit : todosSit.filter(p => (p.status === 'arquivado') === (sit === 'arquivado'));
+    const tribunais = [...new Set(todosSit.map(p => p.tribunal || '—'))].sort();
+    const todos = todosSit
+      .filter(p => sit === 'todos' || (p.status === 'arquivado') === (sit === 'arquivado'))
+      .filter(p => !trib || (p.tribunal || '—') === trib)
+      .filter(p => !cli || (cli === 'com' ? !!p.cliente_id : !p.cliente_id))
+      .filter(p => !ato || (p.proximo_ato_data && p.proximo_ato_data >= hojeISO()));
     const nomeArea = p => p.area || 'Sem área';
     const lista = area ? todos.filter(p => nomeArea(p) === area) : todos;
     const porArea = {}, porTrib = {};
@@ -783,15 +823,15 @@
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, sit: sit === 'ativo' ? '' : sit, semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
     const form = h('form', { class: 'barra', role: 'search' },
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar por número, cliente, parte contrária ou vara', 'aria-label': 'Buscar processos' }),
-      h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'semcliente', checked: semCliente }), 'Só sem cliente'),
+
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
-    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), semcliente: form.semcliente.checked ? '1' : '' }); });
+    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim() }); });
     const relatorio = h('aside', { class: 'caixa relatorio' },
       h('h3', {}, 'Quantas ações por área'),
       h('table', { class: 'mini-tab' }, h('tbody', {}, areas.map(a => h('tr', { onclick: () => ir({ area: a }) },
@@ -800,9 +840,15 @@
       h('h3', { class: 'mt' }, 'Por tribunal'),
       h('table', { class: 'mini-tab' }, h('tbody', {}, Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]).map(t => h('tr', {}, h('td', {}, t), h('td', { class: 'num' }, String(porTrib[t])))))));
     const principal = h('div', { class: 'col-principal' },
-      h('div', { class: 'chips chips-sit' },
-        [['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`], ['todos', `Todos (${todosSit.length})`]]
-          .map(([v, t]) => h('button', { type: 'button', class: 'chip-filtro' + (sit === v ? ' ativo' : ''), onclick: () => ir({ sit: v === 'ativo' ? '' : v, area: '' }) }, t))),
+      h('div', { class: 'filtros-proc' },
+        h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
+          [['todos', `Todos (${todosSit.length})`], ['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`]].map(([v, t]) => h('option', { value: v, selected: sit === v }, t)))),
+        h('label', {}, 'Tribunal', h('select', { onchange: e => ir({ trib: e.target.value, area: '' }) },
+          h('option', { value: '' }, 'Todos'), tribunais.map(t => h('option', { value: t, selected: trib === t }, t)))),
+        h('label', {}, 'Cliente', h('select', { onchange: e => ir({ cli: e.target.value }) },
+          [['', 'Todos'], ['com', 'Com cliente cadastrado'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
+        h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
+        (sit !== 'todos' || trib || cli || ato || area || busca) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null),
       h('div', { class: 'chips' },
         h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todos (${todos.length})`),
         areas.map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
@@ -816,7 +862,7 @@
           p.ultimo_movimento ? h('div', { class: 'peq' }, p.ultimo_movimento_em ? new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR') + ' · ' : '', p.ultimo_movimento) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.'));
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}`)),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}${trib ? ' · ' + trib : ''}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
       h('div', { class: 'duas-colunas' }, principal, relatorio));
     document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
@@ -1213,9 +1259,12 @@
   // Filtros da agenda: o que cada visão mostra
   const FILTROS_AGENDA = {
     tudo: { nome: 'Tudo', agendas: null, prazos: true },
-    dra: { nome: 'Dra. Júlian', agendas: ['ATENDIMENTOS', 'AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'], prazos: true },
-    clientes: { nome: 'Clientes (audiências e perícias)', agendas: ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO', 'PERÍCIAS'], prazos: false },
-    audiencias: { nome: 'Só audiências', agendas: ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'], prazos: false }
+    dra: { nome: 'Dra. Júlian', agendas: ['ATENDIMENTOS', 'AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO'], prazos: false },
+    atendimentos: { nome: 'Atendimentos', agendas: ['ATENDIMENTOS'], prazos: false },
+    conciliacao: { nome: 'Audiências de conciliação', agendas: ['AUDIÊNCIA CONCILIAÇÃO'], prazos: false },
+    instrucao: { nome: 'Audiências de instrução', agendas: ['AUDIÊNCIA INSTRUÇÃO'], prazos: false },
+    pericias: { nome: 'Perícias', agendas: ['PERÍCIAS'], prazos: false },
+    prazos: { nome: 'Prazos fatais', agendas: [], prazos: true }
   };
   function filtrarAgenda(dados, ver) {
     const f = FILTROS_AGENDA[ver] || FILTROS_AGENDA.tudo;
@@ -1246,6 +1295,95 @@
     return pz.concat(ev);
   }
 
+  /* Grade de horários no estilo do Google Agenda (visões dia e semana) */
+  const H_INI = 7, H_FIM = 21, PX_HORA = 52;
+  const minutos = hhmm => { const [hh, mm] = hhmm.split(':').map(Number); return hh * 60 + mm; };
+  const nomeSem = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short' }).replace('.', '');
+
+  function detalheEvento(it) {
+    const caixa = document.getElementById('ag-detalhe') || document.body.appendChild(h('div', { id: 'ag-detalhe', class: 'ag-detalhe', role: 'dialog', 'aria-modal': 'false' }));
+    caixa.replaceChildren(
+      h('button', { type: 'button', class: 'fechar', 'aria-label': 'Fechar', onclick: () => { caixa.hidden = true; } }, '×'),
+      h('span', { class: 'chip ' + it.cls }, it.rotulo),
+      h('h3', {}, it.titulo),
+      h('p', { class: 'peq' }, it.quando),
+      it.local ? h('p', {}, '📍 ', it.local) : null,
+      it.desc ? h('p', { class: 'peq' }, it.desc) : null,
+      it.id ? h('a', { class: 'btn mini', href: '#/prazo/' + it.id, onclick: () => { caixa.hidden = true; } }, 'Abrir prazo') : null);
+    caixa.hidden = false;
+  }
+
+  /** Lado a lado quando dois compromissos se sobrepõem. */
+  function faixas(evs) {
+    evs.sort((a, b) => a.ini - b.ini || b.fim - a.fim);
+    let grupo = [], fimGrupo = -1;
+    const fechar = () => { const n = Math.max(...grupo.map(e => e.faixa)) + 1; grupo.forEach(e => { e.total = n; }); grupo = []; };
+    evs.forEach(e => {
+      if (grupo.length && e.ini >= fimGrupo) fechar();
+      const usadas = grupo.filter(g => g.fim > e.ini).map(g => g.faixa);
+      e.faixa = 0; while (usadas.includes(e.faixa)) e.faixa++;
+      grupo.push(e); fimGrupo = Math.max(fimGrupo, e.fim);
+    });
+    if (grupo.length) fechar();
+    return evs;
+  }
+
+  function gradeAgenda(dias, dados, ir) {
+    const hoje = hojeISO();
+    const n = dias.length;
+    const linhaCols = cls => { const el = h('div', { class: cls }); el.style.setProperty('--n', n); return el; };
+    const cab = linhaCols('gc-cab');
+    cab.append(h('div', { class: 'gc-canto' }), ...dias.map(d => h('button', { type: 'button', class: 'gc-dia-cab' + (d === hoje ? ' hoje' : ''), onclick: () => ir('dia', d) },
+      h('span', { class: 'gc-sem' }, nomeSem(d)), h('span', { class: 'gc-num' }, String(+d.slice(8))))));
+    const todo = linhaCols('gc-todo');
+    todo.append(h('div', { class: 'gc-canto peq' }, 'dia todo'), ...dias.map(d => {
+      const itens = itensDoDia(dados, d).filter(it => it.tipo === 'prazo' || it.hora === 'dia todo');
+      return h('div', { class: 'gc-todo-dia' }, itens.map(it => h('button', { type: 'button', class: 'gc-chip ' + it.cls, title: it.titulo,
+        onclick: () => detalheEvento({ ...it, quando: dataBR(d) + (it.tipo === 'prazo' ? ' · até 23h59' : ' · dia todo') }) }, it.tipo === 'prazo' ? '⚑ ' + it.titulo : it.titulo)));
+    }));
+    const horas = h('div', { class: 'gc-horas' });
+    for (let hh = H_INI; hh < H_FIM; hh++) horas.append(h('div', { class: 'gc-hora' }, String(hh).padStart(2, '0') + ':00'));
+    const cols = linhaCols('gc-cols');
+    dias.forEach(d => {
+      const col = h('div', { class: 'gc-col' + (d === hoje ? ' hoje' : '') });
+      col.style.setProperty('height', (H_FIM - H_INI) * PX_HORA + 'px');
+      col.addEventListener('click', ev => {
+        if (ev.target !== col) return;
+        const min = H_INI * 60 + Math.floor(ev.offsetY / PX_HORA * 2) * 30;
+        const hhmm = String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+        location.hash = '#/compromisso/novo?data=' + d + '&hora=' + hhmm;
+      });
+      const evs = dados.eventos.filter(e => !e.diaTodo && e.inicio.slice(0, 10) === d).map(e => {
+        const ini = minutos(e.inicio.slice(11, 16));
+        const fim = e.fim && e.fim.slice(0, 10) === d ? Math.max(minutos(e.fim.slice(11, 16)), ini + 20) : ini + 60;
+        return { e, ini, fim };
+      });
+      faixas(evs).forEach(x => {
+        const top = Math.max(0, (x.ini - H_INI * 60) / 60 * PX_HORA);
+        const alt = Math.max(22, (Math.min(x.fim, H_FIM * 60) - Math.max(x.ini, H_INI * 60)) / 60 * PX_HORA - 2);
+        const cls = CORES_AGENDA[x.e.agenda] || '';
+        const bloco = h('button', { type: 'button', class: 'gc-ev ' + cls, title: x.e.titulo,
+          onclick: () => detalheEvento({ cls, rotulo: NOME_CURTO[x.e.agenda] || x.e.agenda, titulo: x.e.titulo, local: x.e.local, desc: x.e.descricao,
+            quando: dataBR(d) + ' · ' + x.e.inicio.slice(11, 16) + (x.e.fim ? '–' + x.e.fim.slice(11, 16) : '') }) },
+          h('strong', {}, x.e.titulo), h('span', {}, x.e.inicio.slice(11, 16) + (x.e.local ? ' · ' + x.e.local : '')));
+        bloco.style.top = top + 'px';
+        bloco.style.height = alt + 'px';
+        bloco.style.left = (x.faixa / x.total * 100) + '%';
+        bloco.style.width = 'calc(' + (100 / x.total) + '% - 4px)';
+        col.append(bloco);
+      });
+      if (d === hoje) {
+        const agora = new Date(); const min = agora.getHours() * 60 + agora.getMinutes();
+        if (min >= H_INI * 60 && min <= H_FIM * 60) { const ln = h('div', { class: 'gc-agora' }); ln.style.top = ((min - H_INI * 60) / 60 * PX_HORA) + 'px'; col.append(ln); }
+      }
+      cols.append(col);
+    });
+    const corpo = h('div', { class: 'gc-corpo' }, horas, cols);
+    const grade = h('div', { class: 'gc' + (n === 1 ? ' gc-um' : '') }, cab, todo, corpo);
+    setTimeout(() => { const alvo = Math.max(0, (8 - H_INI) * PX_HORA); corpo.scrollTop = alvo; }, 0);
+    return h('div', { class: 'gc-rolagem' }, grade);
+  }
+
   async function telaAgenda(params) {
     carregando();
     const visao = ['dia', 'semana', 'mes'].includes(params.get('visao')) ? params.get('visao') : 'semana';
@@ -1256,14 +1394,18 @@
     const ir = (v, d, f) => { location.hash = `#/agenda?visao=${v}&data=${d}&ver=${f || ver}`; };
     const passo = visao === 'dia' ? 1 : visao === 'semana' ? 7 : 0;
     const mover = n => passo ? ir(visao, isoSoma(data, n * passo)) : ir(visao, isoSoma(data.slice(0, 8) + '15', n * 30).slice(0, 8) + '01');
-    const titulo = visao === 'dia' ? nomeDia(data, true) : visao === 'semana' ? `Semana de ${dataBR(ini)} a ${dataBR(fim)}`
+    const titulo = visao === 'dia' ? nomeDia(data, true) : visao === 'semana' ? `${dataBR(ini).slice(0, 5)} a ${dataBR(fim)}`
       : new Date(data + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' });
-    const barra = h('div', { class: 'barra agenda-barra' },
-      h('div', { class: 'grupo' }, botao('◀', () => mover(-1), 'sec'), botao('Hoje', () => ir(visao, hojeISO()), 'sec'), botao('▶', () => mover(1), 'sec')),
-      h('div', { class: 'grupo' }, ['dia', 'semana', 'mes'].map(v => h('button', { type: 'button', class: 'btn ' + (v === visao ? '' : 'sec'), onclick: () => ir(v, data) }, { dia: 'Dia', semana: 'Semana', mes: 'Mês' }[v]))),
-      botao('Novo compromisso', () => { location.hash = '#/compromisso/novo?data=' + data; }));
-    const filtros = h('div', { class: 'chips' }, Object.keys(FILTROS_AGENDA).map(k => h('button', { type: 'button', class: 'chip-filtro' + (k === ver ? ' ativo' : ''), onclick: () => ir(visao, data, k) }, FILTROS_AGENDA[k].nome)));
-    const legenda = h('div', { class: 'legenda' }, Object.keys(CORES_AGENDA).map(n => h('span', { class: 'chip ' + CORES_AGENDA[n] }, NOME_CURTO[n])), h('span', { class: 'chip ag-prazo' }, 'Prazo fatal'));
+    const barra = h('div', { class: 'ag-topo' },
+      h('div', { class: 'grupo' }, botao('Hoje', () => ir(visao, hojeISO()), 'sec'),
+        h('button', { type: 'button', class: 'seta-nav', 'aria-label': 'Anterior', onclick: () => mover(-1) }, '‹'),
+        h('button', { type: 'button', class: 'seta-nav', 'aria-label': 'Próximo', onclick: () => mover(1) }, '›'),
+        h('h2', { class: 'ag-titulo cap' }, titulo)),
+      h('div', { class: 'grupo' },
+        h('div', { class: 'segmentado' }, ['dia', 'semana', 'mes'].map(v => h('button', { type: 'button', class: v === visao ? 'ativo' : '', onclick: () => ir(v, data) }, { dia: 'Dia', semana: 'Semana', mes: 'Mês' }[v]))),
+        botao('+ Novo compromisso', () => { location.hash = '#/compromisso/novo?data=' + data; })));
+    const filtros = h('div', { class: 'chips ag-filtros' }, Object.keys(FILTROS_AGENDA).map(k => h('button', { type: 'button', class: 'chip-filtro' + (k === ver ? ' ativo' : ''), onclick: () => ir(visao, data, k) },
+      k === 'tudo' || k === 'dra' ? FILTROS_AGENDA[k].nome : h('span', { class: 'bolinha ' + (k === 'prazos' ? 'ag-prazo' : CORES_AGENDA[FILTROS_AGENDA[k].agendas[0]]) }), k === 'tudo' || k === 'dra' ? null : FILTROS_AGENDA[k].nome)));
     let corpo;
     if (visao === 'mes') {
       const dias = [];
@@ -1280,27 +1422,11 @@
     } else {
       const dias = [];
       for (let d = ini; d <= fim; d = isoSoma(d, 1)) dias.push(d);
-      const linhas = [];
-      dias.forEach(d => {
-        const itens = itensDoDia(dados, d);
-        if (!itens.length && visao === 'semana') {
-          linhas.push(h('tr', { class: 'dia-vazio' }, h('th', { scope: 'row' }, nomeDia(d, true)), h('td', { colspan: 4, class: 'peq' }, 'Sem compromissos')));
-          return;
-        }
-        itens.forEach((it, i) => linhas.push(h('tr', { class: it.tipo === 'prazo' ? 'tr-prazo' : '', onclick: it.id ? () => { location.hash = '#/prazo/' + it.id; } : null },
-          i === 0 ? h('th', { scope: 'row', rowspan: itens.length, class: d === hojeISO() ? 'hoje' : '' }, nomeDia(d, true)) : null,
-          h('td', { class: 'num', 'data-r': 'Hora' }, it.hora),
-          h('td', { 'data-r': 'Agenda' }, h('span', { class: 'chip ' + it.cls }, it.rotulo)),
-          h('td', { 'data-r': 'Compromisso' }, it.titulo, it.desc ? h('div', { class: 'peq' }, it.desc) : null),
-          h('td', { 'data-r': 'Local' }, it.local || ''))));
-      });
-      if (!linhas.length) linhas.push(h('tr', {}, h('td', { colspan: 5, class: 'vazio' }, 'Nada marcado neste dia.')));
-      corpo = h('table', { class: 'tabela agenda' },
-        h('thead', {}, h('tr', {}, ['Dia', 'Hora', 'Agenda', 'Compromisso', 'Local'].map(c => h('th', { scope: 'col' }, c)))), h('tbody', {}, linhas));
+      corpo = gradeAgenda(dias, dados, ir);
     }
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Agenda'), h('p', { class: 'cap' }, titulo))),
-      barra, filtros, legenda,
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Agenda'))),
+      barra, filtros,
       dados.avisos.length ? h('div', { class: 'nota alerta' }, dados.avisos.join(' ')) : null,
       corpo);
   }
@@ -1312,8 +1438,8 @@
         campo('agenda', 'Agenda', 'ATENDIMENTOS', { opcoes: Object.keys(CORES_AGENDA).map(n => [n, n]) }),
         campo('titulo', 'Título', '', { obrigatorio: true, max: 200, dica: 'Ex.: Atendimento — Maria da Silva (trabalhista)' }),
         campo('data', 'Data', data, { tipo: 'date', obrigatorio: true }),
-        campo('inicio', 'Início', '09:00', { tipo: 'time', obrigatorio: true }),
-        campo('fim', 'Fim', '10:00', { tipo: 'time' }),
+        campo('inicio', 'Início', /^\d{2}:\d{2}$/.test(params.get('hora') || '') ? params.get('hora') : '09:00', { tipo: 'time', obrigatorio: true }),
+        campo('fim', 'Fim', /^\d{2}:\d{2}$/.test(params.get('hora') || '') ? String(+params.get('hora').slice(0, 2) + 1).padStart(2, '0') + params.get('hora').slice(2) : '10:00', { tipo: 'time' }),
         campo('local', 'Local / link', '', { max: 300, dica: 'Escritório, Zoom, vara…' }),
         campo('descricao', 'Observações', '', { area: true, largo: true })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Marcar na agenda'), h('a', { class: 'btn sec', href: '#/agenda?data=' + data }, 'Voltar')),
@@ -1531,6 +1657,8 @@
       h('section', { class: 'caixa' + (novoCli ? ' destaque-caixa' : '') }, h('h2', {}, 'Gerar para um cliente'),
         formGerar(info, { clientes, clienteInicial: params.get('cliente') || '' })),
       secao('Modelos do escritório', () => h('div', {},
+        info.pastaEscritorio ? h('p', {}, h('a', { class: 'btn sec', href: info.pastaEscritorio, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir a pasta de modelos no Drive'),
+          h('span', { class: 'peq' }, '  Todo Google Docs colocado nessa pasta aparece sozinho aqui. Campos entre colchetes, como [NOME DA PARTE], [VARA] e [CIDADE/UF], são preenchidos.')) : null,
         h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{nome}}, {{qualificacao_resto}}, {{advogado_nome}}, {{numero_processo}}, {{objeto}} e {{clausula_honorarios}}; o painel preenche sozinho. Padrão visual: EB Garamond 12, justificado, logo no topo e rodapé do escritório.'),
         h('div', { class: 'modelos-grade' }, Object.keys(grupos).map(g => h('div', {}, h('h4', {}, g),
           h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))))))), false),
@@ -1554,6 +1682,7 @@
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
     sujo = false;
+    const detAg = document.getElementById('ag-detalhe'); if (detAg) detAg.hidden = true;
     window.scrollTo(0, 0);
     try {
       switch (tela) {
