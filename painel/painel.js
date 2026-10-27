@@ -2428,7 +2428,7 @@
     const corpo = h('div', {});
     const desenhar = c => {
       const f = h('form', { class: 'campos', novalidate: true },
-        campo('chave', c.temChave ? 'Chave do Gemini (já cadastrada; cole outra para trocar)' : 'Chave do Gemini (Google AI Studio)', '', { tipo: 'password', auto: 'off', dica: c.temChave ? '••••••••' : 'AIza…' }),
+        campo('chave', c.temChave ? 'Chave do Gemini (já cadastrada; cole outra para trocar)' : 'Chave do Gemini (Google AI Studio)', '', { tipo: 'password', auto: 'off', dica: c.temChave ? '••••••••' : 'cole a chave copiada' }),
         campo('modelo', 'Modelo', c.modelo, { opcoes: [['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite (mais barato)'], ['gemini-2.5-flash', 'gemini-2.5-flash (melhor)']].concat(/^gemini-2\.5-flash(-lite)?$/.test(c.modelo) ? [] : [[c.modelo, c.modelo]]) }),
         campo('ligada', 'Situação', c.ligada ? 'sim' : 'nao', { opcoes: [['sim', 'Ligada (resume no robô de 6 em 6 h)'], ['nao', 'Desligada']] }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn sec' }, 'Salvar'),
@@ -2444,7 +2444,7 @@
       corpo.replaceChildren(
         h('p', {}, 'O robô manda o texto das intimações novas (principalmente as do DJEN, que vêm com o teor) para o Gemini, do Google, e guarda um resumo de 2 frases com a providência. ',
           h('strong', {}, 'A IA nunca muda prazos: '), 'o resumo aparece ao lado do prazo para a advogada conferir.'),
-        h('p', { class: 'peq' }, 'Antes de enviar, o painel tira CPF, CNPJ, RG, telefones, e-mails, CEP e dados bancários. Use uma chave de projeto com faturamento ativo (plano pago): no plano gratuito o Google pode usar os textos para melhorar os produtos dele. Avisos do PJe que dizem só "documento sigiloso" não têm o que resumir.'),
+        h('p', { class: 'peq' }, 'Antes de enviar, o painel troca o nome das partes por [PARTE] e o número por [PROCESSO], e tira CPF, CNPJ, RG, telefones, e-mails, CEP e dados bancários. Funciona no plano gratuito (o Google pode usar os textos, já sem nomes); no plano pago ele não usa. Avisos do PJe que dizem só "documento sigiloso" não têm o que resumir.'),
         h('ul', { class: 'lista-seg' },
           h('li', { class: c.temChave && c.ligada ? 'ok' : 'alerta' }, h('strong', {}, 'Situação: '), c.temChave ? (c.ligada ? 'ligada' : 'desligada') : 'sem chave cadastrada'),
           c.ultima ? h('li', { class: 'ok' }, h('strong', {}, 'Última rodada: '), c.ultima.replace(/^(\S+)/, iso => new Date(iso).toLocaleString('pt-BR'))) : null,

@@ -144,7 +144,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Resumo do dia por e-mail: gatilho `resumoDiarioGatilho` às 7h, só dias úteis, para usuários com e-mail (coluna `email`,
   `resumo_email`). Usa GmailApp.sendEmail (escopo já existente).
 - IA: Gemini (Google), nunca Claude. Chave só nas Propriedades do script (GEMINI_CHAVE), nunca na planilha. `anonimizar_`
-  tira CPF/CNPJ/RG/telefone/e-mail/CEP/conta antes de enviar. A IA só escreve `resumo_ia` (Intimações e Prazos); NUNCA muda
+  troca nomes das partes por [PARTE] e o nº por [PROCESSO] e tira CPF/CNPJ/RG/telefone/e-mail/CEP/conta antes de enviar. A IA só escreve `resumo_ia` (Intimações e Prazos); NUNCA muda
   prazo. Recomendar chave com faturamento (plano gratuito pode usar os dados).
 - Andamentos: DataJud (API pública do CNJ), gatilho `andamentosGatilho` de 4 em 4 h, em lotes (`UrlFetchApp.fetchAll`).
   Guarda os 25 últimos em Processos.andamentos (JSON; "-" = não achado: segredo de justiça ou não enviado). A chave pública

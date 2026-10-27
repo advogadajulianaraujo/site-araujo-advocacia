@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.7.0';
+var VERSAO = '6.7.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -5225,8 +5225,21 @@ function testarResumoEmail_(d, u) {
 var IA_MODELO_PADRAO = 'gemini-2.5-flash-lite';
 
 /** Tira CPF, CNPJ, RG, telefones, e-mails, CEP e contas bancárias antes de mandar o texto para a IA. */
-function anonimizar_(t) {
-  return String(t || '')
+function anonimizar_(t, nomes) {
+  t = String(t || '');
+  // nomes das partes (cliente, parte contrária, nomes do aviso) viram [PARTE]; o número do processo vira [PROCESSO]
+  (nomes || []).map(function (n) { return String(n || '').replace(/\s+/g, ' ').trim(); })
+    .filter(function (n) { return n.length >= 5 && /\s/.test(n); })
+    .sort(function (a, b) { return b.length - a.length; })
+    .forEach(function (n) {
+      var ac = { a: '[aáàâã]', e: '[eéê]', i: '[ií]', o: '[oóôõ]', u: '[uúü]', c: '[cç]' };
+      var re = normalizar_(n).split(' ').map(function (p) {
+        return p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[aeiouc]/g, function (l) { return ac[l]; });
+      }).join('\\s+');
+      t = t.replace(new RegExp(re, 'gi'), '[PARTE]');
+    });
+  return t
+    .replace(/\b\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\b/g, '[PROCESSO]')
     .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, '[CNPJ]')
     .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[CPF]')
     .replace(/\bRG\s*(n[º°o.]*\s*)?[\dXx.\-\/]{5,}/gi, 'RG [RG]')
@@ -5280,13 +5293,19 @@ function resumirIntimacoes_(limiteMs, max) {
     return t.length >= 120 && !/^\W*(documento sigiloso|conteúdo sigiloso)/i.test(t);
   }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, max || 30);
   if (!fila.length) return { feitas: 0 };
-  var prazos = {};
+  var prazos = {}, procs = {}, nomesCli = {};
   tabZ.linhas.forEach(function (z) { prazos[z.id] = z; });
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { nomesCli[c.id] = c.nome; });
+  var nomesDa = function (x) {
+    var p = procs[x.processo_id] || {};
+    return String(x.partes_cliente || '').split(/;\s*/).concat([nomesCli[p.cliente_id], p.cliente_nome, p.parte_contraria]);
+  };
   tabI.adiar = true; tabZ.adiar = true;
   var feitas = 0, erro = '';
   for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 60000); i += 5) {
     var lote = fila.slice(i, i + 5);
-    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n')), chave, modelo); }));
+    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo); }));
     for (var k = 0; k < lote.length; k++) {
       try {
         var res = lerRespostaGemini_(resps[k]);
@@ -5308,8 +5327,8 @@ function resumirIntimacoes_(limiteMs, max) {
 function configIA_(d, u) {
   var props = PropertiesService.getScriptProperties();
   if (d.chave !== undefined) {
-    var k = String(d.chave || '').trim();
-    if (k && !/^[A-Za-z0-9_\-]{20,80}$/.test(k)) throw falha_('A chave não parece uma chave do Google AI Studio (começa com "AIza…").');
+    var k = String(d.chave || '').replace(/[\s"'`<>]/g, '');
+    if (k && (k.length < 20 || k.length > 300 || /\.\.\./.test(k))) throw falha_('A chave parece incompleta. No Google AI Studio, clique no ícone de copiar (dois quadradinhos) na linha da chave e cole aqui.');
     if (k) props.setProperty('GEMINI_CHAVE', k); else props.deleteProperty('GEMINI_CHAVE');
     registrar_(u.usuario, 'chave da IA', k ? 'cadastrada' : 'apagada');
   }
