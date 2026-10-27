@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.3.0';
+var VERSAO = '6.4.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3713,6 +3713,34 @@ function negritar_(corpo, nomes) {
   });
 }
 
+/**
+ * Junta vários documentos gerados num PDF só, para imprimir de uma vez (cada um começa numa folha nova).
+ * Copia o conteúdo dos Google Docs para um documento novo com o mesmo cabeçalho e rodapé do escritório.
+ */
+function juntarParaImprimir_(docIds, pasta, nome) {
+  var doc = DocumentApp.create(nome);
+  montarPadraoVisual_(doc, [], true);
+  var corpo = doc.getBody();
+  var T = DocumentApp.ElementType;
+  docIds.forEach(function (id, i) {
+    var origem = DocumentApp.openById(id).getBody();
+    if (i > 0) corpo.appendPageBreak();
+    for (var j = 0; j < origem.getNumChildren(); j++) {
+      var el = origem.getChild(j).copy(), tipo = el.getType();
+      if (tipo === T.PARAGRAPH) corpo.appendParagraph(el);
+      else if (tipo === T.LIST_ITEM) corpo.appendListItem(el);
+      else if (tipo === T.TABLE) corpo.appendTable(el);
+    }
+  });
+  // tira o parágrafo vazio que todo documento novo tem no começo
+  try { var p0 = corpo.getChild(0); if (p0.getType() === T.PARAGRAPH && !p0.asParagraph().getText() && corpo.getNumChildren() > 1) p0.removeFromParent(); } catch (e) { /* ok */ }
+  doc.saveAndClose();
+  var arq = DriveApp.getFileById(doc.getId());
+  var pdf = pasta.createFile(arq.getAs('application/pdf')).setName(nome + '.pdf');
+  arq.setTrashed(true);
+  return pdf.getUrl();
+}
+
 /** Notas promissórias: uma por parcela, duas por folha (Decreto nº 57.663/1966 — Lei Uniforme). */
 function linhasPromissorias_(notas, c, esc, tipo, numProc) {
   var nome = String(c.nome).toUpperCase();
@@ -4130,7 +4158,7 @@ function gerarDocumentos_(d, u) {
     var arqNP = DriveApp.getFileById(docNP.getId());
     arqNP.moveTo(destino('promissoria'));
     var pdfNP = destino('promissoria').createFile(arqNP.getAs('application/pdf')).setName(nomeNP + '.pdf');
-    gerados.push({ modelo: MODELOS.promissoria.nome + ' (' + notasP.length + ')', doc: arqNP.getUrl(), pdf: pdfNP.getUrl() });
+    gerados.push({ modelo: MODELOS.promissoria.nome + ' (' + notasP.length + ')', doc: arqNP.getUrl(), pdf: pdfNP.getUrl(), assinar: true, _docId: arqNP.getId(), _ordem: 99 });
   }
   quais.filter(function (k) { return MODELOS[k] && !MODELOS[k].gerado; }).forEach(function (k) {
     var nomeArq = NOMES_ARQ[k] + (k === 'procuracao' && tipo && d.tipo_acao !== 'outro' ? ' (' + tipo.nome.replace(/\s*\(.*\)$/, '').toUpperCase() + ')' : '') +
@@ -4147,14 +4175,22 @@ function gerarDocumentos_(d, u) {
     if (k === 'procuracao_menor') negritar_(corpo, menores.map(function (m) { return m.nome.toUpperCase(); }));
     doc.saveAndClose();
     var pdf = dest.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
-    gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl() });
+    gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl(), assinar: !!MODELOS[k].assinaCliente, _docId: copia.getId(), _ordem: Object.keys(MODELOS).indexOf(k) });
   });
+  // um PDF só com tudo o que o cliente assina, na ordem: procuração, declarações, contrato, promissórias
+  var impressao = '';
+  var paraAssinar = gerados.filter(function (g) { return g.assinar; }).sort(function (a, b) { return a._ordem - b._ordem; });
+  if (paraAssinar.length > 1) {
+    try { impressao = juntarParaImprimir_(paraAssinar.map(function (g) { return g._docId; }), destino('procuracao'), 'IMPRIMIR — PARA ASSINAR — ' + nomePasta_(c.nome) + ' — ' + dataBR_(hoje).replace(/\//g, '-')); }
+    catch (e) { impressao = ''; }
+  }
+  gerados.forEach(function (g) { delete g._docId; delete g._ordem; });
   var lancados = [];
   if (f.lancar && pode.financeiro && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
-  return { gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
+  return { gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
 }
 
 /* ================================================================== */

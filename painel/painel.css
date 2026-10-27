@@ -449,3 +449,6 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 @media (max-width:720px){.linha-menor{grid-template-columns:1fr 1fr}}
 .djen-linha{margin-top:4px}
 .djen-linha.erro{color:var(--vermelho)}
+.imprimir-caixa{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:#fffaf0;border:1px solid #ecd9a8;border-left:4px solid #c98a00;padding:12px 16px;margin:10px 0}
+.lista-gerados li{padding:4px 0}
+.lista-gerados .btn.mini{min-height:0;padding:4px 10px}

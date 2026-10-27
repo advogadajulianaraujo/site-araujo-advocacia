@@ -757,8 +757,13 @@
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
           r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
           r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
-        h('ul', { class: 'lista-int' }, r.gerados.map(g => h('li', {}, h('strong', {}, g.modelo), ' · ',
-          h('a', { href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'abrir PDF'), ' · ',
+        r.gerados.some(g => g.assinar) ? h('div', { class: 'imprimir-caixa' },
+          h('div', {}, h('strong', {}, '🖨 Documentos para o cliente assinar'),
+            h('div', { class: 'peq' }, 'Abre o PDF; clique no ícone da impressora (ou Ctrl+P) para imprimir. Eles também estão na pasta "DOCUMENTOS PARA ASSINAR".')),
+          r.imprimir_tudo ? h('a', { class: 'btn', href: r.imprimir_tudo, target: '_blank', rel: 'noopener noreferrer' }, `Imprimir tudo (${r.gerados.filter(g => g.assinar).length} documentos)`) : null) : null,
+        h('ul', { class: 'lista-int lista-gerados' }, r.gerados.map(g => h('li', {}, h('strong', {}, g.modelo),
+          g.assinar ? h('span', { class: 'tag atencao mini-tag' }, 'assinar') : null, ' · ',
+          g.assinar ? h('a', { class: 'btn mini', href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'Imprimir') : h('a', { href: g.pdf, target: '_blank', rel: 'noopener noreferrer' }, 'abrir PDF'), ' · ',
           h('a', { href: g.doc, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))),
         h('p', {}, h('a', { class: 'btn sec', href: r.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta do cliente'))].filter(Boolean));
       avisar('Documentos gerados na pasta do cliente.');

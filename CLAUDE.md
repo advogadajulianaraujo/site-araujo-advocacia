@@ -56,6 +56,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Documentos que o cliente assina (procurações, declarações, termo LGPD, contratos, notas promissórias: `assinaCliente`)
   vão para a subpasta "DOCUMENTOS PARA ASSINAR" dentro da pasta do cliente (criada se não existir). Petições, recibo e
   notificação ficam na pasta principal. A ficha mostra quantos arquivos esperam assinatura.
+- Ao gerar, os documentos que o cliente assina ganham o botão "Imprimir" e, se forem dois ou mais, um PDF único
+  "IMPRIMIR — PARA ASSINAR" (`juntarParaImprimir_`: procuração → declarações → contrato → promissórias, cada um em folha nova).
 - Procuração, procuração de filhos menores, hipossuficiência e residência cabem em UMA folha (`umaFolha`: margens e logo
   menores, espaçamento 1,1, qualificação sem telefone/e-mail). Petições e contratos não precisam.
 - Procuração de filhos menores: o cliente é quem representa (pai/mãe, tutor, guardião); até 15 anos "representado",
