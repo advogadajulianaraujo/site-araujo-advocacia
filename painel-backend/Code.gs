@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.4.0';
+var VERSAO = '6.5.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -291,6 +291,7 @@ var ROTAS = {
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
   'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
+  'fin.areceber': { permissao: 'financeiro', fn: aReceber_ },
   'fin.honorarios': { permissao: 'financeiro', fn: listarHonorarios_ },
   'fin.honorario': { permissao: 'financeiro', fn: obterHonorario_ },
   'fin.honorario.salvar': { permissao: 'financeiro', fn: salvarHonorario_ },
@@ -306,7 +307,7 @@ var ROTAS = {
 
 var MEMO_LEITURA = null;
 var LEITURAS_RAPIDAS = { 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
-  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1 };
+  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1 };
 
 function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
@@ -1642,8 +1643,34 @@ function definirPendentes_(ctx) {
  * que ainda não estão no painel, com a última movimentação e a situação (ativo ou arquivado).
  * Continua de onde parou em cada execução até chegar ao começo da caixa de entrada.
  */
+/*
+ * Cota do Gmail: o Google limita quantas vezes por dia o script lê o Gmail. A leitura dos avisos NOVOS (robô)
+ * tem prioridade; o histórico antigo e a classificação de áreas usam no máximo GMAIL_EXTRA_DIA leituras por dia
+ * e param no dia em que o Google avisar "chamado muitas vezes".
+ */
+var GMAIL_EXTRA_DIA = 250;
+function gmailExtraRestante_() {
+  var hoje = hojeSP_();
+  if (config_('GMAIL_ESGOTADO_EM') === hoje) return 0;
+  var p = String(config_('GMAIL_EXTRA_USO') || '').split('|');
+  return Math.max(0, GMAIL_EXTRA_DIA - (p[0] === hoje ? parseInt(p[1], 10) || 0 : 0));
+}
+function gmailExtraUsar_(n) {
+  if (!n) return;
+  var hoje = hojeSP_(), p = String(config_('GMAIL_EXTRA_USO') || '').split('|');
+  setConfig_('GMAIL_EXTRA_USO', hoje + '|' + ((p[0] === hoje ? parseInt(p[1], 10) || 0 : 0) + n), 'Leituras extras do Gmail hoje (histórico e áreas)');
+}
+/** Se o erro for de cota do Gmail, anota para as leituras extras pararem hoje. */
+function gmailEsgotado_(e) {
+  if (!/muitas vezes|too many times|limit exceeded/i.test(String((e && e.message) || e))) return false;
+  setConfig_('GMAIL_ESGOTADO_EM', hojeSP_(), 'Dia em que o Google avisou que a cota do Gmail acabou');
+  return true;
+}
+
 function importarHistoricoGmail_(limiteMs) {
   if (config_('HIST_GMAIL_FIM') === 'sim') return { novos: 0, fim: true };
+  var cota = gmailExtraRestante_();
+  if (!cota) return { novos: 0, lidas: 0, fim: false, cota: true };
   var t0 = Date.now();
   if (limiteMs === undefined) limiteMs = 200000;
   var lock = LockService.getScriptLock();
@@ -1653,7 +1680,8 @@ function importarHistoricoGmail_(limiteMs) {
     ctx = contextoRobo_();
     ctx.procs.adiar = true;
     var antes = Object.keys(ctx.porNumero).length;
-    while (Date.now() - t0 < limiteMs) {
+    try {
+    while (Date.now() - t0 < limiteMs && lidas < cota) {
       var q = 'from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br OR trt4.jus.br OR trt9.jus.br) before:' + Math.floor(cursor / 1000);
       var threads = GmailApp.search(q, 0, 50);
       if (!threads.length) { fim = true; break; }
@@ -1661,7 +1689,7 @@ function importarHistoricoGmail_(limiteMs) {
       threads.forEach(function (th) { th.getMessages().forEach(function (m) { if (m.getDate().getTime() < cursor) msgs.push(m); }); });
       msgs.sort(function (a, b) { return b.getDate().getTime() - a.getDate().getTime(); });
       if (!msgs.length) { cursor -= 1000; continue; }
-      for (var i = 0; i < msgs.length && Date.now() - t0 < limiteMs; i++) {
+      for (var i = 0; i < msgs.length && Date.now() - t0 < limiteMs && lidas < cota; i++) {
         var msg = msgs[i];
         var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
         itens.forEach(function (it) {
@@ -1677,6 +1705,8 @@ function importarHistoricoGmail_(limiteMs) {
         cursor = msg.getDate().getTime();
       }
     }
+    } catch (eG) { if (!gmailEsgotado_(eG)) throw eG; }
+    gmailExtraUsar_(lidas + 1);
     regravarMudadas_(ctx.procs);
     gravarLote_(ctx.procs);
     novos = Object.keys(ctx.porNumero).length - antes;
@@ -1827,7 +1857,7 @@ function rodarRobo_(quem) {
   try {
     ctx = contextoRobo_();
     try { var g = lerGmail_(ctx); novas += g.intimacoes; prazosNovos += g.prazos; }
-    catch (e) { erros.push('Gmail: ' + (e.message || e)); }
+    catch (e) { erros.push(gmailEsgotado_(e) ? 'Gmail: o Google limitou as leituras de hoje; os avisos que faltaram entram na próxima rodada' : 'Gmail: ' + (e.message || e)); }
     var djenNav = config_('DJEN_NAVEGADOR_ULTIMA');
     var navRecente = djenNav && (Date.now() - new Date(djenNav).getTime()) < 36 * 3600000;
     try { if (!ctx.gmailParcial && !navRecente) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
@@ -1902,19 +1932,41 @@ function completarPorPartes_(tab, p, partes) {
  * Lê no Gmail o último aviso de cada processo sem área e classifica (uma vez; depois o robô faz sozinho).
  * Limite de 3 minutos; o que sobrar fica para a próxima execução.
  */
+/** Área pelo nome da vara/câmara ("1ª Vara Criminal", "6ª Câmara de Direito Civil", "Vara da Família"…). */
+function areaPeloOrgao_(t) {
+  t = normalizar_(t);
+  if (!t.trim()) return '';
+  if (/criminal|crime|penal|juri|violencia domestica/.test(t)) return 'Criminal';
+  if (/familia|sucess|orfaos/.test(t)) return 'Família';
+  if (/fazenda|execucao fiscal/.test(t)) return 'Cível';
+  if (/trabalho/.test(t)) return 'Trabalhista';
+  if (/federal|jef\b|previdenci/.test(t)) return 'Federal';
+  if (/civel|civeis|direito civil|juizado especial|jec\b/.test(t)) return 'Cível';
+  return '';
+}
+
 function classificarAreas_(limiteMs) {
   var t0 = Date.now();
   if (limiteMs === undefined) limiteMs = 180000;
   var tab = tabela_('Processos');
   tab.adiar = true;
-  var feitos = 0, olhados = 0;
+  var feitos = 0, olhados = 0, cota = gmailExtraRestante_(), parou = false;
+  // nome da vara nos avisos já lidos (sem gastar Gmail)
+  var orgaos = {};
+  try { tabela_('Intimacoes').linhas.forEach(function (i) { orgaos[i.numero] = (orgaos[i.numero] || '') + ' ' + (i.movimento || ''); }); } catch (e) { /* sem aba */ }
   tab.linhas.forEach(function (p) {
-    if (Date.now() - t0 > limiteMs) return;
+    if (Date.now() - t0 > limiteMs || parou) return;
     if (p.area || !p.numero) return;
     var tribunal = p.tribunal || tribunalDoNumero_(p.numero);
-    if (/^TRT/.test(tribunal)) { atualizarLinha_(tab, p, { area: 'Trabalhista' }); feitos++; return; }
+    if (/^(TRT|TST)/.test(tribunal) || /\.5\.\d{2}\.\d{4}$/.test(p.numero)) { atualizarLinha_(tab, p, { area: 'Trabalhista' }); feitos++; return; }
+    var pelaVara = areaPeloOrgao_((p.orgao || '') + ' ' + (orgaos[p.numero] || ''));
+    if (pelaVara) { atualizarLinha_(tab, p, { area: pelaVara }); feitos++; return; }
+    if (/^TRF/.test(tribunal)) { atualizarLinha_(tab, p, { area: 'Federal' }); feitos++; return; }
+    if (olhados >= cota) return;
     olhados++;
-    var th = GmailApp.search('"' + p.numero + '" from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br)', 0, 3);
+    var th;
+    try { th = GmailApp.search('"' + p.numero + '" from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br)', 0, 3); }
+    catch (eG) { if (gmailEsgotado_(eG)) { parou = true; return; } throw eG; }
     var info = null;
     th.some(function (t) {
       return t.getMessages().reverse().some(function (msg) {
@@ -1929,6 +1981,7 @@ function classificarAreas_(limiteMs) {
     if (info && completarPorPartes_(tab, p, info)) feitos++;
   });
   regravarMudadas_(tab);
+  gmailExtraUsar_(olhados);
   if (feitos) registrar_('sistema', 'áreas classificadas', feitos + ' processos (' + olhados + ' avisos consultados no Gmail)');
   return feitos;
 }
@@ -2275,6 +2328,7 @@ function prazoPublico_(z, procs, nomes) {
   x.cliente_id = p.cliente_id || '';
   x.tribunal = p.tribunal || tribunalDoNumero_(z.numero);
   x.orgao = p.orgao || '';
+  x.sistema = p.sistema || '';
   return x;
 }
 
@@ -2385,7 +2439,7 @@ function resumoPrazos_() {
     vencendo: lista.filter(function (z) { return z.fatal && z.fatal >= hoje && z.fatal <= em5; }).length,
     vencidos: lista.filter(function (z) { return z.fatal && z.fatal < hoje; }).length,
     atrasados: lista.filter(function (z) { return z.fatal && z.fatal < hoje; }).slice(0, 6),
-    proximos: lista.filter(function (z) { return z.fatal && z.fatal >= hoje; }).slice(0, 8)
+    proximos: lista.filter(function (z) { return z.fatal && z.fatal >= hoje; }).slice(0, 25)
       .concat(lista.filter(function (z) { return z.situacao === 'a definir'; }).slice(0, 4))
   };
 }
@@ -2493,6 +2547,40 @@ function parcelaPublica_(p, hoje, clientes, hons) {
   x.honorario = h.descricao || TIPOS_HONORARIO[h.tipo] || '';
   x.saldo = x.situacao === 'paga' ? 0 : dinheiro_(p.valor) - dinheiro_(p.valor_pago);
   return x;
+}
+
+/**
+ * Lista "A receber": por cliente e honorário, quantas parcelas, quantas pagas, valor total, recebido,
+ * quanto falta, quanto está atrasado e a próxima parcela. Só quem ainda deve alguma coisa.
+ */
+function aReceber_() {
+  var hoje = hojeSP_(), clientes = mapaClientes_(), hons = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var grupos = {};
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var h = hons[p.honorario_id] || {};
+    if (['cancelado', 'encerrado', 'quitado'].indexOf(h.situacao) >= 0) return;
+    var x = parcelaPublica_(p, hoje, clientes, hons);
+    var g = grupos[p.honorario_id];
+    if (!g) g = grupos[p.honorario_id] = { honorario_id: p.honorario_id, cliente_id: p.cliente_id, cliente: x.cliente, telefone: x.telefone,
+      descricao: x.honorario, tipo: h.tipo || '', total: 0, recebido: 0, saldo: 0, parcelas: 0, pagas: 0, atrasadas: 0, atrasado: 0, proxima: null, ultima: '' };
+    var valor = dinheiro_(p.valor);
+    g.parcelas++; g.total += valor; g.recebido += dinheiro_(p.valor_pago);
+    if (p.vencimento > g.ultima) g.ultima = p.vencimento;
+    if (x.situacao === 'paga') { g.pagas++; return; }
+    g.saldo += x.saldo;
+    if (x.situacao === 'atrasada') { g.atrasadas++; g.atrasado += x.saldo; if (!g.desde || p.vencimento < g.desde) g.desde = p.vencimento; }
+    else if (!g.proxima || p.vencimento < g.proxima.vencimento) g.proxima = { vencimento: p.vencimento, valor: x.saldo, numero: p.numero };
+  });
+  var r2 = function (v) { return Math.round(v * 100) / 100; };
+  var lista = Object.keys(grupos).map(function (k) { return grupos[k]; }).filter(function (g) { return g.saldo > 0.005; })
+    .map(function (g) { g.total = r2(g.total); g.recebido = r2(g.recebido); g.saldo = r2(g.saldo); g.atrasado = r2(g.atrasado); g.dias_atraso = g.desde ? diffDias_(hoje, g.desde) : 0; return g; })
+    .sort(function (a, b) { return (b.atrasado > 0) - (a.atrasado > 0) || b.atrasado - a.atrasado || b.saldo - a.saldo; });
+  var soma = function (f) { return r2(lista.reduce(function (t, g) { return t + g[f]; }, 0)); };
+  var clientesSet = {};
+  lista.forEach(function (g) { clientesSet[g.cliente_id] = 1; });
+  return { lista: lista, totais: { saldo: soma('saldo'), atrasado: soma('atrasado'), recebido: soma('recebido'), total: soma('total'),
+    clientes: Object.keys(clientesSet).length, devendo: lista.filter(function (g) { return g.atrasado > 0; }).length }, hoje: hoje };
 }
 
 /** Mensalistas: mantém as mensalidades geradas até 2 meses à frente. */

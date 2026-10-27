@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'modelos.listar']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -498,8 +498,9 @@
       pode.financeiro ? atalho('#/financeiro', 'Financeiro', null, 'honorários e parcelas') : null);
 
     // prazos: vencidos primeiro, depois os próximos pela data fatal
-    const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).slice(0, 7);
-    const blocoPrazos = bloco('Prazos', '#/prazos', 'ver todos →',
+    const sisIni = sistemaPreferido();
+    const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).filter(z => sisIni === 'todos' || sistemaDoPrazo(z) === sisIni).slice(0, 7);
+    const blocoPrazos = bloco(sisIni === 'todos' ? 'Prazos' : sisIni === 'pje' ? 'Prazos · PJe' : 'Prazos · eproc', '#/prazos', 'ver todos →',
       h('div', {},
         listaPrazos.length ? h('ul', { class: 'ini-lista' }, listaPrazos.map(z => item(() => { location.hash = '#/prazo/' + z.id; },
           selo(z.fatal, 'faixa-' + faixaPrazo(z)), z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
@@ -1390,11 +1391,26 @@
     return cartao;
   }
 
+  /* eproc (TJSC e Justiça Federal: cível, família, federal…) ou PJe (Justiça do Trabalho). Cada pessoa escolhe uma vez. */
+  const SISTEMAS = [['todos', 'Todos os sistemas'], ['eproc', 'eproc · Cível e Federal'], ['pje', 'PJe · Trabalhista']];
+  function sistemaDoPrazo(z) {
+    const s = String(z.sistema || '').toLowerCase();
+    if (/pje/.test(s)) return 'pje';
+    if (/eproc/.test(s)) return 'eproc';
+    return /^TRT/i.test(z.tribunal || '') || /\.5\.\d{2}\.\d{4}$/.test(z.numero || '') ? 'pje' : 'eproc';
+  }
+  function sistemaPreferido() { try { return localStorage.getItem('prazos_sistema') || 'todos'; } catch (e) { return 'todos'; } }
+
   async function telaPrazos(params) {
     carregando();
     const encerrados = params.get('encerrados') === '1';
     const ver = params.get('ver') || 'todos';
-    const [lista, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
+    const sis = params.get('sis') || sistemaPreferido();
+    const [listaToda, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
+    const porSis = { todos: listaToda.length, eproc: 0, pje: 0 };
+    listaToda.forEach(z => { if (SITUACOES_ABERTAS.includes(z.situacao) || encerrados) porSis[sistemaDoPrazo(z)]++; });
+    const lista = sis === 'todos' ? listaToda : listaToda.filter(z => sistemaDoPrazo(z) === sis);
+    const mudarSis = v => { try { localStorage.setItem('prazos_sistema', v); } catch (e) { /* ok */ } ir({ sis: v === 'todos' ? '' : v }); };
     const dir = params.get('ordem') === 'desc' ? 'desc' : 'asc';
     const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/prazos' + (q.toString() ? '?' + q : ''); };
     const ordem = { dir, mudar: d => ir({ ordem: d === 'asc' ? '' : d }) };
@@ -1420,9 +1436,13 @@
       h('b', {}, String(n)), h('span', {}, rotulo));
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações e prazos'),
-        h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto · contagem até 23h59 do dia fatal`)),
+        h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : sis === 'pje' ? ' no PJe (trabalhista)' : ' no eproc (cível e federal)'} · contagem até 23h59 do dia fatal`)),
         h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       cartaoRobo(resumo.robo),
+      h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'Sistema' },
+        SISTEMAS.map(([v, rot]) => h('button', { type: 'button', class: 'seg' + (sis === v ? ' ativo' : ''), 'aria-pressed': String(sis === v), onclick: () => mudarSis(v) },
+          rot, v !== 'todos' ? h('span', { class: 'seg-n' }, String(porSis[v])) : null)),
+        h('span', { class: 'peq seg-dica' }, 'Fica guardado neste computador.')),
       h('div', { class: 'kpis' },
         kpi(conta('vencido'), 'vencidos sem baixa', 'k-vencido', 'vencido'),
         kpi(conta('urgente'), 'vencem em até 2 dias', 'k-urgente', 'urgente'),
@@ -1748,9 +1768,13 @@
     const nome = nomeProprioJS(String(p.cliente || '').split(' ')[0]);
     const valor = reais(p.saldo || p.valor), venc = dataBR(p.vencimento);
     const ref = p.honorario ? ` (${p.honorario})` : '';
+    if (p.qtdAtrasadas > 1) {
+      const msgV = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Constam em aberto ${p.qtdAtrasadas} parcelas dos honorários${ref}, somando ${valor}, a primeira vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msgV);
+    }
     const msg = p.vencimento >= hojeISO()
-      ? `Olá, ${nome}! Tudo bem? Aqui é do escritório Araújo Advocacia. Passando para lembrar que a ${p.numero}ª parcela dos honorários${ref}, no valor de ${valor}, vence em ${venc}. Você pode pagar por PIX ou no escritório. Se já tiver pago, por favor nos envie o comprovante. Obrigado!`
-      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto a ${p.numero}ª parcela dos honorários${ref}, no valor de ${valor}, vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
+      ? `Olá, ${nome}! Tudo bem? Aqui é do escritório Araújo Advocacia. Passando para lembrar que ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'a parcela'} dos honorários${ref}, no valor de ${valor}, vence em ${venc}. Você pode pagar por PIX ou no escritório. Se já tiver pago, por favor nos envie o comprovante. Obrigado!`
+      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'uma parcela'} dos honorários${ref}, no valor de ${valor}, vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
   }
 
@@ -1808,7 +1832,8 @@
     form.addEventListener('submit', ev => { ev.preventDefault(); location.hash = '#/financeiro' + (form.busca.value.trim() ? '?busca=' + encodeURIComponent(form.busca.value.trim()) : ''); });
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Financeiro'), h('p', {}, 'Honorários, parcelas e cobranças. Só a administração vê esta área.')),
-        botao('Novo honorário', () => { location.hash = '#/honorario/novo'; })),
+        h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber — lista por cliente'),
+          botao('Novo honorário', () => { location.hash = '#/honorario/novo'; }))),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' + (t.atrasado ? ' destaque' : '') }, h('b', {}, reais(t.atrasado)), h('span', {}, `em atraso · ${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
         h('div', { class: 'numero' }, h('b', {}, reais(t.aReceber30)), h('span', {}, 'a receber nos próximos 30 dias')),
@@ -1829,6 +1854,54 @@
         h('td', { class: 'num', 'data-r': 'Em atraso' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'),
         h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (x.situacao === 'ativo' ? 'ok' : x.situacao === 'encerrado' ? '' : 'atencao') }, x.situacao))
       ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
+  }
+
+  /** A receber: quem deve ao escritório, por cliente e honorário (para conferir, cobrar e imprimir). */
+  async function telaAReceber(params) {
+    carregando();
+    const r = await api('fin.areceber', {});
+    const ver = params.get('ver') || 'todos';
+    const busca = (params.get('busca') || '').trim();
+    const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/financeiro/receber' + (q.toString() ? '?' + q : ''); };
+    let lista = r.lista;
+    if (ver === 'atraso') lista = lista.filter(g => g.atrasado > 0);
+    if (ver === 'dia') lista = lista.filter(g => !g.atrasado);
+    if (busca) lista = lista.filter(g => norm(g.cliente + ' ' + g.descricao).includes(norm(busca)));
+    const t = r.totais;
+    const somaSaldo = lista.reduce((a, g) => a + g.saldo, 0), somaAtraso = lista.reduce((a, g) => a + g.atrasado, 0);
+    const form = h('form', { class: 'barra nao-imprimir', role: 'search' },
+      h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar cliente', 'aria-label': 'Buscar cliente' }),
+      h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
+    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim() }); });
+    const wa = g => linkWhats({ telefone: g.telefone, cliente: g.cliente, honorario: g.descricao, qtdAtrasadas: g.atrasadas,
+      numero: g.atrasado ? '' : (g.proxima ? g.proxima.numero : ''), saldo: g.atrasado || (g.proxima ? g.proxima.valor : g.saldo),
+      vencimento: g.atrasado ? g.desde : (g.proxima ? g.proxima.vencimento : hojeISO()) });
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'A receber'),
+        h('p', {}, `${t.clientes} cliente(s) com valores a receber · ${t.devendo} com parcela atrasada · posição em ${dataBR(r.hoje)}`)),
+        h('div', { class: 'barra nao-imprimir' }, h('a', { class: 'btn sec', href: '#/financeiro' }, '← Financeiro'), botao('Imprimir lista', () => window.print()))),
+      h('div', { class: 'numeros' },
+        h('div', { class: 'numero' }, h('b', {}, reais(t.saldo)), h('span', {}, 'falta receber (todas as parcelas em aberto)')),
+        h('div', { class: 'numero' + (t.atrasado ? ' destaque' : '') }, h('b', {}, reais(t.atrasado)), h('span', {}, 'já vencido e não pago')),
+        h('div', { class: 'numero' }, h('b', {}, reais(t.recebido)), h('span', {}, 'já recebido desses contratos')),
+        h('div', { class: 'numero' }, h('b', {}, reais(t.total)), h('span', {}, 'valor total contratado'))),
+      h('div', { class: 'barra-filtros nao-imprimir' },
+        h('div', { class: 'chips' }, [['todos', 'Todos'], ['atraso', 'Com parcela atrasada'], ['dia', 'Em dia']].map(([v, rot]) =>
+          h('button', { type: 'button', class: 'chip-filtro' + (ver === v ? ' ativo' : ''), onclick: () => ir({ ver: v === 'todos' ? '' : v }) }, rot))),
+        form),
+      compacta(tabela(['Cliente', 'Honorário', 'Parcelas', 'Valor total', 'Recebido', 'Falta receber', 'Atrasado', 'Próxima parcela', ''], lista, g => [
+        h('td', { 'data-r': 'Cliente' }, h('strong', {}, g.cliente || '(sem cliente)'), g.telefone ? h('div', { class: 'peq' }, g.telefone) : null),
+        h('td', { 'data-r': 'Honorário' }, g.descricao || '—', g.tipo === 'mensal' ? h('div', { class: 'peq' }, 'mensalidade') : null),
+        h('td', { class: 'num', 'data-r': 'Parcelas' }, `${g.pagas} de ${g.parcelas} pagas`, h('div', { class: 'peq' }, `faltam ${g.parcelas - g.pagas}` + (g.ultima ? ` · última ${dataBR(g.ultima)}` : ''))),
+        h('td', { class: 'num', 'data-r': 'Valor total' }, reais(g.total)),
+        h('td', { class: 'num', 'data-r': 'Recebido' }, reais(g.recebido)),
+        h('td', { class: 'num', 'data-r': 'Falta receber' }, h('strong', {}, reais(g.saldo))),
+        h('td', { class: 'num', 'data-r': 'Atrasado' }, g.atrasado ? h('div', {}, h('span', { class: 'tag urgente' }, reais(g.atrasado)), h('div', { class: 'peq' }, `${g.atrasadas} parcela(s) · ${g.dias_atraso} dia(s)`)) : h('span', { class: 'tag ok' }, 'em dia')),
+        h('td', { class: 'num', 'data-r': 'Próxima' }, g.proxima ? h('div', {}, dataBR(g.proxima.vencimento), h('div', { class: 'peq' }, `${g.proxima.numero}ª · ${reais(g.proxima.valor)}`)) : '—'),
+        h('td', { class: 'nao-imprimir' }, wa(g) ? h('a', { class: 'btn mini sec wa', href: wa(g), target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, g.atrasado ? 'Cobrar' : 'Lembrar') : h('span', { class: 'peq' }, 'sem telefone'))
+      ], g => { location.hash = '#/honorario/' + g.honorario_id; }, busca || ver !== 'todos' ? 'Ninguém neste filtro.' : 'Ninguém devendo ao escritório. 🎉')),
+      lista.length ? h('p', { class: 'total-lista' }, h('strong', {}, `Total desta lista: ${reais(somaSaldo)} a receber`), somaAtraso ? ` · ${reais(somaAtraso)} em atraso` : '') : null);
   }
 
   async function telaHonorario(id, params) {
@@ -1978,7 +2051,7 @@
         case 'compromisso': await telaCompromisso(params); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
-        case 'financeiro': await telaFinanceiro(params); break;
+        case 'financeiro': if (id === 'receber') await telaAReceber(params); else await telaFinanceiro(params); break;
         case 'honorario': await telaHonorario(id, params); break;
         default: await telaInicio();
       }

@@ -15,6 +15,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pelo navegador (`lerDjenNavegador` em painel.js → rotas `djen.config`/`djen.importar`) a cada 2 h, para todas as OABs
   da aba Advogados, e manda para a planilha; se o navegador leu nas últimas 36 h, o robô do servidor nem tenta.
   Se o CNJ recusar também o navegador, o cartão do robô mostra o problema e o link "ver no site do DJEN".
+- Cota do Gmail: a leitura dos avisos NOVOS tem prioridade. Histórico antigo e classificação de áreas usam no máximo
+  `GMAIL_EXTRA_DIA` (250) leituras por dia e param no dia em que o Google avisar "chamado muitas vezes" (`gmailEsgotado_`).
+- Intimações: filtro por sistema (Todos / eproc · Cível e Federal / PJe · Trabalhista), guardado em cada computador
+  (`prazos_sistema`); o quadro Prazos do Início segue a mesma escolha.
+- Área sem Gmail: TRT/TST e número ".5." = Trabalhista; TRF = Federal; senão pelo nome da vara nos avisos (`areaPeloOrgao_`).
 - Ao revisar prazos, procure em tudo que tiver acesso: avisos do eproc e do PJe no Gmail (conta advogadajulianaraujo),
   DJEN (a consulta pública recusa o Google e esta nuvem, código 403) e a agenda. Nunca invente o conteúdo de um ato.
 
@@ -88,6 +93,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "ENTRADA DO WHATSAPP (exportar conversas aqui)". `processarWhatsapp_` (robô de 6 em 6 h e botão na ficha) acha o cliente pelo
   nome ou telefone, faz o PDF das fotos (uma por página, com data), a conversa em PDF e guarda vídeos/áudios numa subpasta
   na pasta do cliente. Também aceita subpasta da entrada com o nome do cliente. Zip acima de 48 MB não abre (limite do Google).
+- Financeiro › "A receber": lista por cliente/honorário com parcelas pagas/total, valor total, recebido, falta receber,
+  atrasado e próxima parcela (`aReceber_`, rota `fin.areceber`), atrasados primeiro, com botão de imprimir e de WhatsApp.
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade
