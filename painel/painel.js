@@ -61,6 +61,22 @@
     return acao + '|' + JSON.stringify(d);
   }
   function esquecerTudo() { memoria.clear(); geracao++; }
+  /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
+  const AFETA = {
+    clientes: ['clientes', 'processos', 'resumo', 'modelos'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
+    processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos'],
+    intimacoes: ['intimacoes', 'prazos', 'resumo'], agenda: ['agenda', 'resumo'], fin: ['fin', 'resumo', 'clientes'],
+    advogados: ['modelos'], usuarios: ['usuarios'], feriados: ['feriados', 'prazos', 'resumo']
+  };
+  function esquecerDepois(acao) {
+    const lista = AFETA[acao.split('.')[0]];
+    if (!lista) { esquecerTudo(); return; }
+    geracao++;
+    for (const [k, m] of memoria) {
+      if (lista.includes(k.split('|')[0].split('.')[0])) memoria.delete(k);
+      else if ('txt' in m) m.t = 0; else memoria.delete(k);
+    }
+  }
 
   const GRAVANDO = new Map();
   async function api(acao, dados) {
@@ -69,7 +85,7 @@
       const kg = chaveDe(acao, dados);
       if (GRAVANDO.has(kg)) return GRAVANDO.get(kg);
       const p = (async () => {
-        try { return await chamar(acao, dados); } finally { GRAVANDO.delete(kg); if (acao !== 'situacao') esquecerTudo(); }
+        try { return await chamar(acao, dados); } finally { GRAVANDO.delete(kg); if (acao !== 'situacao') esquecerDepois(acao); }
       })();
       GRAVANDO.set(kg, p);
       return p;
@@ -116,10 +132,20 @@
   /** Depois do login, já busca o que as abas principais usam. */
   function preaquecer() {
     const pode = (sessao && sessao.usuario && sessao.usuario.pode) || {};
-    const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}]];
+    const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['modelos.listar', {}]];
     if (pode.financeiro) lista.push(['fin.resumo'], ['fin.honorarios', {}]);
     lista.forEach(([a, d]) => api(a, d).catch(() => {}));
   }
+  /** Ao passar o mouse (ou encostar o dedo) numa aba, já começa a buscar o que ela mostra. */
+  const LEITURAS_DA_ABA = {
+    inicio: () => [['resumo'], ['agenda.listar', { inicio: hojeISO(), fim: isoSoma(hojeISO(), 14) }]],
+    clientes: () => [['clientes.listar', {}], ['processos.listar', {}]],
+    processos: () => [['processos.listar', {}]],
+    prazos: () => [['prazos.listar', {}], ['resumo']],
+    modelos: () => [['modelos.listar', {}], ['clientes.listar', {}]],
+    financeiro: () => [['fin.resumo'], ['fin.honorarios', {}]]
+  };
+  function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   async function chamar(acao, dados) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
@@ -163,6 +189,16 @@
     const cls = d <= 2 ? 'urgente' : d <= 5 ? 'atencao' : 'ok';
     return h('span', { class: 'tag ' + cls }, `faltam ${d} dia${d === 1 ? '' : 's'}`);
   }
+  /** "Audiência 26/10" + 2026-10-26 → "Audiência 26/10/2026"; sem data no texto, acrescenta a data. */
+  function atoComData(ato, iso) {
+    const t = String(ato || '').trim();
+    if (!iso) return t;
+    const [a, m, d] = iso.split('-');
+    const re = new RegExp('\\b0?' + (+d) + '/0?' + (+m) + '(?!/\\d)\\b');
+    return re.test(t) ? t.replace(re, `${d}/${m}/${a}`) : `${t} ${d}/${m}/${a}`;
+  }
+  /** Tabela mais junta (menos espaço entre as linhas). */
+  function compacta(t) { t.classList.add('compacta'); return t; }
   function etiquetaSituacao(s) {
     if (s === 'completo') return h('span', { class: 'tag ok' }, 'completo');
     return h('span', { class: 'tag atencao' }, s || 'a conferir');
@@ -264,7 +300,7 @@
   function montarTopo() {
     const pode = sessao.usuario.pode;
     abasEl.replaceChildren(...ABAS.filter(a => !a[3] || pode[a[3]]).map(([id, nome, breve]) =>
-      h('a', { href: '#/' + id, 'data-aba': id }, nome, breve ? h('span', { class: 'breve' }, breve) : null)));
+      h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id) }, nome, breve ? h('span', { class: 'breve' }, breve) : null)));
     document.getElementById('quem-nome').textContent = `${sessao.usuario.nome} · ${sessao.usuario.perfilNome}`;
     document.getElementById('menu-usuarios').hidden = !pode.usuarios;
     abasEl.hidden = false;
@@ -283,18 +319,25 @@
         h('p', {}, 'O painel ainda não foi ligado ao Google. Siga o passo a passo em painel-backend/INSTALAR.md e cole o endereço em painel/config.js.')));
       return;
     }
+    let lembrado = '';
+    try { lembrado = localStorage.getItem('painel_usuario') || ''; } catch (e) { /* navegação privada */ }
     const form = h('form', { class: 'entrar', novalidate: true },
       h('h1', {}, 'Entrar'),
       h('p', {}, 'Acesso restrito à equipe da Araújo Advocacia.'),
       h('div', { class: 'campo' }, h('label', { for: 'l-u' }, 'Usuário'), h('input', { id: 'l-u', name: 'usuario', autocomplete: 'username', required: true, autocapitalize: 'none' })),
       h('div', { class: 'campo' }, h('label', { for: 'l-s' }, 'Senha'), h('input', { id: 'l-s', name: 'senha', type: 'password', autocomplete: 'current-password', required: true })),
+      h('label', { class: 'marcar lembrar' }, h('input', { type: 'checkbox', name: 'lembrar', checked: true }), 'Lembrar meu usuário neste computador'),
       h('button', { type: 'submit', class: 'btn' }, 'Entrar'),
+      h('p', { class: 'peq dica-senha' }, 'Para não digitar a senha toda vez, aceite quando o navegador perguntar "Salvar senha?". Use só no computador do escritório.'),
       h('p', { class: 'erro' }),
       h('div', { class: 'rodape', id: 'primeiro' }));
     mostrar(form);
-    form.querySelector('input').focus();
+    if (lembrado) { form.usuario.value = lembrado; form.senha.focus(); } else form.querySelector('input').focus();
     aoEnviar(form, async fd => {
       const r = await api('login', { usuario: fd.get('usuario'), senha: fd.get('senha') });
+      try { if (fd.get('lembrar')) localStorage.setItem('painel_usuario', fd.get('usuario')); else localStorage.removeItem('painel_usuario'); } catch (e) { /* navegação privada */ }
+      // pede ao navegador para guardar usuário e senha no gerenciador de senhas (Chrome/Edge)
+      try { if (window.PasswordCredential && navigator.credentials) await navigator.credentials.store(new PasswordCredential({ id: fd.get('usuario'), password: fd.get('senha'), name: r.usuario.nome })); } catch (e) { /* o navegador recusou */ }
       sessao = r;
       document.getElementById('aviso').hidden = true;
       guardar('painel_sessao', r);
@@ -674,6 +717,7 @@
           campo('nome', pf ? 'Nome completo' : 'Razão social', c.nome, { obrigatorio: true, max: 200 }),
           campo('cpf_cnpj', pf ? 'CPF' : 'CNPJ', c.cpf_cnpj, { modo: 'numeric', max: 18, obrigatorio: novo }),
           soPF(campo('rg', 'RG', c.rg, { max: 30, obrigatorio: novo })),
+          soPF(campo('genero', 'Sexo (para os documentos)', c.genero || '', { opcoes: [['', '— pelo nome —'], ['feminino', 'Feminino'], ['masculino', 'Masculino']], dica: 'Sai "brasileira, casada" ou "brasileiro, casado" nos documentos' })),
           soPF(campo('nascimento', 'Data de nascimento', c.nascimento, { tipo: 'date' })),
           soPF(campo('estado_civil', 'Estado civil', c.estado_civil, { opcoes: ESTADO_CIVIL })),
           soPF(campo('profissao', 'Profissão', c.profissao, { max: 100, obrigatorio: novo })),
@@ -724,7 +768,7 @@
 
     aoEnviar(form, async fd => {
       const dados = Object.fromEntries(fd.entries());
-      if (dados.tipo === 'PJ') { delete dados.rg; delete dados.nascimento; delete dados.estado_civil; delete dados.profissao; }
+      if (dados.tipo === 'PJ') { delete dados.rg; delete dados.nascimento; delete dados.estado_civil; delete dados.profissao; delete dados.genero; }
       if (novo) {
         const falta = [];
         if (!dados.nome.trim()) falta.push(dados.tipo === 'PJ' ? 'razão social' : 'nome completo');
@@ -743,6 +787,39 @@
   }
 
   /** Seção que abre e fecha pela seta (como "Editar cadastro"). Carrega o conteúdo só ao abrir. */
+  /** WhatsApp → PDF: instruções, pasta de entrada e botão para converter agora. */
+  function caixaWhats(c) {
+    const saida = h('div', {});
+    const btn = h('button', { type: 'button', class: 'btn' }, 'Converter agora');
+    const linkEntrada = h('a', { class: 'btn sec', target: '_blank', rel: 'noopener noreferrer', href: '#' }, 'Abrir a pasta de entrada no Drive');
+    api('whatsapp.entrada', {}).then(r => { linkEntrada.href = r.url; }).catch(() => { linkEntrada.hidden = true; });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Convertendo… (pode levar alguns minutos)';
+      try {
+        const r = await api('clientes.whatsapp', { id: c.id });
+        const meus = r.feitos.filter(f => f.cliente_id === c.id);
+        saida.replaceChildren(...[
+          meus.length ? h('div', { class: 'nota ok' }, h('strong', {}, `${meus.length} conversa(s) convertida(s).`),
+            h('ul', { class: 'lista-int' }, meus.map(f => h('li', {}, `${f.fotos} foto(s), ${f.outros} vídeo(s)/áudio(s)/outros · `,
+              ...f.pdfs.map((u, i) => h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, f.pdfs.length > 1 ? ` PDF das fotos ${i + 1} ` : 'PDF das fotos')),
+              f.conversa ? [' · ', h('a', { href: f.conversa, target: '_blank', rel: 'noopener noreferrer' }, 'conversa em PDF')] : '',
+              ' · ', h('a', { href: f.pasta, target: '_blank', rel: 'noopener noreferrer' }, 'pasta com os arquivos'))))) :
+            h('div', { class: 'nota alerta' }, 'Não achei nenhuma conversa deste cliente na pasta de entrada. Confira se o arquivo exportado terminou de subir para o Drive.'),
+          r.erros.length ? h('div', { class: 'nota alerta' }, 'Problemas: ' + r.erros.join(' · ')) : null].filter(Boolean));
+      } catch (e) { saida.replaceChildren(h('div', { class: 'nota alerta' }, e.message)); }
+      btn.disabled = false; btn.textContent = 'Converter agora';
+    });
+    return h('div', {},
+      h('p', {}, 'O WhatsApp não deixa nenhum sistema ler as conversas direto do celular. O jeito é exportar a conversa para o Drive; o painel faz o resto sozinho: junta as fotos num PDF (uma por página, com a data), guarda a conversa em PDF e salva vídeos e áudios numa subpasta, tudo na pasta deste cliente.'),
+      h('ol', { class: 'passos' },
+        h('li', {}, 'No celular, abra a conversa com o cliente no WhatsApp.'),
+        h('li', {}, 'Toque nos ⋮ (Android) ou no nome do contato (iPhone) › Mais › ', h('strong', {}, 'Exportar conversa'), ' › ', h('strong', {}, 'Anexar mídia'), '.'),
+        h('li', {}, 'Escolha ', h('strong', {}, 'Drive'), ' e salve na pasta ', h('strong', {}, 'ENTRADA DO WHATSAPP'), '.'),
+        h('li', {}, 'Pronto: o robô converte nas próximas horas, ou aperte "Converter agora".')),
+      h('p', { class: 'peq' }, 'Se o contato estiver salvo com outro nome, o painel também reconhece pelo telefone. Arquivos acima de 48 MB não abrem: nesse caso, selecione as fotos no celular, compartilhe para o Drive numa pasta com o nome do cliente dentro da ENTRADA DO WHATSAPP.'),
+      h('div', { class: 'acoes' }, btn, linkEntrada), saida);
+  }
+
   function secao(titulo, conteudo, aberto) {
     const det = h('details', { class: 'caixa secao', open: !!aberto }, h('summary', {}, titulo));
     const carregar = () => { if (det.dataset.ok) return; det.dataset.ok = '1'; det.append(typeof conteudo === 'function' ? conteudo() : conteudo); };
@@ -839,6 +916,7 @@
       descricao,
       secao('Observações', notas, true),
       secao('Pasta do cliente', pasta, false),
+      secao('Fotos e conversas do WhatsApp', () => caixaWhats(c), false),
       secao(`Processos (${r.processos.length})`, procs, false),
       sessao.usuario.pode.financeiro ? secao('Honorários', hons, false) : null,
       h('details', { class: 'caixa secao editar-cad', open: incompleto }, h('summary', {}, 'Editar cadastro'), formCliente(c, false)));
@@ -898,18 +976,16 @@
           [['', 'Todos'], ['com', 'Com cliente cadastrado'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
         h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
         (sit !== 'todos' || trib || cli || ato || area || busca) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null),
-      h('div', { class: 'chips' },
-        h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todos (${todos.length})`),
-        areas.map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
-      tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato / último movimento'], lista, p => [
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero)), p.status === 'arquivado' ? h('div', {}, h('span', { class: 'tag' }, 'arquivado')) : null),
+      compacta(tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
+        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
-        h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('div', { class: 'peq' }, p.sistema) : null),
+        h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('span', { class: 'peq' }, ' · ' + p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
-        h('td', { 'data-r': 'Último movimento' }, p.proximo_ato ? h('div', {}, p.proximo_ato, p.proximo_ato_data ? h('div', {}, dataBR(p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null) : null,
-          p.ultimo_movimento ? h('div', { class: 'peq' }, p.ultimo_movimento_em ? new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR') + ' · ' : '', p.ultimo_movimento) : null)
-      ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.'));
+        h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato
+          ? h('div', { class: 'ato-linha' }, h('span', {}, atoComData(p.proximo_ato, p.proximo_ato_data)), p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : null)
+          : h('span', { class: 'peq' }, p.ultimo_movimento_em ? 'últ. mov. ' + new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR') : '—'))
+      ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.')));
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}${trib ? ' · ' + trib : ''}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
@@ -960,6 +1036,9 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo processo' : (p.numero || 'Processo sem número')),
         novo ? null : h('p', {}, p.cliente_id ? p.cliente_nome : 'Cliente a identificar', p.origem ? ` · origem: ${p.origem}` : '', ' · ', acessoTribunal(p.numero)))),
+      !novo && (p.proximo_ato || p.ultimo_movimento) ? h('section', { class: 'caixa resumo-proc' },
+        p.proximo_ato ? h('p', {}, h('strong', {}, 'Próximo ato: '), atoComData(p.proximo_ato, p.proximo_ato_data), ' ', p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : '') : null,
+        p.ultimo_movimento ? h('p', {}, h('strong', {}, 'Última movimentação'), p.ultimo_movimento_em ? ` (${new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR')})` : '', ': ', p.ultimo_movimento) : null) : null,
       prazosProc, form);
   }
 
@@ -1006,6 +1085,10 @@
         h('td', { 'data-r': 'Último acesso' }, u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR') : '—')
       ], u => editarUsuario(u), 'Nenhum usuário.'),
       h('div', { id: 'editar-usuario' }),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Quem pode ver o quê'),
+        h('table', { class: 'mini-tab permissoes' }, h('thead', {}, h('tr', {}, ['Perfil', 'Clientes, processos, intimações, agenda e modelos', 'Conferir prazos', 'Financeiro e contratos', 'Usuários'].map(x => h('th', {}, x)))),
+          h('tbody', {}, [['Administrador', '✓', '✓', '✓', '✓'], ['Advogada', '✓', '✓', '—', '—'], ['Secretário', '✓', '—', '—', '—'], ['Estagiário', '✓', '—', '—', '—']]
+            .map(l => h('tr', {}, l.map((x, i) => h(i ? 'td' : 'th', { scope: i ? null : 'row' }, x))))))),
       form,
       await relatorioCumpridos());
   }
@@ -1036,7 +1119,15 @@
         campo('perfil', 'Perfil', u.perfil, { opcoes: PERFIS }),
         campo('ativo', 'Situação', u.ativo, { opcoes: [['sim', 'Ativo'], ['nao', 'Desativado']] }),
         campo('senha', 'Nova senha (deixe em branco para manter)', '', { tipo: 'password', auto: 'new-password' })),
-      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'), botao('Cancelar', () => alvo.replaceChildren(), 'sec')),
+      h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
+        botao('Desconectar agora', async ev => {
+          ev.target.disabled = true;
+          try { await api('usuarios.salvar', { id: u.id, desconectar: true }); avisar(`${u.nome} foi desconectado(a) de todos os aparelhos.`); }
+          catch (e) { avisar(e.message, true); } ev.target.disabled = false;
+        }, 'sec'),
+        u.bloqueado ? botao('Desbloquear', async () => { await api('usuarios.salvar', { id: u.id, desbloquear: true }); avisar('Usuário desbloqueado.'); telaUsuarios(); }, 'sec') : null,
+        botao('Cancelar', () => alvo.replaceChildren(), 'sec')),
+      h('p', { class: 'peq' }, '"Desconectar agora" tira a pessoa do painel em todos os computadores e celulares; ela precisa entrar de novo com a senha. Para impedir a entrada de vez, mude a Situação para Desativado.'),
       h('p', { class: 'erro' }));
     aoEnviar(form, async fd => {
       const d = Object.fromEntries(fd.entries());
@@ -1145,15 +1236,14 @@
       ? h('button', { type: 'button', class: 'ordenar', title: ordem.dir === 'asc' ? 'Mais urgentes primeiro. Clique para inverter.' : 'Mais distantes primeiro. Clique para inverter.', onclick: () => ordem.mudar(ordem.dir === 'asc' ? 'desc' : 'asc') },
         'Fatal ', h('span', { class: 'seta' }, ordem.dir === 'asc' ? '▼' : '▲'))
       : 'Fatal';
-    return tabela([cabFatal, 'Processo', 'Cliente', 'O que fazer', 'Situação', ''], lista, z => [
+    return compacta(tabela([cabFatal, 'Processo', 'Cliente', 'O que fazer', 'Situação', ''], lista, z => [
       h('td', { class: 'num col-fatal', 'data-r': 'Fatal' }, z.fatal ? h('strong', { class: 'data-fatal' }, dataBR(z.fatal)) : '—', h('div', {}, etiquetaContagem(z.fatal))),
       h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
       h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
-      h('td', { 'data-r': 'O que fazer' }, h('strong', { class: 'desc-prazo' }, z.descricao), h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : ''),
-        z.ciencia_tipo ? h('div', { class: 'peq' }, z.ciencia_tipo) : null),
+      h('td', { 'data-r': 'O que fazer' }, h('div', { class: 'desc-prazo', title: z.descricao }, z.descricao), h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : '')),
       h('td', { 'data-r': 'Situação' }, etiquetaPrazo(z)),
       h('td', {}, botoesPrazo(z))
-    ], z => { location.hash = '#/prazo/' + z.id; }, vazio, z => 'linha-' + faixaPrazo(z));
+    ], z => { location.hash = '#/prazo/' + z.id; }, vazio, z => 'linha-' + faixaPrazo(z)));
   }
 
   function linhaRobo(robo) {
@@ -1531,12 +1621,17 @@
     return p.situacao === 'atrasada' ? h('span', { class: 'tag' }, 'sem contato') : null;
   }
 
+  const nomeProprioJS = n => n ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : '';
   function linkWhats(p) {
     let tel = String(p.telefone || '').replace(/\D/g, '');
     if (!tel) return null;
     if (tel.length <= 11) tel = '55' + tel;
-    const nome = String(p.cliente || '').split(' ')[0];
-    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto a parcela ${p.numero} dos honorários, no valor de ${reais(p.saldo || p.valor)}, com vencimento em ${dataBR(p.vencimento)}. Se já pagou, por favor nos envie o comprovante. Qualquer dúvida, estamos à disposição.`;
+    const nome = nomeProprioJS(String(p.cliente || '').split(' ')[0]);
+    const valor = reais(p.saldo || p.valor), venc = dataBR(p.vencimento);
+    const ref = p.honorario ? ` (${p.honorario})` : '';
+    const msg = p.vencimento >= hojeISO()
+      ? `Olá, ${nome}! Tudo bem? Aqui é do escritório Araújo Advocacia. Passando para lembrar que a ${p.numero}ª parcela dos honorários${ref}, no valor de ${valor}, vence em ${venc}. Você pode pagar por PIX ou no escritório. Se já tiver pago, por favor nos envie o comprovante. Obrigado!`
+      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto a ${p.numero}ª parcela dos honorários${ref}, no valor de ${valor}, vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
   }
 
@@ -1558,9 +1653,14 @@
       return caixa;
     }
     caixa.append(pagar);
+    if (p.situacao !== 'atrasada' && p.vencimento >= hojeISO()) {
+      caixa.append(wa
+        ? h('a', { class: 'btn mini sec wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com um lembrete pronto', onclick: ev => ev.stopPropagation() }, 'Lembrar no WhatsApp')
+        : h('span', { class: 'peq' }, 'sem telefone'));
+    }
     if (p.situacao === 'atrasada') {
       caixa.append(wa
-        ? h('a', { class: 'btn mini sec', href: wa, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); api('fin.parcela.cobranca', { id: p.id, etapa: 'mensagem' }).then(depois).catch(() => {}); } }, 'WhatsApp')
+        ? h('a', { class: 'btn mini sec wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com a cobrança pronta', onclick: ev => { ev.stopPropagation(); api('fin.parcela.cobranca', { id: p.id, etapa: 'mensagem' }).then(depois).catch(() => {}); } }, 'Cobrar no WhatsApp')
         : h('span', { class: 'peq' }, 'sem telefone'));
       if (p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Marcado: ação de cobrança.'); depois(); }) }, 'Ação'));
     }

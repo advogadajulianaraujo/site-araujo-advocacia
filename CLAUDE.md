@@ -46,6 +46,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   reclamação trabalhista, petição inicial, réplica, juntada de documentos e declaração de residência (o painel já tem as suas).
   Modelos do Drive que são petições dentro do processo (pesquisa de endereço, emenda etc.) vão para o grupo "Petições" e exigem o nº.
 - O contrato gerado de novo não lança outra vez o mesmo honorário (mesmo tipo, percentual e valor).
+- Gênero nos documentos: nunca "brasileiro(a)" quando dá para saber. Nos textos use {{c:o|a}} (cliente), {{adv:o|a}} (advogado(a))
+  e {{sub:o|a}} (quem substabelece); `resolverGenero_` escolhe. O gênero vem do campo "Sexo" do cadastro ou do primeiro nome
+  (`generoPeloNome_`); sem certeza sai "o(a)" e o painel avisa. Endereço com preposição certa ("na Rua", "no Loteamento").
+- Contrato de honorários (modelos v4): cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
+  despesas (perícias, custas, diligências fora da comarca, deslocamento acima de 100 km), obrigações do cliente (documentos,
+  mudança de telefone/endereço), vedado acordo sem anuência, obrigação de meio, desistência = 2 salários mínimos,
+  descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (MODELO4_ → MODELO5_)
+  para o Google Docs do modelo ser recriado.
 
 ## Layout
 
@@ -53,7 +61,23 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ficam no menu que abre ao clicar no nome.
 - Início: atalhos para todos os tópicos (com números), e três quadros pequenos: Prazos (vencidos primeiro), Audiências e perícias
   (agenda + audiências dos processos, sem repetir) e Hoje.
-- Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos").
+- Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.
+- Tabelas de Processos e Intimações compactas: na coluna "Próximo ato" só o ato com a data completa ("Audiência 26/10/2026");
+  o resumo da última movimentação aparece só ao abrir o processo.
+
+## WhatsApp e Financeiro
+
+- O WhatsApp não deixa ler conversas. O caminho é "Exportar conversa › Anexar mídia" para a pasta do Drive
+  "ENTRADA DO WHATSAPP (exportar conversas aqui)". `processarWhatsapp_` (robô de 6 em 6 h e botão na ficha) acha o cliente pelo
+  nome ou telefone, faz o PDF das fotos (uma por página, com data), a conversa em PDF e guarda vídeos/áudios numa subpasta
+  na pasta do cliente. Também aceita subpasta da entrada com o nome do cliente. Zip acima de 48 MB não abre (limite do Google).
+- Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
+
+## Login
+
+- "Lembrar meu usuário" guarda só o nome de usuário no navegador; a senha fica no gerenciador de senhas do navegador
+  (o painel pede para salvar). A sessão continua só na aba (sessionStorage) e cai ao fechar o navegador.
+- Usuários: "Desconectar agora" derruba a pessoa em todos os aparelhos; "Desbloquear" tira o bloqueio de 15 min.
 
 ## Agenda e clientes
 

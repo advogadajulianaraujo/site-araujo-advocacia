@@ -415,3 +415,32 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 .ini-novos{margin-top:12px;border-top:1px solid var(--linha);padding-top:10px}
 .ini-novos h3{font:500 11.5px/1.2 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--mudo);margin-bottom:6px}
 .ini-robo{color:var(--mudo)}
+
+/* Tabelas compactas (Processos e Intimações) */
+.tabela.compacta th,.tabela.compacta td{padding:7px 10px;font-size:14px;line-height:1.4}
+.tabela.compacta td .peq{font-size:12.5px}
+.tabela.compacta .acesso{margin-top:2px}
+.tabela.compacta .desc-prazo{font-weight:500;color:var(--tinta);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:420px}
+.ato-linha{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.ato-linha .tag{font-size:11px}
+.mini-tag{font-size:10.5px;margin-left:6px;padding:1px 6px}
+.resumo-proc p{margin:0 0 6px}
+.resumo-proc p:last-child{margin:0}
+.btn.wa{border-color:#1f9d55;color:#13703b}
+.btn.wa:hover{background:#e7f6ed}
+.passos{margin:8px 0 10px;padding-left:22px}
+.passos li{margin:3px 0}
+.permissoes th,.permissoes td{text-align:center;padding:7px 8px;border-bottom:1px solid var(--linha);font-size:13.5px}
+.permissoes th[scope=row],.permissoes thead th:first-child{text-align:left}
+.permissoes thead th{font:500 11px/1.3 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--mudo)}
+.permissoes tr{cursor:default}
+.entrar .lembrar{margin:2px 0 14px;font-size:14px}
+.dica-senha{margin-top:12px;color:var(--mudo)}
+/* Intimações mais baixas: cartões menores e botões lado a lado */
+.kpi{padding:8px 12px}
+.kpi b{font-size:26px}
+.tabela.compacta .mini-acoes{flex-wrap:nowrap}
+.tabela.compacta .btn.mini{padding:5px 9px;font-size:10.5px;min-height:0}
+.tabela.compacta .tag{font-size:11px;padding:1px 7px}
+.tabela.compacta .col-fatal .data-fatal{font-size:15px}
+.tabela.compacta td .tag + .tag{margin-left:4px}
