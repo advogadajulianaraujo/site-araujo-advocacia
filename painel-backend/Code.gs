@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '5.1.0';
+var VERSAO = '5.2.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2494,8 +2494,12 @@ var ESCRITORIO_PADRAO = {
   email: 'advogadajulianaraujo@gmail.com',
   telefone: '(48) 3626-2556',
   cidade: 'Tubarão/SC',
-  foro: 'Tubarão/SC'
+  foro: 'Tubarão/SC',
+  cnpj: '46.000.441/0001-94',
+  oab: '7551',
+  rodape: ['Rua Silvino Moreira Lima, nº 888, Humaitá, Tubarão/SC.', 'Fone: (48) 36262556', 'CNPJ nº 46.000.441/0001-94', 'OAB/SC nº 7551']
 };
+var LOGO_DOCUMENTOS = 'https://araujoadvocaciasc.com.br/assets/logo-documentos.png';
 
 function escritorio_() {
   return {
@@ -2504,7 +2508,10 @@ function escritorio_() {
     email: config_('ESCRITORIO_EMAIL') || ESCRITORIO_PADRAO.email,
     telefone: config_('ESCRITORIO_TELEFONE') || ESCRITORIO_PADRAO.telefone,
     cidade: config_('ESCRITORIO_CIDADE') || ESCRITORIO_PADRAO.cidade,
-    foro: config_('ESCRITORIO_FORO') || ESCRITORIO_PADRAO.foro
+    foro: config_('ESCRITORIO_FORO') || ESCRITORIO_PADRAO.foro,
+    cnpj: config_('ESCRITORIO_CNPJ') || ESCRITORIO_PADRAO.cnpj,
+    oab: config_('ESCRITORIO_OAB') || ESCRITORIO_PADRAO.oab,
+    rodape: ESCRITORIO_PADRAO.rodape
   };
 }
 
@@ -2553,47 +2560,64 @@ var TIPOS_ACAO = {
   outro: { nome: 'Outro (descreva em "Detalhes")', area: '', objeto: '', poderes: '' }
 };
 
+/*
+ * Linhas dos modelos:  ['t', título centralizado em negrito]  ['h', subtítulo em negrito]  ['p', parágrafo justificado]
+ * ['c', parágrafo centralizado]  ['l', linha à esquerda sem recuo (cabeçalho de petição)]  ['a', assinatura do cliente]
+ * ['adv'] assinatura do(a) advogado(a): nome em negrito e OAB embaixo.
+ * Trechos entre **asteriscos** saem em negrito (o painel tira os asteriscos ao criar o modelo).
+ * Padrão visual do escritório (modelo de juntada): EB Garamond 12, justificado, espaço depois do parágrafo,
+ * logo no topo com linha e rodapé com endereço, telefone, CNPJ e OAB da sociedade.
+ */
 var MODELOS = {
-  procuracao: { nome: 'Procuração ad judicia et extra', grupo: 'Procuração e declarações', config: 'MODELO2_PROCURACAO_ID', antigo: 'MODELO_PROCURACAO_ID' },
-  hipossuficiencia: { nome: 'Declaração de hipossuficiência (justiça gratuita)', grupo: 'Procuração e declarações', config: 'MODELO2_HIPOSSUFICIENCIA_ID' },
-  residencia: { nome: 'Declaração de residência', grupo: 'Procuração e declarações', config: 'MODELO2_RESIDENCIA_ID' },
-  lgpd: { nome: 'Termo de consentimento – dados pessoais (LGPD)', grupo: 'Procuração e declarações', config: 'MODELO2_LGPD_ID' },
-  contrato: { nome: 'Contrato de honorários advocatícios', grupo: 'Contratos e recibos', financeiro: true, honorarios: true, config: 'MODELO2_CONTRATO_ID', antigo: 'MODELO_CONTRATO_ID' },
-  prestacao: { nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos e recibos', financeiro: true, honorarios: true, config: 'MODELO2_PRESTACAO_ID' },
-  assessoria: { nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos e recibos', financeiro: true, mensal: true, config: 'MODELO2_ASSESSORIA_ID' },
-  recibo: { nome: 'Recibo de honorários', grupo: 'Contratos e recibos', financeiro: true, recibo: true, config: 'MODELO2_RECIBO_ID' }
+  procuracao: { nome: 'Procuração ad judicia et extra', grupo: 'Procuração e declarações', config: 'MODELO3_PROCURACAO_ID', antigo: ['MODELO2_PROCURACAO_ID', 'MODELO_PROCURACAO_ID'] },
+  hipossuficiencia: { nome: 'Declaração de hipossuficiência (justiça gratuita)', grupo: 'Procuração e declarações', config: 'MODELO3_HIPOSSUFICIENCIA_ID', antigo: ['MODELO2_HIPOSSUFICIENCIA_ID'] },
+  residencia: { nome: 'Declaração de residência', grupo: 'Procuração e declarações', config: 'MODELO3_RESIDENCIA_ID', antigo: ['MODELO2_RESIDENCIA_ID'] },
+  lgpd: { nome: 'Termo de consentimento – dados pessoais (LGPD)', grupo: 'Procuração e declarações', config: 'MODELO3_LGPD_ID', antigo: ['MODELO2_LGPD_ID'] },
+  juntada: { nome: 'Petição de juntada de documentos', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO3_JUNTADA_ID' },
+  habilitacao: { nome: 'Petição de juntada de procuração (habilitação)', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO3_HABILITACAO_ID' },
+  substabelecimento: { nome: 'Substabelecimento com reserva de poderes', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO3_SUBSTABELECIMENTO_ID' },
+  contrato: { nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO3_CONTRATO_ID', antigo: ['MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
+  prestacao: { nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO3_PRESTACAO_ID', antigo: ['MODELO2_PRESTACAO_ID'] },
+  assessoria: { nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO3_ASSESSORIA_ID', antigo: ['MODELO2_ASSESSORIA_ID'] },
+  recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO3_RECIBO_ID', antigo: ['MODELO2_RECIBO_ID'] },
+  cobranca: { nome: 'Notificação de cobrança de honorários em atraso', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, config: 'MODELO3_COBRANCA_ID' }
 };
 
-var TEXTO_ASSINATURA_ADV = ['a', '{{advogado_nome}} — {{advogado_oab}}'];
+var CABECALHO_PETICAO = [
+  ['t', '{{juizo}}'],
+  ['l', 'Processo nº {{numero_processo}}'],
+  ['l', '{{rotulo_ativo}}: {{parte_ativa}}'],
+  ['l', '{{rotulo_passivo}}: {{parte_passiva}}']
+];
 
 var TEXTO_MODELOS = {
   procuracao: [
     ['t', 'PROCURAÇÃO AD JUDICIA ET EXTRA'],
-    ['p', 'OUTORGANTE: {{qualificacao}}.'],
-    ['p', 'OUTORGADO(A): {{advogado}}.'],
-    ['p', 'PODERES: pelo presente instrumento, o(a) OUTORGANTE nomeia e constitui seu(sua) bastante procurador(a) o(a) OUTORGADO(A), a quem confere amplos poderes para o foro em geral, com a cláusula ad judicia et extra, em qualquer juízo, instância ou tribunal, podendo propor contra quem de direito as ações competentes e defendê-lo(a) nas contrárias, seguindo umas e outras até final decisão, usando dos recursos legais e acompanhando-os, conferindo-lhe ainda poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber, dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça e assinar declaração de hipossuficiência econômica, representá-lo(a) perante repartições públicas federais, estaduais e municipais, autarquias e instituições financeiras, podendo ainda substabelecer esta a outrem, com ou sem reserva de iguais poderes (art. 105 do Código de Processo Civil).'],
+    ['p', '**OUTORGANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', '**OUTORGADO(A):** **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
+    ['p', '**PODERES:** pelo presente instrumento, o(a) OUTORGANTE nomeia e constitui seu(sua) bastante procurador(a) o(a) OUTORGADO(A), a quem confere amplos poderes para o foro em geral, com a cláusula ad judicia et extra, em qualquer juízo, instância ou tribunal, podendo propor contra quem de direito as ações competentes e defendê-lo(a) nas contrárias, seguindo umas e outras até final decisão, usando dos recursos legais e acompanhando-os, conferindo-lhe ainda poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber, dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça e assinar declaração de hipossuficiência econômica, representá-lo(a) perante repartições públicas federais, estaduais e municipais, autarquias e instituições financeiras, podendo ainda substabelecer esta a outrem, com ou sem reserva de iguais poderes (art. 105 do Código de Processo Civil).'],
     ['p', '{{poderes_especificos}}'],
-    ['p', 'FINALIDADE ESPECÍFICA: {{objeto}}.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['p', '**FINALIDADE ESPECÍFICA:** {{objeto}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}']
   ],
   hipossuficiencia: [
     ['t', 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA ECONÔMICA'],
-    ['p', '{{qualificacao}}, DECLARA, para os fins dos arts. 98 e 99 do Código de Processo Civil e do art. 5º, LXXIV, da Constituição Federal, que não possui condições de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento e do de sua família, razão pela qual requer o benefício da gratuidade da justiça.'],
+    ['p', '**{{nome}}**, {{qualificacao_resto}}, **DECLARA**, para os fins dos arts. 98 e 99 do Código de Processo Civil e do art. 5º, LXXIV, da Constituição Federal, que não possui condições de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento e do de sua família, razão pela qual requer o benefício da gratuidade da justiça.'],
     ['p', 'Declara, ainda, estar ciente de que a falsidade desta declaração sujeita o(a) declarante às sanções civis, administrativas e criminais previstas na legislação, inclusive ao pagamento de até o décuplo das custas (art. 100, parágrafo único, do CPC).'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}']
   ],
   residencia: [
     ['t', 'DECLARAÇÃO DE RESIDÊNCIA'],
-    ['p', '{{qualificacao_sem_endereco}}, DECLARA, para os devidos fins e sob as penas da lei (art. 299 do Código Penal), que reside e é domiciliado(a) no seguinte endereço: {{endereco_completo}}.'],
+    ['p', '**{{nome}}**, {{qualificacao_resto_sem_endereco}}, **DECLARA**, para os devidos fins e sob as penas da lei (art. 299 do Código Penal), que reside e é domiciliado(a) no seguinte endereço: {{endereco_completo}}.'],
     ['p', 'Por ser expressão da verdade, firma a presente declaração.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}']
   ],
   lgpd: [
     ['t', 'TERMO DE CONSENTIMENTO PARA TRATAMENTO DE DADOS PESSOAIS'],
-    ['p', '{{qualificacao}}, na qualidade de TITULAR, autoriza {{escritorio}}, com escritório na {{escritorio_endereco}}, a tratar os seus dados pessoais, inclusive dados sensíveis (como dados de saúde, quando necessários à causa), nos termos da Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais).'],
+    ['p', '**{{nome}}**, {{qualificacao_resto}}, na qualidade de TITULAR, autoriza **{{escritorio}}**, com escritório na {{escritorio_endereco}}, a tratar os seus dados pessoais, inclusive dados sensíveis (como dados de saúde, quando necessários à causa), nos termos da Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais).'],
     ['h', '1. Finalidade'],
     ['p', 'Os dados serão usados exclusivamente para a prestação dos serviços advocatícios contratados, incluindo a elaboração de documentos, o ajuizamento e o acompanhamento de processos judiciais e administrativos, o contato com o(a) TITULAR e o cumprimento de obrigações legais e regulatórias.'],
     ['h', '2. Compartilhamento'],
@@ -2602,13 +2626,39 @@ var TEXTO_MODELOS = {
     ['p', 'Os dados serão armazenados com medidas de segurança adequadas pelo tempo necessário à prestação dos serviços e ao cumprimento de prazos legais, inclusive de guarda de documentos profissionais.'],
     ['h', '4. Direitos do titular'],
     ['p', 'O(A) TITULAR pode, a qualquer tempo, solicitar acesso, correção, portabilidade ou eliminação dos dados e revogar este consentimento pelo e-mail {{escritorio_email}}, ressalvadas as hipóteses legais de conservação.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}']
+  ],
+  juntada: CABECALHO_PETICAO.concat([
+    ['t', 'JUNTADA DE DOCUMENTOS'],
+    ['p', '**{{nome}}**, já qualificado(a) nos autos em epígrafe, por {{procurador_tratamento}}, vem, respeitosamente, perante Vossa Excelência, por meio desta petição intermediária, requerer a **JUNTADA DE DOCUMENTOS** que serão anexados à presente manifestação, para que passem a integrar os autos e sejam apreciados por este Juízo.'],
+    ['p', 'Diante do exposto, requer:'],
+    ['p', 'a) o recebimento da presente manifestação e a juntada aos autos dos documentos que a acompanham;'],
+    ['p', 'b) a apreciação dos documentos apresentados, com observância do contraditório e intimação da parte contrária, quando cabível;'],
+    ['p', 'c) o regular prosseguimento do feito.'],
+    ['c', 'Nestes termos, pede deferimento.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ]),
+  habilitacao: CABECALHO_PETICAO.concat([
+    ['t', 'JUNTADA DE PROCURAÇÃO'],
+    ['p', '**{{nome}}**, {{qualificacao_resto}}, vem, respeitosamente, perante Vossa Excelência, por {{procurador_tratamento}} ao final assinado(a), requerer a **JUNTADA DO INSTRUMENTO DE MANDATO** anexo e a habilitação de **{{advogado_nome}}**, {{advogado_oab}}, nos autos em epígrafe.'],
+    ['p', 'Requer, ainda, que todas as intimações e publicações relativas ao presente feito sejam realizadas exclusivamente em nome de **{{advogado_nome}}**, {{advogado_oab}}, sob pena de nulidade (art. 272, § 5º, do Código de Processo Civil).'],
+    ['c', 'Nestes termos, pede deferimento.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ]),
+  substabelecimento: [
+    ['t', 'SUBSTABELECIMENTO COM RESERVA DE PODERES'],
+    ['p', '**{{substabelecente_nome}}**, {{substabelecente_qualificacao}}, nos autos do processo nº {{numero_processo}}, em que figura como cliente **{{nome}}**, **SUBSTABELECE, COM RESERVA DE IGUAIS PODERES**, a **{{advogado_nome}}**, {{advogado_qualificacao}}, os poderes que lhe foram conferidos pelo(a) cliente.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '**{{substabelecente_nome}}**'],
+    ['c', '{{substabelecente_oab}}']
   ],
   contrato: [
     ['t', 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS E HONORÁRIOS'],
-    ['p', 'CONTRATANTE: {{qualificacao}}.'],
-    ['p', 'CONTRATADA: {{escritorio}}, com escritório na {{escritorio_endereco}}, neste ato representada por {{advogado}}.'],
+    ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
     ['p', 'As partes acima identificadas têm entre si justo e contratado o presente contrato de prestação de serviços advocatícios, que se regerá pelas cláusulas seguintes, pela Lei nº 8.906/1994 (Estatuto da Advocacia) e pelo Código de Ética e Disciplina da OAB.'],
     ['h', 'CLÁUSULA 1ª – DO OBJETO'],
     ['p', 'A CONTRATADA prestará ao(à) CONTRATANTE serviços advocatícios consistentes em: {{objeto}}.'],
@@ -2628,7 +2678,7 @@ var TEXTO_MODELOS = {
     ['h', 'CLÁUSULA 7ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
     ['p', 'E, por estarem justas e contratadas, as partes assinam o presente em duas vias de igual teor, na presença de duas testemunhas.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}} — CONTRATANTE'],
     ['a', '{{escritorio}} — CONTRATADA'],
     ['p', 'Testemunhas:'],
@@ -2637,8 +2687,8 @@ var TEXTO_MODELOS = {
   ],
   prestacao: [
     ['t', 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS'],
-    ['p', 'CONTRATANTE: {{qualificacao}}.'],
-    ['p', 'CONTRATADA: {{escritorio}}, com escritório na {{escritorio_endereco}}, neste ato representada por {{advogado}}.'],
+    ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
     ['h', 'CLÁUSULA 1ª – DO OBJETO'],
     ['p', 'A CONTRATADA prestará ao(à) CONTRATANTE os seguintes serviços advocatícios de natureza extrajudicial e consultiva: {{objeto}}.'],
     ['p', 'Parágrafo único. Caso seja necessária a propositura ou a defesa em ação judicial, as partes firmarão contrato próprio.'],
@@ -2652,7 +2702,7 @@ var TEXTO_MODELOS = {
     ['p', 'O atraso no pagamento sujeitará o(a) CONTRATANTE a multa de 2% (dois por cento), juros de 1% (um por cento) ao mês e correção monetária, servindo este instrumento como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
     ['h', 'CLÁUSULA 6ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}} — CONTRATANTE'],
     ['a', '{{escritorio}} — CONTRATADA'],
     ['p', 'Testemunhas:'],
@@ -2661,10 +2711,10 @@ var TEXTO_MODELOS = {
   ],
   assessoria: [
     ['t', 'CONTRATO DE ASSESSORIA JURÍDICA'],
-    ['p', 'CONTRATANTE: {{qualificacao}}.'],
-    ['p', 'CONTRATADA: {{escritorio}}, com escritório na {{escritorio_endereco}}, neste ato representada por {{advogado}}.'],
+    ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
     ['h', 'CLÁUSULA 1ª – DO OBJETO'],
-    ['p', 'A CONTRATADA prestará ao(à) CONTRATANTE assessoria jurídica contínua, compreendendo: consultas e orientações verbais e por escrito; análise e elaboração de contratos, notificações e documentos; acompanhamento de questões administrativas; e participação em reuniões quando solicitado. {{objeto_assessoria}}'],
+    ['p', 'A CONTRATADA prestará ao(à) CONTRATANTE assessoria jurídica contínua, compreendendo: consultas e orientações verbais e por escrito; análise e elaboração de contratos, notificações e documentos; acompanhamento de questões administrativas; e participação em reuniões quando solicitado.'],
     ['p', 'Parágrafo único. Ações judiciais, defesas em processos já existentes e procedimentos complexos não estão incluídos na mensalidade e serão objeto de contrato próprio, com condições diferenciadas ao(à) CONTRATANTE.'],
     ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS'],
     ['p', '{{clausula_honorarios}}'],
@@ -2677,7 +2727,7 @@ var TEXTO_MODELOS = {
     ['p', 'A CONTRATADA manterá sigilo sobre todas as informações recebidas em razão deste contrato, nos termos do Estatuto da Advocacia e da Lei Geral de Proteção de Dados.'],
     ['h', 'CLÁUSULA 6ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}} — CONTRATANTE'],
     ['a', '{{escritorio}} — CONTRATADA'],
     ['p', 'Testemunhas:'],
@@ -2686,11 +2736,25 @@ var TEXTO_MODELOS = {
   ],
   recibo: [
     ['t', 'RECIBO DE HONORÁRIOS ADVOCATÍCIOS'],
-    ['p', 'VALOR: {{valor}}'],
-    ['p', '{{escritorio}}, por meio de {{advogado}}, declara que RECEBEU de {{qualificacao}} a importância de {{valor}} ({{valor_extenso}}), referente a {{referente}}.'],
+    ['t', '{{valor}}'],
+    ['p', '**{{escritorio}}**, {{escritorio_qualificacao}}, declara que **RECEBEU** de **{{nome}}**, {{qualificacao_resto}}, a importância de **{{valor}}** ({{valor_extenso}}), referente a {{referente}}.'],
     ['p', 'Pelo que dá plena, geral e irrevogável quitação do valor acima.'],
-    ['p', '{{cidade_assinatura}}, {{data_extenso}}.'],
-    TEXTO_ASSINATURA_ADV
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ],
+  cobranca: [
+    ['t', 'NOTIFICAÇÃO EXTRAJUDICIAL'],
+    ['t', 'COBRANÇA DE HONORÁRIOS ADVOCATÍCIOS'],
+    ['p', '**NOTIFICANTE:** **{{escritorio}}**, {{escritorio_qualificacao}}.'],
+    ['p', '**NOTIFICADO(A):** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', 'Prezado(a) cliente, consta em aberto, referente aos honorários advocatícios contratados{{referente_processo}}, o pagamento das seguintes parcelas:'],
+    ['p', '{{parcelas_atrasadas}}'],
+    ['p', 'O valor total em atraso é de **{{total_atraso}}** ({{total_atraso_extenso}}), sem prejuízo da multa, dos juros e da correção monetária previstos no contrato.'],
+    ['p', 'Fica Vossa Senhoria **NOTIFICADO(A)** a efetuar o pagamento no prazo de **5 (cinco) dias** a contar do recebimento desta notificação, por PIX, depósito ou diretamente no escritório, ou a entrar em contato para negociar o débito.'],
+    ['p', 'Decorrido o prazo sem pagamento ou acordo, o escritório adotará as medidas cabíveis para a cobrança, inclusive judicial, valendo o contrato de honorários como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
+    ['p', 'Caso o pagamento já tenha sido feito, por favor desconsidere esta notificação e nos envie o comprovante.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
   ]
 };
 
@@ -2737,6 +2801,31 @@ function salvarAdvogado_(d, u) {
   });
 }
 
+/** Qualificação do(a) advogado(a) sem o nome (o nome vai em negrito no modelo). */
+function qualificacaoAdvogadoResto_(a) {
+  return qualificacaoAdvogado_(a).replace(/^[^,]+,\s*/, '');
+}
+
+/** "54.832" + "SC" → "OAB/SC 54.832". */
+function oabTexto_(a) { return 'OAB/' + (a.uf || 'SC') + ' ' + a.oab; }
+
+/** Nome como a pessoa escreve: "Júlian Marcelino Araújo". */
+function nomeAssinatura_(nome) { return nomeProprio_(String(nome || '').toUpperCase()); }
+
+/** Juízo para o cabeçalho da petição, a partir do órgão cadastrado no processo. */
+function juizoDoProcesso_(p, numero) {
+  var tribunal = (p && p.tribunal) || tribunalDoNumero_(numero);
+  var orgao = String((p && p.orgao) || '').trim();
+  if (/\.0000$/.test(numero || '') || /2º grau/i.test(orgao)) return 'EXCELENTÍSSIMO(A) SENHOR(A) DESEMBARGADOR(A) RELATOR(A)';
+  if (orgao) {
+    var o = orgao.replace(/\bVT\b/i, 'VARA DO TRABALHO DE').replace(/\bJEC\b/i, 'JUIZADO ESPECIAL CÍVEL DE').replace(/\bJEF\b/i, 'JUIZADO ESPECIAL FEDERAL DE');
+    return 'AO JUÍZO DA ' + o.toUpperCase() + (/\/[A-Z]{2}$/.test(o) ? '' : '/SC');
+  }
+  if (/^TRT/.test(tribunal)) return 'AO JUÍZO DA ___ VARA DO TRABALHO DE __________/SC';
+  if (/^TRF/.test(tribunal)) return 'AO JUÍZO DA ___ VARA FEDERAL DE __________/SC';
+  return 'AO JUÍZO DA ___ VARA DA COMARCA DE __________/SC';
+}
+
 function qualificacaoAdvogado_(a) {
   var esc = escritorio_();
   var nac = a.tratamento === 'advogado' ? 'brasileiro, advogado inscrito' : 'brasileira, advogada inscrita';
@@ -2765,28 +2854,82 @@ function modeloId_(chave, verificar) {
   var id = config_(cfg.config);
   if (id && !verificar) return id;
   if (id) { try { DriveApp.getFileById(id).getName(); return id; } catch (e) { /* recria */ } }
-  if (cfg.antigo && config_(cfg.antigo)) {
-    try { var velho = DriveApp.getFileById(config_(cfg.antigo)); velho.setName('ANTIGO — ' + velho.getName()); } catch (e) { /* já apagado */ }
-  }
-  var doc = DocumentApp.create('MODELO — ' + cfg.nome);
-  var corpo = doc.getBody();
-  corpo.clear();
-  TEXTO_MODELOS[chave].forEach(function (l) {
-    if (l[0] === 'a') {
-      corpo.appendParagraph('');
-      corpo.appendParagraph('_____________________________________________').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-      corpo.appendParagraph(l[1]).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-      return;
-    }
-    var par = corpo.appendParagraph(l[1]);
-    if (l[0] === 't') par.setHeading(DocumentApp.ParagraphHeading.HEADING1).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    else if (l[0] === 'h') par.setHeading(DocumentApp.ParagraphHeading.HEADING3);
-    else par.setAlignment(DocumentApp.HorizontalAlignment.JUSTIFY);
+  (cfg.antigo || []).forEach(function (k) {
+    if (!config_(k)) return;
+    try { var velho = DriveApp.getFileById(config_(k)); if (!/^ANTIGO/.test(velho.getName())) velho.setName('ANTIGO — ' + velho.getName()); } catch (e) { /* já apagado */ }
   });
+  var doc = DocumentApp.create('MODELO — ' + cfg.nome);
+  montarPadraoVisual_(doc, TEXTO_MODELOS[chave]);
   doc.saveAndClose();
   DriveApp.getFileById(doc.getId()).moveTo(pastaModelos_());
   setConfig_(cfg.config, doc.getId(), 'Modelo: ' + cfg.nome);
   return doc.getId();
+}
+
+/** Texto com **negrito** → texto limpo e trechos em negrito. */
+function trechosNegrito_(txt) {
+  var limpo = '', negritos = [], partes = String(txt).split('**');
+  partes.forEach(function (p, i) {
+    if (i % 2 === 1 && p) negritos.push([limpo.length, limpo.length + p.length - 1]);
+    limpo += p;
+  });
+  return { texto: limpo, negritos: negritos };
+}
+
+/**
+ * Padrão visual do escritório (modelo "Juntada de documentos"): EB Garamond 12, justificado, espaço depois
+ * do parágrafo, logo centralizado no topo com linha, rodapé em itálico com endereço, telefone, CNPJ e OAB.
+ */
+function montarPadraoVisual_(doc, linhas) {
+  var A = DocumentApp.HorizontalAlignment;
+  var corpo = doc.getBody();
+  corpo.clear();
+  corpo.setMarginTop(42).setMarginBottom(42).setMarginLeft(85).setMarginRight(57);
+  var fonte = function (el, tam) { var t = el.editAsText(); if (t.getText().length) t.setFontFamily('EB Garamond').setFontSize(tam || 12); return el; };
+  // cabeçalho: logo + linha
+  var cab = doc.getHeader() || doc.addHeader();
+  var pLogo = cab.getParagraphs()[0] || cab.appendParagraph('');
+  pLogo.setAlignment(A.CENTER);
+  try {
+    var img = pLogo.appendInlineImage(UrlFetchApp.fetch(LOGO_DOCUMENTOS).getBlob());
+    img.setWidth(105).setHeight(83);
+  } catch (e) { pLogo.appendText('ARAÚJO ADVOCACIA'); fonte(pLogo, 14); }
+  cab.appendParagraph('').appendHorizontalRule();
+  // rodapé: linha + dados do escritório
+  var rod = doc.getFooter() || doc.addFooter();
+  (rod.getParagraphs()[0] || rod.appendParagraph('')).appendHorizontalRule();
+  escritorio_().rodape.forEach(function (l) {
+    var p = rod.appendParagraph(l).setAlignment(A.CENTER).setSpacingAfter(0).setSpacingBefore(0);
+    p.editAsText().setFontFamily('EB Garamond').setFontSize(9).setItalic(true);
+  });
+  var par = function (txt, alin, depois, antes) {
+    var t = trechosNegrito_(txt);
+    var p = corpo.appendParagraph(t.texto);
+    p.setAlignment(alin).setSpacingAfter(depois === undefined ? 10 : depois).setSpacingBefore(antes || 0).setLineSpacing(1.5);
+    fonte(p);
+    var ed = p.editAsText();
+    t.negritos.forEach(function (r) { if (r[1] >= r[0]) ed.setBold(r[0], r[1], true); });
+    return p;
+  };
+  linhas.forEach(function (l) {
+    var tipo = l[0], txt = l[1] || '';
+    if (tipo === 't') { par('**' + txt + '**', A.CENTER, 12, 6); return; }
+    if (tipo === 'h') { par('**' + txt + '**', A.LEFT, 6, 6); return; }
+    if (tipo === 'l') { par(txt, A.LEFT, 2); return; }
+    if (tipo === 'c') { par(txt, A.CENTER, 8); return; }
+    if (tipo === 'adv') {
+      par('**{{advogado_assinatura}}**', A.CENTER, 0, 12);
+      par('{{advogado_oab}}', A.CENTER, 10);
+      return;
+    }
+    if (tipo === 'a') {
+      par('', A.CENTER, 0, 18);
+      par('_____________________________________________', A.CENTER, 0);
+      par(txt, A.CENTER, 10);
+      return;
+    }
+    par(txt, A.JUSTIFY, 10);
+  });
 }
 
 function listarModelos_(d, u) {
@@ -2794,7 +2937,7 @@ function listarModelos_(d, u) {
   return {
     modelos: Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
       var m = MODELOS[k];
-      return { chave: k, nome: m.nome, grupo: m.grupo, honorarios: !!m.honorarios, mensal: !!m.mensal, recibo: !!m.recibo,
+      return { chave: k, nome: m.nome, grupo: m.grupo, honorarios: !!m.honorarios, mensal: !!m.mensal, recibo: !!m.recibo, processo: !!m.processo, cobranca: !!m.cobranca,
         url: 'https://docs.google.com/document/d/' + modeloId_(k) + '/edit' };
     }),
     tipos: Object.keys(TIPOS_ACAO).map(function (k) { return { chave: k, nome: TIPOS_ACAO[k].nome, area: TIPOS_ACAO[k].area }; }),
@@ -2831,6 +2974,11 @@ function qualificacao_(c, semEndereco) {
     if (c.email) partes.push('e-mail ' + c.email);
   }
   return partes.join(', ');
+}
+
+/** Qualificação sem o nome do cliente (o nome vai em negrito no modelo). */
+function qualificacaoResto_(c, semEndereco) {
+  return qualificacao_(c, semEndereco).replace(/^[^,]+,\s*/, '');
 }
 
 function porExtensoData_(iso) {
@@ -2984,10 +3132,15 @@ function gerarDocumentos_(d, u) {
   var adv = advogados_().filter(function (a) { return a.id === d.advogado_id; })[0] ||
     advogados_().filter(function (a) { return a.padrao === 'sim'; })[0] || advogados_()[0];
   var tipo = TIPOS_ACAO[d.tipo_acao] || null;
-  var contra = String(d.parte_contraria || '').trim();
+  var numProc = String(d.numero_processo || '').trim();
+  if (numProc && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numProc)) throw falha_('Número do processo fora do padrão (0000000-00.0000.0.00.0000).');
+  if (!numProc && quais.some(function (k) { return MODELOS[k].processo; })) throw falha_('Informe o número do processo: as petições e o substabelecimento precisam dele.');
+  var proc = numProc ? tabela_('Processos').linhas.filter(function (x) { return x.numero === numProc; })[0] || { numero: numProc } : null;
+  var contra = String(d.parte_contraria || (proc && proc.parte_contraria) || '').trim();
   var detalhes = String(d.objeto || '').trim();
   var objeto = tipo && tipo.objeto ? tipo.objeto.replace('{{contra}}', contra ? ' em face de ' + contra : '').replace('{{contra_de}}', contra ? ' ' + contra : '') : '';
   if (detalhes) objeto = objeto ? objeto + ' — ' + detalhes : detalhes;
+  if (numProc && objeto) objeto += ', nos autos do processo nº ' + numProc;
   if (!objeto) objeto = c.tipo_acao || 'atuação em favor do(a) outorgante/contratante em ' + (c.area || 'matéria a definir');
 
   var faltando = [];
@@ -3011,6 +3164,21 @@ function gerarDocumentos_(d, u) {
   }
   var rec = d.recibo || {};
   if (quais.indexOf('recibo') >= 0 && !(dinheiro_(rec.valor) > 0)) throw falha_('Informe o valor recebido para o recibo.');
+  var atrasadas = [], totalAtraso = 0;
+  if (quais.indexOf('cobranca') >= 0) {
+    var hojeC = hojeSP_();
+    atrasadas = tabela_('Parcelas').linhas.filter(function (q) { return q.cliente_id === c.id && !q.pago_em && q.vencimento && q.vencimento < hojeC; })
+      .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+    if (!atrasadas.length) throw falha_('Este cliente não tem parcelas em atraso no Financeiro.');
+    atrasadas.forEach(function (q) { totalAtraso += dinheiro_(q.valor); });
+  }
+  var subst = null;
+  if (quais.indexOf('substabelecimento') >= 0) {
+    subst = advogados_().filter(function (a) { return a.padrao === 'sim'; })[0] || advogados_()[0];
+    if (subst.id === adv.id) throw falha_('No substabelecimento, escolha como advogado(a) quem vai RECEBER os poderes (não pode ser o(a) mesmo(a) advogado(a) padrão).');
+  }
+  var ativo = !proc || !proc.polo || /ativo|autor|requerente|exequente|reclamante|apelante|agravante|impetrante|embargante|recorrente|querelante/.test(normalizar_(proc.polo));
+  var trabalhista = proc && /^TRT/.test(proc.tribunal || tribunalDoNumero_(numProc));
 
   // pasta: cria se ainda não existir
   if (!c.pasta_id) { criarPastaCliente_({ id: c.id }, u); c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0]; }
@@ -3024,12 +3192,26 @@ function gerarDocumentos_(d, u) {
   var esc = escritorio_();
   var hoje = hojeSP_();
   var poderes = tipo && tipo.poderes ? tipo.poderes : '';
+  var nomeCli = String(c.nome).toUpperCase();
+  var outra = contra ? contra.split(';')[0].trim().toUpperCase() : '__________';
   var valores = {
+    '{{qualificacao_resto}}': qualificacaoResto_(c), '{{qualificacao_resto_sem_endereco}}': qualificacaoResto_(c, true), '{{advogado_qualificacao}}': qualificacaoAdvogadoResto_(adv),
+    '{{advogado_assinatura}}': nomeAssinatura_(adv.nome),
+    '{{escritorio_qualificacao}}': 'sociedade de advogados inscrita no CNPJ sob o nº ' + esc.cnpj + ' e registrada na OAB/SC sob o nº ' + esc.oab + ', com sede na ' + esc.endereco,
+    '{{juizo}}': numProc ? juizoDoProcesso_(proc, numProc) : '', '{{numero_processo}}': numProc,
+    '{{rotulo_ativo}}': trabalhista ? 'Reclamante' : 'Requerente', '{{rotulo_passivo}}': trabalhista ? 'Reclamada' : 'Requerida',
+    '{{parte_ativa}}': ativo ? nomeCli : outra, '{{parte_passiva}}': ativo ? outra : nomeCli,
+    '{{procurador_tratamento}}': adv.tratamento === 'advogado' ? 'seu procurador' : 'sua procuradora',
+    '{{substabelecente_nome}}': subst ? String(subst.nome).toUpperCase() : '', '{{substabelecente_qualificacao}}': subst ? qualificacaoAdvogadoResto_(subst) : '',
+    '{{substabelecente_oab}}': subst ? oabTexto_(subst) : '',
+    '{{referente_processo}}': numProc ? ' no processo nº ' + numProc : (tipo ? ' (' + tipo.nome.toLowerCase() + ')' : ''),
+    '{{parcelas_atrasadas}}': atrasadas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'vencida em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(q.valor); }).join('; ') + (atrasadas.length ? '.' : ''),
+    '{{total_atraso}}': reaisTxt_(totalAtraso), '{{total_atraso_extenso}}': extenso_(totalAtraso),
     '{{qualificacao}}': qualificacao_(c), '{{qualificacao_sem_endereco}}': qualificacao_(c, true), '{{nome}}': String(c.nome).toUpperCase(),
     '{{objeto}}': objeto, '{{objeto_assessoria}}': detalhes ? 'Inclui ainda: ' + detalhes + '.' : '',
     '{{tipo_acao}}': tipo ? tipo.nome : '', '{{parte_contraria}}': contra, '{{poderes_especificos}}': poderes ? 'PODERES ESPECÍFICOS: ' + poderes : '',
     '{{clausula_honorarios}}': clausula, '{{advogado}}': qualificacaoAdvogado_(adv), '{{advogado_nome}}': String(adv.nome).toUpperCase(),
-    '{{advogado_oab}}': 'OAB/' + (adv.uf || 'SC') + ' ' + adv.oab, '{{escritorio}}': esc.nome, '{{escritorio_endereco}}': esc.endereco,
+    '{{advogado_oab}}': oabTexto_(adv), '{{escritorio}}': esc.nome, '{{escritorio_endereco}}': esc.endereco,
     '{{escritorio_email}}': esc.email, '{{escritorio_telefone}}': esc.telefone, '{{foro}}': esc.foro,
     '{{cidade_assinatura}}': esc.cidade, '{{data_extenso}}': porExtensoData_(hoje), '{{endereco_completo}}': enderecoCompleto_(c),
     '{{valor}}': rec.valor ? reaisTxt_(rec.valor) : '', '{{valor_extenso}}': rec.valor ? extenso_(dinheiro_(rec.valor)) : '',
@@ -3038,7 +3220,8 @@ function gerarDocumentos_(d, u) {
     '{{cep}}': c.cep || '', '{{telefone}}': c.telefone || '', '{{email}}': c.email || '', '{{estado_civil}}': c.estado_civil || '',
     '{{profissao}}': c.profissao || '', '{{representante}}': c.representante || '', '{{nascimento}}': dataBR_(c.nascimento || '')
   };
-  var NOMES_ARQ = { procuracao: 'PROCURAÇÃO', hipossuficiencia: 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA', residencia: 'DECLARAÇÃO DE RESIDÊNCIA',
+  var NOMES_ARQ = { juntada: 'JUNTADA DE DOCUMENTOS', habilitacao: 'JUNTADA DE PROCURAÇÃO', substabelecimento: 'SUBSTABELECIMENTO', cobranca: 'NOTIFICAÇÃO DE COBRANÇA',
+    procuracao: 'PROCURAÇÃO', hipossuficiencia: 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA', residencia: 'DECLARAÇÃO DE RESIDÊNCIA',
     lgpd: 'TERMO LGPD', contrato: 'CONTRATO DE HONORÁRIOS', prestacao: 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS', assessoria: 'CONTRATO DE ASSESSORIA',
     recibo: 'RECIBO DE HONORÁRIOS' };
   var pasta = DriveApp.getFolderById(c.pasta_id);

@@ -415,13 +415,8 @@
     };
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), conferir: form.conferir.checked ? '1' : '' }); });
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', {}, `${todos.length} clientes · ${comProc} com processo · ${procs.length} processos no total`)),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', { class: 'peq' }, `${todos.length} clientes · ${comProc} com processo`, aConferir ? h('span', {}, ' · ', h('a', { href: '#/clientes?conferir=1' }, `${aConferir} cadastros a completar`)) : null)),
         botao('Novo cliente', () => { location.hash = '#/cliente/novo'; })),
-      h('div', { class: 'numeros' },
-        h('div', { class: 'numero' }, h('b', {}, todos.length), h('span', {}, 'clientes cadastrados')),
-        h('div', { class: 'numero' }, h('b', {}, comProc), h('span', {}, 'com processo ativo')),
-        h('div', { class: 'numero' }, h('b', {}, procs.length), h('span', {}, 'processos')),
-        h('a', { class: 'numero' + (aConferir ? ' destaque' : ''), href: '#/clientes?conferir=1' }, h('b', {}, aConferir), h('span', {}, 'cadastros a completar'))),
       h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todas as áreas (${todos.length})`),
         Object.keys(porArea).sort().map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
       form,
@@ -470,11 +465,29 @@
       busca.addEventListener('input', () => {
         const c = porRotulo.get(busca.value);
         idCliente.value = c ? c.id : '';
+        carregarProcessos(idCliente.value);
         aviso.textContent = c ? (c.situacao !== 'completo' ? 'Cadastro a completar: confira CPF, RG, profissão e endereço antes de gerar.' : '✓ Cliente escolhido') : '';
       });
       blocoCliente = h('div', { class: 'largo' }, h('label', { for: 'f-cliente-busca' }, 'Cliente *'), busca,
         h('datalist', { id: 'dl-clientes' }, opc.clientes.map(c => h('option', { value: rotulo(c) }))), idCliente, aviso);
     }
+
+    // nº do processo: opcional; obrigatório só para petições e substabelecimento
+    const dlProc = h('datalist', { id: 'dl-processos' });
+    const rotProc = h('label', { for: 'f-numero_processo' }, 'Número do processo (opcional)');
+    const avisoProc = h('div', { class: 'peq' }, 'Escolha um processo do cliente ou digite o número. Puxa o juízo e a parte contrária do cadastro do processo.');
+    const campoProc = h('div', {}, rotProc, h('input', { id: 'f-numero_processo', name: 'numero_processo', list: 'dl-processos', inputmode: 'numeric', autocomplete: 'off', placeholder: '0000000-00.0000.0.00.0000', maxlength: 25 }), dlProc, avisoProc);
+    const carregarProcessos = async id => {
+      dlProc.replaceChildren();
+      if (!id) return;
+      try {
+        const r = await api('clientes.obter', { id });
+        dlProc.replaceChildren(...r.processos.filter(p => p.numero).map(p => h('option', { value: p.numero }, [p.area, p.orgao, p.parte_contraria].filter(Boolean).join(' · '))));
+        avisoProc.textContent = r.processos.length ? `${r.processos.length} processo(s) deste cliente na lista.` : 'Este cliente não tem processo cadastrado; digite o número, se houver.';
+      } catch (e) { /* digita à mão */ }
+    };
+    if (opc.cliente) carregarProcessos(opc.cliente.id);
+    else if (opc.clienteInicial) carregarProcessos(opc.clienteInicial);
 
     const grupos = {};
     info.modelos.forEach(m => { (grupos[m.grupo] = grupos[m.grupo] || []).push(m); });
@@ -500,14 +513,14 @@
       h('div', { class: 'campos' }, campo('recibo_valor', 'Valor recebido (R$)', '', { modo: 'decimal', max: 20 }),
         campo('recibo_referente', 'Referente a', '', { max: 200, dica: 'Ex.: 1ª parcela dos honorários da reclamatória trabalhista' })));
 
+    const notaCobranca = h('div', { class: 'nota' }, 'A notificação de cobrança lista sozinha as parcelas em atraso deste cliente na aba Financeiro e dá 5 dias para pagar.');
     const form = h('form', { class: 'gerador', novalidate: true },
       h('div', { class: 'campos' },
         blocoCliente,
         campo('advogado_id', 'Advogado(a) outorgado(a)', padrao, { opcoes: advs.map(a => [a.id, `${a.nome} — OAB/${a.uf} ${a.oab}`]) }),
         campo('tipo_acao', 'Tipo de ação', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
-        campo('parte_contraria', 'Contra quem (parte contrária)', '', { max: 200, dica: 'Ex.: Empresa X Ltda, INSS, nome do ex-cônjuge' }),
-        campo('objeto', 'Detalhes (opcional)', '', { max: 400, largo: true, dica: 'Complemento da finalidade. Ex.: verbas rescisórias e horas extras do período de 2022 a 2025' })),
-      h('h4', {}, 'Quais documentos'), docs, hon, rec,
+        campoProc),
+      h('h4', {}, 'Quais documentos'), docs, notaCobranca, hon, rec,
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
       h('p', { class: 'erro' }), h('div', { class: 'gerados' }));
 
@@ -522,6 +535,9 @@
       const forma = (form.querySelector('input[name=forma]:checked') || {}).value;
       hon.querySelectorAll('[data-formas]').forEach(el => { el.hidden = !el.dataset.formas.split(' ').includes(forma); });
       lancar.hidden = forma === 'cadastrado';
+      const precisaProc = escolhidos.some(m => m && m.processo);
+      rotProc.textContent = precisaProc ? 'Número do processo *' : 'Número do processo (opcional)';
+      notaCobranca.hidden = !escolhidos.some(m => m && m.cobranca);
     };
     form.addEventListener('change', ev => { if (ev.target.name === 'forma') form.dataset.mexeu = '1'; atualizar(); });
     atualizar();
@@ -530,9 +546,10 @@
       if (!fd.get('cliente_id')) throw new Error('Escolha o cliente na lista.');
       const modelos = fd.getAll('doc');
       if (!modelos.length) throw new Error('Marque pelo menos um documento.');
+      if (!(fd.get('numero_processo') || '').trim() && modelos.some(k => (info.modelos.find(m => m.chave === k) || {}).processo)) throw new Error('Informe o número do processo: as petições e o substabelecimento precisam dele.');
       const dados = {
         cliente_id: fd.get('cliente_id'), modelos, advogado_id: fd.get('advogado_id'), tipo_acao: fd.get('tipo_acao'),
-        parte_contraria: fd.get('parte_contraria'), objeto: fd.get('objeto'),
+        numero_processo: (fd.get('numero_processo') || '').trim(),
         honorarios: hon.hidden ? null : { forma: fd.get('forma'), percentual: fd.get('percentual'), valor_total: fd.get('valor_total'),
           parcelas: fd.get('parcelas'), primeiro_vencimento: fd.get('primeiro_vencimento'), valor_mensal: fd.get('valor_mensal'),
           dia_vencimento: fd.get('dia_vencimento'), lancar: !!fd.get('lancar') },
@@ -555,7 +572,7 @@
 
   /** O que tem na pasta do cliente: procuração, contrato, honorário, declarações e quantos outros arquivos. */
   function caixaDocumentos(c) {
-    const caixa = h('section', { class: 'caixa' }, h('h2', {}, 'Pasta do cliente'), h('p', { class: 'peq' }, 'Verificando a pasta no Drive…'));
+    const caixa = h('section', { class: 'caixa' }, h('p', { class: 'peq' }, 'Verificando a pasta no Drive…'));
     (async () => {
       let d;
       try { d = await api('clientes.documentos', { id: c.id }); } catch (e) { caixa.lastChild.textContent = e.message; return; }
@@ -573,7 +590,7 @@
               ' · ', h('a', { href: '#/honorario/novo?cliente=' + c.id }, 'novo honorário'))))
         : null;
       caixa.replaceChildren(...[
-        h('div', { class: 'bloco-cab' }, h('h2', {}, 'Pasta do cliente'),
+        h('div', { class: 'acoes-sec' },
           d.pasta_url ? h('a', { class: 'btn sec', href: d.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir pasta no Google Drive')
             : botao('Criar pasta no Drive', async ev => { ev.target.disabled = true; try { await api('clientes.criarPasta', { id: c.id }); avisar('Pasta criada.'); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec')),
         d.erroPasta ? h('div', { class: 'nota alerta' }, d.erroPasta) : null,
@@ -584,20 +601,6 @@
           docItem('Declarações e termos', d.declaracao, 'nenhuma declaração na pasta'),
           d.recibo.length ? docItem('Recibos', d.recibo, '') : null),
         d.pasta_url ? h('p', { class: 'peq mt-p' }, d.outros ? `Mais ${d.outros} documento${d.outros === 1 ? '' : 's'} na pasta (${d.total} arquivo${d.total === 1 ? '' : 's'} ao todo).` : 'Nenhum outro documento na pasta.') : null].filter(Boolean));
-    })();
-    return caixa;
-  }
-
-  function caixaGerar(c, destacar) {
-    const caixa = h('section', { class: 'caixa' + (destacar ? ' destaque-caixa' : '') },
-      destacar ? h('div', { class: 'passo-ok' }, h('strong', {}, '✓ Cliente cadastrado e pasta criada.'), ' Agora gere a procuração e o contrato.') : null,
-      h('h2', {}, 'Gerar documentos'), h('p', { class: 'peq' }, 'Preenche com os dados deste cadastro e salva na pasta do cliente em Google Docs e PDF.'),
-      h('p', { class: 'peq' }, 'Carregando os modelos…'));
-    (async () => {
-      try {
-        const info = await carregarModelos();
-        caixa.lastChild.replaceWith(formGerar(info, { cliente: c, aoGerar: () => { const d = document.querySelector('.docs-pasta'); if (d) d.replaceWith(Object.assign(caixaDocumentos(c), { className: 'caixa docs-pasta' })); } }));
-      } catch (e) { caixa.lastChild.replaceWith(h('div', { class: 'nota alerta' }, e.message)); }
     })();
     return caixa;
   }
@@ -678,9 +681,18 @@
       const res = await api('clientes.salvar', { cliente: dados });
       if (res.avisoPasta) avisar(res.avisoPasta, true);
       else avisar(novo ? 'Cliente cadastrado e pasta criada.' : 'Alterações salvas.');
-      if (novo) location.hash = '#/cliente/' + res.id + '?gerar=1'; else telaCliente(c.id);
+      if (novo) location.hash = '#/modelos?cliente=' + encodeURIComponent(res.id) + '&novo=1'; else telaCliente(c.id);
     });
     return form;
+  }
+
+  /** Seção que abre e fecha pela seta (como "Editar cadastro"). Carrega o conteúdo só ao abrir. */
+  function secao(titulo, conteudo, aberto) {
+    const det = h('details', { class: 'caixa secao', open: !!aberto }, h('summary', {}, titulo));
+    const carregar = () => { if (det.dataset.ok) return; det.dataset.ok = '1'; det.append(typeof conteudo === 'function' ? conteudo() : conteudo); };
+    if (aberto) carregar();
+    det.addEventListener('toggle', () => { if (det.open) carregar(); });
+    return det;
   }
 
   async function telaCliente(id, params) {
@@ -690,58 +702,67 @@
     if (novo) {
       mostrar(
         h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Novo cliente'),
-          h('p', {}, 'Só o necessário para a procuração e o contrato. Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES; depois você escolhe o tipo de ação e gera os documentos.'))),
+          h('p', {}, 'Só o necessário para a procuração e o contrato. Ao cadastrar, o painel cria a pasta do cliente em 02. CLIENTES e abre a aba Modelos para gerar os documentos.'))),
         formCliente({ tipo: 'PF', situacao: 'completo' }, true));
       document.getElementById('f-nome').focus();
       return;
     }
     const r = await api('clientes.obter', { id });
     const c = r.cliente;
-    const recem = params.get('gerar') === '1';
     const incompleto = c.situacao && c.situacao !== 'completo';
+    const pf = c.tipo !== 'PJ';
 
-    const procs = h('section', { class: 'caixa' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, `Processos (${r.processos.length})`), botao('Novo processo', () => { location.hash = '#/processo/novo?cliente=' + encodeURIComponent(c.id); }, 'sec')),
-      tabela(['Processo', 'Área', 'Órgão', 'Parte contrária', 'Próximo ato'], r.processos, p => [
+    // Descrição do cliente: os dados num cartão, lado a lado
+    const item = (rot, val, largo) => h('div', { class: 'desc-item' + (largo ? ' largo' : '') }, h('span', { class: 'desc-rot' }, rot), h('span', { class: 'desc-val' + (val ? '' : ' vazio') }, val || '—'));
+    const endereco = [c.endereco, c.cidade && c.uf ? c.cidade + '/' + c.uf : c.cidade, c.cep ? 'CEP ' + c.cep : ''].filter(Boolean).join(' · ');
+    const descricao = h('section', { class: 'caixa descricao-cliente' },
+      h('div', { class: 'desc-grade' },
+        item(pf ? 'CPF' : 'CNPJ', c.cpf_cnpj),
+        pf ? item('RG', c.rg) : item('Representante legal', c.representante),
+        pf ? item('Nascimento', c.nascimento ? dataBR(c.nascimento) : '') : null,
+        pf ? item('Estado civil', c.estado_civil) : null,
+        pf ? item('Profissão', c.profissao) : null,
+        item('Telefone', c.telefone),
+        item('E-mail', c.email),
+        item('Como chegou', c.origem),
+        item('Tipo de ação', c.tipo_acao),
+        item('Área', c.area),
+        item('Endereço', endereco, true),
+        c.observacoes ? item('Observações', c.observacoes, true) : null));
+
+    const procs = () => h('div', {},
+      h('div', { class: 'acoes-sec' }, botao('Novo processo', () => { location.hash = '#/processo/novo?cliente=' + encodeURIComponent(c.id); }, 'sec')),
+      tabela(['Processo', 'Área', 'Órgão', 'Parte contrária', 'Situação'], r.processos, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Área' }, p.area || '—', h('div', { class: 'peq' }, p.tribunal)),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
         h('td', { 'data-r': 'Parte contrária' }, p.parte_contraria),
-        h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato, p.proximo_ato_data ? h('div', {}, etiquetaDias(p.proximo_ato_data)) : null)
+        h('td', { 'data-r': 'Situação' }, p.status === 'arquivado' ? h('span', { class: 'tag' }, 'arquivado') : h('span', { class: 'tag ok' }, 'em andamento'),
+          p.proximo_ato ? h('div', { class: 'peq' }, p.proximo_ato) : null)
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo ligado a este cliente.'));
 
-    let honsCli = null;
-    if (sessao.usuario.pode.financeiro) {
-      const hs = await api('fin.honorarios', { cliente_id: c.id }).catch(() => []);
-      honsCli = h('section', { class: 'caixa' }, h('div', { class: 'bloco-cab' }, h('h2', {}, 'Honorários'), botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
+    const hons = () => {
+      const caixa = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
+      api('fin.honorarios', { cliente_id: c.id }).catch(() => []).then(hs => caixa.replaceChildren(
+        h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
         tabela(['Tipo', 'Descrição', 'Recebido', 'Em atraso', 'Situação'], hs, x => [
           h('td', {}, TIPOS_HON[x.tipo] || x.tipo), h('td', {}, x.descricao), h('td', { class: 'num' }, reais(x.resumo.pago)),
           h('td', { class: 'num' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'), h('td', {}, x.situacao)
-        ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
-    }
+        ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.')));
+      return caixa;
+    };
 
-    const dadosLinha = (rot, val) => val ? h('div', {}, h('div', { class: 'peq' }, rot), h('strong', {}, val)) : null;
-    const resumo = h('section', { class: 'caixa ficha-resumo' },
-      h('div', { class: 'linha-info' },
-        dadosLinha(c.tipo === 'PJ' ? 'CNPJ' : 'CPF', c.cpf_cnpj || '—'),
-        c.tipo !== 'PJ' ? dadosLinha('RG', c.rg || '—') : dadosLinha('Representante', c.representante || '—'),
-        c.tipo !== 'PJ' ? dadosLinha('Profissão', c.profissao || '—') : null,
-        dadosLinha('Telefone', c.telefone || '—'),
-        dadosLinha('Tipo de ação', c.tipo_acao),
-        dadosLinha('Área', c.area)),
-      h('div', { class: 'peq' }, [c.endereco, c.cidade && c.uf ? c.cidade + '/' + c.uf : c.cidade, c.cep].filter(Boolean).join(' · ') || 'Sem endereço cadastrado.'));
-
-    const editar = h('details', { class: 'caixa editar-cad', open: incompleto && !recem }, h('summary', {}, 'Editar cadastro'), formCliente(c, false));
-    const docs = caixaDocumentos(c); docs.className = 'caixa docs-pasta';
+    const pasta = () => { const d = caixaDocumentos(c); d.className = 'docs-pasta'; return d; };
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
-        h('p', {}, etiquetaSituacao(c.situacao), c.origem ? ` · chegou por: ${c.origem}` : ''))),
-      incompleto && !recem ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
-      recem ? caixaGerar(c, true) : null,
-      resumo, docs,
-      recem ? null : caixaGerar(c, false),
-      procs, honsCli, editar);
-    if (recem) window.scrollTo(0, 0);
+        h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
+        h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos')),
+      incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
+      descricao,
+      secao('Pasta do cliente', pasta, true),
+      secao(`Processos (${r.processos.length})`, procs, false),
+      sessao.usuario.pode.financeiro ? secao('Honorários', hons, false) : null,
+      h('details', { class: 'caixa secao editar-cad', open: incompleto }, h('summary', {}, 'Editar cadastro'), formCliente(c, false)));
   }
 
   /* ---------- processos ---------- */
@@ -1479,8 +1500,7 @@
     const grupos = {};
     info.modelos.forEach(m => { (grupos[m.grupo] = grupos[m.grupo] || []).push(m); });
 
-    const advs = h('section', { class: 'caixa' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Advogados (outorgados)')),
+    const advs = h('div', {},
       h('p', { class: 'peq' }, 'Quem aparece como outorgado(a) na procuração e como responsável nos contratos. O(a) marcado(a) como padrão vem escolhido primeiro.'),
       h('ul', { class: 'lista-int' }, info.advogados.map(a => h('li', {}, h('strong', {}, a.nome), ` — OAB/${a.uf} ${a.oab}`, a.padrao === 'sim' ? h('span', { class: 'tag info' }, 'padrão') : null,
         a.email ? h('div', { class: 'peq' }, [a.email, a.telefone].filter(Boolean).join(' · ')) : null))));
@@ -1500,23 +1520,25 @@
         avisar('Advogado(a) cadastrado(a).');
         rota();
       });
-      advs.append(h('details', {}, h('summary', {}, 'Cadastrar outro(a) advogado(a)'), f));
+      advs.append(h('details', { class: 'sub' }, h('summary', {}, 'Cadastrar outro(a) advogado(a)'), f));
     }
 
+    const novoCli = params.get('novo') === '1' && clientes.find(c => c.id === params.get('cliente'));
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'),
         h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.'))),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Gerar para um cliente'),
+      novoCli ? h('div', { class: 'passo-ok' }, h('strong', {}, `✓ ${novoCli.nome} cadastrado(a) e pasta criada.`), ' Agora escolha o tipo de ação e gere a procuração e o contrato.') : null,
+      h('section', { class: 'caixa' + (novoCli ? ' destaque-caixa' : '') }, h('h2', {}, 'Gerar para um cliente'),
         formGerar(info, { clientes, clienteInicial: params.get('cliente') || '' })),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Modelos do escritório'),
-        h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{qualificacao}}, {{nome}}, {{advogado}}, {{objeto}}, {{poderes_especificos}}, {{clausula_honorarios}} e {{data_extenso}}; o painel preenche sozinho.'),
+      secao('Modelos do escritório', () => h('div', {},
+        h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{nome}}, {{qualificacao_resto}}, {{advogado_nome}}, {{numero_processo}}, {{objeto}} e {{clausula_honorarios}}; o painel preenche sozinho. Padrão visual: EB Garamond 12, justificado, logo no topo e rodapé do escritório.'),
         h('div', { class: 'modelos-grade' }, Object.keys(grupos).map(g => h('div', {}, h('h4', {}, g),
-          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))))))),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Tipos de ação'),
+          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))))))), false),
+      secao('Tipos de ação', () => h('div', {},
         h('p', { class: 'peq' }, 'Cada tipo preenche a finalidade da procuração e acrescenta os poderes específicos daquela ação (por exemplo, perícias e Meu INSS na previdenciária, prisão civil na pensão alimentícia, art. 44 do CPP na queixa-crime).'),
-        h('div', { class: 'chips' }, info.tipos.map(t => h('span', { class: 'chip-filtro' }, t.nome)))),
-      advs,
-      h('div', { class: 'nota' }, 'Os textos iniciais foram redigidos pelo Claude como ponto de partida. A Dra. Júlian deve revisá-los antes do primeiro uso, ou trocar pelos modelos do escritório.'));
+        h('div', { class: 'chips' }, info.tipos.map(t => h('span', { class: 'chip-filtro' }, t.nome)))), false),
+      secao('Advogados (outorgados)', advs, false),
+      h('p', { class: 'peq' }, 'Os textos iniciais foram redigidos pelo Claude a partir do modelo de juntada do escritório. A Dra. Júlian deve revisá-los antes do primeiro uso.'));
   }
 
   /* ---------- rotas ---------- */

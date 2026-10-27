@@ -27,3 +27,13 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 ## Dados
 
 - Nenhum dado de cliente vai para este repositório (é público). Tudo fica na planilha PAINEL — BANCO DE DADOS.
+
+## Modelos de documentos
+
+- A geração de documentos fica só na aba Modelos (a ficha do cliente tem apenas o botão "Gerar documentos").
+- Padrão visual de TODOS os modelos (tirado do modelo de juntada enviado pela usuária): fonte EB Garamond 12,
+  texto sempre justificado, espaço depois de cada parágrafo, nome da parte em negrito, títulos centralizados em
+  negrito, logo (assets/logo-documentos.png) no topo com linha, rodapé em itálico com endereço, telefone,
+  CNPJ 46.000.441/0001-94 e OAB/SC nº 7551, assinatura do(a) advogado(a) centralizada (nome em negrito e OAB embaixo).
+- O número do processo é opcional no gerador; é obrigatório só para petições e substabelecimento.
+- A usuária vai mandar os modelos oficiais do escritório para refazer os textos (ex.: juntada de documentos).
