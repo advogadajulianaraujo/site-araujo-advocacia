@@ -2499,7 +2499,8 @@ var ESCRITORIO_PADRAO = {
   oab: '7551',
   rodape: ['Rua Silvino Moreira Lima, nº 888, Humaitá, Tubarão/SC.', 'Fone: (48) 36262556', 'CNPJ nº 46.000.441/0001-94', 'OAB/SC nº 7551']
 };
-var LOGO_DOCUMENTOS = 'https://araujoadvocaciasc.com.br/assets/logo-documentos.png';
+var LOGO_DOCUMENTOS = ['https://araujoadvocaciasc.com.br/assets/logo-documentos.png',
+  'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/assets/logo-documentos.png'];
 
 function escritorio_() {
   return {
@@ -2890,10 +2891,13 @@ function montarPadraoVisual_(doc, linhas) {
   var cab = doc.getHeader() || doc.addHeader();
   var pLogo = cab.getParagraphs()[0] || cab.appendParagraph('');
   pLogo.setAlignment(A.CENTER);
-  try {
-    var img = pLogo.appendInlineImage(UrlFetchApp.fetch(LOGO_DOCUMENTOS).getBlob());
-    img.setWidth(105).setHeight(83);
-  } catch (e) { pLogo.appendText('ARAÚJO ADVOCACIA'); fonte(pLogo, 14); }
+  var blob = null;
+  LOGO_DOCUMENTOS.some(function (url) {
+    try { var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); if (r.getResponseCode() === 200) blob = r.getBlob(); } catch (e) { /* tenta o próximo */ }
+    return !!blob;
+  });
+  if (blob) pLogo.appendInlineImage(blob).setWidth(105).setHeight(83);
+  else { pLogo.appendText('ARAÚJO ADVOCACIA'); fonte(pLogo, 14); }
   cab.appendParagraph('').appendHorizontalRule();
   // rodapé: linha + dados do escritório
   var rod = doc.getFooter() || doc.addFooter();
