@@ -87,7 +87,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Modelos novos (MODELO7_): procuração para inventário e partilha, requerimento de isenção de IRPF (doença grave),
   declaração de comparecimento, notificação extrajudicial em nome do cliente e contrato de honorários previdenciário
   (texto do contrato do escritório: 2 benefícios ou 30%, revisões 30%, multa de desistência 2 SM, 5% habilitação de herdeiros).
-  Contrato de honorários (MODELO7_CONTRATO_ID): multa de 2 salários mínimos por falta injustificada em audiência.
+  Versão MODELO8_ (contrato, prestação, assessoria, previdenciário, procurações): atraso > 30 dias permite suspender os
+  serviços não urgentes e renunciar ao mandato com aviso de 10 dias (art. 5º, § 3º, EAOAB; art. 112 CPC); multa de 2 salários
+  mínimos por desistência OU falta injustificada em audiência/perícia, cobrável judicialmente (art. 24 EAOAB; art. 784, III, CPC).
+- Procuração por área (`poderesGeraisProcuracao_`, campo `ambito` em TIPOS_ACAO): o tipo de ação é obrigatório; a procuração
+  traz FINALIDADE, PODERES com o âmbito da área (Justiça do Trabalho, INSS/Justiça Federal, Varas de Família…) e PODERES
+  ESPECÍFICOS DESTA ÁREA. Na área criminal os poderes são pelo CPP (sem o art. 105 do CPC).
 - Contrato de honorários (modelos v5, com cláusulas do contrato antigo do escritório: notas promissórias, PIX, vencimento
   antecipado após 30 dias de atraso, sigilo/LGPD). Antes, v4: cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
   despesas (perícias, custas, diligências fora da comarca, deslocamento acima de 100 km), obrigações do cliente (documentos,

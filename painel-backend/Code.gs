@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.8.0';
+var VERSAO = '6.8.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3368,48 +3368,68 @@ function escritorio_() {
 
 /** Tipos de ação: preenchem a finalidade da procuração e os poderes específicos. {{contra}} vira " em face de Fulano". */
 var TIPOS_ACAO = {
-  trabalhista: { nome: 'Ação trabalhista (reclamatória)', area: 'Trabalhista',
+  trabalhista: { nome: 'Ação trabalhista (reclamatória)', area: 'Trabalhista', ambito: 'perante a Justiça do Trabalho (Varas do Trabalho, Tribunais Regionais do Trabalho e Tribunal Superior do Trabalho), as Comissões de Conciliação Prévia, o Ministério do Trabalho e Emprego e o Ministério Público do Trabalho',
     objeto: 'propor e acompanhar reclamatória trabalhista{{contra}}, em todas as fases, inclusive execução e recursos',
     poderes: 'Poderes especiais para firmar acordos perante a Justiça do Trabalho e as Comissões de Conciliação Prévia e para receber e dar quitação de valores, levantar depósitos recursais e alvarás, e requerer a habilitação de créditos.' },
-  defesa_trabalhista: { nome: 'Defesa trabalhista (empresa reclamada)', area: 'Trabalhista',
+  defesa_trabalhista: { nome: 'Defesa trabalhista (empresa reclamada)', area: 'Trabalhista', ambito: 'perante a Justiça do Trabalho (Varas do Trabalho, Tribunais Regionais do Trabalho e Tribunal Superior do Trabalho), o Ministério do Trabalho e Emprego e o Ministério Público do Trabalho',
     objeto: 'apresentar defesa e acompanhar reclamatória trabalhista{{contra}}, em todas as fases, inclusive execução e recursos',
     poderes: 'Poderes especiais para firmar acordos, indicar preposto, oferecer bens à penhora e efetuar depósitos recursais.' },
-  previdenciaria: { nome: 'Previdenciária / INSS (benefícios)', area: 'Previdenciário',
+  previdenciaria: { nome: 'Previdenciária / INSS (benefícios)', area: 'Previdenciário', ambito: 'perante o Instituto Nacional do Seguro Social (INSS), o Conselho de Recursos da Previdência Social, a Justiça Federal e os Juizados Especiais Federais e, na competência delegada, a Justiça Estadual',
     objeto: 'requerer, acompanhar e recorrer de benefícios previdenciários e assistenciais perante o Instituto Nacional do Seguro Social – INSS e propor as ações judiciais cabíveis{{contra}}',
     poderes: 'Poderes especiais para representar {{c:o|a}} OUTORGANTE perante o INSS em qualquer de suas agências e no Meu INSS, requerer benefícios, agendar e acompanhar perícias, cumprir exigências, ter vista e obter cópias de processos administrativos, requerer certidões e extratos (CNIS), recorrer ao Conselho de Recursos da Previdência Social e receber valores atrasados.' },
-  civel: { nome: 'Ação cível (indenização, obrigação, cobrança)', area: 'Cível',
-    objeto: 'propor e acompanhar ação cível{{contra}}, em todas as fases e instâncias', poderes: '' },
-  consumidor: { nome: 'Direito do consumidor', area: 'Consumidor',
-    objeto: 'propor e acompanhar ação de natureza consumerista{{contra}}, inclusive perante o PROCON e os Juizados Especiais', poderes: '' },
-  alimentos: { nome: 'Pensão alimentícia (alimentos, revisão, execução)', area: 'Família',
+  civel: { nome: 'Ação cível (indenização, obrigação, cobrança)', area: 'Cível', ambito: 'perante a Justiça Estadual, os Juizados Especiais Cíveis e os Tribunais',
+    objeto: 'propor e acompanhar ação cível{{contra}}, em todas as fases e instâncias',
+    poderes: 'Poderes especiais para firmar acordos, receber e dar quitação, levantar alvarás e depósitos judiciais, indicar bens à penhora e requerer o cumprimento de sentença.' },
+  defesa_civel: { nome: 'Defesa cível (cliente é o réu)', area: 'Cível', ambito: 'perante a Justiça Estadual, os Juizados Especiais Cíveis e os Tribunais',
+    objeto: 'apresentar defesa, reconvenção e recursos e acompanhar a ação cível movida{{contra_por}} contra {{c:o|a}} OUTORGANTE, em todas as fases e instâncias',
+    poderes: 'Poderes especiais para firmar acordos, oferecer bens à penhora, efetuar depósitos judiciais, receber citação e dar quitação.' },
+  consumidor: { nome: 'Direito do consumidor', area: 'Consumidor', ambito: 'perante a Justiça Estadual, os Juizados Especiais Cíveis, o PROCON, o Banco Central (Registrato), a plataforma consumidor.gov.br e as instituições financeiras e fornecedores',
+    objeto: 'propor e acompanhar ação de natureza consumerista{{contra}}, inclusive perante o PROCON e os Juizados Especiais',
+    poderes: 'Poderes especiais para registrar reclamações no PROCON e no consumidor.gov.br, solicitar extratos, contratos e gravações a bancos e fornecedores, firmar acordos, receber e dar quitação e levantar alvarás.' },
+  alimentos: { nome: 'Pensão alimentícia (alimentos, revisão, execução)', area: 'Família', ambito: 'perante as Varas de Família, os Centros Judiciários de Solução de Conflitos (CEJUSC), o Ministério Público e os empregadores e fontes pagadoras',
     objeto: 'propor e acompanhar ação de alimentos, revisional, de exoneração ou de execução de alimentos{{contra}}',
     poderes: 'Poderes especiais para requerer a prisão civil do devedor de alimentos, o desconto em folha de pagamento, a penhora de bens e valores e o protesto do título judicial.' },
-  divorcio: { nome: 'Divórcio / união estável', area: 'Família',
+  divorcio: { nome: 'Divórcio / união estável', area: 'Família', ambito: 'perante as Varas de Família, os CEJUSCs, os tabelionatos de notas e os registros civis e de imóveis',
     objeto: 'propor e acompanhar ação de divórcio ou de reconhecimento e dissolução de união estável{{contra}}, consensual ou litigiosa, com partilha de bens, guarda, convivência e alimentos',
     poderes: 'Poderes especiais para concordar com a partilha de bens, transigir sobre guarda, convivência e alimentos e assinar escritura pública de divórcio ou de dissolução de união estável perante tabelionato de notas.' },
-  guarda: { nome: 'Guarda, convivência e visitas', area: 'Família',
+  guarda: { nome: 'Guarda, convivência e visitas', area: 'Família', ambito: 'perante as Varas de Família e da Infância e Juventude, os CEJUSCs, o Conselho Tutelar e o Ministério Público',
     objeto: 'propor e acompanhar ação de guarda, regulamentação de convivência ou modificação de guarda{{contra}}',
     poderes: 'Poderes especiais para transigir sobre guarda, convivência e alimentos.' },
-  inventario: { nome: 'Inventário e partilha', area: 'Família',
+  inventario: { nome: 'Inventário e partilha', area: 'Família', ambito: 'perante as Varas de Família e Sucessões, os tabelionatos de notas, os registros de imóveis, a Receita Federal e as Fazendas Estadual e Municipal',
     objeto: 'requerer a abertura e acompanhar inventário, arrolamento e partilha, judicial ou extrajudicial, dos bens deixados pelo autor da herança{{contra_de}}',
     poderes: 'Poderes especiais para prestar compromisso de inventariante, apresentar primeiras e últimas declarações, concordar com avaliações, cálculos e partilha, requerer alvarás, receber e dar quitação e assinar escritura pública de inventário e partilha.' },
-  criminal: { nome: 'Defesa criminal', area: 'Criminal',
+  criminal: { nome: 'Defesa criminal', area: 'Criminal', criminal: true,
     objeto: 'promover a defesa d{{c:o|a}} OUTORGANTE em inquérito policial, termo circunstanciado, ação penal e execução penal{{contra}}, em qualquer juízo ou tribunal',
     poderes: 'Poderes para requerer liberdade provisória, relaxamento de prisão e revogação de medidas cautelares, impetrar habeas corpus, apresentar resposta à acusação, alegações finais e recursos, propor e aceitar transação penal, suspensão condicional do processo e acordo de não persecução penal, e acompanhar audiências de custódia.' },
-  queixa: { nome: 'Queixa-crime (ofendido)', area: 'Criminal',
+  queixa: { nome: 'Queixa-crime (ofendido)', area: 'Criminal', criminal: true,
     objeto: 'oferecer e acompanhar queixa-crime{{contra}} pelos fatos de ________ (descreva o fato e o crime, art. 44 do Código de Processo Penal)',
     poderes: 'Poderes especiais para oferecer queixa-crime, nos termos do art. 44 do Código de Processo Penal, representar criminalmente, habilitar-se como assistente de acusação e aceitar ou recusar retratação e perdão.' },
-  execucao: { nome: 'Execução / cobrança de dívida', area: 'Cível',
+  execucao: { nome: 'Execução / cobrança de dívida', area: 'Cível', ambito: 'perante a Justiça Estadual, os Juizados Especiais Cíveis, os cartórios de protesto e os registros de imóveis e de veículos',
     objeto: 'propor e acompanhar ação de execução, monitória ou de cobrança{{contra}}',
     poderes: 'Poderes especiais para indicar bens à penhora, requerer adjudicação, arrematar, receber e dar quitação.' },
-  imovel: { nome: 'Imóveis (usucapião, despejo, posse)', area: 'Cível',
+  imovel: { nome: 'Imóveis (usucapião, despejo, posse)', area: 'Cível', ambito: 'perante a Justiça Estadual, os registros de imóveis, os tabelionatos de notas e as prefeituras',
     objeto: 'propor e acompanhar ação de usucapião, despejo, possessória ou outra relativa a imóvel{{contra}}',
     poderes: 'Poderes especiais para representar {{c:o|a}} OUTORGANTE perante cartórios de registro de imóveis e tabelionatos, inclusive em usucapião extrajudicial.' },
-  administrativo: { nome: 'Órgãos públicos / procedimento administrativo', area: 'Cível',
+  administrativo: { nome: 'Órgãos públicos / procedimento administrativo', area: 'Cível', ambito: 'perante órgãos e repartições públicas federais, estaduais e municipais, autarquias, concessionárias e instituições financeiras',
     objeto: 'representar {{c:o|a}} OUTORGANTE perante órgãos e repartições públicas federais, estaduais e municipais, autarquias, concessionárias e instituições financeiras{{contra}}',
     poderes: 'Poderes para protocolar requerimentos, recursos e defesas administrativas, ter vista de processos e obter cópias e certidões.' },
-  outro: { nome: 'Outro (descreva em "Detalhes")', area: '', objeto: '', poderes: '' }
+  outro: { nome: 'Outro (descreva em "Detalhes")', area: '', ambito: '', objeto: '', poderes: '' }
 };
+
+/**
+ * Poderes gerais da procuração conforme a área: na esfera criminal, com base no CPP (sem os poderes de transigir/confessar
+ * do art. 105 do CPC); nas demais, o foro em geral do art. 105 do CPC com o âmbito de atuação da área.
+ */
+function poderesGeraisProcuracao_(tipo, menor) {
+  var quem = menor ? 'a parte OUTORGANTE' : '{{c:o|a}} OUTORGANTE', la = menor ? 'la' : 'l{{c:o|a}}';
+  if (tipo && tipo.criminal) {
+    return 'pelo presente instrumento, ' + quem + ' confere {{adv:ao|à}} OUTORGAD{{adv:O|A}} amplos poderes para o foro em geral, com a cláusula ad judicia et extra, para representá-' + la +
+      ' perante delegacias de polícia, o Ministério Público, os juízos e tribunais criminais, os juizados especiais criminais e as varas de execução penal, podendo acompanhar inquéritos e termos circunstanciados, ter vista e extrair cópias de autos, requerer diligências e perícias, apresentar defesas, memoriais, recursos e revisão criminal, impetrar habeas corpus e mandado de segurança e substabelecer, com ou sem reserva de poderes (arts. 266 e seguintes do Código de Processo Penal e art. 5º da Lei nº 8.906/1994).';
+  }
+  var onde = tipo && tipo.ambito ? tipo.ambito + ', bem como em qualquer outro juízo, instância ou tribunal' : 'em qualquer juízo, instância ou tribunal e perante órgãos públicos, autarquias e instituições financeiras';
+  return 'pelo presente instrumento, ' + quem + ' confere {{adv:ao|à}} OUTORGAD{{adv:O|A}} amplos poderes para o foro em geral, com a cláusula ad judicia et extra, para representá-' + la + ' ' + onde +
+    ', podendo propor as ações competentes, defendê-' + la + ' nas contrárias e interpor recursos, com poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber e dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça, firmar declaração de hipossuficiência e substabelecer, com ou sem reserva de poderes (art. 105 do Código de Processo Civil).';
+}
 
 /*
  * Linhas dos modelos:  ['t', título centralizado em negrito]  ['h', subtítulo em negrito]  ['p', parágrafo justificado]
@@ -3420,17 +3440,17 @@ var TIPOS_ACAO = {
  * logo no topo com linha e rodapé com endereço, telefone, CNPJ e OAB da sociedade.
  */
 var MODELOS = {
-  procuracao: { assinaCliente: true, nome: 'Procuração ad judicia et extra', grupo: 'Procuração e declarações', config: 'MODELO6_PROCURACAO_ID', antigo: ['MODELO5_PROCURACAO_ID', 'MODELO4_PROCURACAO_ID', 'MODELO3_PROCURACAO_ID', 'MODELO2_PROCURACAO_ID', 'MODELO_PROCURACAO_ID'], umaFolha: true },
-  procuracao_menor: { assinaCliente: true, nome: 'Procuração de filhos menores (representados pelo pai ou pela mãe)', grupo: 'Procuração e declarações', menores: true, umaFolha: true, config: 'MODELO6_PROCURACAO_MENOR_ID', antigo: ['MODELO5_PROCURACAO_MENOR_ID'] },
+  procuracao: { assinaCliente: true, nome: 'Procuração ad judicia et extra', grupo: 'Procuração e declarações', config: 'MODELO8_PROCURACAO_ID', antigo: ['MODELO6_PROCURACAO_ID', 'MODELO5_PROCURACAO_ID', 'MODELO4_PROCURACAO_ID', 'MODELO3_PROCURACAO_ID', 'MODELO2_PROCURACAO_ID', 'MODELO_PROCURACAO_ID'], umaFolha: true },
+  procuracao_menor: { assinaCliente: true, nome: 'Procuração de filhos menores (representados pelo pai ou pela mãe)', grupo: 'Procuração e declarações', menores: true, umaFolha: true, config: 'MODELO8_PROCURACAO_MENOR_ID', antigo: ['MODELO6_PROCURACAO_MENOR_ID', 'MODELO5_PROCURACAO_MENOR_ID'] },
   hipossuficiencia: { assinaCliente: true, nome: 'Declaração de hipossuficiência (justiça gratuita)', grupo: 'Procuração e declarações', config: 'MODELO6_HIPOSSUFICIENCIA_ID', antigo: ['MODELO5_HIPOSSUFICIENCIA_ID', 'MODELO4_HIPOSSUFICIENCIA_ID', 'MODELO3_HIPOSSUFICIENCIA_ID', 'MODELO2_HIPOSSUFICIENCIA_ID'], umaFolha: true },
   residencia: { assinaCliente: true, nome: 'Declaração de residência', grupo: 'Procuração e declarações', config: 'MODELO6_RESIDENCIA_ID', antigo: ['MODELO5_RESIDENCIA_ID', 'MODELO4_RESIDENCIA_ID', 'MODELO3_RESIDENCIA_ID', 'MODELO2_RESIDENCIA_ID'], umaFolha: true },
   lgpd: { assinaCliente: true, nome: 'Termo de consentimento – dados pessoais (LGPD)', grupo: 'Procuração e declarações', config: 'MODELO6_LGPD_ID', antigo: ['MODELO5_LGPD_ID', 'MODELO4_LGPD_ID', 'MODELO3_LGPD_ID', 'MODELO2_LGPD_ID'] },
   juntada: { nome: 'Petição de juntada de documentos', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_JUNTADA_ID', antigo: ['MODELO5_JUNTADA_ID', 'MODELO4_JUNTADA_ID', 'MODELO3_JUNTADA_ID'] },
   habilitacao: { nome: 'Petição de juntada de procuração (habilitação)', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_HABILITACAO_ID', antigo: ['MODELO5_HABILITACAO_ID', 'MODELO4_HABILITACAO_ID', 'MODELO3_HABILITACAO_ID'] },
   substabelecimento: { nome: 'Substabelecimento com reserva de poderes', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_SUBSTABELECIMENTO_ID', antigo: ['MODELO5_SUBSTABELECIMENTO_ID', 'MODELO4_SUBSTABELECIMENTO_ID', 'MODELO3_SUBSTABELECIMENTO_ID'] },
-  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO7_CONTRATO_ID', antigo: ['MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
-  prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO6_PRESTACAO_ID', antigo: ['MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
-  assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO6_ASSESSORIA_ID', antigo: ['MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
+  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO8_CONTRATO_ID', antigo: ['MODELO7_CONTRATO_ID', 'MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
+  prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO8_PRESTACAO_ID', antigo: ['MODELO6_PRESTACAO_ID', 'MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
+  assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO8_ASSESSORIA_ID', antigo: ['MODELO6_ASSESSORIA_ID', 'MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
   recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO6_RECIBO_ID', antigo: ['MODELO5_RECIBO_ID', 'MODELO4_RECIBO_ID', 'MODELO3_RECIBO_ID', 'MODELO2_RECIBO_ID'] },
   cobranca: { nome: 'Notificação de cobrança de honorários em atraso', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, config: 'MODELO6_COBRANCA_ID', antigo: ['MODELO5_COBRANCA_ID', 'MODELO4_COBRANCA_ID', 'MODELO3_COBRANCA_ID'] },
   promissoria: { assinaCliente: true, nome: 'Notas promissórias das parcelas', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, gerado: true },
@@ -3438,7 +3458,7 @@ var MODELOS = {
   isencao_irpf: { assinaCliente: true, nome: 'Requerimento de isenção do imposto de renda (doença grave)', grupo: 'Procuração e declarações', config: 'MODELO7_ISENCAO_IRPF_ID' },
   comparecimento: { nome: 'Declaração de comparecimento ao escritório', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_COMPARECIMENTO_ID' },
   notificacao: { nome: 'Notificação extrajudicial (em nome do cliente)', grupo: 'Petições e notificações', config: 'MODELO7_NOTIFICACAO_ID' },
-  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO7_CONTRATO_PREV_ID' }
+  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO8_CONTRATO_PREV_ID', antigo: ['MODELO7_CONTRATO_PREV_ID'] }
 };
 
 var CABECALHO_PETICAO = [
@@ -3453,9 +3473,9 @@ var TEXTO_MODELOS = {
     ['t', 'PROCURAÇÃO AD JUDICIA ET EXTRA'],
     ['p', '**OUTORGANTE:** **{{nome}}**, {{qualificacao_curta}}.'],
     ['p', '**OUTORGAD{{adv:O|A}}:** **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
-    ['p', '**PODERES:** pelo presente instrumento, {{c:o|a}} OUTORGANTE confere {{adv:ao|à}} OUTORGAD{{adv:O|A}} amplos poderes para o foro em geral, com a cláusula ad judicia et extra, para representá-l{{c:o|a}} em qualquer juízo, instância ou tribunal e perante órgãos públicos, autarquias e instituições financeiras, podendo propor as ações competentes, defendê-l{{c:o|a}} nas contrárias e interpor recursos, com poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber e dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça, firmar declaração de hipossuficiência e substabelecer, com ou sem reserva de poderes (art. 105 do Código de Processo Civil).'],
-    ['p', '{{poderes_especificos}}'],
     ['p', '**FINALIDADE:** {{objeto}}.'],
+    ['p', '**PODERES:** {{poderes_gerais}}'],
+    ['p', '**PODERES ESPECÍFICOS DESTA ÁREA:** {{poderes_especificos}}'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}']
   ],
@@ -3463,9 +3483,9 @@ var TEXTO_MODELOS = {
     ['t', 'PROCURAÇÃO AD JUDICIA ET EXTRA'],
     ['p', '**{{rotulo_outorgantes}}:** {{menores_qualificacao}}, {{menores_representacao}} **{{nome}}**, {{qualificacao_curta}}.'],
     ['p', '**OUTORGAD{{adv:O|A}}:** **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
-    ['p', '**PODERES:** pelo presente instrumento, a parte OUTORGANTE confere {{adv:ao|à}} OUTORGAD{{adv:O|A}} amplos poderes para o foro em geral, com a cláusula ad judicia et extra, para representá-la em qualquer juízo, instância ou tribunal e perante órgãos públicos, autarquias e instituições financeiras, podendo propor as ações competentes, defendê-la nas contrárias e interpor recursos, com poderes especiais para confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber e dar quitação, firmar compromisso, levantar alvarás e valores, requerer a gratuidade da justiça, firmar declaração de hipossuficiência e substabelecer, com ou sem reserva de poderes (art. 105 do Código de Processo Civil).'],
-    ['p', '{{poderes_especificos}}'],
     ['p', '**FINALIDADE:** {{objeto}}.'],
+    ['p', '**PODERES:** {{poderes_gerais_menor}}'],
+    ['p', '**PODERES ESPECÍFICOS DESTA ÁREA:** {{poderes_especificos}}'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}'],
     ['c', '{{menores_assinatura}}']
@@ -3545,17 +3565,18 @@ var TEXTO_MODELOS = {
     ['p', 'Parágrafo único. {{c:O|A}} CONTRATANTE arcará, ainda, com as despesas de deslocamento superiores a 100 km (cem quilômetros) da sede da CONTRATADA, quando a viagem se destinar a tratar de assuntos de seu interesse.'],
     ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
     ['p', '{{c:O|A}} CONTRATANTE obriga-se a: a) providenciar e entregar à CONTRATADA todos os documentos e informações por ela solicitados, de forma verdadeira e completa; b) informar imediatamente qualquer mudança de telefone, endereço ou e-mail; c) comparecer às audiências, perícias e demais atos para os quais for intimad{{c:o|a}} ou convocad{{c:o|a}}.'],
-    ['p', 'Parágrafo primeiro. A CONTRATADA não se responsabiliza por prejuízos decorrentes da omissão ou da inexatidão de informações e documentos de responsabilidade d{{c:o|a}} CONTRATANTE.'],
-    ['p', 'Parágrafo segundo. O não comparecimento injustificado d{{c:o|a}} CONTRATANTE às audiências para as quais tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA sujeitará {{c:o|a}} CONTRATANTE ao pagamento de multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento, sem prejuízo dos honorários contratados e das consequências processuais da ausência.'],
+    ['p', 'Parágrafo único. A CONTRATADA não se responsabiliza por prejuízos decorrentes da omissão ou da inexatidão de informações e documentos de responsabilidade d{{c:o|a}} CONTRATANTE.'],
     ['h', 'CLÁUSULA 5ª – DOS ACORDOS E DO RECEBIMENTO DE VALORES'],
     ['p', 'Fica expressamente vedado {{c:ao|à}} CONTRATANTE firmar qualquer acordo ou transação, bem como receber quaisquer importâncias referentes ao litígio objeto do presente contrato, sem a expressa anuência da CONTRATADA, hipótese em que os honorários serão devidos integralmente.'],
     ['h', 'CLÁUSULA 6ª – DA NATUREZA DA OBRIGAÇÃO'],
     ['p', 'A obrigação assumida pela CONTRATADA é de meio, e não de resultado, não se obrigando a garantir o resultado eventualmente esperado pel{{c:o|a}} CONTRATANTE, mas a empregar todo o zelo e a técnica profissional na defesa de seus interesses.'],
-    ['h', 'CLÁUSULA 7ª – DO ATRASO'],
+    ['h', 'CLÁUSULA 7ª – DO ATRASO E DA SUSPENSÃO DOS SERVIÇOS'],
     ['p', 'O atraso no pagamento de qualquer parcela sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária pelo INPC, e o atraso superior a 30 (trinta) dias acarretará o vencimento antecipado das parcelas restantes, podendo a CONTRATADA promover a cobrança judicial, inclusive pela execução das notas promissórias e deste contrato, que vale como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
-    ['h', 'CLÁUSULA 8ª – DA DESISTÊNCIA E DA REVOGAÇÃO'],
-    ['p', 'Em caso de desistência, {{c:o|a}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento.'],
-    ['p', 'Parágrafo único. A desistência ou a revogação do mandato não desobriga {{c:o|a}} CONTRATANTE do pagamento dos honorários vencidos e dos proporcionais ao trabalho já realizado, nem dos honorários de êxito, caso o proveito econômico venha a ser obtido em razão dos atos praticados pela CONTRATADA.'],
+    ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
+    ['h', 'CLÁUSULA 8ª – DAS MULTAS POR DESISTÊNCIA E POR AUSÊNCIA EM AUDIÊNCIA'],
+    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência da ação ou da contratação; b) em caso de não comparecimento injustificado a audiência ou perícia para a qual tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA.'],
+    ['p', 'Parágrafo primeiro. As multas desta cláusula são devidas sem prejuízo dos honorários contratados e das consequências processuais da desistência ou da ausência, vencem na data do fato e, não pagas em 10 (dez) dias, podem ser cobradas judicialmente pela CONTRATADA, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, III, do Código de Processo Civil).'],
+    ['p', 'Parágrafo segundo. A desistência ou a revogação do mandato não desobriga {{c:o|a}} CONTRATANTE do pagamento dos honorários vencidos e dos proporcionais ao trabalho já realizado, nem dos honorários de êxito, caso o proveito econômico venha a ser obtido em razão dos atos praticados pela CONTRATADA.'],
     ['h', 'CLÁUSULA 9ª – DO DESCUMPRIMENTO'],
     ['p', 'Em caso de descumprimento de qualquer cláusula do presente contrato, a parte infratora pagará multa de 5% (cinco por cento) sobre o valor total do contrato, além de indenizar a parte prejudicada pelos danos e pelas despesas adicionais causados pelo descumprimento.'],
     ['h', 'CLÁUSULA 10ª – DO SIGILO E DOS DADOS PESSOAIS'],
@@ -3590,8 +3611,10 @@ var TEXTO_MODELOS = {
     ['p', '{{c:O|A}} CONTRATANTE obriga-se a providenciar todos os documentos e informações solicitados pela CONTRATADA, de forma verdadeira e completa, e a informar qualquer mudança de telefone, endereço ou e-mail, não se responsabilizando a CONTRATADA por prejuízos decorrentes da omissão ou da inexatidão dessas informações.'],
     ['h', 'CLÁUSULA 6ª – DA NATUREZA DA OBRIGAÇÃO'],
     ['p', 'A obrigação assumida pela CONTRATADA é de meio, e não de resultado, não se obrigando a garantir o resultado eventualmente esperado pel{{c:o|a}} CONTRATANTE.'],
-    ['h', 'CLÁUSULA 7ª – DO ATRASO E DA DESISTÊNCIA'],
-    ['p', 'O atraso no pagamento sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária, servindo este instrumento como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994). A desistência não desobriga {{c:o|a}} CONTRATANTE do pagamento dos honorários proporcionais ao trabalho já realizado.'],
+    ['h', 'CLÁUSULA 7ª – DO ATRASO, DA SUSPENSÃO DOS SERVIÇOS E DA DESISTÊNCIA'],
+    ['p', 'O atraso no pagamento sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária, servindo este instrumento como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
+    ['p', 'Parágrafo primeiro. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
+    ['p', 'Parágrafo segundo. Em caso de desistência, {{c:o|a}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes, além dos honorários proporcionais ao trabalho já realizado, podendo a multa ser cobrada judicialmente com base neste contrato.'],
     ['h', 'CLÁUSULA 8ª – DO SIGILO E DOS DADOS PESSOAIS'],
     ['p', 'A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato, nos termos do Estatuto da Advocacia e da Lei nº 13.709/2018 (LGPD).'],
     ['h', 'CLÁUSULA 9ª – DO FORO'],
@@ -3621,7 +3644,8 @@ var TEXTO_MODELOS = {
     ['h', 'CLÁUSULA 4ª – DO PRAZO E DA RESCISÃO'],
     ['p', 'O presente contrato vigorará por 12 (doze) meses a contar da sua assinatura, renovando-se automaticamente por iguais períodos, e poderá ser rescindido por qualquer das partes mediante aviso prévio, por escrito, de 30 (trinta) dias, sem multa.'],
     ['h', 'CLÁUSULA 5ª – DO ATRASO'],
-    ['p', 'O atraso no pagamento sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária e, após 60 (sessenta) dias, à suspensão dos serviços.'],
+    ['p', 'O atraso no pagamento sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
+    ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
     ['h', 'CLÁUSULA 6ª – DO SIGILO'],
     ['p', 'A CONTRATADA manterá sigilo sobre todas as informações recebidas em razão deste contrato, nos termos do Estatuto da Advocacia e da Lei Geral de Proteção de Dados Pessoais.'],
     ['h', 'CLÁUSULA 7ª – DO FORO'],
@@ -3697,9 +3721,9 @@ var TEXTO_MODELOS = {
     ['p', 'Correrão por conta d{{c:o|a}} CONTRATANTE as despesas com perícias, custas, certidões e diligências, bem como os honorários para sustentação oral e para recursos aos Tribunais Superiores, que dependerão de ajuste próprio.'],
     ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
     ['p', '{{c:O|A}} CONTRATANTE obriga-se a entregar os documentos solicitados, informar mudanças de telefone e endereço e comparecer às perícias médicas, avaliações sociais e audiências para as quais for convocad{{c:o|a}}.'],
-    ['p', 'Parágrafo único. O não comparecimento injustificado d{{c:o|a}} CONTRATANTE às perícias ou audiências sujeitará {{c:o|a}} CONTRATANTE ao pagamento de multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento.'],
-    ['h', 'CLÁUSULA 5ª – DA DESISTÊNCIA'],
-    ['p', 'Em caso de desistência, {{c:o|a}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes, sem prejuízo dos honorários proporcionais ao trabalho realizado.'],
+    ['h', 'CLÁUSULA 5ª – DAS MULTAS, DO ATRASO E DA SUSPENSÃO DOS SERVIÇOS'],
+    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência; b) em caso de não comparecimento injustificado a perícia, avaliação social ou audiência para a qual tenha sido convocad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA. As multas são devidas sem prejuízo dos honorários e podem ser cobradas judicialmente, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, III, do Código de Processo Civil).'],
+    ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
     ['h', 'CLÁUSULA 6ª – DO FALECIMENTO E DA HABILITAÇÃO DE HERDEIROS'],
     ['p', 'Em caso de falecimento d{{c:o|a}} CONTRATANTE, os sucessores obrigam-se a cumprir integralmente o presente contrato, sendo devidos honorários adicionais de 5% (cinco por cento) pela habilitação dos herdeiros.'],
     ['h', 'CLÁUSULA 7ª – DA NATUREZA DA OBRIGAÇÃO E DO SIGILO'],
@@ -4415,13 +4439,16 @@ function gerarDocumentos_(d, u) {
   var adv = advogados_().filter(function (a) { return a.id === d.advogado_id; })[0] ||
     advogados_().filter(function (a) { return a.padrao === 'sim'; })[0] || advogados_()[0];
   var tipo = TIPOS_ACAO[d.tipo_acao] || null;
+  if ((quais.indexOf('procuracao') >= 0 || quais.indexOf('procuracao_menor') >= 0) && (!tipo || (d.tipo_acao === 'outro' && !String(d.objeto || '').trim()))) {
+    throw falha_('Escolha o tipo de ação: a procuração sai com os poderes específicos daquela área (trabalhista, cível, criminal…). Se for "Outro", descreva em "Detalhes".');
+  }
   var numProc = String(d.numero_processo || '').trim();
   if (numProc && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numProc)) throw falha_('Número do processo fora do padrão (0000000-00.0000.0.00.0000).');
   if (!numProc && quais.some(function (k) { return M(k).processo; })) throw falha_('Informe o número do processo: as petições e o substabelecimento precisam dele.');
   var proc = numProc ? tabela_('Processos').linhas.filter(function (x) { return x.numero === numProc; })[0] || { numero: numProc } : null;
   var contra = String(d.parte_contraria || (proc && proc.parte_contraria) || '').trim();
   var detalhes = String(d.objeto || '').trim();
-  var objeto = tipo && tipo.objeto ? tipo.objeto.replace('{{contra}}', contra ? ' em face de ' + contra : '').replace('{{contra_de}}', contra ? ' ' + contra : '') : '';
+  var objeto = tipo && tipo.objeto ? tipo.objeto.replace('{{contra}}', contra ? ' em face de ' + contra : '').replace('{{contra_de}}', contra ? ' ' + contra : '').replace('{{contra_por}}', contra ? ' por ' + contra : '') : '';
   if (detalhes) objeto = objeto ? objeto + ' — ' + detalhes : detalhes;
   if (numProc && objeto) objeto += ', nos autos do processo nº ' + numProc;
   if (!objeto) objeto = c.tipo_acao || 'atuação em favor d{{c:o|a}} outorgante/contratante em ' + (c.area || 'matéria a definir');
@@ -4500,6 +4527,7 @@ function gerarDocumentos_(d, u) {
   var esc = escritorio_();
   var hoje = hojeSP_();
   var poderes = tipo && tipo.poderes ? tipo.poderes : '';
+  var poderesGerais = poderesGeraisProcuracao_(tipo, false), poderesGeraisMenor = poderesGeraisProcuracao_(tipo, true);
   var nomeCli = String(c.nome).toUpperCase();
   var partesOrg = orgaoPartes_(proc && proc.orgao);
   var juizoInfo = { vara: String(d.vara || '').trim() || partesOrg.vara, comarca: String(d.comarca || '').trim() || partesOrg.cidade };
@@ -4520,7 +4548,8 @@ function gerarDocumentos_(d, u) {
     '{{total_atraso}}': reaisTxt_(totalAtraso), '{{total_atraso_extenso}}': extenso_(totalAtraso),
     '{{qualificacao}}': qualificacao_(c), '{{qualificacao_sem_endereco}}': qualificacao_(c, true), '{{nome}}': String(c.nome).toUpperCase(),
     '{{objeto}}': objeto, '{{objeto_prev}}': detalhes ? ', visando ' + detalhes : (numProc ? ', nos autos do processo nº ' + numProc : ''), '{{objeto_assessoria}}': detalhes ? 'Inclui ainda: ' + detalhes + '.' : '',
-    '{{tipo_acao}}': tipo ? tipo.nome : '', '{{parte_contraria}}': contra, '{{poderes_especificos}}': poderes ? 'PODERES ESPECÍFICOS: ' + poderes : '',
+    '{{tipo_acao}}': tipo ? tipo.nome : '', '{{parte_contraria}}': contra, '{{poderes_especificos}}': poderes,
+    '{{poderes_gerais}}': poderesGerais, '{{poderes_gerais_menor}}': poderesGeraisMenor,
     '{{clausula_honorarios}}': clausula, '{{advogado}}': qualificacaoAdvogado_(adv), '{{advogado_nome}}': String(adv.nome).toUpperCase(),
     '{{advogado_oab}}': oabTexto_(adv), '{{escritorio}}': esc.nome, '{{escritorio_endereco}}': esc.endereco,
     '{{escritorio_email}}': esc.email, '{{escritorio_telefone}}': esc.telefone, '{{foro}}': esc.foro,
@@ -4607,7 +4636,7 @@ function gerarDocumentos_(d, u) {
       corpo.replaceText(chave.replace(/[{}]/g, '\\$&'), String(valores[chave]).replace(/\$/g, '\\$'));
     });
     resolverGenero_(corpo, generos);
-    corpo.getParagraphs().forEach(function (pp) { if (pp.getText() === REMOVER) { try { pp.removeFromParent(); } catch (e) { pp.setText(''); } } });
+    corpo.getParagraphs().forEach(function (pp) { if (pp.getText().indexOf(REMOVER) >= 0) { try { pp.removeFromParent(); } catch (e) { pp.setText(''); } } });
     if (k === 'procuracao_menor') negritar_(corpo, menores.map(function (m) { return m.nome.toUpperCase(); }));
     doc.saveAndClose();
     var pdf = dest.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');

@@ -767,7 +767,7 @@
       h('div', { class: 'campos' },
         blocoCliente,
         campo('advogado_id', 'Advogado(a) outorgado(a)', padrao, { opcoes: advs.map(a => [a.id, `${a.nome} — OAB/${a.uf} ${a.oab}`]) }),
-        campo('tipo_acao', 'Tipo de ação', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
+        campo('tipo_acao', 'Tipo de ação (obrigatório na procuração: define a área e os poderes)', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
         campoProc, campoVara, campoComarca),
       h('h4', {}, 'Quais documentos'), docs, notaCobranca, menoresBox, hon, rec,
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
