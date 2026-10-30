@@ -364,3 +364,60 @@ footer.site{background:var(--black);color:#9e9a92;font-size:14px;padding:90px 0 
 .acomp-prox strong{font:500 18px/1.4 var(--sans)}
 .acomp-mov{margin:14px 0 0;font-size:15px;line-height:1.6}
 .acomp-grid[hidden],.acomp-form[hidden]{display:none}
+/* Acompanhe v3: etapas, explicação e histórico */
+.acomp-ola{font:500 11.5px/1 var(--sans);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.acomp-card{border-radius:2px;box-shadow:0 1px 0 rgba(0,0,0,.02),0 8px 24px -18px rgba(0,0,0,.25);padding:26px 28px}
+.acomp-card.arquivado{border-left-color:#b9b3a7;opacity:.9}
+.acomp-area{display:block;font:500 11px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.acomp-etapas{list-style:none;margin:22px 0 4px;padding:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));position:relative}
+.acomp-etapas li{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;position:relative;color:var(--muted);font-size:12.5px;line-height:1.25}
+.acomp-etapas li::before{content:"";position:absolute;top:14px;left:-50%;right:50%;height:2px;background:#e3dfd6;z-index:0}
+.acomp-etapas li:first-child::before{display:none}
+.acomp-etapas li.feita::before,.acomp-etapas li.atual::before{background:var(--black)}
+.acomp-bola{position:relative;z-index:1;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:600 12.5px/1 var(--sans);background:#fff;border:2px solid #d8d3c9;color:var(--muted)}
+.acomp-etapas li.feita .acomp-bola{background:var(--black);border-color:var(--black);color:#fff}
+.acomp-etapas li.atual .acomp-bola{border-color:var(--black);color:var(--black);box-shadow:0 0 0 5px rgba(0,0,0,.08)}
+.acomp-etapas li.atual{color:var(--ink);font-weight:600}
+.acomp-explica{margin:16px 0 0;font-size:16px;line-height:1.65;color:var(--ink)}
+.acomp-prox small{color:var(--muted);font-size:13.5px}
+.acomp-hist{margin:16px 0 0;border-top:1px solid var(--line);padding-top:12px}
+.acomp-hist summary{cursor:pointer;font:500 14px/1.4 var(--sans)}
+.acomp-linha{list-style:none;margin:12px 0 0;padding:0 0 0 16px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:9px}
+.acomp-linha li{display:flex;gap:10px;font-size:14.5px;line-height:1.5}
+.acomp-linha time{font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.acomp-fala{display:inline-block;margin:16px 0 0;font-size:14.5px;text-decoration:underline;text-underline-offset:3px}
+@media (max-width:620px){
+  .acomp-card{padding:20px 18px}
+  .acomp-etapas{grid-template-columns:1fr;gap:8px;margin:18px 0 0}
+  .acomp-etapas li{flex-direction:row;text-align:left;gap:12px}
+  .acomp-etapas li::before{display:none}
+  .acomp-etapas li:not(.atual):not(.feita){display:none}
+  .acomp-etapas li.feita{display:none}
+  .acomp-etapas li.feita:nth-last-child(n){display:none}
+}
+/* Botão flutuante e "Prefere que a gente ligue?" */
+.flutuante{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.flut-wa{display:flex;align-items:center;gap:8px;background:#1f7a3f;color:#fff;text-decoration:none;padding:12px 18px 12px 14px;border-radius:999px;box-shadow:0 8px 24px -8px rgba(0,0,0,.45);font:500 15px/1 var(--sans)}
+.flut-wa svg{width:24px;height:24px}
+.flut-wa:hover{background:#196433}
+.flut-liga{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font:500 13px/1 var(--sans);cursor:pointer;box-shadow:0 6px 18px -10px rgba(0,0,0,.4)}
+.flut-liga:hover{border-color:var(--black)}
+.liga-caixa{border:0;padding:0;max-width:440px;width:calc(100% - 32px)}
+.liga-caixa::backdrop{background:rgba(0,0,0,.5)}
+.liga-form{padding:28px;display:flex;flex-direction:column;gap:10px;position:relative;background:#fff}
+.liga-form h2{font:400 28px/1.15 var(--display);margin:0}
+.liga-form p{margin:0 0 6px;color:var(--muted);line-height:1.55}
+.liga-form label{display:flex;flex-direction:column;gap:5px;font:500 12px/1.3 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.liga-form input,.liga-form select{font:400 16px/1.3 var(--sans);padding:11px 12px;border:1px solid #cfcac0;background:#fff;color:var(--ink);text-transform:none;letter-spacing:0}
+.liga-form .liga-aceite{flex-direction:row;align-items:flex-start;gap:8px;text-transform:none;letter-spacing:0;font-size:13.5px;line-height:1.5}
+.liga-form .liga-aceite input{margin-top:3px}
+.liga-mel{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.liga-fechar{position:absolute;top:10px;right:12px;border:0;background:none;font-size:28px;line-height:1;cursor:pointer;color:var(--muted)}
+.liga-msg.ok{color:#1f7a3f;font-weight:500}
+.liga-msg.erro{color:#b42318}
+@media (max-width:620px){.flutuante{right:12px;bottom:12px}.flut-liga{display:none}.flut-wa span{display:none}.flut-wa{padding:14px;border-radius:50%}}
+@media print{.flutuante{display:none}}
+.flutuante.tem-float{bottom:92px}
+.flutuante.tem-float .flut-wa{display:none}
+/* celular: já existe a barra de baixo (WhatsApp e telefone); o "ligamos" fica logo acima dela */
+@media (max-width:920px){.flutuante.tem-float{bottom:calc(66px + env(safe-area-inset-bottom));right:10px}.flutuante.tem-float .flut-liga{display:block;font-size:12.5px;padding:8px 12px}}

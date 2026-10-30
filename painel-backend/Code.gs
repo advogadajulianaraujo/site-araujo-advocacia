@@ -15,14 +15,33 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.7.1';
+var VERSAO = '6.8.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
   advogada: { nome: 'Advogada', financeiro: false, usuarios: false, conferePrazos: true },
   secretario: { nome: 'Secretário', financeiro: false, usuarios: false, conferePrazos: false },
-  estagiario: { nome: 'Estagiário', financeiro: false, usuarios: false, conferePrazos: false }
+  estagiario: { nome: 'Estagiário', financeiro: false, usuarios: false, conferePrazos: false },
+  // RH: vê tudo, menos Usuários; entra no Financeiro, mas os valores chegam apagados (o servidor nem envia)
+  rh: { nome: 'RH', financeiro: true, usuarios: false, conferePrazos: false, ocultarValores: true }
 };
+
+/* Campos de dinheiro que o perfil RH não recebe. */
+var CAMPOS_VALOR = /^(valor|valor_[a-z_]+|total|totais_valor|recebido|saldo|atrasado|honorarios|repasse_cliente|valor_bruto|aReceber30|recebidoMes|entradas|saidas|saldo_previsto|mesEntradas|mesSaidas|proximos30|pago|percentual)$/;
+function semValores_(x) {
+  if (Array.isArray(x)) return x.map(semValores_);
+  if (x && typeof x === 'object') {
+    var o = {};
+    Object.keys(x).forEach(function (k) {
+      if (CAMPOS_VALOR.test(k) && (typeof x[k] === 'number' || typeof x[k] === 'string' || x[k] === null)) o[k] = null;
+      else if ((k === 'entradas' || k === 'saidas') && Array.isArray(x[k])) o[k] = x[k].map(function () { return null; });
+      else o[k] = semValores_(x[k]);
+    });
+    return o;
+  }
+  return x;
+}
+var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1 };
 
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
@@ -34,7 +53,7 @@ var ESQUEMA = {
     'acesso_hash', 'acesso_criado_em'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
@@ -53,6 +72,7 @@ var ESQUEMA = {
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+  Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
@@ -275,6 +295,7 @@ var ROTAS = {
   'clientes.whatsapp': { fn: whatsappCliente_ },
   'clientes.acesso': { fn: acessoCliente_ },
   'consulta.processos': { publica: true, fn: consultaCliente_ },
+  'site.contato': { publica: true, fn: contatoSite_ },
   'whatsapp.entrada': { fn: function () { var e = pastaEntradaWhats_(); return { url: e.getUrl(), pendentes: config_('WHATSAPP_SEM_CLIENTE') || '' }; } },
   'clientes.criarPasta': { fn: criarPastaCliente_ },
   'clientes.nota': { fn: anotarCliente_ },
@@ -288,6 +309,7 @@ var ROTAS = {
   'robo.rodar': { fn: function (d, u) { return rodarRobo_(u.usuario); } },
   'djen.config': { fn: djenConfig_ },
   'djen.importar': { fn: djenImportar_ },
+  'djen.historico': { fn: djenHistorico_ },
   'agenda.listar': { fn: listarAgenda_ },
   'agenda.criar': { fn: criarCompromisso_ },
   'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
@@ -337,11 +359,13 @@ function rotear_(acao, token, dados) {
     registrar_(u.usuario, 'acesso negado', acao);
     throw falha_('Seu perfil não tem acesso a esta área.');
   }
+  var oculta = !!PERFIS[u.perfil].ocultarValores;
+  if (oculta && ROTAS_VALOR_BLOQUEADAS[acao]) throw falha_('O perfil RH não altera valores do financeiro.');
   // Rotas só de leitura: cada aba da planilha é lida uma vez só por pedido (mais rápido)
   MEMO_LEITURA = LEITURAS_RAPIDAS[acao] ? {} : null;
   try {
-    if (ROTAS_GUARDADAS[acao]) return comMemoria_(acao, u, dados, function () { return rota.fn(dados, u, token); });
-    return rota.fn(dados, u, token);
+    var res = ROTAS_GUARDADAS[acao] ? comMemoria_(acao, u, dados, function () { return rota.fn(dados, u, token); }) : rota.fn(dados, u, token);
+    return oculta && /^(fin\.|relatorio\.|documentos\.gerar|clientes\.documentos)/.test(acao) ? semValores_(res) : res;
   } finally { MEMO_LEITURA = null; }
 }
 
@@ -534,7 +558,7 @@ function usuarioDaSessao_(token) {
 
 function publicoUsuario_(u) {
   var p = PERFIS[u.perfil];
-  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos } };
+  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos, ocultarValores: !!p.ocultarValores } };
 }
 
 function criarUsuario_(d) {
@@ -1072,16 +1096,19 @@ function consultaCliente_(d) {
   })[0];
   if (!cli) falhou();
   var hoje = hojeSP_();
-  var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === cli.id && p.numero; }).map(function (p) {
+  var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === cli.id && (p.numero || faseDe_(p) === 'contratado'); }).map(function (p) {
     var ato = p.proximo_ato_data && p.proximo_ato_data >= hoje ? { ato: String(p.proximo_ato || '').slice(0, 120), data: p.proximo_ato_data } : null;
+    var fase = faseDe_(p), andam = [];
+    try { andam = p.andamentos && p.andamentos !== '-' ? JSON.parse(p.andamentos).slice(0, 6).map(function (m) { return { d: String(m.d).slice(0, 10), n: String(m.n).slice(0, 140) }; }) : []; } catch (e) { andam = []; }
     return {
-      numero: p.numero, area: p.area || '', tribunal: p.tribunal || tribunalDoNumero_(p.numero), orgao: p.orgao || '',
-      situacao: p.status === 'arquivado' ? 'Arquivado / baixado' : 'Em andamento', proximo: ato,
+      numero: p.numero || '', area: p.area || '', tribunal: p.tribunal || tribunalDoNumero_(p.numero), orgao: p.orgao || '',
+      situacao: p.status === 'arquivado' || fase === 'extinto' ? 'Arquivado / baixado' : !p.numero ? 'Em preparação' : 'Em andamento', proximo: ato,
+      fase: fase, fase_nome: FASES[fase], andamentos: andam,
       movimentacao: p.ultimo_movimento_em ? String(p.ultimo_movimento_em).slice(0, 10) : '',
       ultimo: String(p.ultimo_movimento || '').replace(/\s+/g, ' ').slice(0, 160)
     };
   }).sort(function (a, b) {
-    if (a.situacao !== b.situacao) return a.situacao === 'Em andamento' ? -1 : 1;
+    if (a.situacao !== b.situacao) return a.situacao === 'Arquivado / baixado' ? 1 : b.situacao === 'Arquivado / baixado' ? -1 : 0;
     return a.movimentacao < b.movimentacao ? 1 : a.movimentacao > b.movimentacao ? -1 : 0;
   });
   cache.remove(kCpf);
@@ -1301,7 +1328,7 @@ function listarProcessos_(d) {
   var nomes = {};
   tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
   return tabela_('Processos').linhas
-    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; return x; })
+    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; x.fase = faseDe_(p); return x; })
     .filter(function (p) {
       if (d.semCliente && p.cliente_id) return false;
       if (!busca) return true;
@@ -1333,17 +1360,24 @@ function salvarProcesso_(d, u) {
     var dados = {};
     CAMPOS_PROCESSO.forEach(function (k) { if (p[k] !== undefined) dados[k] = String(p[k]).trim(); });
     if (numero && !dados.tribunal) dados.tribunal = tribunalDoNumero_(numero);
+    if (p.fase !== undefined) {
+      if (p.fase && !FASES[p.fase]) throw falha_('Fase inválida.');
+      dados.fase = p.fase || ''; dados.fase_auto = p.fase ? 'nao' : '';
+    }
     dados.atualizado_em = agora;
     dados.atualizado_por = u.usuario;
     if (p.id) {
       var linha = tab.linhas.filter(function (r) { return r.id === p.id; })[0];
       if (!linha) throw falha_('Processo não encontrado.');
+      if (dados.fase !== undefined && dados.fase === linha.fase) delete dados.fase_auto; // não mexeu na fase: segue automática
+      if (!linha.numero && numero && (dados.fase || linha.fase) === 'contratado' && linha.fase_auto !== 'nao') { dados.fase = 'ajuizado'; dados.fase_auto = ''; }
       atualizarLinha_(tab, linha, dados);
       registrar_(u.usuario, 'processo alterado', linha.id + ' ' + (numero || linha.numero));
       return { id: linha.id };
     }
     dados.id = novoId_('P');
     dados.status = dados.status || 'ativo';
+    if (!dados.fase) { dados.fase = numero ? 'ajuizado' : 'contratado'; dados.fase_auto = ''; }
     dados.origem = 'painel';
     dados.criado_em = agora;
     inserirLinha_(tab, dados);
@@ -1356,10 +1390,34 @@ function tribunalDoNumero_(n) {
   var m = /\.(\d)\.(\d{2})\.\d{4}$/.exec(n);
   if (!m) return '';
   var j = m[1], tr = m[2];
-  if (j === '5') return 'TRT' + parseInt(tr, 10);
-  if (j === '8' && tr === '24') return 'TJSC';
+  if (j === '5') return +tr === 0 ? 'TST' : 'TRT' + parseInt(tr, 10);
+  if (j === '8') return (ESTADUAIS_DATAJUD[+tr] || 'TJ').toUpperCase();
   if (j === '4') return 'TRF' + parseInt(tr, 10);
+  if (j === '3') return 'STJ';
   return '';
+}
+
+/* Todos os tribunais: o robô lê qualquer aviso de um endereço ".jus.br". */
+var BUSCA_TRIBUNAIS = 'from:jus.br';
+/** Aviso de outro formato (Projudi, e-SAJ, peticionamento, e-mail de vara): só cadastra o processo, sem prazo. */
+function lerAvisoGenerico_(msg) {
+  var corpo = msg.getSubject() + '\n' + (msg.getPlainBody() || '');
+  var vistos = {}, itens = [], data = dataSP_(msg.getDate());
+  var re = /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/g, m;
+  var mov = /peticionamento/i.test(msg.getSubject()) ? 'Processo protocolado (peticionamento eletrônico)' : String(msg.getSubject()).replace(/\s+/g, ' ').slice(0, 120);
+  while ((m = re.exec(corpo)) && itens.length < 40) {
+    if (vistos[m[1]]) continue; vistos[m[1]] = 1;
+    itens.push({ fonte: 'e-mail ' + (tribunalDoNumero_(m[1]) || 'tribunal'), chave: 'gen|' + m[1] + '|' + data + '|' + mov.slice(0, 40),
+      recebido_em: msg.getDate().toISOString(), numero: m[1], tribunal: tribunalDoNumero_(m[1]), sistema: '', movimento: mov, evento: '', texto: '', nomes: [], tipo: '' });
+  }
+  return itens;
+}
+/** Escolhe o leitor pelo formato do e-mail. */
+function lerAvisoTribunal_(msg) {
+  var assunto = msg.getSubject() || '';
+  if (/\[PUSH\]/.test(assunto)) return lerAvisoPje_(msg);
+  if (/Movimenta.*Processua.*EPROC/i.test(assunto)) { var e = lerAvisoEproc_(msg); if (e.length) return e; }
+  return lerAvisoGenerico_(msg);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1701,10 +1759,39 @@ function statusPeloMovimento_(mov) {
 }
 
 /** Guarda a última movimentação do processo e ajusta ativo/arquivado. */
+/* Fase do processo (aba Processos). A fase muda sozinha pela última movimentação, até alguém escolher à mão. */
+var FASES = { contratado: 'Contrato assinado (a ajuizar)', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
+  homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
+/** Fase guardada ou, nos processos antigos sem fase, a calculada pela situação e pela última movimentação. */
+function faseDe_(p) {
+  if (p.fase && FASES[p.fase]) return p.fase;
+  if (p.status === 'arquivado') return 'extinto';
+  if (!p.numero) return 'contratado';
+  return faseDoMovimento_(p.ultimo_movimento) || 'andamento';
+}
+function faseDoMovimento_(mov) {
+  var t = normalizar_(mov || '');
+  if (!t) return '';
+  if (/desarquiv/.test(t)) return 'andamento';
+  if (/arquivad|arquivamento|baixa definitiva|extint|remetidos? os autos .*arquivo/.test(t)) return 'extinto';
+  if (/homologa/.test(t)) return 'homologacao';
+  if (/acordo/.test(t) && !/acordao/.test(t)) return 'acordo';
+  if (/cumprimento de sentenca|execucao|penhora|sisbajud|bacenjud|renajud|alvara|requisicao de pequeno valor|\brpv\b|precatorio/.test(t)) return 'execucao';
+  if (/recurso|apelac|agravo|acordao|embargos de declaracao|contrarraz|remetidos? os autos .*(tribunal|instancia|turma|tst|stj)|2o grau|\(2º grau\)/.test(t)) return 'recurso';
+  if (/sentenca|julgad[oa] (im)?procedente|procedencia|improcedencia|julgamento/.test(t)) return 'sentenca';
+  if (/distribuid|peticionamento|protocolad/.test(t)) return 'ajuizado';
+  return 'andamento';
+}
+
 function atualizarMovimento_(tab, proc, mov, quando) {
   if (!mov || !quando) return;
   if (proc.ultimo_movimento_em && quando < proc.ultimo_movimento_em) return;
   var m = { ultimo_movimento: String(mov).slice(0, 200), ultimo_movimento_em: quando };
+  if (proc.fase_auto !== 'nao') {
+    var f = faseDoMovimento_(mov);
+    // movimentação comum ("juntada", "conclusão") não tira o processo de uma fase mais adiantada
+    if (f && !(f === 'andamento' && /sentenca|acordo|homologacao|recurso|execucao/.test(proc.fase || ''))) m.fase = f;
+  }
   var st = statusPeloMovimento_(mov);
   if (st === 'arquivado' && proc.status !== 'arquivado') m.status = 'arquivado';
   else if (proc.status === 'arquivado' && st !== 'arquivado' && !/decorrid|certid|juntad|baixa|transit/.test(normalizar_(mov))) m.status = 'ativo';
@@ -1770,22 +1857,26 @@ function gmailEsgotado_(e) {
   return true;
 }
 
+// Antes de continuar o histórico geral, lê do começo ao fim os avisos dos tribunais que o robô não lia (TJRS, TRT2/4/9, TRF3, TJSP…).
+var BUSCA_OUTROS_TRIBUNAIS = 'from:jus.br -from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br)';
 function importarHistoricoGmail_(limiteMs) {
-  if (config_('HIST_GMAIL_FIM') === 'sim') return { novos: 0, fim: true };
+  var fase2 = config_('HIST2_GMAIL_FIM') !== 'sim';
+  var chaveAte = fase2 ? 'HIST2_GMAIL_ATE' : 'HIST_GMAIL_ATE', chaveFim = fase2 ? 'HIST2_GMAIL_FIM' : 'HIST_GMAIL_FIM';
+  if (!fase2 && config_('HIST_GMAIL_FIM') === 'sim') return { novos: 0, fim: true };
   var cota = gmailExtraRestante_();
   if (!cota) return { novos: 0, lidas: 0, fim: false, cota: true };
   var t0 = Date.now();
   if (limiteMs === undefined) limiteMs = 200000;
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return { novos: 0 };
-  var ctx, novos = 0, lidas = 0, cursor = parseInt(config_('HIST_GMAIL_ATE'), 10) || Date.now(), fim = false;
+  var ctx, novos = 0, lidas = 0, cursor = parseInt(config_(chaveAte), 10) || Date.now(), fim = false;
   try {
     ctx = contextoRobo_();
     ctx.procs.adiar = true;
     var antes = Object.keys(ctx.porNumero).length;
     try {
     while (Date.now() - t0 < limiteMs && lidas < cota) {
-      var q = 'from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br OR trt4.jus.br OR trt9.jus.br) before:' + Math.floor(cursor / 1000);
+      var q = (fase2 ? BUSCA_OUTROS_TRIBUNAIS : BUSCA_TRIBUNAIS) + ' before:' + Math.floor(cursor / 1000);
       var threads = GmailApp.search(q, 0, 50);
       if (!threads.length) { fim = true; break; }
       var msgs = [];
@@ -1794,7 +1885,7 @@ function importarHistoricoGmail_(limiteMs) {
       if (!msgs.length) { cursor -= 1000; continue; }
       for (var i = 0; i < msgs.length && Date.now() - t0 < limiteMs && lidas < cota; i++) {
         var msg = msgs[i];
-        var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
+        var itens = lerAvisoTribunal_(msg);
         itens.forEach(function (it) {
           var existia = !!ctx.porNumero[it.numero];
           var proc = processoDoNumero_(ctx, it.numero, it.tribunal, it.sistema, it.nomes, it.partes);
@@ -1813,8 +1904,8 @@ function importarHistoricoGmail_(limiteMs) {
     regravarMudadas_(ctx.procs);
     gravarLote_(ctx.procs);
     novos = Object.keys(ctx.porNumero).length - antes;
-    setConfig_('HIST_GMAIL_ATE', String(cursor), 'Histórico do Gmail lido até esta data (ms), do mais novo para o mais antigo');
-    if (fim) setConfig_('HIST_GMAIL_FIM', 'sim', 'Histórico do Gmail lido por completo');
+    setConfig_(chaveAte, String(cursor), 'Histórico do Gmail lido até esta data (ms), do mais novo para o mais antigo' + (fase2 ? ' (outros tribunais)' : ''));
+    if (fim) setConfig_(chaveFim, 'sim', 'Histórico do Gmail lido por completo' + (fase2 ? ' (outros tribunais)' : ''));
     registrar_('sistema', 'histórico do Gmail', lidas + ' avisos lidos, ' + novos + ' processos novos' + (fim ? ' (fim do histórico)' : ' (continua na próxima rodada)'));
   } finally {
     lock.releaseLock();
@@ -1955,8 +2046,6 @@ function rodarRoboGatilho() {
   // processos ainda sem área: classifica pelos avisos do Gmail no tempo que sobrar
   var resta = 300000 - (Date.now() - t0);
   if (resta > 60000) { try { classificarAreas_(Math.min(resta - 30000, 120000)); } catch (e) { /* tenta na próxima */ } }
-  resta = 300000 - (Date.now() - t0);
-  if (resta > 90000) { try { processarWhatsapp_('', Math.min(resta - 60000, 120000)); } catch (e) { /* tenta na próxima */ } }
   resta = 300000 - (Date.now() - t0);
   if (resta > 60000) { try { importarHistoricoGmail_(resta - 30000); } catch (e) { /* tenta na próxima */ } }
   resta = 300000 - (Date.now() - t0);
@@ -2157,7 +2246,7 @@ var RE_CNJ = /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/;
 
 function lerGmail_(ctx) {
   var desde = parseInt(config_('ROBO_GMAIL_DESDE'), 10) || (Date.now() - 30 * 86400000);
-  var q = 'from:(tjsc.jus.br OR jfsc.jus.br OR trf4.jus.br OR trt12.jus.br OR trt6.jus.br OR trt16.jus.br) after:' + Math.floor(desde / 1000);
+  var q = BUSCA_TRIBUNAIS + ' after:' + Math.floor(desde / 1000);
   var threads = GmailApp.search(q, 0, 300);
   var msgs = [];
   threads.forEach(function (th) {
@@ -2168,7 +2257,7 @@ function lerGmail_(ctx) {
   for (var i = 0; i < msgs.length; i++) {
     if (Date.now() - ctx.inicio > 240000) { ctx.gmailParcial = true; break; } // 4 min: para com folga antes dos 6 do Google
     var msg = msgs[i];
-    var itens = /\[PUSH\]/.test(msg.getSubject()) ? lerAvisoPje_(msg) : lerAvisoEproc_(msg);
+    var itens = lerAvisoTribunal_(msg);
     itens.forEach(function (it) {
       var r = registrarIntimacao_(ctx, it);
       if (r.nova) intimacoes++;
@@ -2184,7 +2273,7 @@ function lerGmail_(ctx) {
 function lerAvisoEproc_(msg) {
   var corpo = msg.getPlainBody() || '';
   var data = dataSP_(msg.getDate());
-  var fonte = /jfsc|trf4/i.test(msg.getFrom()) ? 'eproc JFSC' : 'eproc TJSC';
+  var fonte = /jfsc|trf4/i.test(msg.getFrom()) ? 'eproc JFSC' : /tjrs/i.test(msg.getFrom()) ? 'eproc TJRS' : /jfrs|jfpr/i.test(msg.getFrom()) ? 'eproc JF' : 'eproc TJSC';
   var segundoGrau = /eproc2g|eproc2trf4/i.test(corpo);
   var itens = [];
   corpo.split(/-{10,}/).forEach(function (bloco) {
@@ -2195,7 +2284,7 @@ function lerAvisoEproc_(msg) {
     var tipo = /confirmada a intima/i.test(mov) ? 'confirmada' : /expedida.*intima/i.test(mov) ? 'expedida' : '';
     itens.push({
       fonte: fonte, chave: fonte + '|' + mN[1] + '|' + evento + '|' + mov + '|' + data, recebido_em: msg.getDate().toISOString(),
-      numero: mN[1], tribunal: tribunalDoNumero_(mN[1]) || (fonte === 'eproc JFSC' ? 'TRF4' : 'TJSC'), sistema: 'eproc',
+      numero: mN[1], tribunal: tribunalDoNumero_(mN[1]) || (fonte === 'eproc JFSC' ? 'TRF4' : fonte === 'eproc TJRS' ? 'TJRS' : 'TJSC'), sistema: 'eproc',
       movimento: mov + (segundoGrau ? ' (2º grau)' : ''), evento: evento, texto: '', nomes: nomesDoCliente_(bloco), tipo: tipo, segundoGrau: segundoGrau,
       partes: partesEproc_(bloco),
       ciencia: tipo === 'expedida' ? somarDias_(data, 10) : data,
@@ -2374,7 +2463,49 @@ function djenConfig_() {
   if (!oabs.length) oabs = [{ numero: OAB_NUMERO, uf: OAB_UF }];
   var vistos = {};
   oabs = oabs.filter(function (o) { var k = o.numero + o.uf; if (vistos[k]) return false; vistos[k] = 1; return true; });
-  return { oabs: oabs, desde: config_('DJEN_NAVEGADOR_DESDE') || somarDias_(hoje, -30), hoje: hoje };
+  return { oabs: oabs, desde: config_('DJEN_NAVEGADOR_DESDE') || somarDias_(hoje, -30), hoje: hoje,
+    hist: { ate: config_('DJEN_HIST_ATE') || somarDias_(hoje, -30), fim: config_('DJEN_HIST_FIM') === 'sim', limite: DJEN_HIST_LIMITE } };
+}
+
+/*
+ * Histórico do DJEN: o navegador do escritório volta no tempo, 30 dias por vez, até 2020, e manda só os números dos processos
+ * (com vara, partes e a data). Aqui só cadastra o processo que faltar e atualiza a última movimentação: NÃO cria intimação nem prazo.
+ */
+var DJEN_HIST_LIMITE = '2020-01-01';
+function djenHistorico_(d, u) {
+  var itens = Array.isArray(d.itens) ? d.itens.slice(0, 600) : [];
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw falha_('O robô está gravando agora. Tente de novo em 1 minuto.');
+  var novos = 0;
+  try {
+    if (itens.length) {
+      var ctx = contextoRobo_();
+      ctx.procs.adiar = true;
+      var meus = /JULIAN MARCELINO/i;
+      itens.forEach(function (it) {
+        if (!it || typeof it !== 'object') return;
+        var numero = String(it.numero || '');
+        if (!RE_CNJ.test(numero)) numero = mascaraCnj_(numero);
+        if (!numero) return;
+        var data = /^\d{4}-\d{2}-\d{2}/.test(it.data || '') ? String(it.data).slice(0, 10) : '';
+        var nomes = (Array.isArray(it.nomes) ? it.nomes : []).map(String).filter(function (n) { return n && !meus.test(n); }).slice(0, 6);
+        var existia = !!ctx.porNumero[numero];
+        var proc = processoDoNumero_(ctx, numero, String(it.tribunal || '').slice(0, 20) || tribunalDoNumero_(numero), '', nomes, null);
+        if (!existia) {
+          novos++;
+          atualizarLinha_(ctx.procs, proc, { origem: 'histórico DJEN', observacoes: 'Encontrado nas publicações antigas do DJEN (' + dataBR_(data) + '). Conferir.' });
+        }
+        if (!proc.orgao && it.orgao) atualizarLinha_(ctx.procs, proc, { orgao: String(it.orgao).slice(0, 160) });
+        if (data) atualizarMovimento_(ctx.procs, proc, String(it.tipo || 'Publicação no DJEN').slice(0, 80) + ' (DJEN)', data + 'T12:00:00.000Z');
+      });
+      regravarMudadas_(ctx.procs);
+      gravarLote_(ctx.procs);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d.ate || '')) setConfig_('DJEN_HIST_ATE', d.ate, 'Histórico do DJEN lido até esta data (voltando no tempo)');
+    if (d.fim) setConfig_('DJEN_HIST_FIM', 'sim', 'Histórico do DJEN lido até ' + DJEN_HIST_LIMITE);
+    if (novos) registrar_(u.usuario, 'histórico do DJEN', novos + ' processo(s) antigo(s) cadastrado(s)');
+    return { novos: novos };
+  } finally { lock.releaseLock(); }
 }
 
 function djenImportar_(d, u) {
@@ -2441,6 +2572,7 @@ function prazoPublico_(z, procs, nomes) {
   var x = limpar_(z);
   x.cliente = nomes[p.cliente_id] || p.cliente_nome || '';
   x.cliente_id = p.cliente_id || '';
+  x.telefone = (prazoPublico_.tel || {})[p.cliente_id] || '';
   x.tribunal = p.tribunal || tribunalDoNumero_(z.numero);
   x.orgao = p.orgao || '';
   x.sistema = p.sistema || '';
@@ -2450,7 +2582,9 @@ function prazoPublico_(z, procs, nomes) {
 function listarPrazos_(d) {
   var procs = {}, nomes = {};
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
-  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var tel = {};
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; tel[c.id] = c.telefone; });
+  prazoPublico_.tel = tel;
   var limiteFechados = somarDias_(hojeSP_(), -30);
   return tabela_('Prazos').linhas
     .filter(function (z) {
@@ -3294,12 +3428,17 @@ var MODELOS = {
   juntada: { nome: 'Petição de juntada de documentos', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_JUNTADA_ID', antigo: ['MODELO5_JUNTADA_ID', 'MODELO4_JUNTADA_ID', 'MODELO3_JUNTADA_ID'] },
   habilitacao: { nome: 'Petição de juntada de procuração (habilitação)', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_HABILITACAO_ID', antigo: ['MODELO5_HABILITACAO_ID', 'MODELO4_HABILITACAO_ID', 'MODELO3_HABILITACAO_ID'] },
   substabelecimento: { nome: 'Substabelecimento com reserva de poderes', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_SUBSTABELECIMENTO_ID', antigo: ['MODELO5_SUBSTABELECIMENTO_ID', 'MODELO4_SUBSTABELECIMENTO_ID', 'MODELO3_SUBSTABELECIMENTO_ID'] },
-  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO6_CONTRATO_ID', antigo: ['MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
+  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO7_CONTRATO_ID', antigo: ['MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
   prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO6_PRESTACAO_ID', antigo: ['MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
   assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO6_ASSESSORIA_ID', antigo: ['MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
   recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO6_RECIBO_ID', antigo: ['MODELO5_RECIBO_ID', 'MODELO4_RECIBO_ID', 'MODELO3_RECIBO_ID', 'MODELO2_RECIBO_ID'] },
   cobranca: { nome: 'Notificação de cobrança de honorários em atraso', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, config: 'MODELO6_COBRANCA_ID', antigo: ['MODELO5_COBRANCA_ID', 'MODELO4_COBRANCA_ID', 'MODELO3_COBRANCA_ID'] },
-  promissoria: { assinaCliente: true, nome: 'Notas promissórias das parcelas', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, gerado: true }
+  promissoria: { assinaCliente: true, nome: 'Notas promissórias das parcelas', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, gerado: true },
+  procuracao_inventario: { assinaCliente: true, nome: 'Procuração para inventário e partilha (judicial ou em cartório)', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_PROC_INVENTARIO_ID' },
+  isencao_irpf: { assinaCliente: true, nome: 'Requerimento de isenção do imposto de renda (doença grave)', grupo: 'Procuração e declarações', config: 'MODELO7_ISENCAO_IRPF_ID' },
+  comparecimento: { nome: 'Declaração de comparecimento ao escritório', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_COMPARECIMENTO_ID' },
+  notificacao: { nome: 'Notificação extrajudicial (em nome do cliente)', grupo: 'Petições e notificações', config: 'MODELO7_NOTIFICACAO_ID' },
+  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO7_CONTRATO_PREV_ID' }
 };
 
 var CABECALHO_PETICAO = [
@@ -3406,7 +3545,8 @@ var TEXTO_MODELOS = {
     ['p', 'Parágrafo único. {{c:O|A}} CONTRATANTE arcará, ainda, com as despesas de deslocamento superiores a 100 km (cem quilômetros) da sede da CONTRATADA, quando a viagem se destinar a tratar de assuntos de seu interesse.'],
     ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
     ['p', '{{c:O|A}} CONTRATANTE obriga-se a: a) providenciar e entregar à CONTRATADA todos os documentos e informações por ela solicitados, de forma verdadeira e completa; b) informar imediatamente qualquer mudança de telefone, endereço ou e-mail; c) comparecer às audiências, perícias e demais atos para os quais for intimad{{c:o|a}} ou convocad{{c:o|a}}.'],
-    ['p', 'Parágrafo único. A CONTRATADA não se responsabiliza por prejuízos decorrentes da omissão ou da inexatidão de informações e documentos de responsabilidade d{{c:o|a}} CONTRATANTE.'],
+    ['p', 'Parágrafo primeiro. A CONTRATADA não se responsabiliza por prejuízos decorrentes da omissão ou da inexatidão de informações e documentos de responsabilidade d{{c:o|a}} CONTRATANTE.'],
+    ['p', 'Parágrafo segundo. O não comparecimento injustificado d{{c:o|a}} CONTRATANTE às audiências para as quais tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA sujeitará {{c:o|a}} CONTRATANTE ao pagamento de multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento, sem prejuízo dos honorários contratados e das consequências processuais da ausência.'],
     ['h', 'CLÁUSULA 5ª – DOS ACORDOS E DO RECEBIMENTO DE VALORES'],
     ['p', 'Fica expressamente vedado {{c:ao|à}} CONTRATANTE firmar qualquer acordo ou transação, bem como receber quaisquer importâncias referentes ao litígio objeto do presente contrato, sem a expressa anuência da CONTRATADA, hipótese em que os honorários serão devidos integralmente.'],
     ['h', 'CLÁUSULA 6ª – DA NATUREZA DA OBRIGAÇÃO'],
@@ -3501,6 +3641,78 @@ var TEXTO_MODELOS = {
     ['p', 'Pelo que dá plena, geral e irrevogável quitação do valor acima.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['adv']
+  ],
+  procuracao_inventario: [
+    ['t', 'PROCURAÇÃO — INVENTÁRIO E PARTILHA'],
+    ['p', '**OUTORGANTE:** **{{nome}}**, {{qualificacao_curta}}.'],
+    ['p', '**OUTORGAD{{adv:O|A}}:** **{{advogado_nome}}**, {{advogado_qualificacao}}.'],
+    ['p', '**PODERES:** pelo presente instrumento, {{c:o|a}} OUTORGANTE confere {{adv:ao|à}} OUTORGAD{{adv:O|A}} poderes para representá-l{{c:o|a}} no inventário e na partilha dos bens deixados por [NOME DO(A) FALECIDO(A)], falecid{{c:o|a}} em [DATA DO ÓBITO], pela via judicial ou extrajudicial (escritura pública, art. 610 do Código de Processo Civil), podendo requerer a abertura do inventário ou do arrolamento, requerer e aceitar a nomeação de inventariante, prestar compromisso, primeiras e últimas declarações, apresentar e concordar com o plano de partilha, assinar a escritura pública de inventário e partilha e demais documentos perante tabelionatos e registros de imóveis, representar {{c:o|a}} OUTORGANTE perante a Receita Federal, as Fazendas Estadual e Municipal (inclusive para declarar e recolher o ITCMD), prefeituras, DETRAN, bancos e demais instituições, requerer certidões e alvarás, levantar valores, receber e dar quitação, com os poderes da cláusula ad judicia et extra para o foro em geral e os especiais do art. 105 do Código de Processo Civil, inclusive para transigir, desistir e substabelecer, com ou sem reserva de poderes.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['a', '{{nome}}']
+  ],
+  isencao_irpf: [
+    ['t', 'REQUERIMENTO DE ISENÇÃO DO IMPOSTO DE RENDA'],
+    ['l', 'À fonte pagadora: [INSS / ÓRGÃO OU ENTIDADE PAGADORA]'],
+    ['l', 'Benefício / matrícula nº [NÚMERO]'],
+    ['p', '**{{nome}}**, {{qualificacao_curta}}, vem, respeitosamente, **REQUERER** a isenção do imposto de renda sobre os proventos de aposentadoria, reforma ou pensão que recebe, com fundamento no art. 6º, inciso XIV, da Lei nº 7.713/1988, por ser portador{{c:|a}} de [DOENÇA] (CID [CID]), conforme laudo pericial emitido por serviço médico oficial, nos termos do art. 30 da Lei nº 9.250/1995.'],
+    ['p', 'Requer, ainda, que a isenção seja aplicada a partir da data do diagnóstico indicada no laudo, com a cessação imediata da retenção na fonte e a restituição dos valores indevidamente retidos.'],
+    ['p', 'Junta: laudo pericial oficial, documento de identidade, CPF e comprovante do benefício.'],
+    ['c', 'Nestes termos, pede deferimento.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['a', '{{nome}}']
+  ],
+  comparecimento: [
+    ['t', 'DECLARAÇÃO DE COMPARECIMENTO'],
+    ['p', '**{{escritorio}}**, {{escritorio_qualificacao}}, **DECLARA**, para os devidos fins, que **{{nome}}**, {{qualificacao_curta}}, compareceu a este escritório em {{data_extenso}}, das [HH:MM] às [HH:MM], para atendimento jurídico.'],
+    ['p', 'Por ser verdade, firma a presente declaração.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ],
+  notificacao: [
+    ['t', 'NOTIFICAÇÃO EXTRAJUDICIAL'],
+    ['p', '**NOTIFICANTE:** **{{nome}}**, {{qualificacao_resto}}, por {{adv:seu|sua}} advogad{{adv:o|a}} **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
+    ['p', '**NOTIFICADO(A):** [NOME DO(A) NOTIFICADO(A)], [QUALIFICAÇÃO E ENDEREÇO].'],
+    ['p', 'Pela presente, fica Vossa Senhoria **NOTIFICADA** do seguinte: [DESCREVER OS FATOS].'],
+    ['p', 'Diante disso, solicita-se que, no prazo de [PRAZO] dias contados do recebimento desta notificação, Vossa Senhoria [DESCREVER O QUE SE PEDE], ou entre em contato com o escritório para uma solução amigável.'],
+    ['p', 'O não atendimento no prazo indicado autoriza a adoção das medidas judiciais cabíveis, servindo esta notificação como prova da tentativa de solução extrajudicial e para os fins dos arts. 397 e 405 do Código Civil.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ],
+  contrato_previdenciario: [
+    ['t', 'CONTRATO DE HONORÁRIOS ADVOCATÍCIOS — PREVIDENCIÁRIO'],
+    ['p', 'Contrato de honorários advocatícios que fazem entre si as partes abaixo qualificadas, em conformidade com a tabela de honorários da OAB/SC, nas condições a seguir especificadas:'],
+    ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
+    ['h', 'CLÁUSULA 1ª – DO OBJETO'],
+    ['p', 'A CONTRATADA obriga-se a atuar em favor d{{c:o|a}} CONTRATANTE em processo administrativo e/ou judicial contra o Instituto Nacional do Seguro Social (INSS){{objeto_prev}}.'],
+    ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS (SOMENTE EM CASO DE ÊXITO)'],
+    ['p', 'a) Nas CONCESSÕES, {{c:o|a}} CONTRATANTE pagará o equivalente a 2 (dois) benefícios ou 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação do benefício, o que for maior, não podendo esta quantia ser inferior a 3 (três) vezes o valor do benefício, ainda que {{c:o|a}} CONTRATANTE opte por não recebê-lo;'],
+    ['p', 'b) Nas REVISÕES, {{c:o|a}} CONTRATANTE pagará 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação da revisão, não inferiores ao mínimo da tabela da OAB/SC vigente na data do pagamento.'],
+    ['p', 'Parágrafo primeiro. Havendo implantação do direito por tutela antecipada, medida cautelar ou de ofício, o percentual de 30% (trinta por cento) incidirá também sobre o período de manutenção da medida.'],
+    ['p', 'Parágrafo segundo. Valores recebidos administrativamente ou descontados do benefício durante o processo judicial não serão abatidos dos atrasados para o cálculo do percentual.'],
+    ['p', 'Parágrafo terceiro. Havendo procedência parcial do pedido, será devido, no mínimo, o valor previsto na tabela de honorários da OAB/SC.'],
+    ['p', 'Parágrafo quarto. Os valores contratados não excluem o direito da CONTRATADA ao recebimento integral dos honorários de sucumbência (arts. 22 e 23 da Lei nº 8.906/1994). Havendo pagamento por RPV, precatório ou alvará, fica a CONTRATADA autorizada a reter os honorários, repassando o saldo com a devida prestação de contas.'],
+    ['p', 'Parágrafo quinto. Os pagamentos serão feitos por PIX ou depósito em favor da CONTRATADA ({{escritorio_pix}}), valendo o comprovante como recibo.'],
+    ['h', 'CLÁUSULA 3ª – DAS DESPESAS'],
+    ['p', 'Correrão por conta d{{c:o|a}} CONTRATANTE as despesas com perícias, custas, certidões e diligências, bem como os honorários para sustentação oral e para recursos aos Tribunais Superiores, que dependerão de ajuste próprio.'],
+    ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
+    ['p', '{{c:O|A}} CONTRATANTE obriga-se a entregar os documentos solicitados, informar mudanças de telefone e endereço e comparecer às perícias médicas, avaliações sociais e audiências para as quais for convocad{{c:o|a}}.'],
+    ['p', 'Parágrafo único. O não comparecimento injustificado d{{c:o|a}} CONTRATANTE às perícias ou audiências sujeitará {{c:o|a}} CONTRATANTE ao pagamento de multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento.'],
+    ['h', 'CLÁUSULA 5ª – DA DESISTÊNCIA'],
+    ['p', 'Em caso de desistência, {{c:o|a}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes, sem prejuízo dos honorários proporcionais ao trabalho realizado.'],
+    ['h', 'CLÁUSULA 6ª – DO FALECIMENTO E DA HABILITAÇÃO DE HERDEIROS'],
+    ['p', 'Em caso de falecimento d{{c:o|a}} CONTRATANTE, os sucessores obrigam-se a cumprir integralmente o presente contrato, sendo devidos honorários adicionais de 5% (cinco por cento) pela habilitação dos herdeiros.'],
+    ['h', 'CLÁUSULA 7ª – DA NATUREZA DA OBRIGAÇÃO E DO SIGILO'],
+    ['p', 'A obrigação da CONTRATADA é de meio, e não de resultado. A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato (Lei nº 13.709/2018 — LGPD).'],
+    ['h', 'CLÁUSULA 8ª – DO FORO'],
+    ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
+    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['a', '{{nome}}|CONTRATANTE'],
+    ['a', '{{escritorio}}|CONTRATADA — {{advogado_assinatura}}, {{advogado_oab}}'],
+    ['h', 'TESTEMUNHAS'],
+    ['a', 'Testemunha 1|Nome: ____________________________   CPF: ________________'],
+    ['a', 'Testemunha 2|Nome: ____________________________   CPF: ________________']
   ],
   cobranca: [
     ['t', 'NOTIFICAÇÃO EXTRAJUDICIAL'],
@@ -4197,7 +4409,7 @@ function gerarDocumentos_(d, u) {
   var quais = (d.modelos || []).map(function (k) { return k === 'procuracao_antiga' ? 'procuracao' : k; }).filter(function (k) { return MODELOS[k] || doDrive[k]; });
   var M = function (k) { return MODELOS[k] || (doDrive[k] ? { processo: modeloDrivePrecisaProcesso_(doDrive[k].nome) } : {}); };
   if (!quais.length) throw falha_('Escolha pelo menos um documento.');
-  if (quais.some(function (k) { return M(k).financeiro; }) && !pode.financeiro) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
+  if (quais.some(function (k) { return M(k).financeiro; }) && (!pode.financeiro || pode.ocultarValores)) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
   if (!c) throw falha_('Escolha o cliente.');
   var adv = advogados_().filter(function (a) { return a.id === d.advogado_id; })[0] ||
@@ -4307,7 +4519,7 @@ function gerarDocumentos_(d, u) {
     '{{parcelas_atrasadas}}': atrasadas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'vencida em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(q.valor); }).join('; ') + (atrasadas.length ? '.' : ''),
     '{{total_atraso}}': reaisTxt_(totalAtraso), '{{total_atraso_extenso}}': extenso_(totalAtraso),
     '{{qualificacao}}': qualificacao_(c), '{{qualificacao_sem_endereco}}': qualificacao_(c, true), '{{nome}}': String(c.nome).toUpperCase(),
-    '{{objeto}}': objeto, '{{objeto_assessoria}}': detalhes ? 'Inclui ainda: ' + detalhes + '.' : '',
+    '{{objeto}}': objeto, '{{objeto_prev}}': detalhes ? ', visando ' + detalhes : (numProc ? ', nos autos do processo nº ' + numProc : ''), '{{objeto_assessoria}}': detalhes ? 'Inclui ainda: ' + detalhes + '.' : '',
     '{{tipo_acao}}': tipo ? tipo.nome : '', '{{parte_contraria}}': contra, '{{poderes_especificos}}': poderes ? 'PODERES ESPECÍFICOS: ' + poderes : '',
     '{{clausula_honorarios}}': clausula, '{{advogado}}': qualificacaoAdvogado_(adv), '{{advogado_nome}}': String(adv.nome).toUpperCase(),
     '{{advogado_oab}}': oabTexto_(adv), '{{escritorio}}': esc.nome, '{{escritorio_endereco}}': esc.endereco,
@@ -4414,7 +4626,25 @@ function gerarDocumentos_(d, u) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
-  return { gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
+  // Procuração ou contrato para quem ainda não tem processo: entra em Processos como "Contrato assinado (a ajuizar)"
+  var aAjuizar = null;
+  if (!numProc && quais.some(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); })) {
+    try {
+      aAjuizar = comTrava_(function () {
+        var tabP = tabela_('Processos');
+        var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && (!x.numero || x.fase === 'contratado') && x.status !== 'arquivado'; })[0];
+        if (ja) return null;
+        var agora = new Date().toISOString();
+        var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
+          polo: 'ativo', parte_contraria: contra, proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
+          observacoes: (tipo ? tipo.nome + '. ' : '') + 'Criado ao gerar ' + quais.filter(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); }).join(', ') + ' em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
+          origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '' };
+        inserirLinha_(tabP, novo);
+        return novo.id;
+      });
+    } catch (eA) { /* os documentos já foram gerados; o processo pode ser criado à mão */ }
+  }
+  return { a_ajuizar: aAjuizar, gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
 }
 
 /* ================================================================== */
@@ -5139,7 +5369,7 @@ function montarResumoDia_(u, base) {
     bloco('Prazos que vencem amanhã (' + base.fAmanha.length + ')', base.fAmanha.map(lin), '#b54708') +
     bloco('Audiências, perícias e compromissos de hoje', base.atos.map(function (a) { return '<li><b>' + esc_(a.hora || '') + '</b> ' + esc_(a.titulo) + (a.extra ? ' · ' + esc_(a.extra) : '') + '</li>'; })) +
     bloco('Suas tarefas para hoje e amanhã (' + minhas.length + ')', minhas.map(function (x) { return '<li><b>' + esc_(dataBR_(x.vence_em)) + '</b> · ' + esc_(x.titulo) + (x.cliente ? ' · ' + esc_(x.cliente) : '') + (x.atrasada ? ' <b style="color:#b42318">(atrasada)</b>' : '') + '</li>'; }));
-  if (PERFIS[u.perfil] && PERFIS[u.perfil].financeiro && base.fin) {
+  if (PERFIS[u.perfil] && PERFIS[u.perfil].financeiro && !PERFIS[u.perfil].ocultarValores && base.fin) {
     html += bloco('Financeiro', ['<li>Parcelas vencendo hoje: <b>' + base.fin.hoje + '</b></li>', '<li>Em atraso: <b>R$ ' + esc_(txtDinheiro_(base.fin.atrasado).replace('.', ',')) + '</b> (' + base.fin.qtd + ' parcela(s))</li>',
       base.fin.contas ? '<li>Contas do escritório vencendo hoje ou atrasadas: <b>' + base.fin.contas + '</b></li>' : '']);
   }
@@ -5499,4 +5729,46 @@ function estadoExtras_() {
   return { datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') } };
+}
+
+
+/* ---------- Site: "Prefere que a gente ligue?" ---------- */
+
+var ASSUNTOS_SITE = ['Trabalhista', 'Empresa / assessoria', 'Previdenciário (INSS)', 'Banco, compra ou contrato', 'Família', 'Criminal', 'Outro assunto'];
+/** Pedido de contato vindo do site público: grava em Contatos, cria tarefa "Ligar para…" e avisa o escritório por e-mail. */
+function contatoSite_(d) {
+  if (d.empresa_site) return { ok: true }; // campo escondido: robô de spam preenche, gente não
+  var nome = String(d.nome || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  var tel = String(d.telefone || '').replace(/\D/g, '');
+  if (tel.length > 11 && tel.indexOf('55') === 0) tel = tel.slice(2);
+  if (nome.length < 2) throw falha_('Informe seu nome.');
+  if (tel.length < 10 || tel.length > 11) throw falha_('Informe o telefone com DDD.');
+  if (!d.aceite) throw falha_('Marque a autorização para entrarmos em contato.');
+  var assunto = ASSUNTOS_SITE.indexOf(d.assunto) >= 0 ? d.assunto : 'Outro assunto';
+  var horario = { manha: 'manhã', tarde: 'tarde', qualquer: 'qualquer horário' }[d.horario] || 'qualquer horário';
+  var cache = CacheService.getScriptCache();
+  var total = parseInt(cache.get('site_contatos') || '0', 10);
+  if (total >= 40) throw falha_('Recebemos muitos pedidos agora. Chame no WhatsApp, por favor.');
+  if (cache.get('site_tel_' + tel)) return { ok: true, repetido: true };
+  cache.put('site_contatos', String(total + 1), 3600);
+  cache.put('site_tel_' + tel, '1', 6 * 3600);
+  var fone = '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4);
+  var agora = new Date().toISOString(), id = novoId_('K');
+  comTrava_(function () {
+    var resp = config_('RESP_SITE') || config_('RESP_PADRAO') || '';
+    var tid = novoId_('T');
+    inserirLinha_(tabela_('Tarefas'), { id: tid, titulo: 'Ligar para ' + nome + ' (pedido pelo site · ' + assunto + ')', descricao: 'Telefone: ' + fone + '\nMelhor horário: ' + horario + '\nPágina: ' + String(d.pagina || '').slice(0, 80),
+      responsavel: resp, processo_id: '', numero: '', cliente_id: '', vence_em: hojeSP_(), etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
+      historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' site: pedido de contato', criado_em: agora, criado_por: 'site', atualizado_em: agora, atualizado_por: 'site' });
+    inserirLinha_(tabela_('Contatos'), { id: id, criado_em: agora, nome: nome, telefone: fone, assunto: assunto, horario: horario, pagina: String(d.pagina || '').slice(0, 80),
+      situacao: 'novo', tarefa_id: tid, observacoes: '' });
+  });
+  try {
+    var para = config_('CONTATO_EMAIL') || Session.getEffectiveUser().getEmail();
+    GmailApp.sendEmail(para, 'Site: ' + nome + ' pediu para ligarmos (' + assunto + ')',
+      'Pedido de contato pelo site\n\nNome: ' + nome + '\nTelefone: ' + fone + '\nAssunto: ' + assunto + '\nMelhor horário: ' + horario + '\n\nWhatsApp: https://wa.me/55' + tel + '\n\nJá entrou como tarefa no painel (aba Tarefas).',
+      { name: 'Site Araújo Advocacia' });
+  } catch (e) { /* o contato já ficou gravado */ }
+  registrar_('site', 'pedido de contato', id + ' ' + assunto);
+  return { ok: true };
 }

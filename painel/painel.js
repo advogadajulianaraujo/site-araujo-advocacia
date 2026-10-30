@@ -214,6 +214,7 @@
           lote.push(it); tam += t;
         }
         await enviar(true);
+        historicoDjen(cfg).catch(() => {}); // por trás: completa os processos antigos (até 2020)
         if (novas) { avisar(`DJEN: ${novas} comunicação(ões) nova(s), ${prazos} prazo(s) novo(s).`); if (/^#\/(inicio|prazos)?$/.test(location.hash.split('?')[0] || '#/')) pedirRedesenho(); }
         return { ok: true, total: itens.length, novas, prazos };
       } catch (e) {
@@ -226,6 +227,50 @@
     return djenRodando;
   }
   setInterval(() => { if (sessao) lerDjenNavegador(false); }, 30 * 60e3);
+
+  /** Volta no DJEN, 30 dias por vez, até 2020, e manda só os números dos processos (o servidor cadastra os que faltarem). */
+  let histDjenRodando = false;
+  async function historicoDjen(cfg, tempoMax) {
+    if (histDjenRodando || !cfg.hist || cfg.hist.fim) return { fim: true };
+    histDjenRodando = true;
+    const t0 = Date.now();
+    let ate = cfg.hist.ate, novos = 0;
+    try {
+      while (Date.now() - t0 < (tempoMax || 120e3)) {
+        const ini = isoSoma(ate, -30) < cfg.hist.limite ? cfg.hist.limite : isoSoma(ate, -30);
+        const itens = [];
+        for (const o of cfg.oabs) {
+          for (let pg = 1, tent = 0; pg <= 30; pg++) {
+            const url = `${DJEN_API}?numeroOab=${encodeURIComponent(o.numero)}&ufOab=${encodeURIComponent(o.uf)}&dataDisponibilizacaoInicio=${ini}&dataDisponibilizacaoFim=${ate}&pagina=${pg}&itensPorPagina=100`;
+            const resp = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+            if (resp.status === 429 && tent++ < 3) { await espera(5000 * tent); pg--; continue; }
+            if (!resp.ok) throw new Error('DJEN ' + resp.status);
+            const j = await resp.json();
+            const lista = j.items || j.itens || [];
+            lista.forEach(it => itens.push({ numero: it.numeroprocessocommascara || it.numero_processo, data: it.data_disponibilizacao || it.dataDisponibilizacao,
+              tribunal: it.siglaTribunal, orgao: it.nomeOrgao, tipo: it.tipoComunicacao, nomes: (it.destinatarios || []).map(x => x && x.nome).filter(Boolean).slice(0, 6) }));
+            if (lista.length < 100) break;
+            await espera(600);
+          }
+        }
+        // um item por processo (o mais novo da janela) basta para cadastrar
+        const porNum = new Map();
+        itens.forEach(x => { const k = String(x.numero || ''); if (!porNum.has(k) || String(x.data) > String(porNum.get(k).data)) porNum.set(k, x); });
+        const unicos = [...porNum.values()];
+        const proximo = isoSoma(ini, -1), fim = ini <= cfg.hist.limite;
+        for (let i = 0; i < unicos.length || i === 0; i += 300) {
+          const ultimo = i + 300 >= unicos.length;
+          const r = await chamar('djen.historico', { itens: unicos.slice(i, i + 300), ate: ultimo ? proximo : undefined, fim: ultimo && fim });
+          novos += r.novos || 0;
+          if (!unicos.length) break;
+        }
+        ate = proximo;
+        if (fim) { cfg.hist.fim = true; break; }
+      }
+      if (novos) avisar(`DJEN antigo: ${novos} processo(s) que faltavam foram cadastrados.`);
+      return { novos, ate, fim: !!cfg.hist.fim };
+    } finally { histDjenRodando = false; }
+  }
 
   /** Ao passar o mouse (ou encostar o dedo) numa aba, já começa a buscar o que ela mostra. */
   const LEITURAS_DA_ABA = {
@@ -516,7 +561,7 @@
     // prazos: vencidos primeiro, depois os próximos pela data fatal
     const sisIni = sistemaPreferido();
     const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).filter(z => sisIni === 'todos' || sistemaDoPrazo(z) === sisIni).slice(0, 7);
-    const blocoPrazos = bloco(sisIni === 'todos' ? 'Prazos' : sisIni === 'pje' ? 'Prazos · PJe' : 'Prazos · eproc', '#/prazos', 'ver todos →',
+    const blocoPrazos = bloco(NOME_SIS[sisIni], '#/prazos', 'ver todos →',
       h('div', {},
         listaPrazos.length ? h('ul', { class: 'ini-lista' }, listaPrazos.map(z => item(() => { location.hash = '#/prazo/' + z.id; },
           selo(z.fatal, 'faixa-' + faixaPrazo(z)), z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
@@ -774,6 +819,8 @@
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
           r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
           r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
+        r.a_ajuizar ? h('div', { class: 'nota' }, 'O cliente entrou em Processos na fase ', h('strong', {}, 'Contrato assinado (a ajuizar)'), '. ',
+          h('a', { href: '#/processo/' + r.a_ajuizar + '?avisar=1' }, 'Abrir e avisar o cliente no WhatsApp'), '. Quando protocolar, coloque o número lá.') : null,
         r.gerados.some(g => g.assinar) ? h('div', { class: 'imprimir-caixa' },
           h('div', {}, h('strong', {}, '🖨 Documentos para o cliente assinar'),
             h('div', { class: 'peq' }, 'Abre o PDF; clique no ícone da impressora (ou Ctrl+P) para imprimir. Eles também estão na pasta "DOCUMENTOS PARA ASSINAR".')),
@@ -1053,7 +1100,7 @@
     const hons = () => {
       const caixa = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
       api('fin.honorarios', { cliente_id: c.id }).catch(() => []).then(hs => caixa.replaceChildren(
-        h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
+        sessao.usuario.pode.ocultarValores ? null : h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
         tabela(['Tipo', 'Descrição', 'Recebido', 'Em atraso', 'Situação'], hs, x => [
           h('td', {}, TIPOS_HON[x.tipo] || x.tipo), h('td', {}, x.descricao), h('td', { class: 'num' }, reais(x.resumo.pago)),
           h('td', { class: 'num' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'), h('td', {}, x.situacao)
@@ -1071,13 +1118,46 @@
       secao('Observações', notas, true),
       secao('Pasta do cliente', pasta, false),
       secao('Acesso do cliente ao site (acompanhar processo)', () => caixaAcesso(c), false),
-      secao('Fotos e conversas do WhatsApp', () => caixaWhats(c), false),
       secao(`Processos (${r.processos.length})`, procs, false),
       sessao.usuario.pode.financeiro ? secao('Honorários', hons, false) : null,
       h('details', { class: 'caixa secao editar-cad', open: incompleto }, h('summary', {}, 'Editar cadastro'), formCliente(c, false)));
   }
 
   /* ---------- processos ---------- */
+
+  const FASES = { contratado: 'Contrato assinado', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
+    homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
+  function etiquetaFase(f) { return f ? h('span', { class: 'tag fase fase-' + f }, FASES[f] || f) : '—'; }
+
+  /** Mensagem pronta para avisar o cliente do processo (opcional: com um código novo de acesso ao site). */
+  function whatsProcesso(p, cliente, codigo) {
+    let tel = String((cliente && cliente.telefone) || '').replace(/\D/g, '');
+    if (!tel) return null;
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(String((cliente && cliente.nome) || '').split(' ')[0]);
+    const site = 'https://araujoadvocaciasc.com.br/acompanhe/';
+    const corpo = p.numero
+      ? `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Informamos que sua ação foi protocolada na Justiça: processo nº ${p.numero}${p.orgao ? ' (' + p.orgao + ')' : ''}. Vamos acompanhar cada passo e avisar você das novidades.`
+      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Recebemos sua procuração e o contrato. Já estamos preparando a sua ação e avisaremos assim que ela for protocolada.`;
+    const acomp = codigo ? `\n\nVocê também pode acompanhar pelo nosso site: ${site}\nDigite seu CPF e este código: ${codigo} (guarde e não compartilhe).`
+      : `\n\nVocê também pode acompanhar pelo nosso site: ${site} (se ainda não tem o código de acesso, é só pedir para nós).`;
+    return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(corpo + acomp);
+  }
+  function caixaAvisarCliente(p, cliente, novo) {
+    const saida = h('div', { class: 'barra' });
+    const desenhar = cod => { const l = whatsProcesso(p, cliente, cod); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer' }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
+    desenhar('');
+    const comCodigo = cliente && cliente.telefone ? h('label', { class: 'marcar' }, h('input', { type: 'checkbox', onchange: async ev => {
+      if (!ev.target.checked) { desenhar(''); return; }
+      if (!confirm('Gerar um código novo de acesso ao site? Se o cliente já tinha um, o antigo deixa de valer.')) { ev.target.checked = false; return; }
+      try { const r = await api('clientes.acesso', { id: cliente.id, acao: 'gerar' }); desenhar(r.codigo); avisar('Código gerado e colocado na mensagem.'); }
+      catch (e) { ev.target.checked = false; avisar(e.message, true); }
+    } }), 'Incluir código de acesso ao site') : null;
+    return h('section', { class: 'caixa avisar-cliente' + (novo ? ' destaque-caixa' : '') },
+      h('h2', {}, novo ? '✓ Processo salvo. Avise o cliente' : 'Avisar o cliente'),
+      h('p', { class: 'peq' }, 'Abre o WhatsApp com a mensagem pronta, com o número do processo e o link do "Acompanhe seu processo".'),
+      saida, comCodigo);
+  }
 
   async function telaProcessos(params) {
     carregando();
@@ -1088,6 +1168,7 @@
     const trib = params.get('trib') || '';
     const cli = params.get('cli') || '';
     const ato = params.get('ato') === '1';
+    const fase = params.get('fase') || '';
     const todosSit = await api('processos.listar', { busca, semCliente });
     const nAtivos = todosSit.filter(p => p.status !== 'arquivado').length, nArq = todosSit.length - nAtivos;
     const tribunais = [...new Set(todosSit.map(p => p.tribunal || '—'))].sort();
@@ -1097,13 +1178,15 @@
       .filter(p => !cli || (cli === 'com' ? !!p.cliente_id : !p.cliente_id))
       .filter(p => !ato || (p.proximo_ato_data && p.proximo_ato_data >= hojeISO()));
     const nomeArea = p => p.area || 'Sem área';
-    const lista = area ? todos.filter(p => nomeArea(p) === area) : todos;
+    const porFase = {};
+    todos.forEach(p => { porFase[p.fase] = (porFase[p.fase] || 0) + 1; });
+    const lista = (area ? todos.filter(p => nomeArea(p) === area) : todos).filter(p => !fase || p.fase === fase);
     const porArea = {}, porTrib = {};
     todos.forEach(p => { porArea[nomeArea(p)] = (porArea[nomeArea(p)] || 0) + 1; const t = p.tribunal || '—'; porTrib[t] = (porTrib[t] || 0) + 1; });
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, fase, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
@@ -1130,10 +1213,15 @@
         h('label', {}, 'Cliente', h('select', { onchange: e => ir({ cli: e.target.value }) },
           [['', 'Todos'], ['com', 'Com cliente cadastrado'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
         h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
-        (sit !== 'todos' || trib || cli || ato || area || busca) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null),
+        (sit !== 'todos' || trib || cli || ato || area || busca || fase) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null),
+      h('div', { class: 'chips fases-chips', role: 'group', 'aria-label': 'Fase' },
+        h('button', { type: 'button', class: 'chip-filtro' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) }, `Todas as fases (${todos.length})`),
+        Object.keys(FASES).map(f => h('button', { type: 'button', class: 'chip-filtro fase-' + f + (fase === f ? ' ativo' : ''), onclick: () => ir({ fase: fase === f ? '' : f }) },
+          FASES[f], ' ', h('span', { class: 'seg-n' }, String(porFase[f] || 0))))),
       form,
-      compacta(tabela(['Processo', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(sem número)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
+      compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
+        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
+        h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase)),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('span', { class: 'peq' }, ' · ' + p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
@@ -1168,6 +1256,7 @@
         campo('proximo_ato', 'Próximo ato', p.proximo_ato, { max: 200, dica: 'Ex.: Audiência de instrução 10h' }),
         campo('proximo_ato_data', 'Data do próximo ato', p.proximo_ato_data, { tipo: 'date' }),
         campo('status', 'Situação', p.status || 'ativo', { opcoes: [['ativo', 'Ativo'], ['suspenso', 'Suspenso'], ['arquivado', 'Arquivado']] }),
+        campo('fase', 'Fase' + (p.fase_auto === 'nao' ? ' (escolhida à mão)' : ' (muda sozinha com as movimentações)'), p.fase || (novo ? '' : 'andamento'), { opcoes: [['', novo ? 'Automática (ajuizado se tiver número)' : '—']].concat(Object.entries(FASES)) }),
         campo('observacoes', 'Observações', p.observacoes, { area: true, largo: true })),
       h('div', { class: 'acoes' },
         h('button', { type: 'submit', class: 'btn' }, novo ? 'Cadastrar processo' : 'Salvar'),
@@ -1179,7 +1268,7 @@
       dados.cliente_nome = dados.cliente_id ? '' : 'a identificar';
       const res = await api('processos.salvar', { processo: dados });
       avisar(novo ? 'Processo cadastrado.' : 'Alterações salvas.');
-      location.hash = '#/processo/' + res.id;
+      location.hash = '#/processo/' + res.id + (novo || (!p.numero && dados.numero) ? '?avisar=1' : '');
       if (!novo) telaProcesso(res.id, new URLSearchParams());
     });
     let prazosProc = null;
@@ -1194,12 +1283,13 @@
       !novo && (p.proximo_ato || p.ultimo_movimento) ? h('section', { class: 'caixa resumo-proc' },
         p.proximo_ato ? h('p', {}, h('strong', {}, 'Próximo ato: '), atoComData(p.proximo_ato, p.proximo_ato_data), ' ', p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : '') : null,
         p.ultimo_movimento ? h('p', {}, h('strong', {}, 'Última movimentação'), p.ultimo_movimento_em ? ` (${new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR')})` : '', ': ', p.ultimo_movimento) : null) : null,
+      !novo && p.cliente_id ? caixaAvisarCliente(p, clientes.find(c => c.id === p.cliente_id), params.get('avisar') === '1') : null,
       novo ? null : blocoAndamentos(p), prazosProc, form);
   }
 
   /* ---------- usuários ---------- */
 
-  const PERFIS = [['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
+  const PERFIS = [['rh', 'RH (tudo, menos usuários; financeiro sem ver valores)'], ['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
 
   async function telaUsuarios() {
     carregando();
@@ -1243,7 +1333,7 @@
       h('div', { id: 'editar-usuario' }),
       h('section', { class: 'caixa' }, h('h2', {}, 'Quem pode ver o quê'),
         h('table', { class: 'mini-tab permissoes' }, h('thead', {}, h('tr', {}, ['Perfil', 'Clientes, processos, intimações, agenda e modelos', 'Conferir prazos', 'Financeiro e contratos', 'Usuários'].map(x => h('th', {}, x)))),
-          h('tbody', {}, [['Administrador', '✓', '✓', '✓', '✓'], ['Advogada', '✓', '✓', '—', '—'], ['Secretário', '✓', '—', '—', '—'], ['Estagiário', '✓', '—', '—', '—']]
+          h('tbody', {}, [['Administrador', '✓', '✓', '✓', '✓'], ['Advogada', '✓', '✓', '—', '—'], ['RH', '✓', '—', '✓ (sem valores)', '—'], ['Secretário', '✓', '—', '—', '—'], ['Estagiário', '✓', '—', '—', '—']]
             .map(l => h('tr', {}, l.map((x, i) => h(i ? 'td' : 'th', { scope: i ? null : 'row' }, x))))))),
       form,
       caixaEmailDiario(lista),
@@ -1371,15 +1461,35 @@
     rota();
   }
 
+  /** WhatsApp para o cliente: avisa que chegou intimação e que o escritório já está cuidando do prazo. */
+  function whatsPrazo(z) {
+    let tel = String(z.telefone || '').replace(/\D/g, '');
+    if (!tel || !z.cliente) return null;
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(String(z.cliente).split(' ')[0]);
+    const ato = /PROVIS|a definir|conferir/i.test(z.descricao || '') ? '' : ` (${String(z.descricao || '').split(/[—:(]/)[0].trim().toLowerCase()})`;
+    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para informar que hoje recebemos uma intimação no seu processo nº ${z.numero}${ato}. Nossa equipe já está cuidando do prazo e tomará as providências necessárias. Se precisarmos de algum documento ou informação, entraremos em contato.\n\nVocê pode acompanhar seu processo pelo site: https://araujoadvocaciasc.com.br/acompanhe/`;
+    return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
+  }
+  /** Meta interna: 2 dias úteis antes do fatal (sábado e domingo não contam). */
+  function metaInterna(fatal) {
+    if (!fatal) return '';
+    let d = fatal, n = 0;
+    while (n < 2) { d = isoSoma(d, -1); const w = diaSem(d); if (w !== 0 && w !== 6) n++; }
+    return d;
+  }
+
   function botoesPrazo(z) {
     const pode = sessao.usuario.pode;
+    const wa = SITUACOES_ABERTAS.includes(z.situacao) ? whatsPrazo(z) : null;
     const parar = fn => ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; fn().catch(e => { b.disabled = false; avisar(e.message, true); }); };
     return h('div', { class: 'mini-acoes' },
       pode.conferePrazos && z.situacao === 'calculado'
         ? h('button', { type: 'button', class: 'btn mini', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Prazo conferido.')) }, 'Conferir') : null,
       SITUACOES_ABERTAS.includes(z.situacao)
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'cumprido' }, 'Prazo marcado como cumprido.')) }, 'Cumprido')
-        : h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir'));
+        : h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir'),
+      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => ev.stopPropagation() }, 'WhatsApp') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
 
@@ -1397,7 +1507,8 @@
         'Fatal ', h('span', { class: 'seta' }, ordem.dir === 'asc' ? '▼' : '▲'))
       : 'Fatal';
     return compacta(tabela([cabFatal, 'Processo', 'Cliente', 'O que fazer', 'Situação', ''], lista, z => [
-      h('td', { class: 'num col-fatal', 'data-r': 'Fatal' }, z.fatal ? h('strong', { class: 'data-fatal' }, dataBR(z.fatal)) : '—', h('div', {}, etiquetaContagem(z.fatal))),
+      h('td', { class: 'num col-fatal', 'data-r': 'Fatal' }, z.fatal ? h('strong', { class: 'data-fatal' }, dataBR(z.fatal)) : '—', h('div', {}, etiquetaContagem(z.fatal)),
+        z.fatal && SITUACOES_ABERTAS.includes(z.situacao) && metaInterna(z.fatal) >= hojeISO() ? h('div', { class: 'peq meta-int', title: 'Meta do escritório: 2 dias úteis antes do fatal' }, 'fazer até ' + dataBR(metaInterna(z.fatal))) : null),
       h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
       h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
       h('td', { 'data-r': 'O que fazer' }, h('div', { class: 'desc-prazo', title: z.descricao }, z.descricao), h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : '', z.responsavel ? ` · com ${z.responsavel}` : ''),
@@ -1454,22 +1565,24 @@
   }
 
   /* eproc (TJSC e Justiça Federal: cível, família, federal…) ou PJe (Justiça do Trabalho). Cada pessoa escolhe uma vez. */
-  const SISTEMAS = [['todos', 'Todos os sistemas'], ['eproc', 'eproc · Cível e Federal'], ['pje', 'PJe · Trabalhista']];
+  const SISTEMAS = [['todos', 'Todos'], ['civel', 'eproc · Cível'], ['federal', 'eproc · Federal'], ['pje', 'PJe · Trabalhista']];
+  const NOME_SIS = { todos: 'Prazos', civel: 'Prazos · eproc Cível', federal: 'Prazos · eproc Federal', pje: 'Prazos · PJe' };
   function sistemaDoPrazo(z) {
-    const s = String(z.sistema || '').toLowerCase();
-    if (/pje/.test(s)) return 'pje';
-    if (/eproc/.test(s)) return 'eproc';
-    return /^TRT/i.test(z.tribunal || '') || /\.5\.\d{2}\.\d{4}$/.test(z.numero || '') ? 'pje' : 'eproc';
+    const s = String(z.sistema || '').toLowerCase(), t = String(z.tribunal || ''), n = String(z.numero || '');
+    if (/pje/.test(s) && !/\.4\.\d{2}\.\d{4}$/.test(n)) return 'pje';
+    if (/^(TRT|TST)/i.test(t) || /\.5\.\d{2}\.\d{4}$/.test(n)) return 'pje';
+    if (/^(TRF|JF)/i.test(t) || /\.4\.\d{2}\.\d{4}$/.test(n)) return 'federal';
+    return 'civel';
   }
-  function sistemaPreferido() { try { return localStorage.getItem('prazos_sistema') || 'todos'; } catch (e) { return 'todos'; } }
+  function sistemaPreferido() { try { const v = localStorage.getItem('prazos_sistema') || 'todos'; return NOME_SIS[v] ? v : 'todos'; } catch (e) { return 'todos'; } }
 
   async function telaPrazos(params) {
     carregando();
     const encerrados = params.get('encerrados') === '1';
     const ver = params.get('ver') || 'todos';
-    const sis = params.get('sis') || sistemaPreferido();
+    const sis = NOME_SIS[params.get('sis')] ? params.get('sis') : sistemaPreferido();
     const [listaToda, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
-    const porSis = { todos: listaToda.length, eproc: 0, pje: 0 };
+    const porSis = { todos: listaToda.length, civel: 0, federal: 0, pje: 0 };
     listaToda.forEach(z => { if (SITUACOES_ABERTAS.includes(z.situacao) || encerrados) porSis[sistemaDoPrazo(z)]++; });
     const lista = sis === 'todos' ? listaToda : listaToda.filter(z => sistemaDoPrazo(z) === sis);
     const mudarSis = v => { try { localStorage.setItem('prazos_sistema', v); } catch (e) { /* ok */ } ir({ sis: v === 'todos' ? '' : v }); };
@@ -1482,8 +1595,9 @@
     const FILTROS = [
       ['todos', 'Todos', null],
       ['vencido', 'Vencidos', 'vencido'], ['urgente', 'Até 2 dias', 'urgente'], ['atencao', '3 a 5 dias', 'atencao'],
-      ['definir', 'A definir', 'definir'], ['conferir', 'A conferir', null]];
-    const passa = z => ver === 'todos' ? true : ver === 'conferir' ? z.situacao === 'calculado' : faixaPrazo(z) === ver;
+      ['definir', 'A definir', 'definir'], ['conferir', 'A conferir', null], ['hoje', 'Vencem hoje', null], ['meus', 'Meus prazos', null]];
+    const passa = z => ver === 'todos' ? true : ver === 'conferir' ? z.situacao === 'calculado' : ver === 'hoje' ? z.fatal === hojeISO() && SITUACOES_ABERTAS.includes(z.situacao)
+      : ver === 'meus' ? z.responsavel === sessao.usuario.usuario : faixaPrazo(z) === ver;
     const nConferir = lista.filter(z => z.situacao === 'calculado').length;
 
     // Uma tabela só: sem data fatal vai sempre no topo (é o mais perigoso); o resto pela data fatal
@@ -1498,7 +1612,7 @@
       h('b', {}, String(n)), h('span', {}, rotulo));
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações e prazos'),
-        h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : sis === 'pje' ? ' no PJe (trabalhista)' : ' no eproc (cível e federal)'} · contagem até 23h59 do dia fatal`)),
+        h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : { pje: ' no PJe (trabalhista)', civel: ' no eproc cível', federal: ' no eproc federal' }[sis]} · contagem até 23h59 do dia fatal`)),
         h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       cartaoRobo(resumo.robo),
       h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'Sistema' },
@@ -1811,7 +1925,7 @@
   /* ---------- financeiro ---------- */
 
   const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-  const reais = v => BRL.format(+v || 0);
+  const reais = v => v === null ? '•••••' : BRL.format(+v || 0); // null = valor escondido (perfil RH)
   const TIPOS_HON = { parcelado: 'Parcelado', exito: 'Êxito', mensal: 'Mensal (assessoria)' };
 
   function etiquetaParcela(p) {
@@ -1831,15 +1945,16 @@
     if (!tel) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(p.cliente || '').split(' ')[0]);
-    const valor = reais(p.saldo || p.valor), venc = dataBR(p.vencimento);
+    const semValor = p.saldo === null || p.valor === null;
+    const valor = semValor ? '' : reais(p.saldo || p.valor), venc = dataBR(p.vencimento);
     const ref = p.honorario ? ` (${p.honorario})` : '';
     if (p.qtdAtrasadas > 1) {
-      const msgV = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Constam em aberto ${p.qtdAtrasadas} parcelas dos honorários${ref}, somando ${valor}, a primeira vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
+      const msgV = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Constam em aberto ${p.qtdAtrasadas} parcelas dos honorários${ref}${semValor ? '' : ', somando ' + valor}, a primeira vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msgV);
     }
     const msg = p.vencimento >= hojeISO()
-      ? `Olá, ${nome}! Tudo bem? Aqui é do escritório Araújo Advocacia. Passando para lembrar que ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'a parcela'} dos honorários${ref}, no valor de ${valor}, vence em ${venc}. Você pode pagar por PIX ou no escritório. Se já tiver pago, por favor nos envie o comprovante. Obrigado!`
-      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'uma parcela'} dos honorários${ref}, no valor de ${valor}, vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
+      ? `Olá, ${nome}! Tudo bem? Aqui é do escritório Araújo Advocacia. Passando para lembrar que ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'a parcela'} dos honorários${ref}${semValor ? '' : ', no valor de ' + valor}, vence em ${venc}. Você pode pagar por PIX ou no escritório. Se já tiver pago, por favor nos envie o comprovante. Obrigado!`
+      : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto ${p.numero ? 'a ' + p.numero + 'ª parcela' : 'uma parcela'} dos honorários${ref}${semValor ? '' : ', no valor de ' + valor}, vencida em ${venc}. Pedimos, por gentileza, que regularize o pagamento por PIX ou no escritório, ou entre em contato para combinarmos a melhor forma. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
   }
 
@@ -1922,7 +2037,7 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Financeiro'), h('p', {}, 'Honorários, parcelas e cobranças. Só a administração vê esta área.')),
         h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber — lista por cliente'),
           h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas a pagar'),
-          botao('Novo honorário', () => { location.hash = '#/honorario/novo'; }))),
+          sessao.usuario.pode.ocultarValores ? null : botao('Novo honorário', () => { location.hash = '#/honorario/novo'; }))),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' + (t.atrasado ? ' destaque' : '') }, h('b', {}, reais(t.atrasado)), h('span', {}, `em atraso · ${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
         h('div', { class: 'numero' }, h('b', {}, reais(t.aReceber30)), h('span', {}, 'a receber nos próximos 30 dias')),
@@ -2306,7 +2421,7 @@
     const saldo12 = r.fluxo.reduce((a, f) => a + f.saldo, 0);
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Caixa e contas a pagar'), h('p', {}, 'Entradas (parcelas recebidas) e saídas (despesas pagas) do escritório.')),
-        h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro' }, '← Financeiro'), botao('+ Nova despesa', () => editarDespesa({}, r, clientes)))),
+        h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro' }, '← Financeiro'), sessao.usuario.pode.ocultarValores ? null : botao('+ Nova despesa', () => editarDespesa({}, r, clientes)))),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' }, h('b', {}, reais(ult.entradas)), h('span', {}, 'entrou neste mês')),
         h('div', { class: 'numero' }, h('b', {}, reais(ult.saidas)), h('span', {}, 'saiu neste mês')),

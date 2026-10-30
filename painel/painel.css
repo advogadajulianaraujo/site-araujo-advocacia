@@ -544,3 +544,17 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 }
 @media print{ .quadro-t{display:block} .dialogo{display:none} }
 .rolar{overflow-x:auto;max-width:100%}
+
+/* Fases do processo */
+.fases-chips{margin:4px 0 12px}
+.fases-chips .seg-n{margin-left:2px}
+.tag.fase{background:#eceae4;color:#3a3a3a}
+.tag.fase-contratado{background:#f3ecfb;color:#5b2c91}
+.tag.fase-ajuizado,.tag.fase-andamento{background:var(--azul-f);color:var(--azul)}
+.tag.fase-sentenca,.tag.fase-acordo,.tag.fase-homologacao{background:var(--amarelo-f);color:var(--amarelo)}
+.tag.fase-recurso{background:#fdeee3;color:#9a4b12}
+.tag.fase-execucao{background:var(--verde-f);color:var(--verde)}
+.tag.fase-extinto{background:#eee;color:#666}
+.btn.wa{background:#1f7a3f;border-color:#1f7a3f;color:#fff}
+.avisar-cliente h2{font-size:21px;margin-bottom:6px}
+.meta-int{color:var(--azul)}

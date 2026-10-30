@@ -17,13 +17,27 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Se o CNJ recusar também o navegador, o cartão do robô mostra o problema e o link "ver no site do DJEN".
 - Cota do Gmail: a leitura dos avisos NOVOS tem prioridade. Histórico antigo e classificação de áreas usam no máximo
   `GMAIL_EXTRA_DIA` (250) leituras por dia e param no dia em que o Google avisar "chamado muitas vezes" (`gmailEsgotado_`).
-- Intimações: filtro por sistema (Todos / eproc · Cível e Federal / PJe · Trabalhista), guardado em cada computador
-  (`prazos_sistema`); o quadro Prazos do Início segue a mesma escolha.
+- Intimações: filtro por sistema (Todos / eproc · Cível / eproc · Federal / PJe · Trabalhista), guardado em cada computador
+  (`prazos_sistema`); o quadro Prazos do Início segue a mesma escolha. Cada prazo aberto tem botão "WhatsApp" (avisa o cliente
+  que chegou intimação, sem expor o prazo interno), "fazer até" = meta interna de 2 dias úteis antes do fatal, filtros
+  "Vencem hoje" e "Meus prazos".
+- Robô lê TODOS os tribunais (`from:jus.br`, `lerAvisoTribunal_`): PJe [PUSH], eproc (TJSC, TJRS, JF) e, nos outros formatos
+  (Projudi, e-SAJ, peticionamento eletrônico), `lerAvisoGenerico_` só cadastra o processo, sem prazo. O histórico do Gmail lê
+  primeiro os tribunais que antes ficavam de fora (HIST2_GMAIL_*) e depois continua o geral (HIST_GMAIL_*).
+- Histórico do DJEN: o navegador do escritório volta 30 dias por vez até 2020 (`historicoDjen` → rota `djen.historico`),
+  só cadastrando processos que faltam (origem "histórico DJEN"), sem criar intimação nem prazo.
 - Área sem Gmail: TRT/TST e número ".5." = Trabalhista; TRF = Federal; senão pelo nome da vara nos avisos (`areaPeloOrgao_`).
 - Ao revisar prazos, procure em tudo que tiver acesso: avisos do eproc e do PJe no Gmail (conta advogadajulianaraujo),
   DJEN (a consulta pública recusa o Google e esta nuvem, código 403) e a agenda. Nunca invente o conteúdo de um ato.
 
 ## Processos
+
+- Fase de cada processo (`fase`, `FASES`): Contrato assinado (a ajuizar) → Ajuizado → Em andamento → Sentença / Acordo /
+  Homologação → Recurso → Execução → Extinto/arquivado. Muda sozinha pela última movimentação (`faseDoMovimento_`), sem
+  voltar de fase adiantada por "juntada"; escolhida à mão (`fase_auto` = "nao") fica fixa. Processos antigos sem fase usam
+  `faseDe_`. Gerar procuração/contrato para quem não tem processo cria um "a ajuizar" (sem número).
+- Ao criar processo (ou colocar o número no "a ajuizar") a tela mostra "Informar o cliente no WhatsApp" com o link do
+  Acompanhe (opcional: gera código de acesso novo e põe na mensagem).
 
 - Processos em andamento e arquivados/baixados ficam todos no painel. A situação vem da última movimentação
   (`atualizarMovimento_`); o histórico antigo do Gmail é lido por `importarHistoricoGmail_` até o fim da caixa.
@@ -70,6 +84,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Notas promissórias: uma por parcela, duas por folha, geradas do valor fixo do formulário ou das parcelas em aberto.
 - Parcelado: 1ª parcela numa data e as demais "todo dia X" (`dia_demais`).
 - Modelo do Drive "Cobrança de honorários — procedimento comum" escondido a pedido da usuária.
+- Modelos novos (MODELO7_): procuração para inventário e partilha, requerimento de isenção de IRPF (doença grave),
+  declaração de comparecimento, notificação extrajudicial em nome do cliente e contrato de honorários previdenciário
+  (texto do contrato do escritório: 2 benefícios ou 30%, revisões 30%, multa de desistência 2 SM, 5% habilitação de herdeiros).
+  Contrato de honorários (MODELO7_CONTRATO_ID): multa de 2 salários mínimos por falta injustificada em audiência.
 - Contrato de honorários (modelos v5, com cláusulas do contrato antigo do escritório: notas promissórias, PIX, vencimento
   antecipado após 30 dias de atraso, sigilo/LGPD). Antes, v4: cláusulas pedidas pela usuária — sucumbência integral, sustentação oral/TNU/STF fora,
   despesas (perícias, custas, diligências fora da comarca, deslocamento acima de 100 km), obrigações do cliente (documentos,
@@ -89,10 +107,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## WhatsApp e Financeiro
 
-- O WhatsApp não deixa ler conversas. O caminho é "Exportar conversa › Anexar mídia" para a pasta do Drive
-  "ENTRADA DO WHATSAPP (exportar conversas aqui)". `processarWhatsapp_` (robô de 6 em 6 h e botão na ficha) acha o cliente pelo
-  nome ou telefone, faz o PDF das fotos (uma por página, com data), a conversa em PDF e guarda vídeos/áudios numa subpasta
-  na pasta do cliente. Também aceita subpasta da entrada com o nome do cliente. Zip acima de 48 MB não abre (limite do Google).
+- "Fotos e conversas do WhatsApp" foi retirado da ficha e do robô a pedido da usuária (o código `processarWhatsapp_` ficou
+  sem uso; não religar sem ela pedir).
+- Perfil RH (`PERFIS.rh`, `ocultarValores`): vê tudo menos Usuários; entra no Financeiro, mas `semValores_` apaga os valores
+  no servidor (rotas fin.*, relatorio.*, documentos.gerar, clientes.documentos) e as rotas que mudam valores são recusadas.
 - Financeiro › "A receber": lista por cliente/honorário com parcelas pagas/total, valor total, recebido, falta receber,
   atrasado e próxima parcela (`aReceber_`, rota `fin.areceber`), atrasados primeiro, com botão de imprimir e de WhatsApp.
 - Ao marcar uma parcela como paga, o recibo sai sozinho em PDF na pasta do cliente (`reciboDaParcela_`) e o painel abre
@@ -116,6 +134,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ("Acesso do cliente ao site"). O código aparece uma vez só e é guardado embaralhado (`acesso_hash`, nunca vai ao painel).
   Rota pública `consulta.processos` devolve só número, área, vara, situação, próximo ato e data/resumo da última
   movimentação. 5 erros por CPF bloqueiam 15 min; 100 erros no total travam a consulta 15 min. Nada fica no navegador.
+- Acompanhe v3: etapas em linha do tempo (Preparação → Ajuizado → Em andamento → Decisão → Recurso → Recebimento → Concluído),
+  explicação em linguagem simples, últimas movimentações (DataJud) e link de dúvida pelo WhatsApp.
+- Conversão: WhatsApp é o botão principal da primeira tela; "Prefere que a gente ligue?" (site.js) em todas as páginas →
+  rota pública `site.contato` (campo-isca anti-spam, 40/h no total, 1 por telefone a cada 6 h) grava na aba Contatos, cria
+  tarefa "Ligar para…" (Config RESP_SITE) e manda e-mail (Config CONTATO_EMAIL ou a conta dona).
 - SEO: páginas de área com 6 a 8 perguntas frequentes (texto e schema FAQPage iguais) e BreadcrumbList. Conteúdo
   informativo, citando a lei, sem promessas nem preços (Provimento 205/2021 da OAB).
 
