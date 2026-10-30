@@ -558,3 +558,7 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 .btn.wa{background:#1f7a3f;border-color:#1f7a3f;color:#fff}
 .avisar-cliente h2{font-size:21px;margin-bottom:6px}
 .meta-int{color:var(--azul)}
+.robo-alerta{color:var(--vermelho);font-size:13.5px;margin-top:4px;font-weight:500}
+.ia-alerta{color:var(--vermelho)!important}
+.ia-caixa.ia-alerta{background:var(--vermelho-f);border-left-color:var(--vermelho)}
+.ia-caixa p{margin:0 0 8px}

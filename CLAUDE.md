@@ -24,6 +24,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Robô lê TODOS os tribunais (`from:jus.br`, `lerAvisoTribunal_`): PJe [PUSH], eproc (TJSC, TJRS, JF) e, nos outros formatos
   (Projudi, e-SAJ, peticionamento eletrônico), `lerAvisoGenerico_` só cadastra o processo, sem prazo. O histórico do Gmail lê
   primeiro os tribunais que antes ficavam de fora (HIST2_GMAIL_*) e depois continua o geral (HIST_GMAIL_*).
+- Robô à prova de falhas (6.9): `roboRapidoGatilho` de hora em hora (o de 6 em 6 h segue com as tarefas pesadas); Gmail lido com
+  `in:anywhere -in:trash` (pega aviso no SPAM) e TODAS as páginas (não só as 300 conversas mais novas); feriados nacionais e
+  forenses calculados para qualquer ano (`feriadosDoAno_`, Páscoa de Meeus) além dos da aba Feriados; `vigiaRobo_` avisa por
+  e-mail (admin/advogada, no máx. 1 a cada 12 h) e no cartão do robô quando: Gmail sem leitura há 6 h, DJEN sem leitura há 26 h
+  em dia útil, prazo aberto sem data fatal, ou IA achou prazo diferente do calculado.
+- IA confere o prazo: `contextoPrazoIA_` manda o que o painel calculou; se o texto fala em outro nº de dias ou outra data de
+  audiência, o resumo ganha "⚠ ATENÇÃO" (vermelho na tela, no e-mail das 7h e no vigia). A IA nunca muda o prazo.
+  Botão "Resumir com IA" na tela do prazo (rota `ia.resumirPrazo`).
 - Histórico do DJEN: o navegador do escritório volta 30 dias por vez até 2020 (`historicoDjen` → rota `djen.historico`),
   só cadastrando processos que faltam (origem "histórico DJEN"), sem criar intimação nem prazo.
 - Área sem Gmail: TRT/TST e número ".5." = Trabalhista; TRF = Federal; senão pelo nome da vara nos avisos (`areaPeloOrgao_`).

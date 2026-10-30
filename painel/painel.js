@@ -1512,7 +1512,7 @@
       h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
       h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
       h('td', { 'data-r': 'O que fazer' }, h('div', { class: 'desc-prazo', title: z.descricao }, z.descricao), h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : '', z.responsavel ? ` · com ${z.responsavel}` : ''),
-        z.resumo_ia ? h('div', { class: 'peq ia-txt', title: z.resumo_ia }, z.resumo_ia) : null),
+        z.resumo_ia ? h('div', { class: 'peq ia-txt' + (/⚠/.test(z.resumo_ia) ? ' ia-alerta' : ''), title: z.resumo_ia }, z.resumo_ia) : null),
       h('td', { 'data-r': 'Situação' }, etiquetaPrazo(z)),
       h('td', {}, botoesPrazo(z))
     ], z => { location.hash = '#/prazo/' + z.id; }, vazio, z => 'linha-' + faixaPrazo(z)));
@@ -1529,7 +1529,7 @@
   function cartaoRobo(robo) {
     const atrasado = !robo || !robo.ultima || robo.atrasado;
     const status = h('div', { class: 'robo-txt' },
-      h('strong', {}, atrasado ? 'Robô atrasado: atualizando agora…' : 'Robô ligado · lê o Gmail de 6 em 6 horas e o DJEN de 2 em 2 horas'),
+      h('strong', {}, atrasado ? 'Robô atrasado: atualizando agora…' : 'Robô ligado · lê o Gmail de hora em hora (todos os tribunais, inclusive o spam) e o DJEN de 2 em 2 horas'),
       h('div', { class: 'peq' }, robo && robo.ultima ? `Última leitura: ${quando(robo.ultima)}` + (robo.proxima ? ` · próxima: ${quando(robo.proxima)}` : '') : 'Ainda não houve leitura.'),
       robo && robo.resultado ? h('div', { class: 'peq' }, robo.resultado.replace(/^Robô em [^:]+: /, '')) : null);
     const rodar = async btn => {
@@ -1554,6 +1554,7 @@
       } }, 'ler o DJEN agora'),
       ' · ', h('a', { href: linkDjen, target: '_blank', rel: 'noopener noreferrer' }, 'ver no site do DJEN'));
     status.append(linhaDjen);
+    (robo && robo.alertas || []).forEach(a => status.append(h('div', { class: 'robo-alerta' }, '⚠ ' + a)));
     const dj2 = (robo && robo.datajud) || {}, ia = (robo && robo.ia) || {};
     if (dj2.ultima || dj2.erro) status.append(h('div', { class: 'peq' + (dj2.erro ? ' erro' : '') }, h('strong', {}, 'Andamentos (DataJud/CNJ): '),
       dj2.ultima ? dj2.ultima.replace(/^(\S+)/, iso => quando(iso)) : '', dj2.erro ? ' · problema: ' + dj2.erro : ''));
@@ -1716,7 +1717,13 @@
       h('p', {}, h('span', { class: 'num' }, z.numero), ' · ', z.cliente || 'cliente a identificar', ' · ', acessoTribunal(z.numero)),
       z.ciencia_tipo ? h('p', { class: 'peq' }, 'Ciência: ' + z.ciencia_tipo) : null,
       z.responsavel ? h('p', { class: 'peq' }, 'Responsável: ' + z.responsavel + ' · ', h('a', { href: '#/tarefas?quem=todos' }, 'ver no quadro de tarefas')) : null,
-      z.resumo_ia ? h('p', { class: 'ia-caixa' }, z.resumo_ia, h('span', { class: 'peq' }, ' — resumo automático; confira no processo antes de agir.')) : null,
+      h('div', { class: 'ia-caixa' + (/⚠/.test(z.resumo_ia || '') ? ' ia-alerta' : '') },
+        z.resumo_ia ? h('p', {}, z.resumo_ia, h('span', { class: 'peq' }, ' — resumo automático; confira no processo antes de agir.')) : h('p', { class: 'peq' }, 'Sem resumo da IA ainda.'),
+        botao(z.resumo_ia ? 'Resumir de novo com IA' : 'Resumir com IA', async ev => {
+          ev.target.disabled = true; ev.target.textContent = 'Lendo a intimação…';
+          try { await api('ia.resumirPrazo', { id: z.id }); avisar('Resumo da IA pronto.'); telaPrazo(z.id, new URLSearchParams()); }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Resumir com IA'; }
+        }, 'sec mini')),
       h('p', { class: 'peq' }, 'Origem: ' + z.origem + (z.observacoes ? ' · ' + z.observacoes : '')));
     mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, form);
   }

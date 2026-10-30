@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.8.1';
+var VERSAO = '6.9.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -343,6 +343,7 @@ var ROTAS = {
   'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
   'resumo.email.testar': { fn: testarResumoEmail_ },
   'ia.config': { permissao: 'usuarios', fn: configIA_ },
+  'ia.resumirPrazo': { fn: resumirPrazoIA_ },
   'processos.andamentos': { fn: andamentosProcesso_ }
 };
 
@@ -1605,8 +1606,24 @@ function noRecesso_(iso) {
   return md >= '12-20' || md <= '01-20'; // CPC art. 220 e CLT art. 775-A
 }
 
+/** Feriados nacionais e forenses calculados para qualquer ano (Páscoa pelo algoritmo de Meeus): nunca falta o ano que vem. */
+function feriadosDoAno_(ano) {
+  var a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  var mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  var pascoa = ano + '-' + ('0' + mes).slice(-2) + '-' + ('0' + dia).slice(-2);
+  var fixo = function (md) { return ano + '-' + md; };
+  return [[fixo('01-01'), 'todos'], [somarDias_(pascoa, -48), 'todos'], [somarDias_(pascoa, -47), 'todos'], [somarDias_(pascoa, -4), 'JF/JT'],
+    [somarDias_(pascoa, -3), 'todos'], [somarDias_(pascoa, -2), 'todos'], [fixo('04-21'), 'todos'], [fixo('05-01'), 'todos'], [somarDias_(pascoa, 60), 'todos'],
+    [fixo('08-11'), 'JF/JT'], [fixo('09-07'), 'todos'], [fixo('10-12'), 'todos'], [fixo('11-02'), 'todos'], [fixo('11-15'), 'todos'],
+    [fixo('11-20'), 'todos'], [fixo('12-08'), 'JF/JT'], [fixo('12-25'), 'todos']];
+}
+
 function mapaFeriados_() {
-  var m = {};
+  var m = {}, anoAtual = +hojeSP_().slice(0, 4);
+  [anoAtual - 1, anoAtual, anoAtual + 1, anoAtual + 2].forEach(function (ano) {
+    feriadosDoAno_(ano).forEach(function (fe) { var l = m[fe[0]] = m[fe[0]] || []; if (l.indexOf(fe[1]) < 0) l.push(fe[1]); });
+  });
   tabela_('Feriados').linhas.forEach(function (f) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.data)) return;
     (m[f.data] = m[f.data] || []).push(f.abrangencia || 'todos');
@@ -1944,6 +1961,10 @@ function garantirGatilho_() {
     ScriptApp.newTrigger('backupDiario').timeBased().everyDays(1).atHour(3).inTimezone(TZ).create();
     registrar_('sistema', 'cópia de segurança ligada', 'todo dia por volta das 3h');
   }
+  if (nomes.indexOf('roboRapidoGatilho') < 0) {
+    ScriptApp.newTrigger('roboRapidoGatilho').timeBased().everyHours(1).create();
+    registrar_('sistema', 'robô de hora em hora ligado', 'lê os avisos novos do Gmail a cada hora');
+  }
   if (nomes.indexOf('resumoDiarioGatilho') < 0) {
     ScriptApp.newTrigger('resumoDiarioGatilho').timeBased().everyDays(1).atHour(7).inTimezone(TZ).create();
     registrar_('sistema', 'resumo por e-mail ligado', 'dias úteis, por volta das 7h');
@@ -2028,11 +2049,11 @@ function estadoRobo_() {
   var ultima = config_('ROBO_ULTIMA_EXECUCAO');
   var r = { ultima: ultima, resultado: config_('ROBO_ULTIMO_RESULTADO'), proxima: '', atrasado: false,
     djen: { ultima: config_('DJEN_NAVEGADOR_ULTIMA') || '', erro: config_('DJEN_NAVEGADOR_ERRO') || '' } };
-  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; } catch (e) { /* segue */ }
+  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; r.alertas = ex.alertas; } catch (e) { /* segue */ }
   if (ultima) {
     var t = Date.parse(ultima);
-    r.proxima = new Date(t + 6 * 3600000).toISOString();
-    r.atrasado = Date.now() - t > 7.5 * 3600000;
+    r.proxima = new Date(t + 3600000).toISOString();
+    r.atrasado = Date.now() - t > 2.5 * 3600000;
   }
   return r;
 }
@@ -2059,7 +2080,7 @@ function rodarRobo_(quem) {
   var ctx, erros = [], novas = 0, prazosNovos = 0;
   try {
     ctx = contextoRobo_();
-    try { var g = lerGmail_(ctx); novas += g.intimacoes; prazosNovos += g.prazos; }
+    try { var g = lerGmail_(ctx); novas += g.intimacoes; prazosNovos += g.prazos; setConfig_('ROBO_GMAIL_OK', new Date().toISOString(), 'Última leitura do Gmail sem erro'); }
     catch (e) { erros.push(gmailEsgotado_(e) ? 'Gmail: o Google limitou as leituras de hoje; os avisos que faltaram entram na próxima rodada' : 'Gmail: ' + (e.message || e)); }
     var djenNav = config_('DJEN_NAVEGADOR_ULTIMA');
     var navRecente = djenNav && (Date.now() - new Date(djenNav).getTime()) < 36 * 3600000;
@@ -2246,8 +2267,14 @@ var RE_CNJ = /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/;
 
 function lerGmail_(ctx) {
   var desde = parseInt(config_('ROBO_GMAIL_DESDE'), 10) || (Date.now() - 30 * 86400000);
-  var q = BUSCA_TRIBUNAIS + ' after:' + Math.floor(desde / 1000);
-  var threads = GmailApp.search(q, 0, 300);
+  // in:anywhere -in:trash: também lê aviso que caiu no SPAM; e lê TODAS as páginas (antes, só as 300 conversas mais novas)
+  var q = BUSCA_TRIBUNAIS + ' in:anywhere -in:trash after:' + Math.floor(desde / 1000);
+  var threads = [];
+  for (var ini = 0; ini < 3000; ini += 100) {
+    var pagina = GmailApp.search(q, ini, 100);
+    threads = threads.concat(pagina);
+    if (pagina.length < 100) break;
+  }
   var msgs = [];
   threads.forEach(function (th) {
     th.getMessages().forEach(function (msg) { if (msg.getDate().getTime() > desde) msgs.push(msg); });
@@ -5390,7 +5417,9 @@ function montarResumoDia_(u, base) {
     (z.responsavel ? ' · <i>' + esc_(base.nomes[z.responsavel] || z.responsavel) + '</i>' : '') + '</li>'; };
   var bloco = function (titulo, itens, cor) { return itens.length ? '<h3 style="margin:18px 0 6px;font-size:15px;color:' + (cor || '#1f2a44') + '">' + titulo + '</h3><ul style="margin:0;padding-left:18px">' + itens.join('') + '</ul>' : ''; };
   var minhas = base.tarefas.filter(function (x) { return x.responsavel === u.usuario && !/protocolado|concluido/.test(x.etapa) && x.vence_em && x.vence_em <= amanha; });
-  var html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:640px">' +
+  var alertasHtml = (base.alertas || []).length && PERFIS[u.perfil] && (PERFIS[u.perfil].conferePrazos || PERFIS[u.perfil].usuarios)
+    ? '<div style="background:#fbe9e7;border-left:4px solid #b42318;padding:10px 12px;margin:10px 0"><b>Atenção com o robô:</b><ul style="margin:6px 0 0;padding-left:18px">' + base.alertas.map(function (a) { return '<li>' + esc_(a) + '</li>'; }).join('') + '</ul></div>' : '';
+  var html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:640px">' + alertasHtml +
     '<h2 style="margin:0 0 4px;font-size:18px">Bom dia, ' + esc_(String(u.nome || u.usuario).split(' ')[0]) + '!</h2>' +
     '<p style="margin:0 0 10px;color:#555">Resumo do painel para ' + esc_(dataBR_(hoje)) + '.</p>' +
     bloco('Prazos vencidos sem baixa (' + base.vencidos.length + ')', base.vencidos.slice(0, 15).map(lin), '#b42318') +
@@ -5420,6 +5449,7 @@ function baseResumoDia_() {
     vencidos: prazos.filter(function (z) { return z.fatal && z.fatal < hoje; }),
     fHoje: prazos.filter(function (z) { return z.fatal === hoje; }),
     fAmanha: prazos.filter(function (z) { return z.fatal > hoje && z.fatal <= amanha; }), atos: [], tarefas: [] };
+  try { base.alertas = vigiaRobo_(false); } catch (e) { base.alertas = []; }
   try {
     var ag = listarAgenda_({ inicio: hoje, fim: hoje });
     base.atos = ag.eventos.sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; })
@@ -5508,13 +5538,44 @@ function anonimizar_(t, nomes) {
     .replace(/\b(ag[êe]ncia|conta|c\/c|pix)\s*(n[º°o.]*)?\s*[:\-]?\s*[\d.\-\/xX]{4,}/gi, '$1 [DADO BANCÁRIO]');
 }
 
+/** O que o painel calculou, para a IA comparar com o texto. */
+function contextoPrazoIA_(z) {
+  if (!z || !z.fatal) return '';
+  return 'Para conferência: o sistema do escritório calculou para este ato o prazo de ' + (z.dias || '?') + ' dias ' + (z.contagem === 'corridos' ? 'corridos' : 'úteis') +
+    ', com ciência em ' + dataBR_(z.ciencia) + ' e data fatal ' + dataBR_(z.fatal) + '. Responda com base no TEXTO; não repita estes números se o texto não os confirmar.';
+}
+
+/** Resumo por IA de um prazo, na hora (botão "Resumir com IA" na tela do prazo). Não muda o prazo. */
+function resumirPrazoIA_(d, u) {
+  var chave = chaveIA_();
+  if (!chave) throw falha_('A IA não está ligada. A administração cadastra a chave em Usuários › Resumo das intimações por IA.');
+  var tabZ = tabela_('Prazos'), z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!z) throw falha_('Prazo não encontrado.');
+  var tabI = tabela_('Intimacoes');
+  var intim = tabI.linhas.filter(function (i) { return i.id === z.intimacao_id; })[0];
+  if (!intim || String(intim.texto || '').length < 120) intim = tabI.linhas.filter(function (i) { return i.numero === z.numero && String(i.texto || '').length >= 120; })
+    .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; })[0];
+  var texto = intim ? String(intim.texto || '').replace(/\s+/g, ' ') : '';
+  if (texto.length < 120 || /^\W*(documento sigiloso|conteúdo sigiloso)/i.test(texto)) throw falha_('O aviso deste prazo não traz o texto do ato (no PJe vem "documento sigiloso"). Abra o processo no sistema do tribunal.');
+  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === z.processo_id; })[0] || {};
+  var cli = tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {};
+  var nomes = [cli.nome, p.cliente_nome, p.parte_contraria].concat(String(intim.partes_cliente || '').split(/;\s*/));
+  var ped = pedidoGemini_(anonimizar_([intim.movimento, intim.texto].join('\n'), nomes), chave, config_('IA_MODELO') || IA_MODELO_PADRAO, contextoPrazoIA_(z));
+  var res = lerRespostaGemini_(UrlFetchApp.fetch(ped.url, ped), z);
+  comTrava_(function () { atualizarLinha_(tabZ, z, { resumo_ia: res }); atualizarLinha_(tabI, intim, { resumo_ia: res }); });
+  registrar_(u.usuario, 'resumo por IA', z.id);
+  return { resumo_ia: res };
+}
+
 function chaveIA_() { return PropertiesService.getScriptProperties().getProperty('GEMINI_CHAVE') || ''; }
 
-function pedidoGemini_(texto, chave, modelo) {
-  var prompt = 'Você ajuda um escritório de advocacia brasileiro. Leia a intimação/publicação abaixo e responda SOMENTE em JSON com as chaves: ' +
+function pedidoGemini_(texto, chave, modelo, contexto) {
+  var prompt = 'Você ajuda um escritório de advocacia brasileiro a nunca perder prazo. Leia a intimação/publicação abaixo e responda SOMENTE em JSON com as chaves: ' +
     '"resumo" (até 2 frases, em português simples: o que o juiz/tribunal decidiu ou determinou), "ato" (uma palavra: sentença, acórdão, decisão, despacho, ' +
-    'audiência, perícia, citação, intimação, edital ou outro), "providencia" (o que o advogado provavelmente precisa fazer, curto) e "prazo_dias" ' +
-    '(número de dias do prazo SE estiver escrito no texto; senão null). Não invente nada que não esteja no texto.\n\nTEXTO:\n' + texto.slice(0, 6000);
+    'audiência, perícia, citação, intimação, edital ou outro), "providencia" (a peça ou providência que o advogado provavelmente precisa fazer, curto), ' +
+    '"prazo_dias" (número de dias do prazo SE estiver escrito no texto; senão null), "fundamento" (artigo de lei do prazo, se o texto citar; senão null) e ' +
+    '"data_ato" (data de audiência/perícia no formato AAAA-MM-DD, se houver; senão null). Não invente nada que não esteja no texto.' +
+    (contexto ? '\n\n' + contexto : '') + '\n\nTEXTO:\n' + texto.slice(0, 6000);
   return {
     url: 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelo) + ':generateContent',
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
@@ -5524,7 +5585,7 @@ function pedidoGemini_(texto, chave, modelo) {
   };
 }
 
-function lerRespostaGemini_(resp) {
+function lerRespostaGemini_(resp, z) {
   var code = resp.getResponseCode();
   var j = {};
   try { j = JSON.parse(resp.getContentText()); } catch (e) { /* resposta estranha */ }
@@ -5535,8 +5596,12 @@ function lerRespostaGemini_(resp) {
   try { o = JSON.parse(String(txt).replace(/^```(json)?|```$/g, '').trim()); } catch (e) { o = { resumo: String(txt).slice(0, 300) }; }
   var partes = [String(o.resumo || '').trim()];
   if (o.providencia) partes.push('Providência: ' + String(o.providencia).trim());
-  if (o.prazo_dias) partes.push('Prazo citado no texto: ' + parseInt(o.prazo_dias, 10) + ' dias (conferir)');
-  return ('IA: ' + partes.filter(String).join(' · ')).slice(0, 700);
+  var dt = parseInt(o.prazo_dias, 10);
+  if (dt) partes.push('Prazo citado no texto: ' + dt + ' dias' + (o.fundamento ? ' (' + String(o.fundamento).slice(0, 60) + ')' : ''));
+  // Conferência cruzada: o texto fala em prazo diferente do calculado pelo painel? Avisa (a IA nunca muda o prazo).
+  if (z && dt && +z.dias && dt !== +z.dias && !/^ato:/.test(z.observacoes || '')) partes.push('⚠ ATENÇÃO: o texto fala em ' + dt + ' dias e o painel calculou ' + z.dias + ' — conferir no sistema');
+  if (z && o.data_ato && /^\d{4}-\d{2}-\d{2}$/.test(o.data_ato) && /^ato:/.test(z.observacoes || '') && z.fatal && o.data_ato !== z.fatal) partes.push('⚠ ATENÇÃO: o texto indica a data ' + dataBR_(o.data_ato) + ' e o painel tem ' + dataBR_(z.fatal) + ' — conferir');
+  return ('IA: ' + partes.filter(String).join(' · ')).slice(0, 900);
 }
 
 /** Resume as intimações novas que têm texto (DJEN e avisos com conteúdo). Nunca muda prazos: só escreve o resumo. */
@@ -5564,10 +5629,10 @@ function resumirIntimacoes_(limiteMs, max) {
   var feitas = 0, erro = '';
   for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 60000); i += 5) {
     var lote = fila.slice(i, i + 5);
-    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo); }));
+    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo, contextoPrazoIA_(prazos[x.prazo_id])); }));
     for (var k = 0; k < lote.length; k++) {
       try {
-        var res = lerRespostaGemini_(resps[k]);
+        var res = lerRespostaGemini_(resps[k], prazos[lote[k].prazo_id]);
         atualizarLinha_(tabI, lote[k], { resumo_ia: res });
         var z = prazos[lote[k].prazo_id];
         if (z && !z.resumo_ia) atualizarLinha_(tabZ, z, { resumo_ia: res });
@@ -5755,7 +5820,7 @@ function andamentosProcesso_(d, u) {
 }
 
 function estadoExtras_() {
-  return { datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
+  return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') } };
 }
@@ -5800,4 +5865,43 @@ function contatoSite_(d) {
   } catch (e) { /* o contato já ficou gravado */ }
   registrar_('site', 'pedido de contato', id + ' ' + assunto);
   return { ok: true };
+}
+
+
+/* ---------- Robô de hora em hora e vigia (para nunca perder prazo) ---------- */
+
+/** De hora em hora: lê os avisos novos do Gmail (e o DJEN, se o navegador não leu), recalcula prazos e confere se algo está parado. */
+function roboRapidoGatilho() {
+  try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
+  try { vigiaRobo_(true); } catch (e2) { /* segue */ }
+}
+
+/** Problemas que podem fazer perder prazo. Com avisar = true, manda e-mail para a administração (no máximo 1 a cada 12 h). */
+function vigiaRobo_(avisar) {
+  var agora = Date.now(), alertas = [];
+  var gm = config_('ROBO_GMAIL_OK');
+  if (!gm || agora - Date.parse(gm) > 6 * 3600000) alertas.push('O robô não consegue ler o Gmail desde ' + (gm ? Utilities.formatDate(new Date(gm), TZ, 'dd/MM HH:mm') : 'a instalação') + '. Abra o painel › Intimações › "Atualizar agora" e veja o aviso; confira as intimações direto no eproc e no PJe.');
+  var dj = config_('DJEN_NAVEGADOR_ULTIMA');
+  var dsem = new Date(hojeSP_() + 'T12:00:00Z').getUTCDay();
+  if (dsem >= 1 && dsem <= 5 && (!dj || agora - Date.parse(dj) > 26 * 3600000)) alertas.push('O DJEN não é lido desde ' + (dj ? Utilities.formatDate(new Date(dj), TZ, 'dd/MM HH:mm') : 'nunca') + '. O CNJ só deixa ler pelo computador do escritório: deixe o painel aberto lá (ele lê de 2 em 2 horas).');
+  var pend = 0, diverg = [];
+  try {
+    tabela_('Prazos').linhas.forEach(function (z) {
+      if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return;
+      if (!z.fatal) pend++;
+      if (/⚠/.test(z.resumo_ia || '')) diverg.push(z.numero);
+    });
+  } catch (e) { /* segue */ }
+  if (pend) alertas.push(pend + ' prazo(s) aberto(s) sem data fatal. Abra Intimações › "A definir".');
+  if (diverg.length) alertas.push('A IA encontrou prazo diferente do calculado em ' + diverg.length + ' processo(s): ' + diverg.slice(0, 8).join(', ') + '. Confira no sistema do tribunal.');
+  if (avisar && alertas.length) {
+    var ult = config_('ALERTA_ROBO_EM');
+    if (!ult || agora - Date.parse(ult) > 12 * 3600000) {
+      usuarios_().filter(function (u) { return u.ativo === 'sim' && u.email && (u.perfil === 'administrador' || u.perfil === 'advogada'); }).forEach(function (u) {
+        try { GmailApp.sendEmail(u.email, '⚠ Painel: atenção com os prazos', 'O painel encontrou situações que podem fazer perder prazo:\n\n- ' + alertas.join('\n- ') + '\n\nhttps://araujoadvocaciasc.com.br/painel/', { name: 'Painel Araújo Advocacia' }); } catch (e) { /* segue */ }
+      });
+      setConfig_('ALERTA_ROBO_EM', new Date().toISOString(), 'Último alerta do vigia do robô');
+    }
+  }
+  return alertas;
 }
