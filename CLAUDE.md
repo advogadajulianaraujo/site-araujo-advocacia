@@ -118,8 +118,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Clientes: título com o total, cartão de busca (área, "só a completar", Lista / Quadro por etapa) e embaixo as ETAPAS (Sem processo,
   Contrato assinado, Ajuizado, Em andamento, Sentença/acordo, Recurso, Execução, Encerrado), calculadas pela fase mais adiantada
   dos processos do cliente (`etapaDoCliente`); clicar filtra, e o "Quadro por etapa" mostra os clientes em colunas.
-- Início: atalhos para todos os tópicos (com números), e três quadros pequenos: Prazos (vencidos primeiro), Audiências e perícias
-  (agenda + audiências dos processos, sem repetir) e Hoje.
+- Início: faixa escura de boas-vindas (data, saudação em Bodoni, frase do dia: prazos fatais, compromissos e tarefas; alerta de
+  vencidos) com 4 ações rápidas (Novo cliente, Novo prazo, Marcar compromisso, Gerar documentos); cartões com ícone colorido
+  (Intimações, Tarefas, Agenda, Clientes, Processos); três quadros (Prazos com vencidos primeiro, Audiências e perícias sem
+  repetir, Hoje); "Carteira de processos" (barra colorida por fase, mesmas cores das etapas) e a pílula de status do robô.
 - Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.
 - Tabelas de Processos e Intimações compactas: na coluna "Próximo ato" só o ato com a data completa ("Audiência 26/10/2026");
   o resumo da última movimentação aparece só ao abrir o processo.
