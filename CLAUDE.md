@@ -110,8 +110,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Layout
 
-- No topo ficam só os tópicos (Início, Clientes, Processos, Intimações, Tarefas, Agenda, Modelos, Financeiro). Relatórios, Usuários,
-  Trocar senha e Sair ficam no menu que abre ao clicar no nome.
+- Menu LATERAL à esquerda (tema 2026, pedido da usuária, no estilo do ADVBOX): grupos Escritório (Início, Clientes, Processos,
+  Intimações e prazos, Tarefas, Agenda), Documentos (Modelos) e Gestão (Financeiro, Relatórios, Usuários — conforme o perfil), com
+  ícones SVG (`ICONES`/`ABAS` em painel.js). Embaixo, o cartão da pessoa (iniciais, nome, perfil) abre Ver o site, Trocar senha e Sair.
+  No celular (≤ 900 px) o menu vira gaveta pelo botão ☰ da barra preta. Visual: fundo claro, cartões brancos com cantos de 12 px,
+  botões sem caixa-alta, títulos em Jost (Bodoni só na saudação do Início e no login).
+- Clientes: título com o total, cartão de busca (área, "só a completar", Lista / Quadro por etapa) e embaixo as ETAPAS (Sem processo,
+  Contrato assinado, Ajuizado, Em andamento, Sentença/acordo, Recurso, Execução, Encerrado), calculadas pela fase mais adiantada
+  dos processos do cliente (`etapaDoCliente`); clicar filtra, e o "Quadro por etapa" mostra os clientes em colunas.
 - Início: atalhos para todos os tópicos (com números), e três quadros pequenos: Prazos (vencidos primeiro), Audiências e perícias
   (agenda + audiências dos processos, sem repetir) e Hoje.
 - Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.

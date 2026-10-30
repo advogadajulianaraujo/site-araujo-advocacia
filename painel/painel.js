@@ -411,6 +411,7 @@
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
     abasEl.hidden = true;
     quemEl.hidden = true;
+    document.body.classList.add('sem-sessao');
     if (expirou) avisar('Sua sessão terminou. Entre de novo.', true);
     history.replaceState(null, '', location.pathname); // limpa o endereço sem desenhar a tela duas vezes
     telaLogin();
@@ -425,27 +426,65 @@
   document.getElementById('btn-sair').addEventListener('click', () => sair(false));
   document.getElementById('btn-senha').addEventListener('click', () => { location.hash = '#/senha'; });
 
+  /* Menu lateral: [id, nome, grupo, permissão, ícone (traços SVG 24×24)] */
+  const ICONES = {
+    inicio: 'M3 11.5 12 4l9 7.5M5.5 10v9.5h5v-6h3v6h5V10',
+    clientes: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 9c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.3c1.8.8 3 2.7 3 5.7',
+    processos: 'M7 3.5h7l4 4V20.5H7zM14 3.5V8h4M9.5 12h6M9.5 15.5h6',
+    prazos: 'M12 21a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17ZM12 8v5l3 2',
+    tarefas: 'M4 5.5h4v4H4zM4 14.5h4v4H4zM11 7.5h9M11 16.5h9',
+    agenda: 'M4.5 6h15v14h-15zM4.5 10h15M8.5 3.5v4M15.5 3.5v4',
+    modelos: 'M6 3.5h12v17H6zM9 8h6M9 11.5h6M9 15h4',
+    financeiro: 'M3.5 7h17v11h-17zM3.5 10.5h17M7 14.5h3',
+    relatorios: 'M4.5 19.5h15M7 16V11M11.5 16V7M16 16v-6',
+    usuarios: 'M12 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5'
+  };
   const ABAS = [
-    ['inicio', 'Início'],
-    ['clientes', 'Clientes'],
-    ['processos', 'Processos'],
-    ['prazos', 'Intimações'],
-    ['tarefas', 'Tarefas'],
-    ['agenda', 'Agenda'],
-    ['modelos', 'Modelos'],
-    ['financeiro', 'Financeiro', null, 'financeiro']
+    ['inicio', 'Início', 'Escritório'],
+    ['clientes', 'Clientes', 'Escritório'],
+    ['processos', 'Processos', 'Escritório'],
+    ['prazos', 'Intimações e prazos', 'Escritório'],
+    ['tarefas', 'Tarefas', 'Escritório'],
+    ['agenda', 'Agenda', 'Escritório'],
+    ['modelos', 'Modelos', 'Documentos'],
+    ['financeiro', 'Financeiro', 'Gestão', 'financeiro'],
+    ['relatorios', 'Relatórios', 'Gestão', 'usuarios'],
+    ['usuarios', 'Usuários', 'Gestão', 'usuarios']
   ];
+  const icone = id => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'ico');
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICONES[id] || ''); svg.append(p); return svg; };
 
   function montarTopo() {
     const pode = sessao.usuario.pode;
-    abasEl.replaceChildren(...ABAS.filter(a => !a[3] || pode[a[3]]).map(([id, nome, breve]) =>
-      h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id) }, nome, breve ? h('span', { class: 'breve' }, breve) : null)));
-    document.getElementById('quem-nome').textContent = `${sessao.usuario.nome} · ${sessao.usuario.perfilNome}`;
-    document.getElementById('menu-usuarios').hidden = !pode.usuarios;
-    document.getElementById('menu-relatorios').hidden = !pode.usuarios;
+    const itens = [];
+    let grupo = '';
+    ABAS.filter(a => !a[3] || pode[a[3]]).forEach(([id, nome, g]) => {
+      if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
+      itens.push(h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id), onclick: () => abrirLateral(false) }, icone(id), h('span', {}, nome)));
+    });
+    abasEl.replaceChildren(...itens);
+    const nome = sessao.usuario.nome || sessao.usuario.usuario;
+    document.getElementById('quem-nome').textContent = nome;
+    document.getElementById('quem-perfil').textContent = sessao.usuario.perfilNome;
+    document.getElementById('quem-avatar').textContent = String(nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+    document.getElementById('menu-usuarios').hidden = true;
+    document.getElementById('menu-relatorios').hidden = true;
+    document.body.classList.remove('sem-sessao');
     abasEl.hidden = false;
     quemEl.hidden = false;
   }
+
+  // celular: o menu lateral abre por cima da tela
+  const lateralEl = document.getElementById('lateral'), fundoEl = document.getElementById('lateral-fundo'), menuCel = document.getElementById('menu-cel');
+  function abrirLateral(abrir) {
+    document.body.classList.toggle('lateral-aberta', !!abrir);
+    fundoEl.hidden = !abrir;
+    menuCel.setAttribute('aria-expanded', String(!!abrir));
+  }
+  menuCel.addEventListener('click', () => abrirLateral(!document.body.classList.contains('lateral-aberta')));
+  fundoEl.addEventListener('click', () => abrirLateral(false));
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') abrirLateral(false); });
+  if (!lateralEl) console.warn('menu lateral ausente');
 
   function marcarAba(id) {
     abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === id));
@@ -554,9 +593,7 @@
       atalho('#/agenda?visao=dia', 'Agenda', nHoje, nHoje === 1 ? 'compromisso hoje' : 'compromissos hoje'),
       atalho('#/clientes', 'Clientes', t.clientes, (r.clientesNovos || []).length ? `${r.clientesNovos.length} novo(s) em 30 dias` : 'cadastrados'),
       atalho('#/processos', 'Processos', t.processos, 'em andamento'),
-      atalho('#/modelos', 'Modelos', null, 'procurações, contratos e petições'),
-      pode.financeiro ? atalho('#/financeiro', 'Financeiro', null, 'honorários, parcelas e caixa') : null,
-      pode.usuarios ? atalho('#/relatorios', 'Relatórios', null, 'gráficos do escritório') : null);
+      null);
 
     // prazos: vencidos primeiro, depois os próximos pela data fatal
     const sisIni = sistemaPreferido();
@@ -621,46 +658,107 @@
 
   /* ---------- clientes ---------- */
 
+  /* Etapas do cliente (pela fase mais adiantada dos processos dele), como no quadro do ADVBOX */
+  const ETAPAS_CLIENTE = [
+    ['atendimento', 'Sem processo', 'Atendimento ou consulta, sem ação cadastrada'],
+    ['contratado', 'Contrato assinado', 'Procuração e contrato prontos; ação a ajuizar'],
+    ['ajuizado', 'Ajuizado', 'Ação protocolada'],
+    ['andamento', 'Em andamento', 'Processo tramitando'],
+    ['decisao', 'Sentença / acordo', 'Sentença, acordo ou homologação'],
+    ['recurso', 'Recurso', 'Em grau de recurso'],
+    ['execucao', 'Execução', 'Cumprimento e recebimento'],
+    ['encerrado', 'Encerrado', 'Todos os processos arquivados']
+  ];
+  const ORDEM_FASE = { contratado: 1, ajuizado: 2, andamento: 3, sentenca: 4, acordo: 4, homologacao: 4, recurso: 5, execucao: 6 };
+  const FASE_ETAPA = { contratado: 'contratado', ajuizado: 'ajuizado', andamento: 'andamento', sentenca: 'decisao', acordo: 'decisao', homologacao: 'decisao', recurso: 'recurso', execucao: 'execucao' };
+  function etapaDoCliente(procsDoCliente) {
+    if (!procsDoCliente || !procsDoCliente.length) return 'atendimento';
+    const abertos = procsDoCliente.filter(p => p.fase !== 'extinto' && p.status !== 'arquivado');
+    if (!abertos.length) return 'encerrado';
+    const top = abertos.reduce((m, p) => (ORDEM_FASE[p.fase] || 3) > (ORDEM_FASE[m.fase] || 3) ? p : m, abertos[0]);
+    return FASE_ETAPA[top.fase] || 'andamento';
+  }
+
   async function telaClientes(params) {
     carregando();
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
+    const etapa = params.get('etapa') || '';
+    const visao = params.get('visao') === 'quadro' ? 'quadro' : 'lista';
     const limite = Math.max(150, parseInt(params.get('mais'), 10) || 150);
     const [todos, procs] = await Promise.all([api('clientes.listar', { busca }), api('processos.listar', {})]);
-    let lista = todos;
-    if (soConferir) lista = lista.filter(c => c.situacao !== 'completo');
-    if (area) lista = lista.filter(c => (c.area || 'Sem área') === area);
-    const porArea = {};
-    todos.forEach(c => { const a = c.area || 'Sem área'; porArea[a] = (porArea[a] || 0) + 1; });
+    const porCli = {};
+    procs.forEach(p => { if (p.cliente_id) (porCli[p.cliente_id] = porCli[p.cliente_id] || []).push(p); });
+    todos.forEach(c => { c._etapa = etapaDoCliente(porCli[c.id]); });
+    let base = todos;
+    if (soConferir) base = base.filter(c => c.situacao !== 'completo');
+    if (area) base = base.filter(c => (c.area || 'Sem área') === area);
+    const porEtapa = {};
+    base.forEach(c => { porEtapa[c._etapa] = (porEtapa[c._etapa] || 0) + 1; });
+    const lista = etapa ? base.filter(c => c._etapa === etapa) : base;
+    const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const comProc = todos.filter(c => c.processos > 0).length;
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
-    const form = h('form', { class: 'barra', role: 'search' },
-      h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar por nome, CPF, telefone ou cidade', 'aria-label': 'Buscar clientes' }),
-      h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'conferir', checked: soConferir }), 'Só a conferir'),
-      h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
     const ir = (mud) => {
-      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', mais: '', ...mud });
+      const q = new URLSearchParams({ busca, area, etapa, visao: visao === 'quadro' ? 'quadro' : '', conferir: soConferir ? '1' : '', mais: '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
     };
-    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), conferir: form.conferir.checked ? '1' : '' }); });
+    const form = h('form', { class: 'busca-grande', role: 'search' },
+      h('span', { class: 'busca-ico', 'aria-hidden': 'true' }, '⌕'),
+      h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar cliente por nome, CPF, telefone ou cidade', 'aria-label': 'Buscar clientes' }),
+      h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
+    form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim() }); });
+    const filtros = h('div', { class: 'filtros-linha' },
+      h('label', { class: 'filtro-sel' }, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
+        h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, a)))),
+      h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: soConferir, onchange: e => ir({ conferir: e.target.checked ? '1' : '' }) }), `Só cadastros a completar (${aConferir})`),
+      (busca || area || etapa || soConferir) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes' + (visao === 'quadro' ? '?visao=quadro' : ''); } }, 'Limpar filtros') : null,
+      h('div', { class: 'alternar', role: 'group', 'aria-label': 'Ver como' },
+        h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', 'aria-pressed': String(visao === 'lista'), onclick: () => ir({ visao: '' }) }, 'Lista'),
+        h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', 'aria-pressed': String(visao === 'quadro'), onclick: () => ir({ visao: 'quadro' }) }, 'Quadro por etapa')));
+    const etapas = h('div', { class: 'etapas-cli', role: 'group', 'aria-label': 'Etapas' },
+      h('button', { type: 'button', class: 'etapa-card todas' + (!etapa ? ' ativo' : ''), onclick: () => ir({ etapa: '' }) },
+        h('span', { class: 'etapa-n' }, String(base.length)), h('span', { class: 'etapa-nome' }, 'Todos')),
+      ETAPAS_CLIENTE.map(([id, nome, dica]) => h('button', { type: 'button', title: dica, class: 'etapa-card et-' + id + (etapa === id ? ' ativo' : ''), onclick: () => ir({ etapa: etapa === id ? '' : id }) },
+        h('span', { class: 'etapa-n' }, String(porEtapa[id] || 0)), h('span', { class: 'etapa-nome' }, nome))));
+    const linha = c => [
+      h('td', { 'data-r': 'Cliente' }, h('div', { class: 'cli-linha' }, h('span', { class: 'cli-ini' }, String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
+        h('div', {}, h('strong', {}, c.nome), h('div', { class: 'peq' }, [c.cpf_cnpj, c.cidade].filter(Boolean).join(' · '))))),
+      h('td', { 'data-r': 'Etapa' }, h('span', { class: 'tag etapa et-' + c._etapa }, (ETAPAS_CLIENTE.find(e => e[0] === c._etapa) || [])[1])),
+      h('td', { 'data-r': 'Área' }, c.area || h('span', { class: 'peq' }, '—'), c.tipo_acao ? h('div', { class: 'peq' }, c.tipo_acao) : null),
+      h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone || '—'),
+      h('td', { class: 'num', 'data-r': 'Processos' }, String(c.processos)),
+      h('td', { 'data-r': 'Cadastro' }, etiquetaSituacao(c.situacao))
+    ];
+    let corpo;
+    if (visao === 'quadro') {
+      corpo = h('div', { class: 'quadro-cli' }, ETAPAS_CLIENTE.filter(([id]) => !etapa || id === etapa).map(([id, nome]) => {
+        const daEtapa = lista.filter(c => c._etapa === id);
+        return h('section', { class: 'coluna-cli et-' + id },
+          h('h2', {}, h('span', {}, nome), h('span', { class: 'seg-n' }, String(daEtapa.length))),
+          daEtapa.slice(0, 60).map(c => h('a', { class: 'cartao-cli', href: '#/cliente/' + c.id },
+            h('strong', {}, c.nome), h('span', { class: 'peq' }, [c.area, c.telefone].filter(Boolean).join(' · ') || '—'),
+            c.processos ? h('span', { class: 'peq' }, `${c.processos} processo${c.processos === 1 ? '' : 's'}`) : null)),
+          daEtapa.length > 60 ? h('p', { class: 'peq' }, `+ ${daEtapa.length - 60} (use a busca)`) : null,
+          !daEtapa.length ? h('p', { class: 'peq vazio-t' }, 'Ninguém nesta etapa.') : null);
+      }));
+    } else {
+      corpo = h('div', {},
+        h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'} na lista`),
+        tabela(['Cliente', 'Etapa', 'Área', 'Telefone', 'Processos', 'Cadastro'], lista.slice(0, limite), linha, c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
+        lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(150, lista.length - limite)}`, () => ir({ mais: String(limite + 150) }), 'sec')) : null);
+    }
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Clientes'), h('p', { class: 'peq' }, `${todos.length} clientes · ${comProc} com processo`, aConferir ? h('span', {}, ' · ', h('a', { href: '#/clientes?conferir=1' }, `${aConferir} cadastros a completar`)) : null)),
-        botao('Novo cliente', () => { location.hash = '#/cliente/novo'; })),
-      h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip-filtro' + (!area ? ' ativo' : ''), onclick: () => ir({ area: '' }) }, `Todas as áreas (${todos.length})`),
-        Object.keys(porArea).sort().map(a => h('button', { type: 'button', class: 'chip-filtro' + (area === a ? ' ativo' : ''), onclick: () => ir({ area: a }) }, `${a} (${porArea[a]})`))),
-      form,
-      h('p', { class: 'peq' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} na lista`),
-      tabela(['Nome', 'Tipo de ação', 'Telefone', 'Área', 'Processos', 'Cadastro'], lista.slice(0, limite), c => [
-        h('td', { 'data-r': 'Nome' }, h('strong', {}, c.nome), c.cpf_cnpj ? h('div', { class: 'peq' }, c.cpf_cnpj) : null),
-        h('td', { 'data-r': 'Tipo de ação' }, c.tipo_acao || h('span', { class: 'peq' }, '—')),
-        h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone),
-        h('td', { 'data-r': 'Área' }, c.area),
-        h('td', { 'data-r': 'Processos' }, String(c.processos)),
-        h('td', { 'data-r': 'Cadastro' }, etiquetaSituacao(c.situacao), c.pasta_url ? null : h('div', { class: 'peq' }, 'sem pasta'))
-      ], c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
-      lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(150, lista.length - limite)}`, () => ir({ mais: String(limite + 150) }), 'sec')) : null);
+      h('div', { class: 'cab cab-pagina' },
+        h('div', {}, h('div', { class: 'titulo-linha' }, h('h1', {}, 'Clientes'), h('span', { class: 'contador', title: 'clientes cadastrados' }, String(todos.length))),
+          h('p', {}, `${comProc} com processo · ${todos.length - comProc} sem processo`)),
+        h('div', { class: 'barra' }, botao('+ Novo cliente', () => { location.hash = '#/cliente/novo'; }))),
+      h('section', { class: 'painel-busca' }, form, filtros),
+      h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, 'Clique numa etapa para filtrar')),
+      etapas,
+      corpo);
   }
 
   const ESTADO_CIVIL = [['', '—'], ['solteiro(a)', 'Solteiro(a)'], ['casado(a)', 'Casado(a)'], ['união estável', 'União estável'],
@@ -2668,6 +2766,6 @@
 
   sessao = ler('painel_sessao');
   if (sessao) recuperarMemoria();
-  if (sessao) montarTopo();
+  if (sessao) montarTopo(); else document.body.classList.add('sem-sessao');
   rota().then(() => { if (sessao) preaquecer(); });
 })();

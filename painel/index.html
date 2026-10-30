@@ -6,30 +6,35 @@
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://viacep.com.br https://comunicaapi.pje.jus.br; base-uri 'none'; form-action 'none'; object-src 'none'">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#14161a">
 <title>Painel interno | Araújo Advocacia</title>
 <link rel="icon" href="/assets/logo-araujo.png" type="image/png">
 <link rel="preload" href="/assets/jost-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/painel/painel.css?v=21">
+<link rel="stylesheet" href="/painel/painel.css?v=30">
 <script src="/painel/config.js?v=2" defer></script>
-<script src="/painel/painel.js?v=28" defer></script>
+<script src="/painel/painel.js?v=30" defer></script>
 </head>
-<body>
-<header class="topo">
-  <div class="topo-in">
-    <a class="marca" href="/" title="Voltar ao site"><img src="/assets/logo-araujo.png" alt="Araújo Advocacia" width="58" height="40"><span>Painel</span></a>
-    <nav class="abas" id="abas" aria-label="Áreas do painel" hidden></nav>
-    <div class="quem" id="quem" hidden>
-      <button type="button" class="quem-btn" id="quem-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="quem-menu"><span id="quem-nome"></span> <span aria-hidden="true">▾</span></button>
-      <div class="quem-menu" id="quem-menu" role="menu" hidden>
-        <a href="#/relatorios" id="menu-relatorios" role="menuitem">Relatórios</a>
-        <a href="#/usuarios" id="menu-usuarios" role="menuitem">Usuários</a>
-        <button type="button" id="btn-senha" role="menuitem">Trocar senha</button>
-        <button type="button" id="btn-sair" role="menuitem">Sair</button>
-      </div>
+<body class="com-lateral">
+<header class="barra-cel" id="barra-cel">
+  <button type="button" class="menu-cel" id="menu-cel" aria-controls="lateral" aria-expanded="false" aria-label="Abrir o menu"><span></span><span></span><span></span></button>
+  <a class="marca-cel" href="#/inicio"><img src="/assets/logo-araujo.png" alt="Araújo Advocacia" width="44" height="30"></a>
+</header>
+<aside class="lateral" id="lateral" aria-label="Menu do painel">
+  <a class="marca" href="#/inicio" title="Início"><img src="/assets/logo-araujo.png" alt="Araújo Advocacia" width="58" height="40"><span>Painel jurídico</span></a>
+  <nav class="abas" id="abas" aria-label="Áreas do painel" hidden></nav>
+  <div class="quem" id="quem" hidden>
+    <button type="button" class="quem-btn" id="quem-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="quem-menu">
+      <span class="quem-avatar" id="quem-avatar" aria-hidden="true"></span><span class="quem-txt"><span id="quem-nome"></span><small id="quem-perfil"></small></span><span class="quem-seta" aria-hidden="true">▴</span></button>
+    <div class="quem-menu" id="quem-menu" role="menu" hidden>
+      <a href="#/relatorios" id="menu-relatorios" role="menuitem" hidden>Relatórios</a>
+      <a href="#/usuarios" id="menu-usuarios" role="menuitem" hidden>Usuários</a>
+      <a href="/" role="menuitem">Ver o site</a>
+      <button type="button" id="btn-senha" role="menuitem">Trocar senha</button>
+      <button type="button" id="btn-sair" role="menuitem">Sair</button>
     </div>
   </div>
-</header>
+</aside>
+<div class="lateral-fundo" id="lateral-fundo" hidden></div>
 <main id="app" class="app" aria-live="polite">
   <p class="carregando">Carregando…</p>
 </main>
