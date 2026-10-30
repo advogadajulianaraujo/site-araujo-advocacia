@@ -1631,6 +1631,19 @@
         h('div', { class: 'barra' },
           h('button', { type: 'button', class: 'chip-filtro ordem', onclick: () => ordem.mudar(dir === 'asc' ? 'desc' : 'asc') }, dir === 'asc' ? '▼ Mais urgentes primeiro' : '▲ Mais distantes primeiro'),
           h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => ir({ encerrados: e.target.checked ? '1' : '' }) }), 'Mostrar cumpridos (30 dias)'))),
+      sessao.usuario.pode.usuarios && conta('vencido') ? h('div', { class: 'nota alerta baixa-lote' },
+        h('strong', {}, `${conta('vencido')} prazo(s) vencido(s) sem baixa${sis === 'todos' ? '' : ' neste sistema'}.`),
+        ' Se já foram resolvidos, dê baixa em todos de uma vez (eles saem da lista; dá para reabrir em "Mostrar cumpridos"). ',
+        botao('Dar baixa em todos os vencidos', async ev => {
+          const b = ev.target;
+          try {
+            const c = await api('prazos.baixarVencidos', { contar: true });
+            if (!confirm(`Dar baixa em ${c.vencidos} prazo(s) com data fatal antes de hoje, de todos os sistemas? Os de hoje em diante continuam.`)) return;
+            b.disabled = true; b.textContent = 'Dando baixa…';
+            const r = await api('prazos.baixarVencidos', {});
+            avisar(`${r.baixados} prazo(s) vencido(s) baixado(s).`); rota();
+          } catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Dar baixa em todos os vencidos'; }
+        }, 'sec mini')) : null,
       nProv ? h('div', { class: 'nota alerta' }, h('strong', {}, `${nProv} prazo${nProv === 1 ? '' : 's'} provisório${nProv === 1 ? '' : 's'}.`),
         ' O aviso do tribunal não informa o ato (no PJe vem "documento sigiloso"), então o robô usou o prazo mais curto (5 dias). Abra no sistema, confira o ato e clique em Conferir ou corrija os dias.') : null,
       h('section', { class: 'bloco-prazos' }, h('h2', {}, `Prazos (${todosOrdenados.length})`),

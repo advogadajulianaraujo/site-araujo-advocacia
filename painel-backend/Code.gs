@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.0';
+var VERSAO = '6.9.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -305,6 +305,7 @@ var ROTAS = {
   'prazos.salvar': { fn: salvarPrazo_ },
   'prazos.conferir': { permissao: 'conferePrazos', fn: conferirPrazo_ },
   'prazos.situacao': { fn: mudarSituacaoPrazo_ },
+  'prazos.baixarVencidos': { permissao: 'usuarios', fn: baixarVencidos_ },
   'intimacoes.listar': { fn: listarIntimacoes_ },
   'robo.rodar': { fn: function (d, u) { return rodarRobo_(u.usuario); } },
   'djen.config': { fn: djenConfig_ },
@@ -5904,4 +5905,26 @@ function vigiaRobo_(avisar) {
     }
   }
   return alertas;
+}
+
+
+/**
+ * Baixa em lote (feita uma vez, a pedido da administração): todo prazo aberto com data fatal ANTES de hoje vira "cancelado",
+ * com a observação da baixa. Prazos de hoje em diante não são tocados. Cada um pode ser reaberto no painel.
+ */
+function baixarVencidos_(d, u) {
+  return comTrava_(function () {
+    var hoje = hojeSP_(), tab = tabela_('Prazos'), agora = new Date().toISOString(), n = 0;
+    var alvo = tab.linhas.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje; });
+    if (d.contar) return { vencidos: alvo.length };
+    tab.adiar = true;
+    alvo.forEach(function (z) {
+      atualizarLinha_(tab, z, { situacao: 'cancelado', atualizado_em: agora, atualizado_por: u.usuario,
+        observacoes: (z.observacoes ? z.observacoes + ' | ' : '') + 'Baixa em lote dos prazos vencidos em ' + dataBR_(hoje) + ' por ' + (u.nome || u.usuario) + '.' });
+      n++;
+    });
+    regravarMudadas_(tab);
+    registrar_(u.usuario, 'baixa em lote', n + ' prazo(s) vencido(s) baixado(s)');
+    return { baixados: n };
+  });
 }
