@@ -223,6 +223,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Velocidade
 
+- Velocidade 7.2.0: (1) LOTE — as leituras pedidas juntas (mesma tela, busca antecipada) vão numa ida só ao Google: o painel
+  junta por 25 ms (`chamar` → `enviarLote`, máx. 12; só as rotas de `EM_LOTE`) e o servidor responde tudo em `rotearLote_`
+  (aceita só rotas de LEITURAS_RAPIDAS; gravações nunca vão em lote; Code.gs antigo → volta a pedir um por um). (2) Sessão sem
+  abrir a planilha: `usuarioDaSessao_` guarda os dados do usuário (sem hash/salt) na memória do servidor com a versão dos dados
+  na chave — qualquer gravação (desativar, trocar senha/perfil) invalida na hora. (3) Leitura NUNCA pode ficar fora de
+  `LEITURAS` em painel.js: senão é tratada como gravação e apaga a memória do painel (era o caso de `trabalho.aguardando`).
+  Rota de leitura nova = pôr em `LEITURAS` (e em `EM_LOTE` + LEITURAS_RAPIDAS do Code.gs se for só leitura).
+
 - Robô da velocidade (7.1.0): `aquecerMemoria_` (gatilho `aquecerGatilho` de 10 em 10 min e logo depois do robô de hora em hora)
   deixa prontas na memória do servidor as listas grandes (clientes, processos, prazos, intimações abertas, relatório, honorários)
   para cada perfil. Essas listas são guardadas por PERFIL (`MEMORIA_POR_PERFIL`), não por pessoa, e a chave ignora campos vazios

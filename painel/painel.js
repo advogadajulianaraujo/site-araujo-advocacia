@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -83,9 +83,9 @@
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
     clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
-    processos: ['eu', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['eu', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
-    tarefas: ['eu', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
+    processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
+    intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
     advogados: ['modelos'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo']
   };
   function esquecerDepois(acao) {
@@ -284,7 +284,41 @@
   };
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
-  async function chamar(acao, dados) {
+  /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
+  const EM_LOTE = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+    'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
+    'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
+  let filaLote = [], loteTimer = null, loteDesligado = false;
+  function chamar(acao, dados) {
+    if (!EM_LOTE.has(acao) || loteDesligado || !sessao) return chamarUm(acao, dados);
+    return new Promise((ok, falhou) => {
+      filaLote.push({ acao, dados: dados || {}, ok, falhou });
+      if (filaLote.length >= 12) { clearTimeout(loteTimer); enviarLote(); }
+      else if (!loteTimer) loteTimer = setTimeout(enviarLote, 25);
+    });
+  }
+  async function enviarLote() {
+    const fila = filaLote; filaLote = []; loteTimer = null;
+    if (!fila.length) return;
+    if (fila.length === 1) { const x = fila[0]; chamarUm(x.acao, x.dados).then(x.ok, x.falhou); return; }
+    let j;
+    try {
+      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'lote', token: sessao && sessao.token, dados: { pedidos: fila.map(x => ({ acao: x.acao, dados: x.dados })) } }), redirect: 'follow' });
+      j = await resp.json();
+    } catch (e) { fila.forEach(x => chamarUm(x.acao, x.dados).then(x.ok, x.falhou)); return; }
+    if (!j || !j.ok || !Array.isArray(j.dados)) { // programa do Google antigo (sem "lote"): volta a pedir um por um
+      if (j && /desconhecida|inválido/i.test(j.erro || '')) loteDesligado = true;
+      fila.forEach(x => chamarUm(x.acao, x.dados).then(x.ok, x.falhou)); return;
+    }
+    let caiu = false;
+    fila.forEach((x, i) => {
+      const r = j.dados[i] || { ok: false, erro: 'Resposta incompleta.' };
+      if (r.ok) x.ok(r.dados);
+      else { if (r.sessao) caiu = true; x.falhou(new Error(r.erro || 'Erro.')); }
+    });
+    if (caiu) sair(true);
+  }
+  async function chamarUm(acao, dados) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
     let resp;
     try {
@@ -1948,7 +1982,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.1.0';
+  const VERSAO_PAINEL = '7.2.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3440,7 +3474,7 @@
     }
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
-    if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['clientes', 'prazos', 'tarefas', 'inicio'].forEach(preBuscar), 2500); }
+    if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['inicio', 'clientes', 'prazos', 'tarefas'].forEach(preBuscar), 1200); }
     sujo = false;
     const detAg = document.getElementById('ag-detalhe'); if (detAg) detAg.hidden = true;
     window.scrollTo(0, 0);

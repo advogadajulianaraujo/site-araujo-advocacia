@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.1.0';
+var VERSAO = '7.2.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -264,6 +264,7 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, erro: 'Pedido inválido.' });
   }
+  if (req.acao === 'lote') return json_({ ok: true, dados: rotearLote_(req.token, req.dados || {}) });
   try {
     return json_({ ok: true, dados: rotear_(req.acao, req.token, req.dados || {}) });
   } catch (err) {
@@ -271,6 +272,19 @@ function doPost(e) {
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
     return json_({ ok: false, erro: msg, sessao: !!(err && err.sessao) });
   }
+}
+
+/** Velocidade: até 12 LEITURAS numa ida só ao servidor (o painel junta os pedidos da mesma tela). Gravações nunca vêm em lote. */
+function rotearLote_(token, d) {
+  var pedidos = (d.pedidos || []).slice(0, 12);
+  return pedidos.map(function (pd) {
+    try {
+      if (!pd || typeof pd.acao !== 'string' || !LEITURAS_RAPIDAS[pd.acao]) throw falha_('Só leituras podem vir em lote.');
+      return { ok: true, dados: rotear_(pd.acao, token, pd.dados || {}) };
+    } catch (err) {
+      return { ok: false, erro: err && err.publico ? err.message : 'Erro interno. Tente de novo.', sessao: !!(err && err.sessao) };
+    }
+  });
 }
 
 function json_(obj) {
@@ -374,7 +388,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'eu.painel': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -578,7 +592,14 @@ function usuarioDaSessao_(token) {
   var partes = valor.split('|');
   var id = partes[0], versao = partes[1], criada = +partes[2] || 0;
   if (Date.now() - criada > SESSAO_MAX_MS) { cache.remove('sessao_' + token); throw falha_('Sua sessão terminou (12 horas). Entre de novo.', true); }
-  var u = tabela_('Usuarios').linhas.filter(function (r) { return r.id === id; })[0];
+  // dados do usuário ficam na memória do servidor: o pedido que já tem resposta pronta nem abre a planilha.
+  // A memória vale até a próxima gravação (desativar, trocar senha ou perfil grava e derruba na hora).
+  var ku = 'usr_' + id + '_' + versaoDados_().slice(-10), u = null;
+  try { var uc = cache.get(ku); if (uc) u = JSON.parse(uc); } catch (eU) { u = null; }
+  if (!u) {
+    u = tabela_('Usuarios').linhas.filter(function (r) { return r.id === id; })[0];
+    if (u) { try { var cp = {}; Object.keys(u).forEach(function (k) { if (k !== 'hash' && k !== 'salt' && k.charAt(0) !== '_') cp[k] = u[k]; }); cache.put(ku, JSON.stringify(cp), 300); } catch (eP) { /* segue */ } }
+  }
   if (!u || u.ativo !== 'sim' || !PERFIS[u.perfil]) {
     cache.remove('sessao_' + token);
     throw falha_('Seu acesso foi desativado.', true);
