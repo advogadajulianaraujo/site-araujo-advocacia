@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.6';
+var VERSAO = '6.9.7';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -71,7 +71,8 @@ var ESQUEMA = {
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
-    'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+    'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
+    'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
@@ -350,6 +351,10 @@ var ROTAS = {
   'tarefas.mover': { fn: moverTarefa_ },
   'tarefas.atribuir': { fn: atribuirTarefa_ },
   'tarefas.config': { permissao: 'usuarios', fn: configTarefas_ },
+  'tarefas.check': { fn: marcarItemTarefa_ },
+  'tarefas.comentar': { fn: comentarTarefa_ },
+  'eu.painel': { fn: meuPainel_ },
+  'trabalho.assumir': { fn: assumirTrabalho_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
   'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
   'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
@@ -361,7 +366,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'eu.painel': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -387,7 +392,7 @@ function rotear_(acao, token, dados) {
  * Memória do servidor para as listas grandes: a resposta fica guardada por até 10 minutos e é jogada fora
  * na hora em que qualquer coisa é gravada na planilha (pelo painel, pelo robô ou pelo configurar).
  */
-var ROTAS_GUARDADAS = { 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
+var ROTAS_GUARDADAS = { 'eu.painel': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 function versaoDados_() {
   var c = CacheService.getScriptCache(), v = c.get('versao_dados');
   if (!v) { v = String(Date.now()); c.put('versao_dados', v, 21600); }
@@ -1644,10 +1649,13 @@ function registrar_(usuario, acao, detalhe) {
   } catch (e) { /* o registro nunca derruba a operação */ }
 }
 
+var TRAVA_NIVEL_ = 0; // trava dentro de trava (uma rota chamando outra) não solta a de fora antes da hora
 function comTrava_(fn) {
+  if (TRAVA_NIVEL_ > 0) { TRAVA_NIVEL_++; try { return fn(); } finally { TRAVA_NIVEL_--; } }
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw falha_('O sistema está ocupado. Tente de novo em alguns segundos.');
-  try { return fn(); } finally { lock.releaseLock(); }
+  TRAVA_NIVEL_ = 1;
+  try { return fn(); } finally { TRAVA_NIVEL_ = 0; lock.releaseLock(); }
 }
 
 function novoId_(prefixo) {
@@ -2801,6 +2809,8 @@ function listarIntimacoes_(d) {
   var procs = {}, clis = {};
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  var respIntim = {};
+  tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && t.situacao !== 'cancelada') respIntim[m[1]] = t.responsavel; });
   var lista = tabela_('Intimacoes').linhas;
   if (d.abertas) lista = lista.filter(function (i) {
     if (i.terminada_por) return false;
@@ -2815,7 +2825,8 @@ function listarIntimacoes_(d) {
     .map(function (i) {
       var x = limpar_(i); x.texto = String(x.texto || '').slice(0, 600);
       var z = prazos[i.prazo_id];
-      if (z) x.prazo = { id: z.id, fatal: z.fatal, situacao: z.situacao, descricao: String(z.descricao || '').slice(0, 120) };
+      if (z) x.prazo = { id: z.id, fatal: z.fatal, situacao: z.situacao, descricao: String(z.descricao || '').slice(0, 120), responsavel: z.responsavel || '' };
+      x.responsavel = (z && z.responsavel) || respIntim[i.id] || '';
       if (atos[i.id]) x.ato = atos[i.id];
       var c = clis[(procs[i.processo_id] || {}).cliente_id];
       if (c) { x.cliente = c.nome; x.telefone = c.telefone || ''; }
@@ -5222,7 +5233,7 @@ function apagado_(cab) {
 
 // Etapas do quadro. Para prazos processuais: "protocolado" marca o prazo como cumprido.
 var ETAPAS_TAREFA = ['afazer', 'fazendo', 'revisar', 'protocolado', 'concluido'];
-var NOMES_ETAPA = { afazer: 'A fazer', fazendo: 'Fazendo', revisar: 'Pronto para revisar', protocolado: 'Protocolado', concluido: 'Conferido e concluído' };
+var NOMES_ETAPA = { afazer: 'A fazer', fazendo: 'Fazendo', revisar: 'Pronto para revisar', protocolado: 'Feito / protocolado', concluido: 'OK da administração' };
 var PESO_PRAZO = 3; // pontos de um prazo processual entregue no prazo (tarefa comum vale o peso dela, 1 por padrão)
 
 function etapaDoPrazo_(z) {
@@ -5277,8 +5288,15 @@ function itemTarefa_(t, nomesCli, hoje) {
     cliente: nomesCli[t.cliente_id] || '', cliente_id: t.cliente_id || '', responsavel: t.responsavel || '', vence_em: t.vence_em || '',
     etapa: t.etapa || 'afazer', peso: parseInt(t.peso, 10) || 1, atrasada: !fim && !!t.vence_em && t.vence_em < hoje,
     concluida_em: t.concluida_em || '', concluida_por: t.concluida_por || '', criado_por: t.criado_por || '',
-    no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '' };
+    no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '',
+    prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '',
+    inicial: /\[inicial:/.test(t.descricao || '') };
 }
+
+function lerChecklist_(txt) {
+  try { var a = JSON.parse(txt || '[]'); return Array.isArray(a) ? a.slice(0, 30).map(function (x) { return { t: String(x.t || '').slice(0, 140), ok: !!x.ok }; }) : []; } catch (e) { return []; }
+}
+var PRIORIDADES = ['baixa', 'normal', 'alta', 'urgente'];
 
 /** Pontos e entregas por pessoa (tarefas e prazos concluídos no período). */
 function pontosPorPessoa_(itens, desde, nomesU) {
@@ -5335,11 +5353,14 @@ function listarTarefas_(d, u) {
     itens.push(itemTarefa_(t, nomesCli, hoje));
   });
   itens.sort(function (a, b) { return (a.vence_em || '9999') < (b.vence_em || '9999') ? -1 : (a.vence_em || '9999') > (b.vence_em || '9999') ? 1 : 0; });
+  var todos = !u.usuario || (PERFIS[u.perfil] && PERFIS[u.perfil].usuarios);
+  // colaborador vê só o que é dele (o que pegou com "Eu faço" ou o que passaram para ele); a administração vê tudo
+  if (!todos) itens = itens.filter(function (x) { return x.responsavel === u.usuario || (x.tipo === 'tarefa' && !x.responsavel && x.criado_por === u.usuario); });
   var nomesU = nomesUsuarios_();
   return {
     hoje: hoje, dias: dias, eu: u.usuario, etapas: ETAPAS_TAREFA.map(function (e) { return { id: e, nome: NOMES_ETAPA[e] }; }),
     usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome }; }),
-    itens: itens, pontos: pontosPorPessoa_(itens, desde, nomesU),
+    itens: itens, todos: todos, pontos: pontosPorPessoa_(itens, desde, nomesU).filter(function (p) { return todos || p.usuario === u.usuario; }),
     responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '', inicial: config_('RESP_INICIAL') || '' }
   };
 }
@@ -5364,11 +5385,22 @@ function salvarTarefa_(d, u) {
     if (t.vence_em && !/^\d{4}-\d{2}-\d{2}$/.test(t.vence_em)) throw falha_('Data de entrega inválida.');
     var proc = null;
     if (t.processo_id) proc = tabela_('Processos').linhas.filter(function (p) { return p.id === t.processo_id; })[0] || null;
+    if (!proc && t.numero) proc = tabela_('Processos').linhas.filter(function (p) { return p.numero === String(t.numero).trim(); })[0] || null;
+    if (t.numero && !proc) throw falha_('Processo ' + t.numero + ' não encontrado no painel.');
+    var cliId = proc ? proc.cliente_id : String(t.cliente_id || '');
+    if (cliId && !tabela_('Clientes').linhas.some(function (c) { return c.id === cliId; })) cliId = '';
     var agora = new Date().toISOString();
     var dados = { titulo: titulo, descricao: String(t.descricao || '').trim().slice(0, 2000), responsavel: validarResponsavel_(t.responsavel),
       vence_em: t.vence_em || '', peso: String(Math.min(Math.max(parseInt(t.peso, 10) || 1, 1), 5)),
-      processo_id: proc ? proc.id : '', numero: proc ? proc.numero : '', cliente_id: proc ? proc.cliente_id : String(t.cliente_id || ''),
+      processo_id: proc ? proc.id : '', numero: proc ? proc.numero : '', cliente_id: cliId,
+      prioridade: PRIORIDADES.indexOf(t.prioridade) >= 0 ? t.prioridade : 'normal',
+      repetir: ['semanal', 'mensal'].indexOf(t.repetir) >= 0 ? t.repetir : '',
       atualizado_em: agora, atualizado_por: u.usuario };
+    if (t.checklist !== undefined) {
+      var itensC = (Array.isArray(t.checklist) ? t.checklist : String(t.checklist || '').split('\n').map(function (l) { return { t: l }; }))
+        .map(function (x) { return { t: String(x.t || '').replace(/^\s*(\[[ x]\]|[-*•])\s*/i, '').trim().slice(0, 140), ok: !!x.ok }; }).filter(function (x) { return x.t; }).slice(0, 30);
+      dados.checklist = JSON.stringify(itensC);
+    }
     var tab = tabela_('Tarefas');
     if (t.id) {
       var l = tab.linhas.filter(function (x) { return x.id === t.id; })[0];
@@ -5415,7 +5447,7 @@ function moverTarefa_(d, u) {
     if (!fim) { mt.concluida_em = ''; mt.concluida_por = ''; }
     if (!t.responsavel && !fim) mt.responsavel = u.usuario;
     atualizarLinha_(tab, t, mt);
-    if (fim) registrar_(u.usuario, 'tarefa: ' + NOMES_ETAPA[etapa], String(t.titulo || '').slice(0, 140));
+    if (fim) { registrar_(u.usuario, 'tarefa: ' + NOMES_ETAPA[etapa], String(t.titulo || '').slice(0, 140)); repetirTarefa_(tab, t, u); }
     return { ok: true };
   });
 }
@@ -5678,6 +5710,120 @@ function relatorioGeral_(d) {
   };
 }
 
+/** Marca ou desmarca um item do checklist da tarefa. */
+function marcarItemTarefa_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Tarefas'), t = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!t) throw falha_('Tarefa não encontrada.');
+    var lista = lerChecklist_(t.checklist), i = parseInt(d.i, 10);
+    if (!lista[i]) throw falha_('Item não encontrado.');
+    lista[i].ok = !!d.ok;
+    atualizarLinha_(tab, t, { checklist: JSON.stringify(lista), historico: historicoMais_(t.historico, u, (d.ok ? '☑ ' : '☐ ') + lista[i].t), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    return { checklist: lista };
+  });
+}
+
+/** Comentário na tarefa (fica no histórico com nome e hora). */
+function comentarTarefa_(d, u) {
+  var txt = String(d.texto || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  if (!txt) throw falha_('Escreva o comentário.');
+  return comTrava_(function () {
+    var tab = tabela_('Tarefas'), t = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!t) throw falha_('Tarefa não encontrada.');
+    atualizarLinha_(tab, t, { historico: historicoMais_(t.historico, u, '💬 ' + txt), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    return { historico: tab.linhas.filter(function (x) { return x.id === d.id; })[0].historico };
+  });
+}
+
+/** Tarefa que se repete: ao terminar, cria a próxima (mesmo responsável, checklist zerado). */
+function repetirTarefa_(tab, t, u) {
+  if (!t.repetir || t.situacao === 'cancelada') return null;
+  var marca = '[rep:' + t.id + ']';
+  if (tab.linhas.some(function (x) { return (x.descricao || '').indexOf(marca) >= 0; })) return null;
+  var base = t.vence_em || hojeSP_();
+  var prox = t.repetir === 'mensal' ? somarMeses_(base, 1) : somarDias_(base, 7);
+  while (prox < hojeSP_()) prox = t.repetir === 'mensal' ? somarMeses_(prox, 1) : somarDias_(prox, 7);
+  var agora = new Date().toISOString();
+  var nova = { id: novoId_('T'), titulo: t.titulo, descricao: String(t.descricao || '').replace(/\n?\[rep:[^\]]+\]/g, '') + '\n' + marca, responsavel: t.responsavel, processo_id: t.processo_id,
+    numero: t.numero, cliente_id: t.cliente_id, vence_em: prox, etapa: 'afazer', peso: t.peso, situacao: 'ativa', concluida_por: '', concluida_em: '',
+    historico: historicoMais_('', u, 'repetição ' + t.repetir + ' (criada ao terminar a anterior)'), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
+    prioridade: t.prioridade, checklist: JSON.stringify(lerChecklist_(t.checklist).map(function (x) { return { t: x.t, ok: false }; })), repetir: t.repetir, ok_por: '', ok_em: '' };
+  inserirLinha_(tab, nova);
+  return nova.id;
+}
+
+function somarMeses_(iso, n) {
+  var a = +iso.slice(0, 4), m = +iso.slice(5, 7) - 1 + n, d = +iso.slice(8, 10);
+  var alvo = new Date(Date.UTC(a, m, 1)), ult = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  return Utilities.formatDate(new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth(), Math.min(d, ult), 12)), 'UTC', 'yyyy-MM-dd');
+}
+
+/** Início de cada pessoa: o que está com ela, o que fez na semana e o que espera o OK. */
+function meuPainel_(d, u) {
+  var t = listarTarefas_({ dias: 7 }, u), hoje = hojeSP_();
+  var minhas = t.itens.filter(function (x) { return x.responsavel === u.usuario && !/protocolado|concluido/.test(x.etapa); });
+  var semana = relatorioSemana_({});
+  var eu = semana.pessoas.filter(function (p) { return p.usuario === u.usuario; })[0] || { total: 0, grupos: {}, itens: [] };
+  var posicao = semana.pessoas.filter(function (p) { return p.total; }).map(function (p) { return p.usuario; }).indexOf(u.usuario) + 1;
+  var esperando = 0;
+  try { var nomeEu = u.nome || u.usuario; esperando = aguardandoOk_().filter(function (x) { return x.por === nomeEu || x.por === u.usuario; }).length; } catch (e) { /* segue */ }
+  var iniciais = tabela_('Processos').linhas.filter(function (p) { return p.fase === 'contratado' && p.status !== 'arquivado' && p.responsavel === u.usuario; }).length;
+  return {
+    minhas: minhas.slice(0, 40), abertas: minhas.length, atrasadas: minhas.filter(function (x) { return x.atrasada; }).length,
+    hoje: minhas.filter(function (x) { return x.vence_em === hoje; }).length, iniciais: iniciais,
+    semana: { inicio: semana.inicio, fim: semana.fim, total: eu.total, grupos: eu.grupos, itens: eu.itens.slice(0, 12), posicao: posicao, equipe: semana.pessoas.filter(function (p) { return p.total; }).length },
+    categorias: semana.categorias, esperando: esperando
+  };
+}
+
+/** "Eu faço": a pessoa pega o prazo, a intimação ou a petição inicial; aparece nas Tarefas dela. */
+function assumirTrabalho_(d, u) {
+  var para = d.para ? pessoaDaEquipe_(d.para, u) : { usuario: u.usuario, nome: u.nome || u.usuario };
+  if (para.usuario !== u.usuario && !PERFIS[u.perfil].usuarios && !PERFIS[u.perfil].conferePrazos) throw falha_('Só a administração passa trabalho para outra pessoa.');
+  var agora = new Date().toISOString();
+  return comTrava_(function () {
+    var tabZ = tabela_('Prazos');
+    var pegarPrazo = function (z) {
+      atualizarLinha_(tabZ, z, { responsavel: para.usuario, etapa: z.etapa === 'afazer' || !z.etapa ? 'fazendo' : z.etapa, atualizado_em: agora, atualizado_por: u.usuario });
+      registrar_(u.usuario, 'responsável', 'prazo ' + z.numero + ' → ' + para.usuario);
+      return { ok: true, tipo: 'prazo', id: z.id, para: para.nome };
+    };
+    if (d.tipo === 'prazo') {
+      var z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!z) throw falha_('Prazo não encontrado.');
+      return pegarPrazo(z);
+    }
+    if (d.tipo === 'intimacao') {
+      var i = tabela_('Intimacoes').linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!i) throw falha_('Intimação não encontrada.');
+      var zi = tabZ.linhas.filter(function (x) { return x.id === i.prazo_id && SITUACOES_ABERTAS.indexOf(x.situacao) >= 0; })[0];
+      if (zi) return pegarPrazo(zi);
+      // sem prazo: vira tarefa da pessoa, ligada à intimação
+      var tabT = tabela_('Tarefas'), marca = '[intim:' + i.id + ']';
+      var ja = tabT.linhas.filter(function (x) { return (x.descricao || '').indexOf(marca) >= 0 && !x.concluida_em && x.situacao !== 'cancelada'; })[0];
+      if (ja) { atualizarLinha_(tabT, ja, { responsavel: para.usuario, historico: historicoMais_(ja.historico, u, 'passou para ' + para.nome), atualizado_em: agora, atualizado_por: u.usuario }); return { ok: true, tipo: 'tarefa', id: ja.id, para: para.nome }; }
+      var p = tabela_('Processos').linhas.filter(function (x) { return x.id === i.processo_id || x.numero === i.numero; })[0] || {};
+      var t = { id: novoId_('T'), titulo: 'Intimação: ' + String(i.movimento || 'ver o ato').slice(0, 120), descricao: 'Recebida em ' + dataBR_(String(i.recebido_em).slice(0, 10)) + ' (' + (i.fonte || '') + '). Abrir no sistema, ver o que pede e fazer.\n' + marca,
+        responsavel: para.usuario, processo_id: p.id || '', numero: i.numero, cliente_id: p.cliente_id || '', vence_em: '', etapa: 'fazendo', peso: '1', situacao: 'ativa',
+        concluida_por: '', concluida_em: '', historico: historicoMais_('', u, 'pegou a intimação' + (para.usuario !== u.usuario ? ' para ' + para.nome : '')), criado_em: agora, criado_por: u.usuario,
+        atualizado_em: agora, atualizado_por: u.usuario, prioridade: 'normal', checklist: '[]', repetir: '', ok_por: '', ok_em: '' };
+      inserirLinha_(tabT, t);
+      return { ok: true, tipo: 'tarefa', id: t.id, para: para.nome };
+    }
+    if (d.tipo === 'inicial') {
+      var tabP = tabela_('Processos'), pr = tabP.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!pr) throw falha_('Processo não encontrado.');
+      atualizarLinha_(tabP, pr, { responsavel: para.usuario, atualizado_em: agora, atualizado_por: u.usuario });
+      if (!tabela_('Tarefas').linhas.some(function (x) { return (x.descricao || '').indexOf('[inicial:' + pr.id + ']') >= 0; })) tarefaPeticaoInicial_(pr, u);
+      passarPeticaoInicial_(pr, para.usuario, u);
+      tabela_('Tarefas').linhas.forEach(function (x) { if ((x.descricao || '').indexOf('[inicial:' + pr.id + ']') >= 0 && x.etapa === 'afazer') atualizarLinha_(tabela_('Tarefas'), x, { etapa: 'fazendo' }); });
+      registrar_(u.usuario, 'responsável', 'petição inicial ' + pr.id + ' → ' + para.usuario);
+      return { ok: true, tipo: 'inicial', id: pr.id, para: para.nome };
+    }
+    throw falha_('Tipo inválido.');
+  });
+}
+
 /* ---------- Conferido (colaborador) → OK (administração) ---------- */
 
 /** Intimações ligadas ao prazo (pelo prazo ou pela intimação: prazo lançado à mão às vezes só tem um lado). */
@@ -5730,7 +5876,24 @@ function conferirTrabalho_(d, u) {
       if (!i) throw falha_('Intimação não encontrada.');
       if (!terminarIntim(i)) return { ok: true, repetido: true, por: i.terminada_por };
       cumprirPrazo(tabZ.linhas.filter(function (x) { return x.id === i.prazo_id; })[0]);
+      var tabTi = tabela_('Tarefas');
+      tabTi.linhas.forEach(function (x) {
+        if ((x.descricao || '').indexOf('[intim:' + i.id + ']') < 0 || x.concluida_em) return;
+        atualizarLinha_(tabTi, x, { etapa: 'protocolado', concluida_em: agora, concluida_por: quem.usuario, ok_por: '', ok_em: '', historico: historicoMais_(x.historico, u, 'conferido: feito por ' + quem.nome), atualizado_em: agora, atualizado_por: u.usuario });
+      });
       registrar_(quem.usuario, 'intimação terminada', i.numero + ' · ' + String(i.movimento || '').slice(0, 100) + marcado);
+      return { ok: true, por: quem.nome };
+    }
+    if (d.tipo === 'tarefa') {
+      var tabT0 = tabela_('Tarefas'), t0 = tabT0.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!t0) throw falha_('Tarefa não encontrada.');
+      if (/\[inicial:([^\]]+)\]/.test(t0.descricao || '') && !t0.concluida_em) return conferirTrabalho_({ tipo: 'inicial', id: /\[inicial:([^\]]+)\]/.exec(t0.descricao)[1], por: quem.usuario }, u);
+      if (t0.concluida_em) return { ok: true, repetido: true };
+      var mi = /\[intim:([^\]]+)\]/.exec(t0.descricao || '');
+      if (mi) { var iT = tabI.linhas.filter(function (x) { return x.id === mi[1]; })[0]; if (iT && !iT.terminada_por) return conferirTrabalho_({ tipo: 'intimacao', id: iT.id, por: quem.usuario }, u); }
+      atualizarLinha_(tabT0, t0, { etapa: 'protocolado', concluida_em: agora, concluida_por: quem.usuario, ok_por: '', ok_em: '', historico: historicoMais_(t0.historico, u, 'conferido: feito por ' + quem.nome), atualizado_em: agora, atualizado_por: u.usuario });
+      registrar_(quem.usuario, 'tarefa: Feito', String(t0.titulo || '').slice(0, 140) + marcado);
+      repetirTarefa_(tabT0, t0, u);
       return { ok: true, por: quem.nome };
     }
     if (d.tipo === 'inicial') {
@@ -5780,6 +5943,12 @@ function aguardandoOk_() {
   var us = {}; usuarios_().forEach(function (x) { us[x.usuario] = x.nome || x.usuario; });
   tabela_('Tarefas').linhas.forEach(function (t) {
     var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || '');
+    if (!m && /\[intim:/.test(t.descricao || '')) return; // conta pela própria intimação
+    if (!m && t.concluida_em && t.etapa === 'protocolado' && !t.ok_em && t.situacao !== 'cancelada' && (t.concluida_em || '') >= desde) {
+      itens.push({ tipo: 'tarefa', id: t.id, titulo: t.titulo, numero: t.numero || '', cliente: nomes[t.cliente_id] || '', por: us[t.concluida_por] || t.concluida_por, em: t.concluida_em,
+        fatal: t.vence_em, no_prazo: !t.vence_em || diaSP_(t.concluida_em) <= t.vence_em, link: '#/tarefas?quem=todos' });
+      return;
+    }
     if (!m || !t.concluida_em || t.etapa === 'concluido' || (t.concluida_em || '') < desde) return;
     var p = procs[m[1]] || {};
     itens.push({ tipo: 'inicial', id: m[1], tarefa_id: t.id, titulo: t.titulo, numero: p.numero || '', cliente: nomes[p.cliente_id] || '', por: us[t.concluida_por] || t.concluida_por, em: t.concluida_em, link: '#/processo/' + m[1] });
@@ -5804,7 +5973,14 @@ function darOk_(d, u) {
         var tI = tabela_('Intimacoes'), x = tI.linhas.filter(function (r) { return r.id === it.id; })[0];
         if (!x || x.ok_em) return;
         atualizarLinha_(tI, x, { ok_por: nome, ok_em: agora });
+        var tTi = tabela_('Tarefas');
+        tTi.linhas.forEach(function (t) { if ((t.descricao || '').indexOf('[intim:' + x.id + ']') >= 0 && t.etapa !== 'concluido') atualizarLinha_(tTi, t, { etapa: 'concluido', ok_por: nome, ok_em: agora }); });
         registrar_(u.usuario, 'ok do administrador', 'intimação ' + x.numero + ' · feita por ' + x.terminada_por); feitos++;
+      } else if (it.tipo === 'tarefa') {
+        var tT0 = tabela_('Tarefas'), t1 = tT0.linhas.filter(function (r) { return r.id === it.id; })[0];
+        if (!t1 || t1.ok_em) return;
+        atualizarLinha_(tT0, t1, { etapa: 'concluido', ok_por: nome, ok_em: agora, historico: historicoMais_(t1.historico, u, 'OK da administração'), atualizado_em: agora, atualizado_por: u.usuario });
+        registrar_(u.usuario, 'ok do administrador', 'tarefa · ' + t1.titulo); feitos++;
       } else if (it.tipo === 'inicial') {
         var tT = tabela_('Tarefas'), marca = '[inicial:' + it.id + ']';
         tT.linhas.forEach(function (t) {
@@ -5832,6 +6008,12 @@ function devolverTrabalho_(d, u) {
       var tI = tabela_('Intimacoes'), x = tI.linhas.filter(function (r) { return r.id === d.id; })[0];
       if (!x) throw falha_('Intimação não encontrada.');
       atualizarLinha_(tI, x, { terminada_por: '', terminada_em: '', ok_por: '', ok_em: '' });
+      var tTd = tabela_('Tarefas');
+      tTd.linhas.forEach(function (t) { if ((t.descricao || '').indexOf('[intim:' + x.id + ']') >= 0) atualizarLinha_(tTd, t, { etapa: 'fazendo', concluida_em: '', concluida_por: '', ok_por: '', ok_em: '', historico: historicoMais_(t.historico, u, 'devolvida pela administração') }); });
+    } else if (d.tipo === 'tarefa') {
+      var tT0 = tabela_('Tarefas'), t1 = tT0.linhas.filter(function (r) { return r.id === d.id; })[0];
+      if (!t1) throw falha_('Tarefa não encontrada.');
+      atualizarLinha_(tT0, t1, { etapa: 'fazendo', concluida_em: '', concluida_por: '', ok_por: '', ok_em: '', historico: historicoMais_(t1.historico, u, 'devolvida pela administração' + (d.motivo ? ': ' + String(d.motivo).slice(0, 120) : '')), atualizado_em: agora, atualizado_por: u.usuario });
     } else if (d.tipo === 'inicial') {
       var tT = tabela_('Tarefas'), marca = '[inicial:' + d.id + ']';
       tT.linhas.forEach(function (t) {
@@ -5914,7 +6096,7 @@ var CATEGORIAS_LOG = [
   ['conferidos', 'Datas de prazo confirmadas', /^prazo conferido$/],
   ['prazos_novos', 'Prazos lançados ou corrigidos', /^prazo (criado|alterado)$/],
   ['iniciais', 'Petições iniciais feitas', /^petição inicial feita$/],
-  ['tarefas', 'Tarefas concluídas', /^tarefa: /],
+  ['tarefas', 'Tarefas feitas', /^tarefa: /],
   ['oks', 'OK do administrador', /^ok do administrador$/],
   ['whatsapp', 'Clientes avisados no WhatsApp', /^whatsapp ao cliente$/],
   ['agenda', 'Audiências, perícias e compromissos na agenda', /^(ato na agenda|compromisso criado)$/],

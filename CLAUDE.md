@@ -224,6 +224,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Tarefas, caixa, relatórios, e-mail, IA e andamentos (versão 6.7)
 
+- Tarefas 6.9.7: cada colaborador vê SÓ o que é dele (servidor, `listarTarefas_`: responsável = ele, ou criada por ele sem
+  responsável); a administração vê tudo ("Minhas / Toda a equipe / pessoa"). "🙋 Eu faço" (e "Passar para…" para administração
+  e advogada) em prazos, intimações e petição inicial (`trabalho.assumir`): prazo → responsável; intimação sem prazo → vira
+  tarefa da pessoa com a marca `[intim:ID]` (Conferido em uma fecha a outra; conta uma vez só no OK); inicial → responsável do
+  processo + tarefa. Tarefa tem prioridade (urgente/alta/normal/baixa), checklist (`tarefas.check`), comentários
+  (`tarefas.comentar`, no histórico), repetição semanal/mensal (`repetirTarefa_` cria a próxima ao terminar, marca `[rep:ID]`),
+  cliente e processo (por número). Quadro ou Lista, busca, filtros Atrasadas / Para hoje / Próximos 7 dias / Urgente / Alta.
+  Etapas: A fazer → Fazendo → Pronto para revisar → Feito / protocolado (Conferido) → OK da administração.
+- Início de cada um (`eu.painel`): colaborador vê os números dele (Comigo, Atrasadas, Hoje, Feitas na semana), "Minhas tarefas e
+  prazos" com ✓ Conferido na própria linha, "O que eu fiz nesta semana" (blocos por tipo, posição na equipe) e os prazos do
+  escritório; a administração vê o Início do escritório + as próprias tarefas, a própria semana e "N esperando o seu OK".
+
 - Tarefas (aba no topo): quadro A fazer → Fazendo → Pronto para revisar → Protocolado → Conferido e concluído. Junta as
   tarefas da aba Tarefas e os prazos abertos (coluna `responsavel` e `etapa` em Prazos). Prazo em "Protocolado" = cumprido;
   voltar para trás reabre. Só quem confere prazos passa para "Conferido e concluído". Pontos: tarefa no prazo vale o peso

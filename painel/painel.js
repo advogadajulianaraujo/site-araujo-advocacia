@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -82,11 +82,11 @@
   }
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
-    clientes: ['clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
-    processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['relatorio'], trabalho: ['prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
-    tarefas: ['tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
-    advogados: ['modelos'], usuarios: ['usuarios'], feriados: ['feriados', 'prazos', 'resumo']
+    clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
+    processos: ['eu', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
+    intimacoes: ['eu', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    tarefas: ['eu', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
+    advogados: ['modelos'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo']
   };
   function esquecerDepois(acao) {
     const lista = AFETA[acao.split('.')[0]];
@@ -564,7 +564,8 @@
   async function telaInicio() {
     carregando();
     const hoje = hojeISO();
-    const [r, ag, procsIni] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }).catch(() => null), api('processos.listar', {}).catch(() => [])]);
+    const [r, ag, procsIni, meu, aguarda] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }).catch(() => null), api('processos.listar', {}).catch(() => []),
+      api('eu.painel').catch(() => null), sessao.usuario.pode.usuarios ? api('trabalho.aguardando').catch(() => []) : Promise.resolve([])]);
     const t = r.totais, pode = sessao.usuario.pode;
     const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
     const eventos = ag ? ag.eventos.slice().sort((a, b) => a.inicio < b.inicio ? -1 : 1) : [];
@@ -636,10 +637,36 @@
           { nome: 'A definir', valor: pz.aDefinir || 0, cor: '#7a4fc0', ir: () => { location.hash = '#/prazos?ver=definir'; } }], { rotulo: 'prazos', titulo: 'Prazos em aberto', vazio: 'Nenhum prazo em aberto.' })),
         h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos ativos por área'), grafRosca(areasTop, { rotulo: 'ativos', titulo: 'Processos por área' })))) : null;
 
-    const nTar = tar.abertas || 0;
+    const nTar = meu ? meu.abertas : (tar.abertas || 0);
+
+    // ----- o que é de cada um: minhas tarefas e prazos, e o que fiz na semana -----
+    const PRI = { urgente: 'Urgente', alta: 'Alta' };
+    const blocoMinhas = meu ? bloco('Minhas tarefas e prazos', '#/tarefas?quem=eu', 'abrir quadro',
+      meu.minhas.length ? h('ul', { class: 'ini-lista' }, meu.minhas.slice(0, 7).map(x => item(
+        () => { if (x.tipo === 'prazo') location.hash = '#/prazo/' + x.id; else location.hash = '#/tarefas?quem=eu'; },
+        x.vence_em ? selo(x.vence_em, x.atrasada ? 'faixa-vencido' : x.vence_em === hoje ? 'faixa-hoje' : '') : h('div', { class: 'selo-data' }, h('b', {}, '—'), h('span', {}, 'sem data')),
+        h('span', {}, x.titulo, x.prioridade && PRI[x.prioridade] ? h('span', { class: 'tag mini-tag pri-' + x.prioridade }, PRI[x.prioridade]) : null),
+        [x.tipo === 'prazo' ? 'prazo' : x.inicial ? 'petição inicial' : 'tarefa', x.cliente, x.numero].filter(Boolean).join(' · '),
+        botaoConferido(x.tipo === 'prazo' ? 'prazo' : 'tarefa', x.id, 'Quem fez?', null, '✓'))))
+        : vazio('Nada com você agora. 🎉'),
+      meu.esperando ? h('p', { class: 'ini-aviso ok' }, `${meu.esperando} item(ns) que você conferiu esperam o OK da administração.`) : null) : null;
+    const blocoMinhaSemana = meu ? (() => {
+      const cats = meu.categorias.filter(c => meu.semana.grupos[c.id]);
+      const el = bloco('O que eu fiz nesta semana', null, null,
+        h('div', {},
+          h('div', { class: 'minha-semana-topo' }, h('b', {}, String(meu.semana.total)), h('span', {}, meu.semana.total === 1 ? 'ação registrada' : 'ações registradas'),
+            meu.semana.posicao ? h('span', { class: 'tag mini-tag ok' }, `${meu.semana.posicao}º da equipe`) : null),
+          cats.length ? h('div', { class: 'eq-tiles mini' }, cats.map(c => h('div', { class: 'eq-tile', 'data-cor': corCat(c.id) }, h('span', { class: 'eq-tile-ico' }, icoCat(c.id)), h('b', {}, String(meu.semana.grupos[c.id])), h('span', {}, c.nome))))
+            : vazio('Ainda nada nesta semana. Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.'),
+          meu.semana.itens.length ? h('ul', { class: 'minha-linha' }, meu.semana.itens.slice(0, 6).map(x => h('li', {},
+            h('span', { class: 'eq-ponto', 'data-cor': corCat(x.cat) }), h('time', {}, new Date(x.quando).toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })), ' ', x.texto || x.acao))) : null));
+      el.querySelectorAll('[data-cor]').forEach(x => x.style.setProperty('--c', x.dataset.cor));
+      return el;
+    })() : null;
+    const colaborador = !pode.usuarios;
     const frase = [fataisHoje.length ? `${fataisHoje.length} prazo${fataisHoje.length > 1 ? 's' : ''} fatal${fataisHoje.length > 1 ? 'is' : ''} hoje` : 'nenhum prazo fatal hoje',
       nHoje ? `${nHoje} compromisso${nHoje > 1 ? 's' : ''}` : 'agenda livre',
-      nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'sem tarefas pendentes'].join(' · ');
+      nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'sem tarefas pendentes'].concat(meu && meu.semana.total ? [`${meu.semana.total} feita(s) na semana`] : []).join(' · ');
     const robo = r.robo || {};
     mostrar(
       h('section', { class: 'ini-hero simples' },
@@ -649,11 +676,17 @@
           h('p', { class: 'ini-frase' }, frase)),
         h('div', { class: 'ini-hero-acoes' },
           pz.vencidos ? h('a', { class: 'ini-hero-alerta', href: '#/prazos?ver=vencido' }, `${pz.vencidos} prazo(s) vencido(s) — ver`) : null,
+          aguarda && aguarda.length ? h('a', { class: 'ini-hero-alerta ok', href: '#/prazos' }, `✓ ${aguarda.length} esperando o seu OK`) : null,
           h('a', { class: 'btn dourado', href: '#/cliente/novo' }, '+ Novo cliente'),
           h('a', { class: 'btn contorno-claro', href: '#/prazo/novo' }, 'Novo prazo'))),
-      atalhos,
-      h('div', { class: 'ini-duas' }, blocoPrazos, blocoAgenda),
-      blocoVisao,
+      colaborador && meu ? h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Meu resumo' },
+        atalho('#/tarefas', 'Comigo', meu.abertas, meu.hoje ? `${meu.hoje} para hoje` : 'tarefas e prazos', ''),
+        atalho('#/tarefas', 'Atrasadas', meu.atrasadas, meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu.atrasadas ? 'alerta' : ''),
+        atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
+        atalho('#/processos', 'Feitas', meu.semana.total, 'nesta semana')) : atalhos,
+      colaborador ? h('div', { class: 'ini-duas' }, blocoMinhas, blocoAgenda) : h('div', { class: 'ini-duas' }, blocoPrazos, blocoAgenda),
+      colaborador ? h('div', { class: 'ini-duas' }, blocoMinhaSemana, blocoPrazos) : h('div', { class: 'ini-duas' }, blocoMinhas, blocoMinhaSemana),
+      colaborador ? null : blocoVisao,
       h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo)));
   }
 
@@ -1368,7 +1401,8 @@
     };
     return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
       h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
-        h('div', {}, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + p.responsavel : 'Sem responsável: escolha abaixo, no formulário do processo.'))),
+        h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Ninguém pegou ainda. Aperte "Eu faço" para ir para as suas Tarefas.')),
+        h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''))),
       h('ol', { class: 'passos-inicial' },
         h('li', {}, h('span', { class: 'passo-n' }, '1'), h('div', {}, h('strong', {}, 'Avise o cliente'), h('div', { class: 'peq' }, 'Mensagem pronta no WhatsApp.')),
           msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial') }, 'WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone')),
@@ -1730,7 +1764,7 @@
       const campoExtra = extra ? extra() : null;
       caixa.append(...[
         h('h2', {}, titulo || 'Quem fez?'),
-        h('p', { class: 'peq' }, 'Aperte o nome de quem fez. Some da lista da equipe e vai para o OK da administração e para o relatório.'),
+        h('p', { class: 'peq' }, /Passar/.test(titulo || '') ? 'Aperte o nome: vai para as Tarefas dessa pessoa.' : 'Aperte o nome de quem fez. Some da lista da equipe e vai para o OK da administração e para o relatório.'),
         campoExtra,
         h('div', { class: 'quem-grade' }, lista.map(x => h('button', { type: 'button', class: 'quem-bt' + (x.usuario === eu ? ' eu' : ''), onclick: () => fim({ usuario: x.usuario, nome: x.nome, extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' }) },
           h('span', { class: 'quem-ini' }, iniciais(x.nome)), h('span', { class: 'quem-nome' }, x.nome, x.usuario === eu ? h('small', {}, ' (você)') : null)))),
@@ -1755,6 +1789,23 @@
       try { if (!(await conferirTrabalho(tipo, id, titulo, extra))) b.disabled = false; } catch (e) { b.disabled = false; avisar(e.message, true); }
     } }, rotulo || '✓ Conferido');
   }
+  /** "🙋 Eu faço" (pega para si; vai para as Tarefas da pessoa) e, para a administração, "Passar para…". */
+  function botoesEuFaco(tipo, id, responsavel) {
+    const eu = sessao.usuario.usuario, pode = sessao.usuario.pode;
+    const pegar = async (para, b) => {
+      b.disabled = true;
+      try { const r = await api('trabalho.assumir', { tipo, id, para }); avisar(para && para !== eu ? `Passado para ${r.para}: já está nas Tarefas dessa pessoa.` : 'É seu: já está nas suas Tarefas.'); rota(); }
+      catch (e) { b.disabled = false; avisar(e.message, true); }
+    };
+    return [
+      responsavel ? h('span', { class: 'tag mini-tag resp-tag', title: 'Responsável' }, '👤 ' + (responsavel === eu ? 'você' : responsavel)) : null,
+      responsavel !== eu ? h('button', { type: 'button', class: 'btn mini sec eu-faco', onclick: ev => { ev.stopPropagation(); pegar('', ev.currentTarget); } }, '🙋 Eu faço') : null,
+      pode.usuarios || pode.conferePrazos ? h('button', { type: 'button', class: 'btn mini sec', onclick: async ev => {
+        ev.stopPropagation(); const b = ev.currentTarget;
+        const q = await escolherQuem('Passar para quem?'); if (q) pegar(q.usuario, b);
+      } }, 'Passar para…') : null];
+  }
+
   /** Para a administração: OK final ou devolver para a equipe. */
   function botoesOk(tipo, id) {
     const parar = fn => async ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; try { await fn(); } catch (e) { b.disabled = false; avisar(e.message, true); } };
@@ -1820,6 +1871,7 @@
     return h('div', { class: 'mini-acoes' },
       wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => { ev.stopPropagation(); registrarWhats(z, 'intimação'); } }, 'WhatsApp') : null,
       aberto ? botaoConferido('prazo', z.id, 'Quem fez este prazo?') : null,
+      aberto ? botoesEuFaco('prazo', z.id, z.responsavel) : null,
       pode.conferePrazos && z.situacao === 'calculado'
         ? h('button', { type: 'button', class: 'btn mini sec', title: 'Confirmar a data fatal calculada pelo robô', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Data do prazo confirmada.')) }, 'Confirmar data') : null,
       z.situacao === 'cumprido' && !z.ok_em
@@ -1830,7 +1882,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '6.9.6';
+  const VERSAO_PAINEL = '6.9.7';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2066,6 +2118,7 @@
           ? h('span', { class: 'terminada-tag' }, '✓ Conferida por ', h('strong', {}, i.terminada_por), i.terminada_em ? ' · ' + new Date(i.terminada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
             i.ok_por ? ' · OK de ' + i.ok_por : ' · aguarda OK')
           : h('span', { class: 'passo2' }, botaoConferido('intimacao', i.id, 'Quem fez esta intimação?', null, '2 · ✓ Conferido')),
+        i.terminada_por ? null : botoesEuFaco('intimacao', i.id, i.responsavel),
         i.terminada_por && !i.ok_por && pode.usuarios ? botoesOk('intimacao', i.id) : null));
   }
 
@@ -2750,53 +2803,79 @@
 
   /* ---------- tarefas da equipe (quadro) ---------- */
 
+  const PRIORIDADES = [['urgente', 'Urgente'], ['alta', 'Alta'], ['normal', 'Normal'], ['baixa', 'Baixa']];
+  const NOME_PRI = Object.fromEntries(PRIORIDADES);
+  const ORD_PRI = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
+
   async function telaTarefas(params) {
     carregando();
     const r = await api('tarefas.listar', {});
     const eu = sessao.usuario.usuario, pode = sessao.usuario.pode;
-    const quem = params.get('quem') || (localStorageGet('tarefas_quem') || 'eu');
+    const quem = r.todos === false ? 'todos' : (params.get('quem') || (localStorageGet('tarefas_quem') || 'eu'));
     const tipo = params.get('tipo') || '';
     const so = params.get('so') || '';
+    const pri = params.get('pri') || '';
+    const busca = params.get('q') || '';
+    const visao = params.get('ver') === 'lista' ? 'lista' : (params.get('ver') === 'quadro' ? 'quadro' : (localStorageGet('tarefas_visao') || 'quadro'));
     const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/tarefas' + (q.toString() ? '?' + q : ''); };
     const nomeDe = u => (r.usuarios.find(x => x.usuario === u) || {}).nome || u;
+    const qn = semAcentoG(busca);
+    const hoje = r.hoje;
     const passa = x => (quem === 'todos' || (quem === 'eu' ? x.responsavel === eu : quem === 'ninguem' ? !x.responsavel : x.responsavel === quem)) &&
-      (!tipo || x.tipo === tipo) && (so !== 'atrasadas' || x.atrasada);
+      (!tipo || x.tipo === tipo) && (so !== 'atrasadas' || x.atrasada) && (so !== 'hoje' || x.vence_em === hoje) &&
+      (so !== 'semana' || (x.vence_em && x.vence_em <= isoSoma(hoje, 7))) &&
+      (!pri || (x.prioridade || 'normal') === pri) && (!qn || semAcentoG([x.titulo, x.cliente, x.numero, x.descricao].join(' ')).includes(qn));
     const itens = r.itens.filter(passa);
-    const atrasadas = itens.filter(x => x.atrasada).length;
+    const abertos = itens.filter(x => !/protocolado|concluido/.test(x.etapa));
+    const atrasadas = abertos.filter(x => x.atrasada).length;
     const mudarQuem = v => { localStorageSet('tarefas_quem', v); ir({ quem: v }); };
     const mover = async (x, etapa, alvo) => {
       if (alvo) alvo.classList.add('movendo');
-      try { await api('tarefas.mover', { tipo: x.tipo, id: x.id, etapa }); avisar(x.tipo === 'prazo' && /protocolado/.test(etapa) ? 'Prazo protocolado e marcado como cumprido.' : 'Movido para "' + r.etapas.find(e => e.id === etapa).nome + '".'); rota(); }
+      try { await api('tarefas.mover', { tipo: x.tipo, id: x.id, etapa }); avisar(x.tipo === 'prazo' && /protocolado/.test(etapa) ? 'Prazo feito e marcado como cumprido.' : 'Movido para "' + r.etapas.find(e => e.id === etapa).nome + '".'); rota(); }
       catch (e) { avisar(e.message, true); if (alvo) alvo.classList.remove('movendo'); }
     };
     const idx = e => r.etapas.findIndex(x => x.id === e);
+    const progresso = x => { const c = x.checklist || []; if (!c.length) return null; const f = c.filter(i => i.ok).length;
+      const el = h('span', { class: 'ct-check' + (f === c.length ? ' completo' : '') }, h('span', { class: 'ct-check-barra' }, h('span', { 'data-w': String(Math.round(f * 100 / c.length)) })), `${f}/${c.length}`);
+      el.querySelector('[data-w]').style.width = el.querySelector('[data-w]').dataset.w + '%'; return el; };
+    const nComent = x => (String(x.historico || '').match(/💬/g) || []).length;
+    const abrir = x => { if (x.tipo === 'prazo') location.hash = '#/prazo/' + x.id; else editarTarefa(x, r); };
+    const acoesItem = x => {
+      const fim = /protocolado|concluido/.test(x.etapa);
+      if (!fim) return botaoConferido(x.tipo === 'prazo' ? 'prazo' : 'tarefa', x.id, 'Quem fez?');
+      if (x.etapa === 'concluido') return h('span', { class: 'tag mini-tag ok' }, '✓ OK' + (x.ok_por ? ' de ' + x.ok_por : ''));
+      return pode.usuarios ? h('span', { class: 'ct-ok' }, botoesOk(x.tipo === 'prazo' ? 'prazo' : (x.inicial ? 'tarefa' : 'tarefa'), x.id)) : h('span', { class: 'tag mini-tag atencao' }, 'aguarda OK');
+    };
     const cartao = x => {
       const i = idx(x.etapa);
       const sel = h('select', { class: 'resp-sel', 'aria-label': 'Responsável', onclick: ev => ev.stopPropagation(), onchange: async ev => {
         try { await api('tarefas.atribuir', { tipo: x.tipo, id: x.id, responsavel: ev.target.value }); avisar('Responsável: ' + (ev.target.value ? nomeDe(ev.target.value) : 'ninguém')); rota(); } catch (e) { avisar(e.message, true); }
       } }, h('option', { value: '' }, '— sem responsável —'), r.usuarios.map(u => h('option', { value: u.usuario, selected: u.usuario === x.responsavel }, u.nome)));
-      const el = h('article', { class: 'cartao-t' + (x.atrasada ? ' atrasada' : '') + (x.tipo === 'prazo' ? ' de-prazo' : ''), draggable: 'true', tabindex: 0,
+      const el = h('article', { class: 'cartao-t pri-borda-' + (x.prioridade || 'normal') + (x.atrasada ? ' atrasada' : '') + (x.tipo === 'prazo' ? ' de-prazo' : ''), draggable: 'true', tabindex: 0,
         ondragstart: ev => { ev.dataTransfer.setData('text/plain', x.tipo + '|' + x.id); el.classList.add('arrastando'); },
         ondragend: () => el.classList.remove('arrastando'),
-        onclick: () => { if (x.tipo === 'prazo') location.hash = '#/prazo/' + x.id; else editarTarefa(x, r); },
-        onkeydown: ev => { if (ev.key === 'Enter') el.click(); } },
-        h('div', { class: 'ct-topo' }, h('span', { class: 'tag ' + (x.tipo === 'prazo' ? 'info' : '') }, x.tipo === 'prazo' ? 'prazo' : 'tarefa'),
+        onclick: () => abrir(x), onkeydown: ev => { if (ev.key === 'Enter') el.click(); } },
+        h('div', { class: 'ct-topo' }, h('span', { class: 'tag ' + (x.tipo === 'prazo' ? 'info' : '') }, x.tipo === 'prazo' ? 'prazo' : x.inicial ? 'inicial' : 'tarefa'),
+          x.prioridade && x.prioridade !== 'normal' ? h('span', { class: 'tag mini-tag pri-' + x.prioridade }, NOME_PRI[x.prioridade]) : null,
           x.provisorio ? h('span', { class: 'tag atencao' }, 'provisório') : null,
+          x.repetir ? h('span', { class: 'tag mini-tag', title: 'Repete ' + x.repetir }, '↻ ' + x.repetir) : null,
           x.vence_em ? h('span', { class: 'ct-data' }, dataBR(x.vence_em), ' ', /protocolado|concluido/.test(x.etapa) ? (x.no_prazo ? h('span', { class: 'tag ok' }, 'no prazo') : h('span', { class: 'tag urgente' }, 'atrasou')) : etiquetaContagem(x.vence_em)) : null),
         h('div', { class: 'ct-tit' }, x.titulo),
         x.cliente || x.numero ? h('div', { class: 'peq' }, [x.cliente, x.numero].filter(Boolean).join(' · ')) : null,
         x.resumo_ia ? h('div', { class: 'peq ia-txt', title: x.resumo_ia }, x.resumo_ia) : null,
+        x.tipo === 'tarefa' && (x.checklist || []).length || nComent(x) ? h('div', { class: 'ct-meta' }, progresso(x), nComent(x) ? h('span', { class: 'peq' }, '💬 ' + nComent(x)) : null) : null,
         h('div', { class: 'ct-pe' }, sel,
           h('span', { class: 'ct-mover' },
-            i > 0 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + r.etapas[i - 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i - 1].id, el); } }, '←') : null,
-            i < r.etapas.length - 1 && (r.etapas[i + 1].id !== 'concluido' || pode.conferePrazos)
-              ? h('button', { type: 'button', class: 'btn mini', title: 'Passar para ' + r.etapas[i + 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i + 1].id, el); } }, '→') : null)));
+            i > 0 && !/concluido/.test(x.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + r.etapas[i - 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i - 1].id, el); } }, '←') : null,
+            i < 2 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Passar para ' + r.etapas[i + 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i + 1].id, el); } }, '→') : null)),
+        h('div', { class: 'ct-final', onclick: ev => ev.stopPropagation() }, acoesItem(x)));
       return el;
     };
+    const ordenar = l => l.slice().sort((a, b) => (b.atrasada - a.atrasada) || (ORD_PRI[a.prioridade || 'normal'] - ORD_PRI[b.prioridade || 'normal']) || ((a.vence_em || '9999') < (b.vence_em || '9999') ? -1 : 1));
     const colunas = r.etapas.map(e => {
       const daEtapa = itens.filter(x => x.etapa === e.id);
       const fim = /protocolado|concluido/.test(e.id);
-      const lista = fim ? daEtapa.slice().sort((a, b) => a.concluida_em < b.concluida_em ? 1 : -1) : daEtapa;
+      const lista = fim ? daEtapa.slice().sort((a, b) => a.concluida_em < b.concluida_em ? 1 : -1) : ordenar(daEtapa);
       const mostra = lista.slice(0, fim ? 20 : 80);
       const col = h('section', { class: 'coluna-t', 'data-etapa': e.id,
         ondragover: ev => { ev.preventDefault(); col.classList.add('sobre'); }, ondragleave: () => col.classList.remove('sobre'),
@@ -2806,16 +2885,21 @@
         lista.length > mostra.length ? h('p', { class: 'peq' }, `+ ${lista.length - mostra.length} mais antigas`) : null);
       return col;
     });
-    const form = h('form', { class: 'campos', novalidate: true },
-      campo('titulo', 'O que precisa ser feito', '', { obrigatorio: true, largo: true, dica: 'Ex.: Pedir documentos para a cliente, protocolar juntada…' }),
-      campo('responsavel', 'Responsável', eu, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
-      campo('vence_em', 'Entregar até', '', { tipo: 'date' }),
-      campo('peso', 'Pontos', '1', { opcoes: [['1', '1 (simples)'], ['2', '2'], ['3', '3 (como um prazo)'], ['5', '5 (peça grande)']] }),
-      campo('descricao', 'Detalhes', '', { area: true, largo: true }),
-      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Criar tarefa')), h('p', { class: 'erro largo' }));
-    aoEnviar(form, async fd => { await api('tarefas.salvar', { tarefa: Object.fromEntries(fd.entries()) }); avisar('Tarefa criada.'); rota(); });
-    const placar = h('section', { class: 'caixa' }, h('h2', {}, 'Placar da equipe · últimos 30 dias'),
-      h('p', { class: 'peq' }, `Cada tarefa entregue no prazo vale os pontos dela; um prazo processual protocolado até o dia fatal vale ${3}. Entregue atrasada não pontua.`),
+    const tabelaLista = () => {
+      const l = ordenar(abertos).concat(itens.filter(x => /protocolado|concluido/.test(x.etapa)).sort((a, b) => a.concluida_em < b.concluida_em ? 1 : -1).slice(0, 30));
+      return l.length ? h('div', { class: 'rolar' }, h('table', { class: 'tabela tab-tarefas' },
+        h('thead', {}, h('tr', {}, ['', 'Tarefa', 'Cliente / processo', 'Responsável', 'Entregar até', 'Etapa', ''].map(t => h('th', { scope: 'col' }, t)))),
+        h('tbody', {}, l.map(x => h('tr', { class: (x.atrasada ? 'atrasada ' : '') + 'pri-linha-' + (x.prioridade || 'normal'), onclick: () => abrir(x) },
+          h('td', { 'data-r': 'Prioridade' }, h('span', { class: 'pri-ponto pri-' + (x.prioridade || 'normal'), title: NOME_PRI[x.prioridade || 'normal'] })),
+          h('td', { 'data-r': 'Tarefa' }, h('strong', {}, x.titulo), h('div', { class: 'peq' }, x.tipo === 'prazo' ? 'prazo processual' : x.inicial ? 'petição inicial' : 'tarefa', x.repetir ? ' · ↻ ' + x.repetir : ''), progresso(x)),
+          h('td', { 'data-r': 'Cliente' }, [x.cliente, x.numero].filter(Boolean).join(' · ') || '—'),
+          h('td', { 'data-r': 'Responsável' }, x.responsavel ? nomeDe(x.responsavel) : h('span', { class: 'peq' }, 'ninguém')),
+          h('td', { 'data-r': 'Entregar até' }, x.vence_em ? dataBR(x.vence_em) : '—', ' ', x.vence_em && !/protocolado|concluido/.test(x.etapa) ? etiquetaContagem(x.vence_em) : null),
+          h('td', { 'data-r': 'Etapa' }, h('span', { class: 'tag mini-tag' }, (r.etapas.find(e => e.id === x.etapa) || {}).nome || x.etapa)),
+          h('td', { onclick: ev => ev.stopPropagation() }, acoesItem(x))))))) : h('p', { class: 'caixa peq' }, 'Nenhuma tarefa neste filtro.');
+    };
+    const placar = h('section', { class: 'caixa' }, h('h2', {}, r.todos === false ? 'Meus pontos · últimos 30 dias' : 'Placar da equipe · últimos 30 dias'),
+      h('p', { class: 'peq' }, `Cada tarefa entregue no prazo vale os pontos dela; um prazo processual feito até o dia fatal vale ${3}. Entregue atrasada não pontua.`),
       r.pontos.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab placar' }, h('thead', {}, h('tr', {}, ['Pessoa', 'Pontos', 'Entregues', 'No prazo', 'Atrasadas', 'Em aberto', 'Vencidas agora'].map(t => h('th', {}, t)))),
         h('tbody', {}, r.pontos.map(p => h('tr', { onclick: () => mudarQuem(p.usuario) }, h('th', { scope: 'row' }, p.nome), h('td', {}, h('b', {}, String(p.pontos))),
           h('td', {}, String(p.entregues)), h('td', {}, String(p.no_prazo)), h('td', {}, p.atrasadas ? h('span', { class: 'tag urgente' }, String(p.atrasadas)) : '0'),
@@ -2831,45 +2915,90 @@
       cfg = secao('Responsáveis automáticos', () => h('div', {}, h('p', { class: 'peq' }, 'Quando o robô lê uma intimação nova, o prazo já entra no quadro de quem cuida daquele sistema. Cliente que contrata vai para Processos › Petição inicial e a tarefa vai para quem faz as iniciais.'), f), !r.responsaveis.pje && !r.responsaveis.eproc);
     }
     const opQuem = [['eu', 'Minhas'], ['todos', 'Toda a equipe'], ['ninguem', 'Sem responsável']].concat(r.usuarios.filter(u => u.usuario !== eu).map(u => [u.usuario, u.nome]));
+    const buscaF = h('form', { class: 'busca-tarefas', role: 'search' }, h('input', { type: 'search', name: 'q', value: busca, placeholder: 'Buscar tarefa, cliente ou nº', 'aria-label': 'Buscar tarefa' }));
+    buscaF.addEventListener('submit', ev => { ev.preventDefault(); ir({ q: buscaF.q.value.trim() }); });
+    const nHoje = abertos.filter(x => x.vence_em === hoje).length;
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Tarefas'),
-        h('p', {}, `${itens.filter(x => !/protocolado|concluido/.test(x.etapa)).length} em aberto`, atrasadas ? h('span', {}, ' · ', h('b', { class: 'txt-vermelho' }, `${atrasadas} atrasada(s)`)) : null,
-          ' · arraste o cartão ou use as setas para mudar de etapa'))),
-      h('div', { class: 'barra-filtros' },
-        h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'De quem' },
-          opQuem.slice(0, 3).map(([v, rot]) => h('button', { type: 'button', class: 'seg' + (quem === v ? ' ativo' : ''), 'aria-pressed': String(quem === v), onclick: () => mudarQuem(v) }, rot)),
-          opQuem.length > 3 ? h('select', { 'aria-label': 'Pessoa', class: 'seg-sel', onchange: ev => mudarQuem(ev.target.value || 'todos') },
-            h('option', { value: '' }, 'Pessoa…'), opQuem.slice(3).map(([v, rot]) => h('option', { value: v, selected: quem === v }, rot))) : null),
+      h('header', { class: 'carteira-topo tarefas-topo' },
+        h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, r.todos === false ? 'Meu quadro' : 'Quadro da equipe'), h('h1', {}, r.todos === false ? 'Minhas tarefas' : 'Tarefas'),
+          h('p', {}, `${abertos.length} em aberto`, atrasadas ? ` · ${atrasadas} atrasada(s)` : '', nHoje ? ` · ${nHoje} para hoje` : '', ' · arraste o cartão ou use "✓ Conferido" quando terminar')),
+        h('div', { class: 'carteira-acoes' }, h('button', { type: 'button', class: 'btn dourado', onclick: () => editarTarefa({ id: '', titulo: '', responsavel: quem === 'eu' || quem === 'todos' || quem === 'ninguem' ? eu : quem, peso: 1, prioridade: 'normal', checklist: [] }, r) }, '+ Nova tarefa'))),
+      h('section', { class: 'painel-busca tarefas-filtros' },
+        h('div', { class: 'tf-linha' },
+          h('div', { class: 'visoes', role: 'tablist' },
+            [['quadro', 'Quadro'], ['lista', 'Lista']].map(([v, rot]) => h('button', { type: 'button', class: 'visao-bt' + (visao === v ? ' ativo' : ''), onclick: () => { localStorageSet('tarefas_visao', v); ir({ ver: v }); } }, rot))),
+          r.todos === false ? h('span', { class: 'peq' }, 'Aqui ficam só as suas: o que você pegou ("Eu faço") e o que passaram para você.') : h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'De quem' },
+            opQuem.slice(0, 3).map(([v, rot]) => h('button', { type: 'button', class: 'seg' + (quem === v ? ' ativo' : ''), 'aria-pressed': String(quem === v), onclick: () => mudarQuem(v) }, rot)),
+            opQuem.length > 3 ? h('select', { 'aria-label': 'Pessoa', class: 'seg-sel', onchange: ev => mudarQuem(ev.target.value || 'todos') },
+              h('option', { value: '' }, 'Pessoa…'), opQuem.slice(3).map(([v, rot]) => h('option', { value: v, selected: quem === v }, rot))) : null),
+          buscaF),
         h('div', { class: 'chips' },
           [['', 'Tudo'], ['prazo', 'Só prazos'], ['tarefa', 'Só tarefas']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (tipo === v ? ' ativo' : ''), onclick: () => ir({ tipo: v }) }, rot)),
-          h('button', { type: 'button', class: 'chip-filtro' + (so === 'atrasadas' ? ' ativo' : ''), onclick: () => ir({ so: so ? '' : 'atrasadas' }) }, 'Atrasadas'))),
-      h('details', { class: 'caixa' }, h('summary', {}, '+ Nova tarefa'), form),
-      h('div', { class: 'quadro-t' }, colunas),
+          [['atrasadas', 'Atrasadas'], ['hoje', 'Para hoje'], ['semana', 'Próximos 7 dias']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (so === v ? ' ativo' : ''), onclick: () => ir({ so: so === v ? '' : v }) }, rot)),
+          PRIORIDADES.slice(0, 2).map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro pri-chip-' + v + (pri === v ? ' ativo' : ''), onclick: () => ir({ pri: pri === v ? '' : v }) }, '⚑ ' + rot)))),
+      visao === 'lista' ? tabelaLista() : h('div', { class: 'quadro-t' }, colunas),
       placar, cfg);
   }
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* navegação privada */ } }
 
-  function editarTarefa(x, r) {
-    const caixa = h('dialog', { class: 'dialogo' });
+  async function editarTarefa(x, r) {
+    const novo = !x.id;
+    const [clientes, procs] = await Promise.all([api('clientes.listar', {}).catch(() => []), api('processos.listar', {}).catch(() => [])]);
+    const caixa = h('dialog', { class: 'dialogo dialogo-tarefa' });
+    const rotCli = c => c.nome + (c.cpf_cnpj ? ' · ' + c.cpf_cnpj : '');
+    const cliAtual = clientes.find(c => c.id === x.cliente_id);
+    const inCli = h('input', { id: 'f-t-cliente', list: 'dl-t-clientes', autocomplete: 'off', placeholder: 'Digite o nome e escolha', value: cliAtual ? rotCli(cliAtual) : '' });
+    const inProc = h('input', { id: 'f-t-numero', name: 'numero', list: 'dl-t-procs', autocomplete: 'off', inputmode: 'numeric', placeholder: '0000000-00.0000.0.00.0000', value: x.numero || '' });
+    const listaChk = (x.checklist || []).slice();
+    const chkLista = h('ul', { class: 'chk-lista' });
+    const desenharChk = () => chkLista.replaceChildren(...listaChk.map((c, i) => h('li', { class: c.ok ? 'feito' : '' },
+      h('label', {}, h('input', { type: 'checkbox', checked: c.ok, onchange: async ev => {
+        c.ok = ev.target.checked; desenharChk();
+        if (!novo) { try { await api('tarefas.check', { id: x.id, i, ok: c.ok }); } catch (e) { avisar(e.message, true); } }
+      } }), h('span', {}, c.t)),
+      h('button', { type: 'button', class: 'link', 'aria-label': 'Tirar item', onclick: () => { listaChk.splice(i, 1); desenharChk(); } }, '×'))));
+    desenharChk();
+    const inChk = h('input', { placeholder: '+ acrescentar item do checklist (Enter)', 'aria-label': 'Novo item do checklist', maxlength: 140,
+      onkeydown: ev => { if (ev.key === 'Enter') { ev.preventDefault(); const t = ev.target.value.trim(); if (t) { listaChk.push({ t, ok: false }); ev.target.value = ''; desenharChk(); } } } });
+    const historico = h('pre', {}, x.historico || '');
+    const inComent = h('input', { placeholder: 'Escreva um comentário para a equipe…', 'aria-label': 'Comentário', maxlength: 600 });
     const form = h('form', { class: 'campos', novalidate: true },
-      h('h2', { class: 'largo' }, 'Tarefa'),
-      campo('titulo', 'O que precisa ser feito', x.titulo, { obrigatorio: true, largo: true }),
+      h('h2', { class: 'largo' }, novo ? 'Nova tarefa' : 'Tarefa'),
+      campo('titulo', 'O que precisa ser feito', x.titulo, { obrigatorio: true, largo: true, dica: 'Ex.: Pedir documentos para a cliente, protocolar juntada…' }),
       campo('responsavel', 'Responsável', x.responsavel, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
       campo('vence_em', 'Entregar até', x.vence_em, { tipo: 'date' }),
-      campo('peso', 'Pontos', String(x.peso), { opcoes: [['1', '1'], ['2', '2'], ['3', '3'], ['5', '5']] }),
-      campo('descricao', 'Detalhes', x.descricao, { area: true, largo: true }),
-      x.historico ? h('div', { class: 'largo peq historico-t' }, h('strong', {}, 'Histórico'), h('pre', {}, x.historico)) : null,
-      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
-        botao('Cancelar a tarefa', async () => { if (!confirm('Cancelar esta tarefa?')) return; await api('tarefas.salvar', { tarefa: { id: x.id, titulo: x.titulo, cancelar: true } }); caixa.close(); avisar('Tarefa cancelada.'); rota(); }, 'sec'),
+      campo('prioridade', 'Prioridade', x.prioridade || 'normal', { opcoes: PRIORIDADES }),
+      campo('repetir', 'Repetir', x.repetir || '', { opcoes: [['', 'Não repete'], ['semanal', 'Toda semana'], ['mensal', 'Todo mês']] }),
+      h('div', {}, h('label', { for: 'f-t-cliente' }, 'Cliente (opcional)'), inCli, h('datalist', { id: 'dl-t-clientes' }, clientes.map(c => h('option', { value: rotCli(c) })))),
+      h('div', {}, h('label', { for: 'f-t-numero' }, 'Processo (opcional)'), inProc, h('datalist', { id: 'dl-t-procs' }, procs.filter(p => p.numero).map(p => h('option', { value: p.numero }, p.cliente_nome || '')))),
+      campo('peso', 'Pontos', String(x.peso || 1), { opcoes: [['1', '1 (simples)'], ['2', '2'], ['3', '3 (como um prazo)'], ['5', '5 (peça grande)']] }),
+      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial):[^\]]+\]/g, ''), { area: true, largo: true }),
+      h('div', { class: 'largo chk-caixa' }, h('label', {}, 'Checklist'), chkLista, inChk),
+      novo ? null : h('div', { class: 'largo coment-caixa' }, h('label', {}, 'Comentários e histórico'),
+        h('div', { class: 'barra' }, inComent, botao('Comentar', async () => {
+          if (!inComent.value.trim()) return;
+          try { const rr = await api('tarefas.comentar', { id: x.id, texto: inComent.value }); historico.textContent = rr.historico; inComent.value = ''; }
+          catch (e) { avisar(e.message, true); }
+        }, 'sec mini')), historico),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, novo ? 'Criar tarefa' : 'Salvar'),
+        !novo && !/protocolado|concluido/.test(x.etapa) ? botaoConferido('tarefa', x.id, 'Quem fez esta tarefa?') : null,
+        !novo ? botao('Cancelar a tarefa', async () => { if (!confirm('Cancelar esta tarefa?')) return; await api('tarefas.salvar', { tarefa: { id: x.id, titulo: x.titulo, cancelar: true } }); caixa.close(); avisar('Tarefa cancelada.'); rota(); }, 'sec') : null,
         botao('Fechar', () => caixa.close(), 'sec')),
       h('p', { class: 'erro largo' }));
-    aoEnviar(form, async fd => { const d = Object.fromEntries(fd.entries()); d.id = x.id; d.processo_id = x.processo_id; d.cliente_id = x.cliente_id; await api('tarefas.salvar', { tarefa: d }); caixa.close(); avisar('Tarefa salva.'); rota(); });
+    aoEnviar(form, async fd => {
+      const d = Object.fromEntries(fd.entries());
+      const c = clientes.find(c => rotCli(c) === inCli.value);
+      d.id = x.id; d.cliente_id = c ? c.id : ''; d.checklist = listaChk;
+      if (inChk.value.trim()) d.checklist = listaChk.concat([{ t: inChk.value.trim(), ok: false }]);
+      await api('tarefas.salvar', { tarefa: d }); caixa.close(); avisar(novo ? 'Tarefa criada.' : 'Tarefa salva.'); rota();
+    });
     caixa.append(form);
     caixa.addEventListener('close', () => caixa.remove());
     document.body.append(caixa);
     caixa.showModal();
   }
+
 
   /* ---------- caixa e contas a pagar ---------- */
 
