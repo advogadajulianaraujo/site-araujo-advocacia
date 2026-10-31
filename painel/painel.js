@@ -1843,8 +1843,8 @@
       h('p', {}, h('span', { class: 'num' }, z.numero), ' · ', z.cliente || 'cliente a identificar', ' · ', acessoTribunal(z.numero)),
       z.ciencia_tipo ? h('p', { class: 'peq' }, 'Ciência: ' + z.ciencia_tipo) : null,
       z.responsavel ? h('p', { class: 'peq' }, 'Responsável: ' + z.responsavel + ' · ', h('a', { href: '#/tarefas?quem=todos' }, 'ver no quadro de tarefas')) : null,
-      h('div', { class: 'ia-caixa' + (/⚠/.test(z.resumo_ia || '') ? ' ia-alerta' : '') },
-        z.resumo_ia ? h('p', {}, z.resumo_ia, h('span', { class: 'peq' }, ' — resumo automático; confira no processo antes de agir.')) : h('p', { class: 'peq' }, 'Sem resumo da IA ainda.'),
+      h('div', { class: 'ia-caixa' + (/⚠/.test(z.resumo_ia || '') ? ' ia-alerta' : /estimativa/.test(z.resumo_ia || '') ? ' ia-estimativa' : '') },
+        z.resumo_ia ? h('p', {}, z.resumo_ia, h('span', { class: 'peq' }, ' — resumo automático; confira no processo antes de agir.')) : h('p', { class: 'peq' }, 'Sem resumo da IA ainda. Se o aviso não trouxer o texto do ato, a IA estima pelo nome do ato e pelas movimentações do processo.'),
         botao(z.resumo_ia ? 'Resumir de novo com IA' : 'Resumir com IA', async ev => {
           ev.target.disabled = true; ev.target.textContent = 'Lendo a intimação…';
           try { await api('ia.resumirPrazo', { id: z.id }); avisar('Resumo da IA pronto.'); telaPrazo(z.id, new URLSearchParams()); }
@@ -2713,7 +2713,7 @@
     const desenhar = c => {
       const f = h('form', { class: 'campos', novalidate: true },
         campo('chave', c.temChave ? 'Chave do Gemini (já cadastrada; cole outra para trocar)' : 'Chave do Gemini (Google AI Studio)', '', { tipo: 'password', auto: 'off', dica: c.temChave ? '••••••••' : 'cole a chave copiada' }),
-        campo('modelo', 'Modelo', c.modelo, { opcoes: [['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite (mais barato)'], ['gemini-2.5-flash', 'gemini-2.5-flash (melhor)']].concat(/^gemini-2\.5-flash(-lite)?$/.test(c.modelo) ? [] : [[c.modelo, c.modelo]]) }),
+        campo('modelo', 'Modelo', c.modelo, { opcoes: [['gemini-3.5-flash-lite', 'gemini-3.5-flash-lite (mais barato)'], ['gemini-3.5-flash', 'gemini-3.5-flash (melhor)']].concat(/^gemini-3\.5-flash(-lite)?$/.test(c.modelo) ? [] : [[c.modelo, c.modelo + ' (escolhido sozinho)']]) }),
         campo('ligada', 'Situação', c.ligada ? 'sim' : 'nao', { opcoes: [['sim', 'Ligada (resume no robô de 6 em 6 h)'], ['nao', 'Desligada']] }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn sec' }, 'Salvar'),
           c.temChave ? botao('Testar', async ev => { ev.target.disabled = true; try { const x = await api('ia.config', { testar: true }); avisar('Funcionou: ' + x.teste); } catch (e) { avisar(e.message, true); } ev.target.disabled = false; }, 'sec') : null,

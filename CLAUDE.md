@@ -31,7 +31,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   em dia útil, prazo aberto sem data fatal, ou IA achou prazo diferente do calculado.
 - IA confere o prazo: `contextoPrazoIA_` manda o que o painel calculou; se o texto fala em outro nº de dias ou outra data de
   audiência, o resumo ganha "⚠ ATENÇÃO" (vermelho na tela, no e-mail das 7h e no vigia). A IA nunca muda o prazo.
-  Botão "Resumir com IA" na tela do prazo (rota `ia.resumirPrazo`).
+  Botão "Resumir com IA" na tela do prazo (rota `ia.resumirPrazo`). Sem o texto do ato (PJe "documento sigiloso"), `fontePrazoIA_`
+  procura: 1) outra publicação do mesmo processo com texto (±20 dias da ciência, ex.: DJEN); 2) o nome do ato no aviso + as últimas
+  movimentações do DataJud (busca na hora se faltar) e a IA dá uma ESTIMATIVA marcada "sem o texto do ato… confirmar" (amarelo).
+  O robô faz isso sozinho para os prazos PROVISÓRIOS (`resumirProvisoriosIA_`, até 10 por rodada).
+- Gemini: modelo padrão `gemini-3.5-flash-lite`; `modeloIA_` troca modelos 1.x/2.x antigos e `modeloSugerido_` troca sozinho quando
+  o Google responde que o modelo foi aposentado ("use models/X"). DataJud: lotes de 4 com pausa; código 429 = espera 8 s, tenta de
+  novo e, se persistir, para sem erro ("o CNJ pediu uma pausa") e continua na próxima rodada. Datas de entrega usam o dia de
+  Brasília (`diaSP_`), não o de Greenwich.
 - Histórico do DJEN: o navegador do escritório volta 30 dias por vez até 2020 (`historicoDjen` → rota `djen.historico`),
   só cadastrando processos que faltam (origem "histórico DJEN"), sem criar intimação nem prazo.
 - Área sem Gmail: TRT/TST e número ".5." = Trabalhista; TRF = Federal; senão pelo nome da vara nos avisos (`areaPeloOrgao_`).

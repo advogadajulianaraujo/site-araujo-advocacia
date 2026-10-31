@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.1';
+var VERSAO = '6.9.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -1591,6 +1591,13 @@ var TZ = 'America/Sao_Paulo';
 
 /* ---------- Datas (sempre texto aaaa-mm-dd, fuso de Brasília) ---------- */
 
+/** Dia (aaaa-mm-dd) no horário de Brasília de uma data ISO gravada em UTC (entrega às 22h de Brasília continua no mesmo dia). */
+function diaSP_(iso) {
+  if (!iso) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? String(iso).slice(0, 10) : Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
 function hojeSP_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
 function dataSP_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }
 
@@ -2072,6 +2079,8 @@ function rodarRoboGatilho() {
   if (resta > 60000) { try { importarHistoricoGmail_(resta - 30000); } catch (e) { /* tenta na próxima */ } }
   resta = 300000 - (Date.now() - t0);
   if (resta > 45000) { try { resumirIntimacoes_(Math.min(resta - 30000, 90000), 30); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
+  resta = 300000 - (Date.now() - t0);
+  if (resta > 40000) { try { resumirProvisoriosIA_(Math.min(resta - 25000, 60000), 10); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
 }
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
@@ -3313,7 +3322,7 @@ function relatorioCumpridos_(d) {
       var p = procs[z.processo_id] || {};
       return { id: z.id, numero: z.numero, descricao: z.descricao, fatal: z.fatal, cliente: nomes[p.cliente_id] || p.cliente_nome || '',
         quem: z.cumprido_por || z.atualizado_por || '', quando: z.cumprido_em || z.atualizado_em || '',
-        noPrazo: !z.fatal || (z.cumprido_em || z.atualizado_em || '').slice(0, 10) <= z.fatal };
+        noPrazo: !z.fatal || diaSP_(z.cumprido_em || z.atualizado_em) <= z.fatal };
     })
     .sort(function (a, b) { return a.quando < b.quando ? 1 : -1; });
   var porPessoa = {};
@@ -4996,7 +5005,7 @@ function itemPrazo_(z, procs, nomesCli, hoje) {
   var p = procs[z.processo_id] || {};
   var etapa = etapaDoPrazo_(z);
   var fim = /protocolado|concluido/.test(etapa);
-  var entregue = (z.cumprido_em || '').slice(0, 10);
+  var entregue = diaSP_(z.cumprido_em);
   return { tipo: 'prazo', id: z.id, titulo: z.descricao || 'Prazo', numero: z.numero, processo_id: z.processo_id,
     cliente: nomesCli[p.cliente_id] || p.cliente_nome || '', cliente_id: p.cliente_id || '', responsavel: z.responsavel || '',
     vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''),
@@ -5006,7 +5015,7 @@ function itemPrazo_(z, procs, nomesCli, hoje) {
 
 function itemTarefa_(t, nomesCli, hoje) {
   var fim = /protocolado|concluido/.test(t.etapa);
-  var entregue = (t.concluida_em || '').slice(0, 10);
+  var entregue = diaSP_(t.concluida_em);
   return { tipo: 'tarefa', id: t.id, titulo: t.titulo, descricao: t.descricao, numero: t.numero, processo_id: t.processo_id,
     cliente: nomesCli[t.cliente_id] || '', cliente_id: t.cliente_id || '', responsavel: t.responsavel || '', vence_em: t.vence_em || '',
     etapa: t.etapa || 'afazer', peso: parseInt(t.peso, 10) || 1, atrasada: !fim && !!t.vence_em && t.vence_em < hoje,
@@ -5390,7 +5399,7 @@ function relatorioGeral_(d) {
   var abertosVencidos = 0;
   tabela_('Prazos').linhas.forEach(function (z) {
     if (z.situacao === 'cumprido') {
-      var q = (z.cumprido_em || z.atualizado_em || '').slice(0, 10), k = q.slice(0, 7);
+      var q = diaSP_(z.cumprido_em || z.atualizado_em), k = q.slice(0, 7);
       if (idx[k] !== undefined) { prazosEntregues[idx[k]]++; if (!z.fatal || q <= z.fatal) prazosNoPrazo[idx[k]]++; }
     } else if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje) abertosVencidos++;
   });
@@ -5512,7 +5521,32 @@ function testarResumoEmail_(d, u) {
 
 /* ---------- Resumo das intimações por IA (Gemini, do Google) ---------- */
 
-var IA_MODELO_PADRAO = 'gemini-2.5-flash-lite';
+var IA_MODELO_PADRAO = 'gemini-3.5-flash-lite';
+/** Modelo em uso. Modelos antigos (1.x/2.x) que o Google desativou viram o padrão novo sozinhos. */
+function modeloIA_() {
+  var m = config_('IA_MODELO');
+  if (!m || /^gemini-(1|2)(\.|-)/.test(m)) return IA_MODELO_PADRAO;
+  return m;
+}
+/** Se o Google disser que o modelo foi aposentado ("use models/X"), guarda o novo e devolve o nome dele. */
+function modeloSugerido_(resp) {
+  if (!resp || (resp.getResponseCode() !== 404 && resp.getResponseCode() !== 400)) return '';
+  var t = String(resp.getContentText() || '');
+  if (!/no longer available|not found|is not supported|deprecated/i.test(t)) return '';
+  var m = t.match(/models\/(gemini-[a-z0-9.\-]+)/gi) || [];
+  var novo = m.map(function (x) { return x.replace(/^models\//i, ''); }).filter(function (x) { return x !== modeloIA_(); }).pop();
+  if (!novo || !/^gemini-[a-z0-9.\-]{3,50}$/.test(novo)) novo = IA_MODELO_PADRAO !== modeloIA_() ? IA_MODELO_PADRAO : '';
+  if (novo) { setConfig_('IA_MODELO', novo, 'Modelo do Gemini (trocado sozinho: o Google aposentou o anterior)'); registrar_('sistema', 'IA: modelo trocado', novo); }
+  return novo;
+}
+/** Chama o Gemini; se o modelo tiver sido aposentado, troca pelo indicado e tenta de novo uma vez. */
+function chamarGemini_(texto, chave, contexto) {
+  var ped = pedidoGemini_(texto, chave, modeloIA_(), contexto);
+  var resp = UrlFetchApp.fetch(ped.url, ped);
+  var novo = modeloSugerido_(resp);
+  if (novo) { ped = pedidoGemini_(texto, chave, novo, contexto); resp = UrlFetchApp.fetch(ped.url, ped); }
+  return resp;
+}
 
 /** Tira CPF, CNPJ, RG, telefones, e-mails, CEP e contas bancárias antes de mandar o texto para a IA. */
 function anonimizar_(t, nomes) {
@@ -5547,25 +5581,87 @@ function contextoPrazoIA_(z) {
 }
 
 /** Resumo por IA de um prazo, na hora (botão "Resumir com IA" na tela do prazo). Não muda o prazo. */
+/**
+ * De onde a IA tira o conteúdo do prazo, nesta ordem:
+ *  1) o texto da própria intimação;
+ *  2) outra comunicação do mesmo processo com texto (ex.: a publicação do DJEN) em até 20 dias da ciência;
+ *  3) sem texto (PJe "documento sigiloso"): o nome do ato no aviso + as últimas movimentações do DataJud (busca na hora se faltar).
+ */
+function fontePrazoIA_(z, tabI, p) {
+  var temTexto = function (i) { var t = String(i && i.texto || '').replace(/\s+/g, ' '); return t.length >= 120 && !/^\W*(documento sigiloso|conteúdo sigiloso)/i.test(t); };
+  var propria = tabI.linhas.filter(function (i) { return i.id === z.intimacao_id; })[0];
+  if (temTexto(propria)) return { modo: 'texto', intim: propria, texto: [propria.movimento, propria.texto].join('\n') };
+  var ref = z.ciencia || hojeSP_();
+  var outra = tabI.linhas.filter(function (i) { return i.numero === z.numero && temTexto(i) && Math.abs(diffDias_(String(i.recebido_em).slice(0, 10), ref)) <= 20; })
+    .sort(function (a, b) { return Math.abs(diffDias_(String(a.recebido_em).slice(0, 10), ref)) - Math.abs(diffDias_(String(b.recebido_em).slice(0, 10), ref)); })[0];
+  if (outra) return { modo: 'texto', intim: outra, texto: [outra.movimento, outra.texto].join('\n'), origem: 'publicação do mesmo processo em ' + dataBR_(String(outra.recebido_em).slice(0, 10)) };
+  // sem texto: monta o quadro com o aviso e os andamentos
+  var andam = [];
+  try { andam = p && p.andamentos && p.andamentos !== '-' ? JSON.parse(p.andamentos) : []; } catch (e) { andam = []; }
+  if (!andam.length && p && aliasDatajud_(p.numero)) {
+    try {
+      var ped = pedidoDatajud_(p.numero, chaveDatajud_(false));
+      var resp = UrlFetchApp.fetch(ped.url, ped);
+      if (resp.getResponseCode() === 200) { var lido = lerDatajud_(resp.getContentText()); if (lido) { andam = lido.movs.slice(0, 15); comTrava_(function () { guardarAndamentos_(tabela_('Processos'), p, lido); }); } }
+    } catch (e) { /* segue com o que tem */ }
+  }
+  var aviso = propria ? String(propria.movimento || '').trim() : '';
+  if (!andam.length && !aviso) return null;
+  var linhas = ['AVISO DO TRIBUNAL (o conteúdo do ato não veio): ' + (aviso || '—'),
+    'Prazo lançado pelo robô: ' + String(z.descricao || '').slice(0, 120),
+    'Processo: ' + [p && p.classe, p && p.area, p && p.orgao, p && p.tribunal].filter(Boolean).join(' · '),
+    'ÚLTIMAS MOVIMENTAÇÕES (mais nova primeiro):'].concat(andam.slice(0, 12).map(function (m) { return dataBR_(String(m.d).slice(0, 10)) + ' — ' + m.n; }));
+  return { modo: 'movimentos', intim: propria || null, texto: linhas.join('\n') };
+}
+
+/** O que a IA deve fazer quando não há o texto do ato. */
+var INSTRUCAO_SEM_TEXTO = 'ATENÇÃO: o tribunal NÃO enviou o texto do ato (ex.: PJe "documento sigiloso"). Com base no aviso e nas movimentações, ' +
+  'diga qual é o ato MAIS PROVÁVEL que gerou a intimação e a providência provável, deixando claro no resumo que é uma estimativa a confirmar no sistema. ' +
+  'Use "prazo_dias": null, a não ser que as movimentações citem o prazo expressamente.';
+
+/** Resumo por IA de um prazo, na hora (botão "Resumir com IA" na tela do prazo). Não muda o prazo. */
 function resumirPrazoIA_(d, u) {
   var chave = chaveIA_();
   if (!chave) throw falha_('A IA não está ligada. A administração cadastra a chave em Usuários › Resumo das intimações por IA.');
   var tabZ = tabela_('Prazos'), z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
   if (!z) throw falha_('Prazo não encontrado.');
   var tabI = tabela_('Intimacoes');
-  var intim = tabI.linhas.filter(function (i) { return i.id === z.intimacao_id; })[0];
-  if (!intim || String(intim.texto || '').length < 120) intim = tabI.linhas.filter(function (i) { return i.numero === z.numero && String(i.texto || '').length >= 120; })
-    .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; })[0];
-  var texto = intim ? String(intim.texto || '').replace(/\s+/g, ' ') : '';
-  if (texto.length < 120 || /^\W*(documento sigiloso|conteúdo sigiloso)/i.test(texto)) throw falha_('O aviso deste prazo não traz o texto do ato (no PJe vem "documento sigiloso"). Abra o processo no sistema do tribunal.');
-  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === z.processo_id; })[0] || {};
+  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === z.processo_id; })[0] || { numero: z.numero };
+  var res = resumoPrazoIA_(z, tabI, p, chave);
+  if (!res) throw falha_('Ainda não há texto do ato nem movimentações deste processo para a IA ler. Abra o processo e clique em "Buscar andamentos agora", ou confira direto no sistema do tribunal.');
+  comTrava_(function () { atualizarLinha_(tabZ, z, { resumo_ia: res.texto }); if (res.intim) atualizarLinha_(tabI, res.intim, { resumo_ia: res.texto }); });
+  registrar_(u.usuario, 'resumo por IA', z.id + ' (' + res.modo + ')');
+  return { resumo_ia: res.texto, modo: res.modo };
+}
+
+function resumoPrazoIA_(z, tabI, p, chave) {
+  var f = fontePrazoIA_(z, tabI, p);
+  if (!f) return null;
   var cli = tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {};
-  var nomes = [cli.nome, p.cliente_nome, p.parte_contraria].concat(String(intim.partes_cliente || '').split(/;\s*/));
-  var ped = pedidoGemini_(anonimizar_([intim.movimento, intim.texto].join('\n'), nomes), chave, config_('IA_MODELO') || IA_MODELO_PADRAO, contextoPrazoIA_(z));
-  var res = lerRespostaGemini_(UrlFetchApp.fetch(ped.url, ped), z);
-  comTrava_(function () { atualizarLinha_(tabZ, z, { resumo_ia: res }); atualizarLinha_(tabI, intim, { resumo_ia: res }); });
-  registrar_(u.usuario, 'resumo por IA', z.id);
-  return { resumo_ia: res };
+  var nomes = [cli.nome, p.cliente_nome, p.parte_contraria].concat(String(f.intim && f.intim.partes_cliente || '').split(/;\s*/));
+  var contexto = (f.modo === 'movimentos' ? INSTRUCAO_SEM_TEXTO + '\n' : '') + contextoPrazoIA_(z);
+  var txt = lerRespostaGemini_(chamarGemini_(anonimizar_(f.texto, nomes), chave, contexto), f.modo === 'texto' ? z : null);
+  if (f.modo === 'movimentos') txt = txt.replace(/^IA: /, 'IA (sem o texto do ato; estimativa pelas movimentações — confirmar no sistema): ');
+  else if (f.origem) txt = txt.replace(/^IA: /, 'IA (pela ' + f.origem + '): ');
+  return { texto: txt.slice(0, 900), modo: f.modo, intim: f.intim };
+}
+
+/** Robô: prazos PROVISÓRIOS (aviso sem o ato) ganham a estimativa da IA pelas movimentações. Nunca muda o prazo. */
+function resumirProvisoriosIA_(limiteMs, max) {
+  var chave = chaveIA_();
+  if (!chave || config_('IA_LIGADA') === 'nao') return { feitas: 0 };
+  var t0 = Date.now(), tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes'), procs = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  var fila = tabZ.linhas.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && !z.resumo_ia && /PROVIS/i.test(z.descricao || ''); }).slice(0, max || 10);
+  var feitas = 0;
+  fila.forEach(function (z) {
+    if (Date.now() - t0 > (limiteMs || 60000)) return;
+    try {
+      var res = resumoPrazoIA_(z, tabI, procs[z.processo_id] || { numero: z.numero }, chave);
+      if (res) { comTrava_(function () { atualizarLinha_(tabZ, z, { resumo_ia: res.texto }); }); feitas++; }
+    } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); }
+  });
+  return { feitas: feitas };
 }
 
 function chaveIA_() { return PropertiesService.getScriptProperties().getProperty('GEMINI_CHAVE') || ''; }
@@ -5609,7 +5705,7 @@ function lerRespostaGemini_(resp, z) {
 function resumirIntimacoes_(limiteMs, max) {
   var chave = chaveIA_();
   if (!chave || config_('IA_LIGADA') === 'nao') return { feitas: 0, motivo: 'desligada' };
-  var modelo = config_('IA_MODELO') || IA_MODELO_PADRAO, t0 = Date.now();
+  var modelo = modeloIA_(), t0 = Date.now();
   var tabI = tabela_('Intimacoes'), tabZ = tabela_('Prazos');
   var desde = new Date(Date.now() - 60 * 86400000).toISOString();
   var fila = tabI.linhas.filter(function (i) {
@@ -5630,7 +5726,11 @@ function resumirIntimacoes_(limiteMs, max) {
   var feitas = 0, erro = '';
   for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 60000); i += 5) {
     var lote = fila.slice(i, i + 5);
-    var resps = UrlFetchApp.fetchAll(lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo, contextoPrazoIA_(prazos[x.prazo_id])); }));
+    var montar = function () { return lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo, contextoPrazoIA_(prazos[x.prazo_id])); }); };
+    var resps = UrlFetchApp.fetchAll(montar());
+    var trocado = modeloSugerido_(resps[0]);
+    if (trocado) { modelo = trocado; resps = UrlFetchApp.fetchAll(montar()); }
+    if (resps.some(function (x) { return x.getResponseCode() === 429; })) { Utilities.sleep(5000); resps = UrlFetchApp.fetchAll(montar()); }
     for (var k = 0; k < lote.length; k++) {
       try {
         var res = lerRespostaGemini_(resps[k], prazos[lote[k].prazo_id]);
@@ -5657,14 +5757,13 @@ function configIA_(d, u) {
     if (k) props.setProperty('GEMINI_CHAVE', k); else props.deleteProperty('GEMINI_CHAVE');
     registrar_(u.usuario, 'chave da IA', k ? 'cadastrada' : 'apagada');
   }
-  if (d.modelo !== undefined) setConfig_('IA_MODELO', /^[a-z0-9.\-]{3,60}$/.test(d.modelo) ? d.modelo : IA_MODELO_PADRAO, 'Modelo do Gemini usado nos resumos');
+  if (d.modelo !== undefined) setConfig_('IA_MODELO', /^gemini-[a-z0-9.\-]{3,60}$/.test(d.modelo) && !/^gemini-(1|2)(\.|-)/.test(d.modelo) ? d.modelo : IA_MODELO_PADRAO, 'Modelo do Gemini usado nos resumos');
   if (d.ligada !== undefined) setConfig_('IA_LIGADA', d.ligada ? 'sim' : 'nao', 'Resumo das intimações por IA ligado?');
-  var r = { temChave: !!chaveIA_(), modelo: config_('IA_MODELO') || IA_MODELO_PADRAO, ligada: config_('IA_LIGADA') !== 'nao',
+  var r = { temChave: !!chaveIA_(), modelo: modeloIA_(), ligada: config_('IA_LIGADA') !== 'nao',
     ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') };
   if (d.testar) {
     if (!r.temChave) throw falha_('Cadastre a chave primeiro.');
-    var ped = pedidoGemini_('Intimação: fica a parte autora intimada para, no prazo de 15 (quinze) dias, apresentar réplica à contestação.', chaveIA_(), r.modelo);
-    try { r.teste = lerRespostaGemini_(UrlFetchApp.fetch(ped.url, ped)); }
+    try { r.teste = lerRespostaGemini_(chamarGemini_('Intimação: fica a parte autora intimada para, no prazo de 15 (quinze) dias, apresentar réplica à contestação.', chaveIA_(), '')); r.modelo = modeloIA_(); }
     catch (e) { throw falha_('O teste falhou: ' + (e.message || e)); }
   }
   if (d.rodar) r.rodada = resumirIntimacoes_(120000, 40);
@@ -5775,30 +5874,46 @@ function atualizarAndamentos_(limiteMs, maximo) {
   }).slice(0, maximo || 400);
   if (!fila.length) return { lidos: 0, achados: 0 };
   tab.adiar = true;
-  var chave = chaveDatajud_(false), renovou = false, lidos = 0, achados = 0, erro = '';
-  for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 120000); i += 10) {
-    var lote = fila.slice(i, i + 10);
+  // O CNJ limita o ritmo (código 429): lotes pequenos, pausa entre eles e, se pedir calma, espera e tenta de novo;
+  // persistindo, para por aqui sem marcar erro — os que faltaram ficam para a próxima rodada (de 4 em 4 horas).
+  var chave = chaveDatajud_(false), renovou = false, lidos = 0, achados = 0, erro = '', aviso = '', pausa = 1200, LOTE = 4;
+  for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 120000); i += LOTE) {
+    var lote = fila.slice(i, i + LOTE);
     var resps = UrlFetchApp.fetchAll(lote.map(function (p) { return pedidoDatajud_(p.numero, chave); }));
     var negado = resps.every(function (r) { return r.getResponseCode() === 401 || r.getResponseCode() === 403; });
     if (negado) {
       if (renovou) { erro = 'o CNJ recusou a chave pública (código ' + resps[0].getResponseCode() + ')'; break; }
-      chave = chaveDatajud_(true, chave); renovou = true; i -= 10; continue;
+      chave = chaveDatajud_(true, chave); renovou = true; i -= LOTE; continue;
     }
+    var limitados = [];
     for (var k = 0; k < lote.length; k++) {
       var code = resps[k].getResponseCode();
-      if (code !== 200) { erro = 'DataJud respondeu ' + code; continue; }
+      if (code === 429 || code === 503) { limitados.push(lote[k]); continue; }
+      if (code !== 200) { erro = 'DataJud respondeu ' + code + ' (processo ' + lote[k].numero + ')'; continue; }
       try { if (guardarAndamentos_(tab, lote[k], lerDatajud_(resps[k].getContentText()))) achados++; lidos++; }
       catch (e) { erro = String(e.message || e); }
     }
+    if (limitados.length) {
+      Utilities.sleep(8000); pausa = Math.min(pausa * 2, 6000);
+      var de2 = limitados.map(function (p) { return UrlFetchApp.fetch(pedidoDatajud_(p.numero, chave).url, pedidoDatajud_(p.numero, chave)); });
+      var aindaLimitado = false;
+      de2.forEach(function (resp, n) {
+        if (resp.getResponseCode() === 200) { try { if (guardarAndamentos_(tab, limitados[n], lerDatajud_(resp.getContentText()))) achados++; lidos++; } catch (e) { erro = String(e.message || e); } }
+        else aindaLimitado = true;
+      });
+      if (aindaLimitado) { aviso = 'o CNJ pediu uma pausa; os processos que faltaram ficam para a próxima rodada'; break; }
+    }
+    Utilities.sleep(pausa);
   }
   regravarMudadas_(tab);
-  setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · ' + lidos + ' consultado(s), ' + achados + ' com andamentos', 'Última leitura do DataJud');
+  var faltam = Math.max(0, fila.length - lidos);
+  setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · ' + lidos + ' consultado(s), ' + achados + ' com andamentos' + (faltam ? ' · ' + faltam + ' na fila' : '') + (aviso ? ' · ' + aviso : ''), 'Última leitura do DataJud');
   setConfig_('DATAJUD_ERRO', erro, 'Último problema do DataJud');
-  return { lidos: lidos, achados: achados, erro: erro };
+  return { lidos: lidos, achados: achados, erro: erro, aviso: aviso };
 }
 
 function andamentosGatilho() {
-  try { atualizarAndamentos_(270000, 600); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+  try { atualizarAndamentos_(270000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
 }
 
 /** Andamentos de um processo (e, se pedido, consulta o DataJud agora). */
