@@ -1135,3 +1135,20 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .ato-caixa{display:flex;gap:12px;align-items:center;background:#eef6fc;border:1px solid #d3e7f5;border-radius:12px;padding:12px}
 .ato-caixa > div{flex:1}
 .ato-ico{font-size:22px}
+/* robô do PIX */
+.pix-caixa{border:1px solid #d3e7d9;background:linear-gradient(180deg,#f7fcf9,#fff)}
+.pix-cab{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:flex-start}
+.pix-cab h2{margin:0 0 4px}
+.pix-sub{font-size:14px;margin:12px 0 6px}
+.pix-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pix-item{display:flex;flex-wrap:wrap;gap:12px;align-items:center;border:1px solid var(--linha);border-radius:12px;padding:10px 12px;background:#fff}
+.pix-item.conferir{border-left:4px solid #e0a23a}
+.pix-item.ok{border-left:4px solid #1f8a4c}
+.pix-valor{font:600 16px/1 var(--sans);color:var(--tinta);min-width:110px}
+.pix-txt{flex:1;min-width:200px}
+.pix-motivo{color:#8a5d06}
+.pix-acoes{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pix-acoes select{max-width:280px}
+.pix-ok{color:#1f6b3f;margin:10px 0 0}
+.pix-feitos{margin-top:10px}
+.pix-feitos summary{cursor:pointer;font-size:13px;color:var(--mudo)}

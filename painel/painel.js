@@ -1915,7 +1915,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '6.9.9';
+  const VERSAO_PAINEL = '7.0.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2553,6 +2553,52 @@
     ], p => { location.hash = '#/honorario/' + p.honorario_id; }, vazio);
   }
 
+  /** Robô do PIX (Inter): o que deu baixa sozinho e o que ficou para conferir. */
+  function blocoPix() {
+    const caixa = h('section', { class: 'caixa pix-caixa' }, h('p', { class: 'peq' }, 'Carregando os PIX recebidos…'));
+    const rh = sessao.usuario.pode.ocultarValores;
+    const desenhar = r => {
+      const conferir = r.lista.filter(x => x.situacao === 'a conferir'), baixados = r.lista.filter(x => x.situacao === 'baixado');
+      const dt = iso => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const valorTxt = v => v === null || v === undefined ? '•••••' : reais(+v);
+      const linhaConferir = x => {
+        const sel = h('select', { 'aria-label': 'Parcela' }, h('option', { value: '' }, x.abertas && x.abertas.length ? '— escolha a parcela —' : '— cliente sem parcela aberta —'),
+          (x.abertas || []).map(q => h('option', { value: q.id }, `${q.numero ? q.numero + 'ª · ' : ''}venc. ${dataBR(q.vencimento)} · ${valorTxt(q.valor)}`)));
+        const selCli = x.cliente_id ? null : h('select', { 'aria-label': 'Cliente', onchange: ev => {
+          const ab = (r.abertas || {})[ev.target.value] || [];
+          sel.replaceChildren(h('option', { value: '' }, ab.length ? '— escolha a parcela —' : '— sem parcela aberta —'), ab.map(q => h('option', { value: q.id }, `${q.numero ? q.numero + 'ª · ' : ''}venc. ${dataBR(q.vencimento)} · ${valorTxt(q.valor)}`)));
+        } }, h('option', { value: '' }, 'De qual cliente é?'), r.clientes.map(c => h('option', { value: c.id }, c.nome)));
+        return h('li', { class: 'pix-item conferir' },
+          h('div', { class: 'pix-valor' }, valorTxt(x.valor)),
+          h('div', { class: 'pix-txt' }, h('strong', {}, x.pagador), h('div', { class: 'peq' }, dt(x.recebido_em), x.cliente ? ' · cliente: ' + x.cliente : ''), h('div', { class: 'peq pix-motivo' }, x.motivo)),
+          rh ? null : h('div', { class: 'pix-acoes' }, selCli, sel,
+            botao('Dar baixa', async ev => {
+              if (!sel.value) { avisar('Escolha a parcela.', true); return; }
+              ev.target.disabled = true;
+              try { const res = await api('fin.pixBaixar', { id: x.id, parcela_id: sel.value }); avisar('Baixa feita' + (res.recibo ? ' e recibo gerado.' : '.')); if (res.recibo) mostrarRecibo(res.recibo); rota(); }
+              catch (e) { ev.target.disabled = false; avisar(e.message, true); }
+            }, 'mini'),
+            botao('Não é honorário', async () => { await api('fin.pixIgnorar', { id: x.id }); avisar('Marcado como "não é honorário".'); rota(); }, 'sec mini')));
+      };
+      caixa.replaceChildren(...[
+        h('div', { class: 'pix-cab' }, h('div', {}, h('h2', {}, '⚡ PIX recebidos (Banco Inter)'),
+          h('p', { class: 'peq' }, 'O robô lê os e-mails do Inter de hora em hora. Mesmo nome do cliente + parcela em aberto com o mesmo valor = baixa sozinho, com recibo. O resto fica aqui para conferir.',
+            r.ultima ? ' Última leitura: ' + r.ultima.replace(/^(\S+)/, iso => quando(iso)) + '.' : '')),
+          rh ? null : botao('Ler o Gmail agora', async ev => {
+            ev.target.disabled = true; ev.target.textContent = 'Lendo…';
+            try { const x = await api('fin.pixLer'); avisar(`${x.lidos} PIX novo(s): ${x.baixados} baixa(s) automática(s), ${x.conferir} para conferir.`); rota(); }
+            catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Ler o Gmail agora'; }
+          }, 'sec mini')),
+        conferir.length ? h('div', {}, h('h3', { class: 'pix-sub' }, `Para conferir (${conferir.length})`), h('ul', { class: 'pix-lista' }, conferir.map(linhaConferir)))
+          : h('p', { class: 'pix-ok' }, '✓ Nenhum PIX para conferir.'),
+        baixados.length ? h('details', { class: 'pix-feitos' }, h('summary', {}, `Baixas automáticas e feitas (${baixados.length})`),
+          h('ul', { class: 'pix-lista' }, baixados.map(x => h('li', { class: 'pix-item ok' }, h('div', { class: 'pix-valor' }, valorTxt(x.valor)),
+            h('div', { class: 'pix-txt' }, h('strong', {}, x.cliente || x.pagador), h('div', { class: 'peq' }, dt(x.recebido_em), x.parcela ? ` · ${x.parcela.numero ? x.parcela.numero + 'ª parcela' : 'parcela'} venc. ${dataBR(x.parcela.vencimento)}` : '', ' · ', x.motivo)))))) : null].filter(Boolean));
+    };
+    api('fin.pix', {}).then(desenhar, e => caixa.replaceChildren(h('p', { class: 'peq' }, /Ação desconhecida|desconhecid/.test(e.message) ? 'O robô do PIX precisa do Code.gs novo no Google.' : e.message)));
+    return caixa;
+  }
+
   async function telaFinanceiro(params) {
     carregando();
     const busca = params.get('busca') || '';
@@ -2567,6 +2613,7 @@
         h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber — lista por cliente'),
           h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas a pagar'),
           sessao.usuario.pode.ocultarValores ? null : botao('Novo honorário', () => { location.hash = '#/honorario/novo'; }))),
+      blocoPix(),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' + (t.atrasado ? ' destaque' : '') }, h('b', {}, reais(t.atrasado)), h('span', {}, `em atraso · ${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
         h('div', { class: 'numero' }, h('b', {}, reais(t.aReceber30)), h('span', {}, 'a receber nos próximos 30 dias')),

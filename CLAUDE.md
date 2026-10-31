@@ -198,6 +198,13 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   atrasado e próxima parcela (`aReceber_`, rota `fin.areceber`), atrasados primeiro, com botão de imprimir e de WhatsApp.
 - Ao marcar uma parcela como paga, o recibo sai sozinho em PDF na pasta do cliente (`reciboDaParcela_`) e o painel abre
   uma caixa com "Abrir / imprimir recibo" e "Mandar no WhatsApp" (o PDF é anexado à mão; não tornamos o arquivo público).
+- Robô do PIX (7.0.0, banco Inter): `lerPix_` roda no robô de hora em hora (e "Ler o Gmail agora" no Financeiro, rota `fin.pixLer`).
+  Lê `from:no-reply@inter.co subject:(Pix recebido)` ("Você recebeu um Pix no valor de R$ X de NOME, na conta …"), guarda cada
+  um na aba Pix (id = "pix:" + id do e-mail; nunca relê; PIX_GMAIL_DESDE, começa 45 dias atrás). Baixa SOZINHO só quando: nome
+  igual ao de um cliente (`nomeComparavel_`, sem acento/"de"/"ltda"), parcela em aberto com o MESMO valor, já vencida ou a vencer
+  em até 15 dias (a mais antiga), e nenhum pagamento igual já lançado à mão ±7 dias. Usa `pagarParcela_` (forma "PIX (Inter)",
+  recibo automático). Todo o resto fica "a conferir" no Financeiro (quadro "PIX recebidos"): escolher a parcela e "Dar baixa"
+  (`fin.pixBaixar`) ou "Não é honorário" (`fin.pixIgnorar`). RH vê sem valores e não dá baixa.
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade

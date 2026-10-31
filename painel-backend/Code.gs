@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.9';
+var VERSAO = '7.0.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -41,7 +41,7 @@ function semValores_(x) {
   }
   return x;
 }
-var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1 };
+var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.parcela.pagar': 1 };
 
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
@@ -74,6 +74,7 @@ var ESQUEMA = {
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
+  Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
@@ -357,6 +358,10 @@ var ROTAS = {
   'trabalho.assumir': { fn: assumirTrabalho_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
+  'fin.pix': { permissao: 'financeiro', fn: listarPix_ },
+  'fin.pixBaixar': { permissao: 'financeiro', fn: baixarPix_ },
+  'fin.pixIgnorar': { permissao: 'financeiro', fn: ignorarPix_ },
+  'fin.pixLer': { permissao: 'financeiro', fn: lerPixAgora_ },
   'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
   'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
   'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
@@ -2195,6 +2200,7 @@ function rodarRobo_(quem) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw falha_('O robô já está rodando. Tente de novo em 1 minuto.');
   var ctx, erros = [], novas = 0, prazosNovos = 0;
+  TRAVA_NIVEL_ = 1; // o robô já segura a trava: o que ele chama (baixa do PIX, recibo) não trava de novo
   try {
     ctx = contextoRobo_();
     try { var g = lerGmail_(ctx); novas += g.intimacoes; prazosNovos += g.prazos; setConfig_('ROBO_GMAIL_OK', new Date().toISOString(), 'Última leitura do Gmail sem erro'); }
@@ -2205,6 +2211,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
+    try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
     try { ctx.prazos.adiar = true; atribuirResponsaveis_(ctx.prazos, ctx.procs); regravarMudadas_(ctx.prazos); } catch (e3) { ctx.prazos.adiar = false; }
@@ -2218,6 +2225,7 @@ function rodarRobo_(quem) {
     registrar_(quem || 'robô', 'robô', resumo);
     return { resumo: resumo, intimacoes: novas, prazos: prazosNovos, erros: erros };
   } finally {
+    TRAVA_NIVEL_ = 0;
     lock.releaseLock();
   }
 }
@@ -3598,6 +3606,145 @@ function marcarAtoPainel_(d, u) {
     var ev = ctx.eventos.linhas[ctx.eventos.linhas.length - 1] || {};
     registrar_(u.usuario, 'ato na agenda', proc.numero + ' ' + ato.tipo + ' ' + d.data + ' ' + (d.hora || ''));
     return { ok: ok, erro_agenda: /^erro/.test(ev.evento_id || '') ? ev.evento_id : '' };
+  });
+}
+
+/* ---------- Robô do PIX (Banco Inter): baixa automática das parcelas ---------- */
+
+var BUSCA_PIX = 'from:no-reply@inter.co subject:(Pix recebido)';
+var U_ROBO_PIX = { usuario: 'robô', nome: 'Robô do PIX', perfil: 'administrador' };
+
+/** Lê o e-mail do Inter: "Você recebeu um Pix no valor de R$ 500,00 de NOME, na conta …". */
+function lerEmailPix_(corpo) {
+  var t = String(corpo || '').replace(/\s+/g, ' ');
+  var m = /recebeu um Pix no valor de R\$\s*([\d.]+,\d{2}) de (.+?), na conta/i.exec(t);
+  return m ? { valor: dinheiro_(m[1]), pagador: m[2].trim().slice(0, 120) } : null;
+}
+
+/** Nome comparável: sem acento, sem "ltda/me/eireli/sa", sem "de/da/do/dos/das/e". */
+function nomeComparavel_(n) {
+  return normalizar_(n).replace(/[^a-z0-9 ]/g, ' ').split(' ')
+    .filter(function (w) { return w && ['de', 'da', 'do', 'dos', 'das', 'e', 'ltda', 'me', 'epp', 'eireli', 'sa', 's', 'a'].indexOf(w) < 0; }).join(' ');
+}
+
+/** Acha o cliente pelo nome de quem pagou. Só aceita nome igual (o mesmo nome completo) ou um único cliente com as mesmas palavras. */
+function clienteDoPagador_(pagador, clientes) {
+  var alvo = nomeComparavel_(pagador);
+  if (!alvo) return null;
+  var iguais = clientes.filter(function (c) { return nomeComparavel_(c.nome) === alvo; });
+  if (iguais.length === 1) return { cliente: iguais[0], certeza: true };
+  if (iguais.length > 1) return null;
+  var pal = alvo.split(' ');
+  var parecidos = clientes.filter(function (c) { var cn = nomeComparavel_(c.nome).split(' '); return pal.length >= 2 && pal.every(function (w) { return cn.indexOf(w) >= 0; }); });
+  return parecidos.length === 1 ? { cliente: parecidos[0], certeza: false } : null;
+}
+
+function parcelasAbertasDe_(clienteId, tabParc) {
+  return tabParc.linhas.filter(function (p) { return p.cliente_id === clienteId && !p.pago_em; })
+    .sort(function (a, b) { return (a.vencimento || '9999') < (b.vencimento || '9999') ? -1 : 1; });
+}
+
+/**
+ * Robô (toda rodada): lê os PIX recebidos no Gmail. Cliente com o mesmo nome + parcela em aberto com o MESMO valor →
+ * dá baixa sozinho (com recibo). Qualquer dúvida (outro nome, outro valor, duas parcelas iguais) fica "a conferir" no Financeiro.
+ */
+function lerPix_(limiteMs) {
+  var t0 = Date.now();
+  var desde = parseInt(config_('PIX_GMAIL_DESDE'), 10) || (Date.now() - 45 * 86400000);
+  var threads;
+  try { threads = GmailApp.search(BUSCA_PIX + ' after:' + Math.floor(desde / 1000), 0, 100); }
+  catch (e) { if (gmailEsgotado_(e)) return { lidos: 0, baixados: 0, conferir: 0, parou: true }; throw e; }
+  var tabPix = tabela_('Pix'), ja = {};
+  tabPix.linhas.forEach(function (x) { ja[x.id] = 1; });
+  var clientes = tabela_('Clientes').linhas, tabParc = tabela_('Parcelas');
+  var msgs = [];
+  threads.forEach(function (th) { th.getMessages().forEach(function (m) { if (m.getDate().getTime() > desde && !ja['pix:' + m.getId()]) msgs.push(m); }); });
+  msgs.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
+  var r = { lidos: 0, baixados: 0, conferir: 0 }, ate = desde;
+  for (var i = 0; i < msgs.length; i++) {
+    if (Date.now() - t0 > (limiteMs || 90000)) break;
+    var m = msgs[i], dados = lerEmailPix_(m.getPlainBody());
+    var agora = new Date().toISOString(), quando = m.getDate().toISOString();
+    ate = Math.max(ate, m.getDate().getTime());
+    var linha = { id: 'pix:' + m.getId(), recebido_em: quando, valor: dados ? txtDinheiro_(dados.valor) : '', pagador: dados ? dados.pagador : '(não entendi o e-mail)',
+      situacao: 'a conferir', cliente_id: '', parcela_id: '', motivo: '', criado_em: agora, atualizado_em: agora, atualizado_por: 'robô' };
+    r.lidos++;
+    if (!dados) { linha.motivo = 'Não consegui ler o valor e o nome no e-mail do Inter.'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
+    var achou = clienteDoPagador_(dados.pagador, clientes);
+    if (!achou) { linha.motivo = 'Nenhum cliente com este nome (pode ser um parente pagando ou outro recebimento).'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
+    linha.cliente_id = achou.cliente.id;
+    var abertas = parcelasAbertasDe_(achou.cliente.id, tabParc);
+    var diaPix = diaSP_(quando);
+    // só parcela já vencida ou que vence em até 15 dias (não "adianta" parcela do futuro)
+    var mesmas = abertas.filter(function (p) { return Math.abs(dinheiro_(p.valor) - dados.valor) < 0.01 && (!p.vencimento || p.vencimento <= somarDias_(diaPix, 15)); });
+    // esse pagamento já foi lançado à mão? (parcela igual paga perto da data do PIX) → não baixa outra
+    var jaLancado = tabParc.linhas.some(function (p) { return p.cliente_id === achou.cliente.id && p.pago_em && Math.abs(dinheiro_(p.valor_pago || p.valor) - dados.valor) < 0.01 && Math.abs(diffDias_(p.pago_em, diaPix)) <= 7; });
+    if (!achou.certeza) linha.motivo = 'Nome parecido com o do cliente (' + achou.cliente.nome + '): confira.';
+    else if (!abertas.length) linha.motivo = 'O cliente não tem parcela em aberto.';
+    else if (jaLancado) linha.motivo = 'Parece já lançado: há uma parcela de mesmo valor paga perto desta data. Confira antes de dar baixa.';
+    else if (!mesmas.length) linha.motivo = 'Nenhuma parcela vencida (ou a vencer em 15 dias) de R$ ' + txtDinheiro_(dados.valor).replace('.', ',') + ' (pode ter pago parte, mais de uma ou adiantado).';
+    if (achou.certeza && mesmas.length && !jaLancado) {
+      var alvo = mesmas[0]; // a mais antiga em aberto com o mesmo valor
+      try {
+        pagarParcela_({ id: alvo.id, data: diaSP_(quando), valor: txtDinheiro_(dados.valor), forma: 'PIX (Inter)' }, U_ROBO_PIX);
+        linha.situacao = 'baixado'; linha.parcela_id = alvo.id;
+        linha.motivo = 'Baixa automática' + (mesmas.length > 1 ? ' na parcela mais antiga (havia ' + mesmas.length + ' do mesmo valor)' : '') + '.';
+        r.baixados++;
+        tabParc = tabela_('Parcelas');
+      } catch (eP) { linha.motivo = 'Não consegui dar baixa: ' + (eP.message || eP); r.conferir++; }
+    } else r.conferir++;
+    inserirLinha_(tabPix, linha);
+  }
+  if (ate > desde) setConfig_('PIX_GMAIL_DESDE', String(ate - 60000), 'Até onde o robô do PIX já leu o Gmail');
+  setConfig_('PIX_ULTIMA', new Date().toISOString() + ' · ' + r.lidos + ' PIX lido(s), ' + r.baixados + ' baixa(s), ' + r.conferir + ' a conferir', 'Última leitura do robô do PIX');
+  if (r.lidos) registrar_('robô', 'robô do PIX', r.lidos + ' lido(s), ' + r.baixados + ' baixa(s) automática(s), ' + r.conferir + ' a conferir');
+  return r;
+}
+
+function lerPixAgora_() { return comTrava_(function () { return lerPix_(120000); }); }
+
+/** Financeiro: PIX recebidos dos últimos 60 dias, com as parcelas em aberto de cada cliente para dar baixa à mão. */
+function listarPix_(d) {
+  var dias = Math.min(parseInt(d.dias, 10) || 60, 365), desde = new Date(Date.now() - dias * 86400000).toISOString();
+  var clientes = {}, tabParc = tabela_('Parcelas'), parc = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clientes[c.id] = c; });
+  tabParc.linhas.forEach(function (p) { parc[p.id] = p; });
+  var abertasPor = {};
+  tabParc.linhas.forEach(function (p) { if (!p.pago_em) (abertasPor[p.cliente_id] = abertasPor[p.cliente_id] || []).push(p); });
+  var lista = tabela_('Pix').linhas.filter(function (x) { return (x.recebido_em || '') >= desde; })
+    .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; })
+    .map(function (x) {
+      var o = limpar_(x), c = clientes[x.cliente_id], p = parc[x.parcela_id];
+      o.cliente = c ? c.nome : '';
+      if (p) o.parcela = { numero: p.numero, vencimento: p.vencimento, valor: p.valor };
+      if (x.situacao === 'a conferir' && c) o.abertas = (abertasPor[c.id] || []).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12)
+        .map(function (q) { return { id: q.id, numero: q.numero, vencimento: q.vencimento, valor: q.valor }; });
+      return o;
+    });
+  var abertas = {};
+  Object.keys(abertasPor).forEach(function (k) { abertas[k] = abertasPor[k].sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12).map(function (q) { return { id: q.id, numero: q.numero, vencimento: q.vencimento, valor: q.valor }; }); });
+  return { lista: lista, abertas: abertas, ultima: config_('PIX_ULTIMA') || '', conferir: lista.filter(function (x) { return x.situacao === 'a conferir'; }).length,
+    clientes: Object.keys(abertasPor).map(function (k) { return clientes[k] ? { id: k, nome: clientes[k].nome } : null; }).filter(Boolean).sort(function (a, b) { return a.nome < b.nome ? -1 : 1; }) };
+}
+
+/** Dar baixa à mão de um PIX "a conferir" numa parcela escolhida (gera o recibo). */
+function baixarPix_(d, u) {
+  var tab = tabela_('Pix'), x = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+  if (!x) throw falha_('PIX não encontrado.');
+  if (x.situacao === 'baixado') throw falha_('Este PIX já deu baixa.');
+  if (!d.parcela_id) throw falha_('Escolha a parcela.');
+  var res = pagarParcela_({ id: d.parcela_id, data: diaSP_(x.recebido_em), valor: d.valor || x.valor, forma: 'PIX (Inter)' }, u);
+  var p = parcelaPorId_(d.parcela_id).p;
+  comTrava_(function () { atualizarLinha_(tab, x, { situacao: 'baixado', parcela_id: d.parcela_id, cliente_id: p.cliente_id, motivo: 'Baixa feita por ' + (u.nome || u.usuario) + '.', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario }); });
+  return { ok: true, recibo: res.recibo || null };
+}
+
+function ignorarPix_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Pix'), x = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!x) throw falha_('PIX não encontrado.');
+    atualizarLinha_(tab, x, { situacao: d.voltar ? 'a conferir' : 'ignorado', motivo: d.voltar ? x.motivo : 'Não é honorário (marcado por ' + (u.nome || u.usuario) + ').', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    return { ok: true };
   });
 }
 
