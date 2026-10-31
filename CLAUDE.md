@@ -205,6 +205,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   em até 15 dias (a mais antiga), e nenhum pagamento igual já lançado à mão ±7 dias. Usa `pagarParcela_` (forma "PIX (Inter)",
   recibo automático). Todo o resto fica "a conferir" no Financeiro (quadro "PIX recebidos"): escolher a parcela e "Dar baixa"
   (`fin.pixBaixar`) ou "Não é honorário" (`fin.pixIgnorar`). RH vê sem valores e não dá baixa.
+  Melhorias 7.0.1 (`planoDeBaixa_`): também baixa sozinho quando o PIX é a SOMA das parcelas em aberto mais antigas (2 a 6) e
+  quando a parcela VENCIDA vem com até PIX_TOLERANCIA_JUROS % a mais (padrão 10; 0 desliga; ajuste no quadro, rota
+  `fin.pixConfig`). Aprende o pagador (`apelidosPix_`): depois de uma baixa (à mão ou automática) o mesmo nome de pagador vai
+  direto para aquele cliente (nome que apontou para 2 clientes é ignorado). A trava "já lançado à mão" ignora parcelas que já
+  vieram de um PIX (`pagasPeloPix`). Cada baixa guarda o recibo (coluna `recibo`) e tem "Mandar recibo no WhatsApp"
+  (agradecimento pronto; o PDF é anexado à mão).
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade

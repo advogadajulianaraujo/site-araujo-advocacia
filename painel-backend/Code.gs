@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.0.0';
+var VERSAO = '7.0.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -41,7 +41,7 @@ function semValores_(x) {
   }
   return x;
 }
-var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.parcela.pagar': 1 };
+var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
 
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
@@ -74,7 +74,7 @@ var ESQUEMA = {
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
-  Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por'],
+  Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
@@ -362,6 +362,7 @@ var ROTAS = {
   'fin.pixBaixar': { permissao: 'financeiro', fn: baixarPix_ },
   'fin.pixIgnorar': { permissao: 'financeiro', fn: ignorarPix_ },
   'fin.pixLer': { permissao: 'financeiro', fn: lerPixAgora_ },
+  'fin.pixConfig': { permissao: 'usuarios', fn: configPix_ },
   'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
   'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
   'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
@@ -3639,6 +3640,46 @@ function clienteDoPagador_(pagador, clientes) {
   return parecidos.length === 1 ? { cliente: parecidos[0], certeza: false } : null;
 }
 
+/** Quem já pagou por qual cliente (aprendido dos PIX já baixados, inclusive os feitos à mão). Nome que apontou para 2 clientes é ignorado. */
+function apelidosPix_(tabPix) {
+  var m = {}, conflito = {};
+  tabPix.linhas.forEach(function (x) {
+    if (x.situacao !== 'baixado' || !x.cliente_id) return;
+    var k = nomeComparavel_(x.pagador);
+    if (!k) return;
+    if (m[k] && m[k] !== x.cliente_id) conflito[k] = 1;
+    m[k] = x.cliente_id;
+  });
+  Object.keys(conflito).forEach(function (k) { delete m[k]; });
+  return m;
+}
+
+/**
+ * Qual parcela (ou quais) o PIX paga:
+ * 1) uma parcela do mesmo valor, já vencida ou a vencer em até 15 dias (a mais antiga);
+ * 2) a soma das parcelas em aberto mais antigas (2 a 6) dá exatamente o valor;
+ * 3) parcela vencida paga com um pouco a mais (multa/juros), até PIX_TOLERANCIA_JUROS % (padrão 10).
+ */
+function planoDeBaixa_(abertas, valor, diaPix, tolPct) {
+  var v = Math.round(valor * 100);
+  var cent = function (p) { return Math.round(dinheiro_(p.valor) * 100); };
+  var eleg = abertas.filter(function (p) { return !p.vencimento || p.vencimento <= somarDias_(diaPix, 15); });
+  var igual = eleg.filter(function (p) { return cent(p) === v; });
+  if (igual.length) return { tipo: 'igual', itens: [{ p: igual[0], valor: valor }], iguais: igual.length };
+  var soma = 0, lista = [];
+  for (var i = 0; i < abertas.length && i < 6; i++) {
+    if (abertas[i].vencimento && abertas[i].vencimento > somarDias_(diaPix, 45)) break;
+    soma += cent(abertas[i]); lista.push(abertas[i]);
+    if (soma === v && lista.length >= 2) return { tipo: 'soma', itens: lista.map(function (p) { return { p: p, valor: dinheiro_(p.valor) }; }) };
+    if (soma > v) break;
+  }
+  if (tolPct > 0) {
+    var venc = abertas.filter(function (p) { return p.vencimento && p.vencimento < diaPix && v > cent(p) && v <= Math.round(cent(p) * (1 + tolPct / 100)); });
+    if (venc.length) return { tipo: 'juros', itens: [{ p: venc[0], valor: valor }] };
+  }
+  return null;
+}
+
 function parcelasAbertasDe_(clienteId, tabParc) {
   return tabParc.linhas.filter(function (p) { return p.cliente_id === clienteId && !p.pago_em; })
     .sort(function (a, b) { return (a.vencimento || '9999') < (b.vencimento || '9999') ? -1 : 1; });
@@ -3657,6 +3698,10 @@ function lerPix_(limiteMs) {
   var tabPix = tabela_('Pix'), ja = {};
   tabPix.linhas.forEach(function (x) { ja[x.id] = 1; });
   var clientes = tabela_('Clientes').linhas, tabParc = tabela_('Parcelas');
+  var apelidos = apelidosPix_(tabPix);
+  var pagasPeloPix = {}; // parcelas já ligadas a um PIX (não contam como "lançado à mão")
+  tabPix.linhas.forEach(function (x) { String(x.parcela_id || '').split(',').forEach(function (id) { if (id) pagasPeloPix[id] = 1; }); });
+  var tolCfg = config_('PIX_TOLERANCIA_JUROS'), tol = tolCfg === '' || tolCfg === null || tolCfg === undefined ? 10 : Math.max(0, Math.min(30, parseFloat(String(tolCfg).replace(',', '.')) || 0));
   var msgs = [];
   threads.forEach(function (th) { th.getMessages().forEach(function (m) { if (m.getDate().getTime() > desde && !ja['pix:' + m.getId()]) msgs.push(m); }); });
   msgs.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
@@ -3671,24 +3716,35 @@ function lerPix_(limiteMs) {
     r.lidos++;
     if (!dados) { linha.motivo = 'Não consegui ler o valor e o nome no e-mail do Inter.'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
     var achou = clienteDoPagador_(dados.pagador, clientes);
-    if (!achou) { linha.motivo = 'Nenhum cliente com este nome (pode ser um parente pagando ou outro recebimento).'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
+    if (!achou || !achou.certeza) { // já pagou antes por este cliente (baixa feita à mão uma vez) → reconhece
+      var cidA = apelidos[nomeComparavel_(dados.pagador)];
+      var cA = cidA && clientes.filter(function (c) { return c.id === cidA; })[0];
+      if (cA) achou = { cliente: cA, certeza: true, apelido: true };
+    }
+    if (!achou) { linha.motivo = 'Nenhum cliente com este nome (pode ser um parente pagando ou outro recebimento). Ao dar baixa à mão, o robô aprende para a próxima vez.'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
     linha.cliente_id = achou.cliente.id;
     var abertas = parcelasAbertasDe_(achou.cliente.id, tabParc);
     var diaPix = diaSP_(quando);
-    // só parcela já vencida ou que vence em até 15 dias (não "adianta" parcela do futuro)
-    var mesmas = abertas.filter(function (p) { return Math.abs(dinheiro_(p.valor) - dados.valor) < 0.01 && (!p.vencimento || p.vencimento <= somarDias_(diaPix, 15)); });
+    var plano = planoDeBaixa_(abertas, dados.valor, diaPix, tol);
     // esse pagamento já foi lançado à mão? (parcela igual paga perto da data do PIX) → não baixa outra
-    var jaLancado = tabParc.linhas.some(function (p) { return p.cliente_id === achou.cliente.id && p.pago_em && Math.abs(dinheiro_(p.valor_pago || p.valor) - dados.valor) < 0.01 && Math.abs(diffDias_(p.pago_em, diaPix)) <= 7; });
-    if (!achou.certeza) linha.motivo = 'Nome parecido com o do cliente (' + achou.cliente.nome + '): confira.';
+    var jaLancado = tabParc.linhas.some(function (p) { return p.cliente_id === achou.cliente.id && p.pago_em && !pagasPeloPix[p.id] && Math.abs(dinheiro_(p.valor_pago || p.valor) - dados.valor) < 0.01 && Math.abs(diffDias_(p.pago_em, diaPix)) <= 7; });
+    if (!achou.certeza) linha.motivo = 'Nome parecido com o do cliente (' + achou.cliente.nome + '): confira. Ao dar baixa, o robô aprende.';
     else if (!abertas.length) linha.motivo = 'O cliente não tem parcela em aberto.';
     else if (jaLancado) linha.motivo = 'Parece já lançado: há uma parcela de mesmo valor paga perto desta data. Confira antes de dar baixa.';
-    else if (!mesmas.length) linha.motivo = 'Nenhuma parcela vencida (ou a vencer em 15 dias) de R$ ' + txtDinheiro_(dados.valor).replace('.', ',') + ' (pode ter pago parte, mais de uma ou adiantado).';
-    if (achou.certeza && mesmas.length && !jaLancado) {
-      var alvo = mesmas[0]; // a mais antiga em aberto com o mesmo valor
+    else if (!plano) linha.motivo = 'O valor não bate com nenhuma parcela (nem soma de parcelas, nem parcela vencida com até ' + tol + '% de juros). Pode ter pago parte ou adiantado.';
+    if (achou.certeza && plano && !jaLancado) {
       try {
-        pagarParcela_({ id: alvo.id, data: diaSP_(quando), valor: txtDinheiro_(dados.valor), forma: 'PIX (Inter)' }, U_ROBO_PIX);
-        linha.situacao = 'baixado'; linha.parcela_id = alvo.id;
-        linha.motivo = 'Baixa automática' + (mesmas.length > 1 ? ' na parcela mais antiga (havia ' + mesmas.length + ' do mesmo valor)' : '') + '.';
+        var ids = [], recibos = [];
+        plano.itens.forEach(function (it) {
+          var res = pagarParcela_({ id: it.p.id, data: diaPix, valor: txtDinheiro_(it.valor), forma: 'PIX (Inter)' }, U_ROBO_PIX);
+          ids.push(it.p.id); if (res.recibo && res.recibo.pdf) recibos.push(res.recibo.pdf);
+        });
+        linha.situacao = 'baixado'; linha.parcela_id = ids.join(','); linha.recibo = recibos.join(' ');
+        ids.forEach(function (id) { pagasPeloPix[id] = 1; });
+        linha.motivo = (achou.apelido ? 'Pagador já conhecido deste cliente. ' : '') +
+          (plano.tipo === 'soma' ? 'Baixa automática de ' + ids.length + ' parcelas (o PIX é a soma delas).'
+            : plano.tipo === 'juros' ? 'Baixa automática da parcela vencida, paga com ' + reaisTxt_(dados.valor - dinheiro_(plano.itens[0].p.valor)) + ' a mais (multa/juros).'
+            : 'Baixa automática' + (plano.iguais > 1 ? ' na parcela mais antiga (havia ' + plano.iguais + ' do mesmo valor)' : '') + '.');
         r.baixados++;
         tabParc = tabela_('Parcelas');
       } catch (eP) { linha.motivo = 'Não consegui dar baixa: ' + (eP.message || eP); r.conferir++; }
@@ -3700,6 +3756,17 @@ function lerPix_(limiteMs) {
   if (r.lidos) registrar_('robô', 'robô do PIX', r.lidos + ' lido(s), ' + r.baixados + ' baixa(s) automática(s), ' + r.conferir + ' a conferir');
   return r;
 }
+
+/** Limite de multa/juros aceito na baixa automática (parcela vencida paga com um pouco a mais). */
+function configPix_(d, u) {
+  var v = parseFloat(String(d.tolerancia).replace(',', '.'));
+  if (!(v >= 0 && v <= 30)) throw falha_('Use um número de 0 a 30 (%).');
+  setConfig_('PIX_TOLERANCIA_JUROS', String(v), 'Robô do PIX: até quantos % acima da parcela vencida aceita como multa/juros');
+  registrar_(u.usuario, 'robô do PIX', 'tolerância de juros ' + v + '%');
+  return { tolerancia: v };
+}
+
+function reaisTxt_(n) { return 'R$ ' + txtDinheiro_(n).replace('.', ','); }
 
 function lerPixAgora_() { return comTrava_(function () { return lerPix_(120000); }); }
 
@@ -3714,16 +3781,19 @@ function listarPix_(d) {
   var lista = tabela_('Pix').linhas.filter(function (x) { return (x.recebido_em || '') >= desde; })
     .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; })
     .map(function (x) {
-      var o = limpar_(x), c = clientes[x.cliente_id], p = parc[x.parcela_id];
-      o.cliente = c ? c.nome : '';
-      if (p) o.parcela = { numero: p.numero, vencimento: p.vencimento, valor: p.valor };
+      var o = limpar_(x), c = clientes[x.cliente_id];
+      var ps = String(x.parcela_id || '').split(',').map(function (id) { return parc[id]; }).filter(Boolean);
+      o.cliente = c ? c.nome : ''; o.telefone = c ? (c.telefone || '') : '';
+      o.recibos = String(x.recibo || '').split(' ').filter(String);
+      if (ps.length) { o.parcela = { numero: ps[0].numero, vencimento: ps[0].vencimento, valor: ps[0].valor }; o.parcelas = ps.map(function (q) { return { numero: q.numero, vencimento: q.vencimento, valor: q.valor_pago || q.valor }; }); }
       if (x.situacao === 'a conferir' && c) o.abertas = (abertasPor[c.id] || []).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12)
         .map(function (q) { return { id: q.id, numero: q.numero, vencimento: q.vencimento, valor: q.valor }; });
       return o;
     });
   var abertas = {};
   Object.keys(abertasPor).forEach(function (k) { abertas[k] = abertasPor[k].sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12).map(function (q) { return { id: q.id, numero: q.numero, vencimento: q.vencimento, valor: q.valor }; }); });
-  return { lista: lista, abertas: abertas, ultima: config_('PIX_ULTIMA') || '', conferir: lista.filter(function (x) { return x.situacao === 'a conferir'; }).length,
+  var tc = config_('PIX_TOLERANCIA_JUROS');
+  return { lista: lista, abertas: abertas, ultima: config_('PIX_ULTIMA') || '', tolerancia: tc === '' || tc == null ? 10 : +tc, conferir: lista.filter(function (x) { return x.situacao === 'a conferir'; }).length,
     clientes: Object.keys(abertasPor).map(function (k) { return clientes[k] ? { id: k, nome: clientes[k].nome } : null; }).filter(Boolean).sort(function (a, b) { return a.nome < b.nome ? -1 : 1; }) };
 }
 
@@ -3735,7 +3805,8 @@ function baixarPix_(d, u) {
   if (!d.parcela_id) throw falha_('Escolha a parcela.');
   var res = pagarParcela_({ id: d.parcela_id, data: diaSP_(x.recebido_em), valor: d.valor || x.valor, forma: 'PIX (Inter)' }, u);
   var p = parcelaPorId_(d.parcela_id).p;
-  comTrava_(function () { atualizarLinha_(tab, x, { situacao: 'baixado', parcela_id: d.parcela_id, cliente_id: p.cliente_id, motivo: 'Baixa feita por ' + (u.nome || u.usuario) + '.', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario }); });
+  comTrava_(function () { atualizarLinha_(tab, x, { situacao: 'baixado', parcela_id: d.parcela_id, cliente_id: p.cliente_id, recibo: res.recibo && res.recibo.pdf ? res.recibo.pdf : '',
+    motivo: 'Baixa feita por ' + (u.nome || u.usuario) + '. Da próxima vez, PIX de "' + x.pagador + '" vai direto para este cliente.', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario }); });
   return { ok: true, recibo: res.recibo || null };
 }
 

@@ -1152,3 +1152,6 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .pix-ok{color:#1f6b3f;margin:10px 0 0}
 .pix-feitos{margin-top:10px}
 .pix-feitos summary{cursor:pointer;font-size:13px;color:var(--mudo)}
+.pix-cfg{margin-top:10px}
+.pix-cfg summary{cursor:pointer;font-size:13px;color:var(--mudo)}
+.pix-cfg input{width:70px;display:inline-block;margin:0 4px}

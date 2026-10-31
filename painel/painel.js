@@ -1915,7 +1915,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.0.0';
+  const VERSAO_PAINEL = '7.0.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2553,6 +2553,19 @@
     ], p => { location.hash = '#/honorario/' + p.honorario_id; }, vazio);
   }
 
+  /** Agradecimento com o recibo no WhatsApp (o PDF é anexado à mão: não deixamos o arquivo público). */
+  function botaoReciboWhats(x) {
+    let tel = String(x.telefone || '').replace(/\D/g, '');
+    if (!tel) return h('span', { class: 'peq' }, 'Cliente sem telefone');
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(String(x.cliente || '').split(' ')[0]);
+    const ps = x.parcelas || [];
+    const ref = ps.length > 1 ? `das parcelas ${ps.map(q => q.numero ? q.numero + 'ª' : '').filter(Boolean).join(', ')} dos honorários` : ps[0] && ps[0].numero ? `da ${ps[0].numero}ª parcela dos honorários` : 'dos honorários';
+    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Recebemos o seu PIX de ${reais(+x.valor)} em ${new Date(x.recebido_em).toLocaleDateString('pt-BR')}, referente ${ref}. Muito obrigado! Segue o recibo.`;
+    return h('a', { class: 'btn mini wa', href: 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com o agradecimento; anexe o PDF do recibo',
+      onclick: () => registrarWhats({ numero: '', cliente: x.cliente }, 'recibo do PIX') }, 'Mandar recibo no WhatsApp');
+  }
+
   /** Robô do PIX (Inter): o que deu baixa sozinho e o que ficou para conferir. */
   function blocoPix() {
     const caixa = h('section', { class: 'caixa pix-caixa' }, h('p', { class: 'peq' }, 'Carregando os PIX recebidos…'));
@@ -2591,9 +2604,19 @@
           }, 'sec mini')),
         conferir.length ? h('div', {}, h('h3', { class: 'pix-sub' }, `Para conferir (${conferir.length})`), h('ul', { class: 'pix-lista' }, conferir.map(linhaConferir)))
           : h('p', { class: 'pix-ok' }, '✓ Nenhum PIX para conferir.'),
-        baixados.length ? h('details', { class: 'pix-feitos' }, h('summary', {}, `Baixas automáticas e feitas (${baixados.length})`),
+        baixados.length ? h('details', { class: 'pix-feitos', open: baixados.some(x => Date.now() - Date.parse(x.atualizado_em || x.recebido_em) < 86400000) },
+          h('summary', {}, `Baixas automáticas e feitas (${baixados.length})`),
           h('ul', { class: 'pix-lista' }, baixados.map(x => h('li', { class: 'pix-item ok' }, h('div', { class: 'pix-valor' }, valorTxt(x.valor)),
-            h('div', { class: 'pix-txt' }, h('strong', {}, x.cliente || x.pagador), h('div', { class: 'peq' }, dt(x.recebido_em), x.parcela ? ` · ${x.parcela.numero ? x.parcela.numero + 'ª parcela' : 'parcela'} venc. ${dataBR(x.parcela.vencimento)}` : '', ' · ', x.motivo)))))) : null].filter(Boolean));
+            h('div', { class: 'pix-txt' }, h('strong', {}, x.cliente || x.pagador), x.cliente && x.pagador && semAcentoG(x.pagador) !== semAcentoG(x.cliente) ? h('span', { class: 'peq' }, ' · pago por ' + x.pagador) : null,
+              h('div', { class: 'peq' }, dt(x.recebido_em), (x.parcelas || []).length ? ' · ' + x.parcelas.map(q => `${q.numero ? q.numero + 'ª' : 'parcela'} (venc. ${dataBR(q.vencimento)})`).join(', ') : '', ' · ', x.motivo)),
+            rh ? null : h('div', { class: 'pix-acoes' }, botaoReciboWhats(x), ...(x.recibos || []).map((u, i) => h('a', { class: 'btn mini sec', href: u, target: '_blank', rel: 'noopener noreferrer' }, x.recibos.length > 1 ? 'Recibo ' + (i + 1) : 'Abrir recibo'))))))) : null,
+        rh || !sessao.usuario.pode.usuarios ? null : (() => {
+          const inp = h('input', { type: 'number', min: 0, max: 30, step: 1, value: String(r.tolerancia), 'aria-label': 'Tolerância de juros (%)' });
+          return h('details', { class: 'pix-cfg' }, h('summary', {}, `Ajustes do robô · aceita até ${r.tolerancia}% a mais em parcela vencida (multa/juros)`),
+            h('div', { class: 'barra' }, h('label', {}, 'Parcela vencida paga com até ', inp, ' % a mais dá baixa sozinha (0 = desliga).'),
+              botao('Salvar', async () => { try { await api('fin.pixConfig', { tolerancia: inp.value }); avisar('Salvo.'); rota(); } catch (e) { avisar(e.message, true); } }, 'sec mini')),
+            h('p', { class: 'peq' }, 'O robô também dá baixa quando o PIX é a soma de parcelas em aberto (ex.: pagou duas de uma vez) e reconhece quem já pagou por um cliente antes (depois de uma baixa feita à mão).'));
+        })()].filter(Boolean));
     };
     api('fin.pix', {}).then(desenhar, e => caixa.replaceChildren(h('p', { class: 'peq' }, /Ação desconhecida|desconhecid/.test(e.message) ? 'O robô do PIX precisa do Code.gs novo no Google.' : e.message)));
     return caixa;
