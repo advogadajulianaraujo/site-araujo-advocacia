@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.5';
+var VERSAO = '6.9.6';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -55,10 +55,10 @@ var ESQUEMA = {
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
-    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em'],
+    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
-    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia'],
+    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em'],
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
@@ -315,6 +315,13 @@ var ROTAS = {
   'agenda.criar': { fn: criarCompromisso_ },
   'agenda.marcarAto': { fn: marcarAtoPainel_ },
   'intimacoes.terminar': { fn: terminarIntimacao_ },
+  'equipe.listar': { fn: listarEquipe_ },
+  'trabalho.conferir': { fn: conferirTrabalho_ },
+  'trabalho.aguardando': { permissao: 'usuarios', fn: aguardandoOk_ },
+  'trabalho.ok': { permissao: 'usuarios', fn: darOk_ },
+  'trabalho.devolver': { permissao: 'usuarios', fn: devolverTrabalho_ },
+  'ia.resumirIntimacao': { fn: resumirIntimacaoIA_ },
+  'robo.consertar': { permissao: 'usuarios', fn: consertarRobo_ },
   'clientes.abrirAcao': { fn: abrirAcaoCliente_ },
   'registro.whatsapp': { fn: registrarWhatsapp_ },
   'relatorio.semana': { permissao: 'usuarios', fn: relatorioSemana_ },
@@ -354,7 +361,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'resumo': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -2133,7 +2140,7 @@ function estadoRobo_() {
   var ultima = config_('ROBO_ULTIMA_EXECUCAO');
   var r = { ultima: ultima, resultado: config_('ROBO_ULTIMO_RESULTADO'), proxima: '', atrasado: false,
     djen: { ultima: config_('DJEN_NAVEGADOR_ULTIMA') || '', erro: config_('DJEN_NAVEGADOR_ERRO') || '' } };
-  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; r.alertas = ex.alertas; } catch (e) { /* segue */ }
+  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; r.alertas = ex.alertas; r.versao = ex.versao; } catch (e) { /* segue */ }
   if (ultima) {
     var t = Date.parse(ultima);
     r.proxima = new Date(t + 3600000).toISOString();
@@ -2795,6 +2802,11 @@ function listarIntimacoes_(d) {
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   var lista = tabela_('Intimacoes').linhas;
+  if (d.abertas) lista = lista.filter(function (i) {
+    if (i.terminada_por) return false;
+    var z = prazos[i.prazo_id];
+    return !(z && (z.situacao === 'cumprido' || z.situacao === 'cancelado'));
+  });
   if (q) lista = lista.filter(function (i) { return normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto].join(' ')).indexOf(q) >= 0; });
   var total = lista.length;
   return { total: total, lista: lista.slice()
@@ -5666,6 +5678,207 @@ function relatorioGeral_(d) {
   };
 }
 
+/* ---------- Conferido (colaborador) → OK (administração) ---------- */
+
+/** Intimações ligadas ao prazo (pelo prazo ou pela intimação: prazo lançado à mão às vezes só tem um lado). */
+function intimacoesDoPrazo_(tabI, z) {
+  return tabI.linhas.filter(function (i) { return (z.intimacao_id && i.id === z.intimacao_id) || (i.prazo_id && i.prazo_id === z.id); });
+}
+
+/** Quem trabalha no escritório (para escolher quem fez). */
+function listarEquipe_() {
+  return usuarios_().filter(function (x) { return x.ativo === 'sim'; })
+    .map(function (x) { return { usuario: x.usuario, nome: x.nome || x.usuario, perfil: x.perfil }; })
+    .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
+}
+
+function pessoaDaEquipe_(usuario, u) {
+  var x = usuarios_().filter(function (r) { return r.usuario === (usuario || u.usuario) && r.ativo === 'sim'; })[0];
+  if (!x) throw falha_('Escolha quem fez, na lista da equipe.');
+  return { usuario: x.usuario, nome: x.nome || x.usuario };
+}
+
+/**
+ * O colaborador terminou: escolhe quem fez e aperta "Conferido". Some da lista da equipe e fica para a administração dar o OK.
+ * tipo: 'prazo' | 'intimacao' | 'inicial' (id do processo; numero opcional: com ele o processo vai para "Em andamento").
+ */
+function conferirTrabalho_(d, u) {
+  var quem = pessoaDaEquipe_(d.por, u), agora = new Date().toISOString();
+  return comTrava_(function () {
+    var tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes');
+    var cumprirPrazo = function (z) {
+      if (!z || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return false;
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: quem.nome, cumprido_em: agora, etapa: 'protocolado', ok_por: '', ok_em: '', atualizado_em: agora, atualizado_por: u.usuario });
+      return true;
+    };
+    var terminarIntim = function (i) {
+      if (!i || i.terminada_por) return false;
+      atualizarLinha_(tabI, i, { terminada_por: quem.nome, terminada_em: agora, ok_por: '', ok_em: '' });
+      return true;
+    };
+    var marcado = u.usuario !== quem.usuario ? ' (marcado por ' + (u.nome || u.usuario) + ')' : '';
+    if (d.tipo === 'prazo') {
+      var z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!z) throw falha_('Prazo não encontrado.');
+      if (!cumprirPrazo(z)) return { ok: true, repetido: true };
+      intimacoesDoPrazo_(tabI, z).forEach(terminarIntim);
+      registrar_(quem.usuario, 'prazo cumprido', z.numero + ' · ' + String(z.descricao || '').slice(0, 80) + marcado);
+      return { ok: true, por: quem.nome };
+    }
+    if (d.tipo === 'intimacao') {
+      var i = tabI.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!i) throw falha_('Intimação não encontrada.');
+      if (!terminarIntim(i)) return { ok: true, repetido: true, por: i.terminada_por };
+      cumprirPrazo(tabZ.linhas.filter(function (x) { return x.id === i.prazo_id; })[0]);
+      registrar_(quem.usuario, 'intimação terminada', i.numero + ' · ' + String(i.movimento || '').slice(0, 100) + marcado);
+      return { ok: true, por: quem.nome };
+    }
+    if (d.tipo === 'inicial') {
+      var tabP = tabela_('Processos'), p = tabP.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!p) throw falha_('Processo não encontrado.');
+      var numero = String(d.numero || '').trim();
+      if (numero && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numero)) throw falha_('Número do processo inválido (use o padrão 0000000-00.0000.0.00.0000) ou deixe em branco.');
+      if (numero && tabP.linhas.some(function (x) { return x.id !== p.id && x.numero === numero; })) throw falha_('Esse número já está em outro processo.');
+      var m = { atualizado_em: agora, atualizado_por: u.usuario, fase_auto: '' };
+      if (numero) { m.numero = numero; m.tribunal = p.tribunal || tribunalDoNumero_(numero); m.fase = 'andamento'; }
+      else m.fase = 'ajuizado';
+      if (p.proximo_ato === 'Ajuizar a ação') m.proximo_ato = numero ? '' : 'Aguardando o número do processo';
+      atualizarLinha_(tabP, p, m);
+      var tabT = tabela_('Tarefas'), marca = '[inicial:' + p.id + ']', achou = false;
+      tabT.linhas.forEach(function (x) {
+        if ((x.descricao || '').indexOf(marca) < 0) return;
+        achou = true;
+        atualizarLinha_(tabT, x, { etapa: 'protocolado', concluida_em: x.concluida_em || agora, concluida_por: quem.usuario, numero: numero || x.numero,
+          historico: historicoMais_(x.historico, u, 'conferido: petição inicial feita por ' + quem.nome), atualizado_em: agora, atualizado_por: u.usuario });
+      });
+      if (!achou) tarefaPeticaoInicial_(p, u);
+      var cli = p.cliente_id ? (tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}).nome : '';
+      registrar_(quem.usuario, 'petição inicial feita', (cli || 'cliente') + (numero ? ' · ' + numero : '') + marcado);
+      return { ok: true, por: quem.nome, fase: m.fase };
+    }
+    throw falha_('Tipo inválido.');
+  });
+}
+
+/** O que a equipe já conferiu e espera o OK da administração. */
+function aguardandoOk_() {
+  var procs = {}, nomes = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var cliDe = function (pid, numero) { var p = procs[pid] || {}; return nomes[p.cliente_id] || (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || ''; };
+  var desde = new Date(Date.now() - 90 * 86400000).toISOString(), itens = [], prazoAguarda = {};
+  tabela_('Prazos').linhas.forEach(function (z) {
+    if (z.situacao !== 'cumprido' || z.ok_em || z.etapa === 'concluido' || (z.cumprido_em || '') < desde) return;
+    prazoAguarda[z.id] = 1;
+    itens.push({ tipo: 'prazo', id: z.id, titulo: z.descricao || 'Prazo', numero: z.numero, cliente: cliDe(z.processo_id), por: z.cumprido_por, em: z.cumprido_em, fatal: z.fatal,
+      no_prazo: !z.fatal || diaSP_(z.cumprido_em) <= z.fatal, link: '#/prazo/' + z.id });
+  });
+  tabela_('Intimacoes').linhas.forEach(function (i) {
+    if (!i.terminada_por || i.ok_em || (i.terminada_em || '') < desde || prazoAguarda[i.prazo_id]) return;
+    itens.push({ tipo: 'intimacao', id: i.id, titulo: i.movimento || 'Intimação', numero: i.numero, cliente: cliDe(i.processo_id), por: i.terminada_por, em: i.terminada_em, link: '#/prazos#intimacoes' });
+  });
+  var us = {}; usuarios_().forEach(function (x) { us[x.usuario] = x.nome || x.usuario; });
+  tabela_('Tarefas').linhas.forEach(function (t) {
+    var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || '');
+    if (!m || !t.concluida_em || t.etapa === 'concluido' || (t.concluida_em || '') < desde) return;
+    var p = procs[m[1]] || {};
+    itens.push({ tipo: 'inicial', id: m[1], tarefa_id: t.id, titulo: t.titulo, numero: p.numero || '', cliente: nomes[p.cliente_id] || '', por: us[t.concluida_por] || t.concluida_por, em: t.concluida_em, link: '#/processo/' + m[1] });
+  });
+  return itens.sort(function (a, b) { return a.em < b.em ? 1 : -1; });
+}
+
+/** OK final da administração. */
+function darOk_(d, u) {
+  var agora = new Date().toISOString(), nome = u.nome || u.usuario;
+  return comTrava_(function () {
+    var feitos = 0;
+    (d.itens || [{ tipo: d.tipo, id: d.id }]).slice(0, 200).forEach(function (it) {
+      if (it.tipo === 'prazo') {
+        var tabZ = tabela_('Prazos'), z = tabZ.linhas.filter(function (x) { return x.id === it.id; })[0];
+        if (!z || z.ok_em) return;
+        atualizarLinha_(tabZ, z, { ok_por: nome, ok_em: agora, etapa: 'concluido', atualizado_em: agora, atualizado_por: u.usuario });
+        var tabI = tabela_('Intimacoes');
+        intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.ok_em) atualizarLinha_(tabI, i, { ok_por: nome, ok_em: agora }); });
+        registrar_(u.usuario, 'ok do administrador', 'prazo ' + z.numero + ' · feito por ' + z.cumprido_por); feitos++;
+      } else if (it.tipo === 'intimacao') {
+        var tI = tabela_('Intimacoes'), x = tI.linhas.filter(function (r) { return r.id === it.id; })[0];
+        if (!x || x.ok_em) return;
+        atualizarLinha_(tI, x, { ok_por: nome, ok_em: agora });
+        registrar_(u.usuario, 'ok do administrador', 'intimação ' + x.numero + ' · feita por ' + x.terminada_por); feitos++;
+      } else if (it.tipo === 'inicial') {
+        var tT = tabela_('Tarefas'), marca = '[inicial:' + it.id + ']';
+        tT.linhas.forEach(function (t) {
+          if ((t.descricao || '').indexOf(marca) < 0 || t.etapa === 'concluido') return;
+          atualizarLinha_(tT, t, { etapa: 'concluido', historico: historicoMais_(t.historico, u, 'OK da administração'), atualizado_em: agora, atualizado_por: u.usuario });
+          registrar_(u.usuario, 'ok do administrador', 'petição inicial · ' + t.titulo); feitos++;
+        });
+      }
+    });
+    return { feitos: feitos };
+  });
+}
+
+/** A administração devolve: volta para a lista da equipe. */
+function devolverTrabalho_(d, u) {
+  var agora = new Date().toISOString();
+  return comTrava_(function () {
+    if (d.tipo === 'prazo') {
+      var tabZ = tabela_('Prazos'), z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+      if (!z) throw falha_('Prazo não encontrado.');
+      atualizarLinha_(tabZ, z, { situacao: z.fatal ? (z.conferido_por ? 'conferido' : 'calculado') : 'a definir', cumprido_por: '', cumprido_em: '', etapa: 'afazer', ok_por: '', ok_em: '', atualizado_em: agora, atualizado_por: u.usuario });
+      var tabI = tabela_('Intimacoes');
+      intimacoesDoPrazo_(tabI, z).forEach(function (i) { atualizarLinha_(tabI, i, { terminada_por: '', terminada_em: '', ok_por: '', ok_em: '' }); });
+    } else if (d.tipo === 'intimacao') {
+      var tI = tabela_('Intimacoes'), x = tI.linhas.filter(function (r) { return r.id === d.id; })[0];
+      if (!x) throw falha_('Intimação não encontrada.');
+      atualizarLinha_(tI, x, { terminada_por: '', terminada_em: '', ok_por: '', ok_em: '' });
+    } else if (d.tipo === 'inicial') {
+      var tT = tabela_('Tarefas'), marca = '[inicial:' + d.id + ']';
+      tT.linhas.forEach(function (t) {
+        if ((t.descricao || '').indexOf(marca) < 0) return;
+        atualizarLinha_(tT, t, { etapa: 'fazendo', concluida_em: '', concluida_por: '', historico: historicoMais_(t.historico, u, 'devolvida pela administração' + (d.motivo ? ': ' + String(d.motivo).slice(0, 120) : '')), atualizado_em: agora, atualizado_por: u.usuario });
+      });
+    } else throw falha_('Tipo inválido.');
+    registrar_(u.usuario, 'devolvido para a equipe', d.tipo + ' ' + d.id + (d.motivo ? ' · ' + String(d.motivo).slice(0, 120) : ''));
+    return { ok: true };
+  });
+}
+
+/** "Resumir com IA" direto na intimação (com ou sem prazo). Nunca muda prazo. */
+function resumirIntimacaoIA_(d, u) {
+  var tabI = tabela_('Intimacoes'), i = tabI.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!i) throw falha_('Intimação não encontrada.');
+  if (i.prazo_id && tabela_('Prazos').linhas.some(function (z) { return z.id === i.prazo_id; })) {
+    var r = resumirPrazoIA_({ id: i.prazo_id }, u);
+    comTrava_(function () { atualizarLinha_(tabI, i, { resumo_ia: r.resumo_ia }); });
+    return r;
+  }
+  var chave = chaveIA_();
+  if (!chave) throw falha_('A IA não está ligada. A administração cadastra a chave em Usuários › Resumo das intimações por IA.');
+  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === i.processo_id || x.numero === i.numero; })[0] || { numero: i.numero };
+  var z = { id: '', numero: i.numero, intimacao_id: i.id, ciencia: String(i.recebido_em || '').slice(0, 10), descricao: 'sem prazo lançado', processo_id: p.id || '' };
+  var res = resumoPrazoIA_(z, tabI, p, chave);
+  if (!res) throw falha_('Ainda não há texto do ato nem movimentações deste processo para a IA ler. Confira no sistema do tribunal.');
+  comTrava_(function () { atualizarLinha_(tabI, i, { resumo_ia: res.texto }); });
+  registrar_(u.usuario, 'resumo por IA', 'intimação ' + i.numero + ' (' + res.modo + ')');
+  return { resumo_ia: res.texto, modo: res.modo };
+}
+
+/** Botão "Consertar agora" do cartão do robô: roda já o DataJud e o resumo da IA (e troca o modelo aposentado). */
+function consertarRobo_() {
+  var r = {};
+  try { r.datajud = atualizarAndamentos_(70000, 40); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+  try {
+    if (chaveIA_()) {
+      var mod = modeloIA_();
+      setConfig_('IA_MODELO', mod, 'Modelo do Gemini');
+      r.ia = resumirIntimacoes_(60000, 10);
+      if (!r.ia || !r.ia.feitas) { lerRespostaGemini_(chamarGemini_('Teste do painel: responda {"resumo":"ok"}', chaveIA_(), '')); setConfig_('IA_ERRO', '', 'Último problema do resumo por IA'); }
+    }
+  } catch (e2) { setConfig_('IA_ERRO', String(e2.message || e2), 'Último problema do resumo por IA'); }
+  return estadoExtras_();
+}
+
 /* ---------- Quem fez o quê (relatório semanal) ---------- */
 
 /** "Terminei": a pessoa marca que terminou a intimação; fica o nome e a hora (e vai para o relatório da semana). */
@@ -5696,11 +5909,13 @@ function registrarWhatsapp_(d, u) {
 }
 
 var CATEGORIAS_LOG = [
-  ['intimacoes', 'Intimações terminadas', /^intimação terminada$/],
-  ['prazos', 'Prazos cumpridos / protocolados', /^prazo (cumprido)$|^prazo: (Protocolado|Conferido e concluído)/],
-  ['conferidos', 'Prazos conferidos', /^prazo conferido$/],
+  ['intimacoes', 'Intimações conferidas', /^intimação terminada$/],
+  ['prazos', 'Prazos conferidos (feitos)', /^prazo (cumprido)$|^prazo: (Protocolado|Conferido e concluído)/],
+  ['conferidos', 'Datas de prazo confirmadas', /^prazo conferido$/],
   ['prazos_novos', 'Prazos lançados ou corrigidos', /^prazo (criado|alterado)$/],
+  ['iniciais', 'Petições iniciais feitas', /^petição inicial feita$/],
   ['tarefas', 'Tarefas concluídas', /^tarefa: /],
+  ['oks', 'OK do administrador', /^ok do administrador$/],
   ['whatsapp', 'Clientes avisados no WhatsApp', /^whatsapp ao cliente$/],
   ['agenda', 'Audiências, perícias e compromissos na agenda', /^(ato na agenda|compromisso criado)$/],
   ['clientes', 'Clientes cadastrados ou atualizados', /^(cliente criado|cliente alterado|observação no cliente)$/],
@@ -5713,8 +5928,10 @@ var CATEGORIAS_LOG = [
 function relatorioSemana_(d) {
   var hoje = hojeSP_();
   var ref = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : hoje;
+  var mes = d.periodo === 'mes';
   var dow = new Date(ref + 'T12:00:00Z').getUTCDay();
-  var ini = somarDias_(ref, -((dow + 6) % 7)), fim = somarDias_(ini, 6);
+  var ini = mes ? ref.slice(0, 8) + '01' : somarDias_(ref, -((dow + 6) % 7));
+  var fim = mes ? somarDias_(somarDias_(ini, 32).slice(0, 8) + '01', -1) : somarDias_(ini, 6);
   var usuarios = {};
   usuarios_().forEach(function (x) { usuarios[x.usuario] = x; });
   var pessoas = {};
@@ -5742,7 +5959,10 @@ function relatorioSemana_(d) {
   });
   var lista = Object.keys(pessoas).map(function (k) { var x = pessoas[k]; x.itens.sort(function (a, b) { return a.quando < b.quando ? 1 : -1; }); return x; })
     .sort(function (a, b) { return b.total - a.total || (a.nome < b.nome ? -1 : 1); });
-  return { inicio: ini, fim: fim, hoje: hoje, anterior: somarDias_(ini, -7), proxima: somarDias_(ini, 7) <= hoje ? somarDias_(ini, 7) : '',
+  var ant = mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
+  var aguardando = 0;
+  try { aguardando = aguardandoOk_().length; } catch (e) { /* segue */ }
+  return { inicio: ini, fim: fim, hoje: hoje, periodo: mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
     categorias: CATEGORIAS_LOG.map(function (c) { return { id: c[0], nome: c[1] }; }), pessoas: lista };
 }
 
@@ -6043,7 +6263,14 @@ function resumirIntimacoes_(limiteMs, max) {
     var t = String(i.texto || '').replace(/\s+/g, ' ');
     return t.length >= 120 && !/^\W*(documento sigiloso|conteúdo sigiloso)/i.test(t);
   }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, max || 30);
-  if (!fila.length) return { feitas: 0 };
+  if (!fila.length) {
+    // nada novo para resumir: se ficou um problema antigo guardado, testa a IA agora e apaga o aviso quando ela responde
+    if (config_('IA_ERRO')) {
+      try { lerRespostaGemini_(chamarGemini_('Teste do painel: responda {"resumo":"ok"}', chave, '')); setConfig_('IA_ERRO', '', 'Último problema do resumo por IA'); setConfig_('IA_ULTIMA', new Date().toISOString() + ' · em dia (nada novo para resumir)', 'Última rodada do resumo por IA'); }
+      catch (eT) { setConfig_('IA_ERRO', String(eT.message || eT), 'Último problema do resumo por IA'); }
+    } else setConfig_('IA_ULTIMA', new Date().toISOString() + ' · em dia (nada novo para resumir)', 'Última rodada do resumo por IA');
+    return { feitas: 0 };
+  }
   var prazos = {}, procs = {}, nomesCli = {};
   tabZ.linhas.forEach(function (z) { prazos[z.id] = z; });
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
@@ -6202,7 +6429,11 @@ function atualizarAndamentos_(limiteMs, maximo) {
   }).sort(function (a, b) {
     return (a.status === 'arquivado') - (b.status === 'arquivado') || ((a.datajud_em || '') < (b.datajud_em || '') ? -1 : 1);
   }).slice(0, maximo || 400);
-  if (!fila.length) return { lidos: 0, achados: 0 };
+  if (!fila.length) { // fila vazia: tudo em dia; apaga o problema antigo
+    setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · em dia (todos os processos consultados nas últimas 20 h)', 'Última leitura do DataJud');
+    setConfig_('DATAJUD_ERRO', '', 'Último problema do DataJud');
+    return { lidos: 0, achados: 0 };
+  }
   tab.adiar = true;
   // O CNJ limita o ritmo (código 429): lotes pequenos, pausa entre eles e, se pedir calma, espera e tenta de novo;
   // persistindo, para por aqui sem marcar erro — os que faltaram ficam para a próxima rodada (de 4 em 4 horas).
@@ -6268,7 +6499,7 @@ function andamentosProcesso_(d, u) {
 function estadoExtras_() {
   return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
-    email: { ultimo: config_('RESUMO_EMAIL_DIA') } };
+    email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO };
 }
 
 

@@ -84,7 +84,7 @@
   const AFETA = {
     clientes: ['clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
     processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['relatorio'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    intimacoes: ['intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['relatorio'], trabalho: ['prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
     advogados: ['modelos'], usuarios: ['usuarios'], feriados: ['feriados', 'prazos', 'resumo']
   };
@@ -1352,6 +1352,30 @@
       : `\n\nVocê também pode acompanhar pelo nosso site: ${site} (se ainda não tem o código de acesso, é só pedir para nós).`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(corpo + acomp);
   }
+  /** Processo "a ajuizar": 1) avisar o cliente no WhatsApp; 2) Conferido (quem fez a inicial e, se já tiver, o número). */
+  function caixaPeticaoInicial(p, cliente) {
+    const msgFeita = (() => {
+      let tel = String((cliente && cliente.telefone) || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      const nome = nomeProprioJS(String(cliente.nome || '').split(' ')[0]);
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e está sendo protocolada na Justiça. Assim que sair o número do processo, enviamos para você. Você poderá acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
+    })();
+    const extra = () => {
+      const inp = h('input', { id: 'f-num-inicial', inputmode: 'numeric', maxlength: 25, placeholder: '0000000-00.0000.0.00.0000 (deixe vazio se ainda não saiu)' });
+      const el = h('div', { class: 'campo-inicial' }, h('label', { for: 'f-num-inicial' }, 'Número do processo (se já protocolou)'), inp,
+        h('p', { class: 'peq' }, 'Com o número, o processo vai para "Em andamento". Sem ele, vai para "Ajuizado" até o número sair.'));
+      el.valor = () => inp.value.trim();
+      return el;
+    };
+    return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
+      h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
+        h('div', {}, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + p.responsavel : 'Sem responsável: escolha abaixo, no formulário do processo.'))),
+      h('ol', { class: 'passos-inicial' },
+        h('li', {}, h('span', { class: 'passo-n' }, '1'), h('div', {}, h('strong', {}, 'Avise o cliente'), h('div', { class: 'peq' }, 'Mensagem pronta no WhatsApp.')),
+          msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial') }, 'WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone')),
+        h('li', {}, h('span', { class: 'passo-n' }, '2'), h('div', {}, h('strong', {}, 'Conferido'), h('div', { class: 'peq' }, 'Quem fez a inicial. O cliente vai para a próxima etapa e a administração dá o OK.')),
+          botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', extra))));
+  }
+
   function caixaAvisarCliente(p, cliente, novo) {
     const saida = h('div', { class: 'barra' });
     const desenhar = cod => { const l = whatsProcesso(p, cliente, cod); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer' }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
@@ -1511,7 +1535,8 @@
       !novo && (p.proximo_ato || p.ultimo_movimento) ? h('section', { class: 'caixa resumo-proc' },
         p.proximo_ato ? h('p', {}, h('strong', {}, 'Próximo ato: '), atoComData(p.proximo_ato, p.proximo_ato_data), ' ', p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : '') : null,
         p.ultimo_movimento ? h('p', {}, h('strong', {}, 'Última movimentação'), p.ultimo_movimento_em ? ` (${new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR')})` : '', ': ', p.ultimo_movimento) : null) : null,
-      !novo && p.cliente_id ? caixaAvisarCliente(p, clientes.find(c => c.id === p.cliente_id), params.get('avisar') === '1') : null,
+      !novo && p.fase === 'contratado' ? caixaPeticaoInicial(p, clientes.find(c => c.id === p.cliente_id)) : null,
+      !novo && p.cliente_id && p.fase !== 'contratado' ? caixaAvisarCliente(p, clientes.find(c => c.id === p.cliente_id), params.get('avisar') === '1') : null,
       novo ? null : blocoAndamentos(p), prazosProc, form);
   }
 
@@ -1690,6 +1715,84 @@
   }
 
   /** WhatsApp para o cliente: avisa que chegou intimação e que o escritório já está cuidando do prazo. */
+  /* ---------- Conferido (equipe) → OK (administração) ---------- */
+
+  const iniciais = n => String(n || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+  /** Janela com a equipe: a pessoa aperta o nome de quem fez. Devolve o usuário escolhido (ou null). */
+  async function escolherQuem(titulo, extra) {
+    const equipe = await api('equipe.listar').catch(() => [{ usuario: sessao.usuario.usuario, nome: sessao.usuario.nome }]);
+    const eu = sessao.usuario.usuario;
+    const lista = equipe.slice().sort((a, b) => (b.usuario === eu) - (a.usuario === eu));
+    return new Promise(resolve => {
+      const caixa = h('dialog', { class: 'dialogo quem-fez' });
+      let feito = false;
+      const fim = v => { if (feito) return; feito = true; caixa.close(); resolve(v); };
+      const campoExtra = extra ? extra() : null;
+      caixa.append(...[
+        h('h2', {}, titulo || 'Quem fez?'),
+        h('p', { class: 'peq' }, 'Aperte o nome de quem fez. Some da lista da equipe e vai para o OK da administração e para o relatório.'),
+        campoExtra,
+        h('div', { class: 'quem-grade' }, lista.map(x => h('button', { type: 'button', class: 'quem-bt' + (x.usuario === eu ? ' eu' : ''), onclick: () => fim({ usuario: x.usuario, nome: x.nome, extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' }) },
+          h('span', { class: 'quem-ini' }, iniciais(x.nome)), h('span', { class: 'quem-nome' }, x.nome, x.usuario === eu ? h('small', {}, ' (você)') : null)))),
+        h('div', { class: 'acoes' }, botao('Cancelar', () => fim(null), 'sec'))].filter(Boolean));
+      caixa.addEventListener('close', () => { caixa.remove(); if (!feito) { feito = true; resolve(null); } });
+      document.body.append(caixa);
+      caixa.showModal();
+    });
+  }
+  async function conferirTrabalho(tipo, id, titulo, extra) {
+    const q = await escolherQuem(titulo, extra);
+    if (!q) return false;
+    const r = await api('trabalho.conferir', { tipo, id, por: q.usuario, numero: q.extra || '' });
+    avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
+    rota();
+    return true;
+  }
+  /** Botão verde "Conferido" (vem depois do WhatsApp). */
+  function botaoConferido(tipo, id, titulo, extra, rotulo) {
+    return h('button', { type: 'button', class: 'btn mini terminei', onclick: async ev => {
+      ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true;
+      try { if (!(await conferirTrabalho(tipo, id, titulo, extra))) b.disabled = false; } catch (e) { b.disabled = false; avisar(e.message, true); }
+    } }, rotulo || '✓ Conferido');
+  }
+  /** Para a administração: OK final ou devolver para a equipe. */
+  function botoesOk(tipo, id) {
+    const parar = fn => async ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; try { await fn(); } catch (e) { b.disabled = false; avisar(e.message, true); } };
+    return [
+      h('button', { type: 'button', class: 'btn mini ok-bt', onclick: parar(async () => { await api('trabalho.ok', { tipo, id }); avisar('OK dado.'); rota(); }) }, '✓ OK'),
+      h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { const m = prompt('Devolver para a equipe. Motivo (opcional):', ''); if (m === null) throw new Error('Cancelado.'); await api('trabalho.devolver', { tipo, id, motivo: m }); avisar('Devolvido: voltou para a lista da equipe.'); rota(); }) }, 'Devolver')];
+  }
+
+  /** Painel da administração: o que a equipe conferiu e espera o OK. */
+  function blocoAguardandoOk() {
+    const caixa = h('section', { class: 'caixa aguarda-ok' });
+    if (!sessao.usuario.pode.usuarios) return null;
+    (async () => {
+      let itens;
+      try { itens = await api('trabalho.aguardando'); } catch (e) { caixa.remove(); return; }
+      if (!itens.length) { caixa.replaceChildren(h('div', { class: 'aguarda-vazio' }, '✓ Nada esperando o seu OK. Tudo o que a equipe conferiu já foi aprovado.')); return; }
+      const ICO = { prazo: '⏱', intimacao: '📨', inicial: '⚖' }, NOME = { prazo: 'Prazo', intimacao: 'Intimação', inicial: 'Petição inicial' };
+      caixa.replaceChildren(
+        h('div', { class: 'aguarda-cab' }, h('div', {}, h('h2', {}, `Aguardando o seu OK (${itens.length})`),
+          h('p', { class: 'peq' }, 'A equipe já conferiu. Dê o OK ou devolva. Isto só aparece para a administração.')),
+          botao(`✓ OK em todos (${itens.length})`, async ev => {
+            if (!confirm(`Dar OK nos ${itens.length} itens?`)) return;
+            ev.target.disabled = true; const r = await api('trabalho.ok', { itens: itens.map(x => ({ tipo: x.tipo, id: x.id })) }); avisar(`${r.feitos} OK dado(s).`); rota();
+          }, 'ok-bt')),
+        h('ul', { class: 'aguarda-lista' }, itens.map(x => h('li', { class: 'aguarda-item t-' + x.tipo },
+          h('span', { class: 'aguarda-ico', 'aria-hidden': 'true' }, ICO[x.tipo]),
+          h('div', { class: 'aguarda-txt' },
+            h('div', {}, h('span', { class: 'tag mini-tag' }, NOME[x.tipo]), ' ', h('a', { href: x.link }, h('strong', {}, String(x.titulo || '').slice(0, 90)))),
+            h('div', { class: 'peq' }, [x.cliente, x.numero].filter(Boolean).join(' · ') || '—'),
+            h('div', { class: 'peq aguarda-quem' }, h('span', { class: 'quem-ini mini' }, iniciais(x.por)), ' feito por ', h('strong', {}, x.por || '—'),
+              x.em ? ' · ' + new Date(x.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
+              x.tipo === 'prazo' && x.fatal ? h('span', { class: 'tag mini-tag ' + (x.no_prazo ? 'ok' : 'urgente') }, x.no_prazo ? 'no prazo' : 'depois do fatal') : null)),
+          h('div', { class: 'aguarda-bts' }, botoesOk(x.tipo, x.id))))));
+    })();
+    caixa.append(h('p', { class: 'peq' }, 'Carregando o que espera o seu OK…'));
+    return caixa;
+  }
+
   /** Guarda no relatório que o cliente foi avisado pelo WhatsApp (não atrapalha se falhar). */
   function registrarWhats(z, motivo) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo }).catch(() => {}); }
   function whatsPrazo(z) {
@@ -1713,15 +1816,21 @@
     const pode = sessao.usuario.pode;
     const wa = SITUACOES_ABERTAS.includes(z.situacao) ? whatsPrazo(z) : null;
     const parar = fn => ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; fn().catch(e => { b.disabled = false; avisar(e.message, true); }); };
+    const aberto = SITUACOES_ABERTAS.includes(z.situacao);
     return h('div', { class: 'mini-acoes' },
+      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => { ev.stopPropagation(); registrarWhats(z, 'intimação'); } }, 'WhatsApp') : null,
+      aberto ? botaoConferido('prazo', z.id, 'Quem fez este prazo?') : null,
       pode.conferePrazos && z.situacao === 'calculado'
-        ? h('button', { type: 'button', class: 'btn mini', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Prazo conferido.')) }, 'Conferir') : null,
-      SITUACOES_ABERTAS.includes(z.situacao)
-        ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'cumprido' }, 'Prazo marcado como cumprido.')) }, 'Cumprido')
-        : h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir'),
-      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => { ev.stopPropagation(); registrarWhats(z, 'intimação'); } }, 'WhatsApp') : null);
+        ? h('button', { type: 'button', class: 'btn mini sec', title: 'Confirmar a data fatal calculada pelo robô', onclick: parar(() => acaoPrazo('prazos.conferir', { id: z.id }, 'Data do prazo confirmada.')) }, 'Confirmar data') : null,
+      z.situacao === 'cumprido' && !z.ok_em
+        ? (pode.usuarios ? botoesOk('prazo', z.id) : h('span', { class: 'tag mini-tag atencao' }, 'feito por ' + (z.cumprido_por || '—') + ' · aguarda OK'))
+        : null,
+      z.situacao === 'cumprido' && z.ok_em ? h('span', { class: 'tag mini-tag ok' }, '✓ OK de ' + z.ok_por) : null,
+      z.situacao === 'cancelado' && pode.usuarios
+        ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
+  const VERSAO_PAINEL = '6.9.6';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -1790,6 +1899,17 @@
       dj2.ultima ? dj2.ultima.replace(/^(\S+)/, iso => quando(iso)) : '', dj2.erro ? ' · problema: ' + dj2.erro : ''));
     if (ia.ligada || ia.erro) status.append(h('div', { class: 'peq' + (ia.erro ? ' erro' : '') }, h('strong', {}, 'Resumo por IA: '),
       ia.ultima ? ia.ultima.replace(/^(\S+)/, iso => quando(iso)) : 'ligado', ia.erro ? ' · problema: ' + ia.erro : ''));
+    // o programa do Google ainda é o antigo? (os avisos de 429 e do modelo aposentado só somem com o Code.gs novo)
+    const vServ = (robo && robo.versao) || '';
+    const velho = !vServ || vServ.localeCompare(VERSAO_PAINEL, undefined, { numeric: true }) < 0;
+    if (velho && robo && sessao.usuario.pode.usuarios) status.append(h('div', { class: 'robo-alerta' }, '⚠ O programa do Google está ', vServ ? 'na versão ' + vServ : 'desatualizado',
+      ' e o painel é da ' + VERSAO_PAINEL + '. Cole o Code.gs novo no Apps Script e publique uma Nova versão: ',
+      h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/painel-backend/Code.gs', target: '_blank', rel: 'noopener noreferrer' }, 'abrir o Code.gs')));
+    if ((dj2.erro || ia.erro) && !velho && sessao.usuario.pode.usuarios) status.append(h('div', {}, h('button', { type: 'button', class: 'btn mini', onclick: async ev => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Consertando (até 2 min)…';
+      try { const r = await api('robo.consertar'); const ok = !(r.datajud && r.datajud.erro) && !(r.ia && r.ia.erro); avisar(ok ? 'Pronto: DataJud e IA funcionando.' : 'Ainda há problema: ' + [(r.datajud || {}).erro, (r.ia || {}).erro].filter(Boolean).join(' · '), !ok); rota(); }
+      catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Consertar agora'; }
+    } }, 'Consertar agora'), h('span', { class: 'peq' }, ' roda o DataJud e testa a IA na hora; o aviso some quando funcionar.')));
     const cartao = h('div', { class: 'robo-cartao ' + (atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto', 'aria-hidden': 'true' }), status, btn);
     if (atrasado && !ler('robo_auto')) { guardar('robo_auto', Date.now()); const h0 = location.hash; setTimeout(() => { if (location.hash === h0 && !btn.disabled) rodar(btn); }, 300); }
     return cartao;
@@ -1846,6 +1966,7 @@
         h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : { pje: ' no PJe (trabalhista)', civel: ' no eproc cível', federal: ' no eproc federal' }[sis]} · contagem até 23h59 do dia fatal`)),
         h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       cartaoRobo(resumo.robo),
+      blocoAguardandoOk(),
       h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'Sistema' },
         SISTEMAS.map(([v, rot]) => h('button', { type: 'button', class: 'seg' + (sis === v ? ' ativo' : ''), 'aria-pressed': String(sis === v), onclick: () => mudarSis(v) },
           rot, v !== 'todos' ? h('span', { class: 'seg-n' }, String(porSis[v])) : null)),
@@ -1889,24 +2010,25 @@
   /** Lista das intimações, sempre aberta na tela: busca, filtro do sistema, prazo de cada uma e "Marcar na agenda". */
   function blocoIntimacoes(sis) {
     const caixa = h('section', { class: 'caixa bloco-intim', id: 'intimacoes' });
-    let limite = 30, busca = '';
+    let limite = 30, busca = '', todas = false;
     const campoBusca = h('input', { type: 'search', placeholder: 'Buscar intimação por número, cliente ou texto', 'aria-label': 'Buscar intimação' });
     const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando as intimações…'));
     const titulo = h('h2', {}, 'Intimações recebidas');
     const carregar = async () => {
       try {
-        let r = await api('intimacoes.listar', { limite: sis === 'todos' ? limite : limite * 3, busca });
+        let r = await api('intimacoes.listar', { limite: sis === 'todos' ? limite : limite * 3, busca, abertas: !todas });
         if (Array.isArray(r)) r = { total: r.length, lista: r };
         const lista = r.lista.filter(i => sis === 'todos' || sistemaDoPrazo({ sistema: i.fonte, tribunal: i.tribunal, numero: i.numero }) === sis).slice(0, limite);
-        titulo.textContent = `Intimações recebidas (${r.total})`;
-        corpo.replaceChildren(...[lista.length ? h('ul', { class: 'lista-intim' }, lista.map(itemIntimacao)) : h('p', { class: 'peq' }, busca ? 'Nenhuma intimação com essa busca.' : 'Nenhuma intimação lida ainda.'),
+        titulo.textContent = todas ? `Intimações recebidas (${r.total})` : `Intimações a fazer (${r.total})`;
+        corpo.replaceChildren(...[lista.length ? h('ul', { class: 'lista-intim' }, lista.map(itemIntimacao)) : h('p', { class: 'peq' }, busca ? 'Nenhuma intimação com essa busca.' : todas ? 'Nenhuma intimação lida ainda.' : '✓ Nenhuma intimação esperando. Tudo conferido.'),
           r.total > limite ? h('div', { class: 'acoes' }, botao('Mostrar mais 30', () => { limite += 30; carregar(); }, 'sec')) : null].filter(Boolean));
       } catch (e) { corpo.replaceChildren(h('p', { class: 'erro' }, e.message)); }
     };
     let t;
     campoBusca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { busca = campoBusca.value.trim(); limite = 30; carregar(); }, 350); });
-    caixa.append(h('div', { class: 'cab-intim' }, titulo, campoBusca),
-      h('p', { class: 'peq' }, 'Tudo o que o robô leu (Gmail do eproc e do PJe, DJEN), da mais nova para a mais antiga. Nada é apagado daqui, mesmo depois de dar baixa no prazo.'), corpo);
+    const chkTodas = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', onchange: ev => { todas = ev.target.checked; limite = 30; carregar(); } }), 'Mostrar também as já conferidas');
+    caixa.append(h('div', { class: 'cab-intim' }, titulo, h('div', { class: 'barra' }, chkTodas, campoBusca)),
+      h('p', { class: 'peq' }, 'O que o robô leu (Gmail do eproc e do PJe, DJEN), da mais nova para a mais antiga. Avise o cliente no WhatsApp e aperte "Conferido" quando terminar: sai da lista e vai para o OK da administração. Nada é apagado.'), corpo);
     carregar();
     return caixa;
   }
@@ -1914,31 +2036,37 @@
   function itemIntimacao(i) {
     const z = i.prazo;
     const wa = whatsPrazo({ telefone: i.telefone, cliente: i.cliente, numero: i.numero, descricao: z ? z.descricao : '' });
-    const li = h('li', { class: 'item-intim' + (i.terminada_por ? ' terminada' : '') });
-    const terminar = async (desfazer, b) => {
-      b.disabled = true;
-      try { await api('intimacoes.terminar', { id: i.id, desfazer }); avisar(desfazer ? 'Intimação reaberta.' : 'Registrado: você terminou esta intimação.'); const n = itemIntimacao(Object.assign({}, i, desfazer ? { terminada_por: '', terminada_em: '' } : { terminada_por: sessao.usuario.nome || sessao.usuario.usuario, terminada_em: new Date().toISOString() })); li.replaceWith(n); }
-      catch (e) { b.disabled = false; avisar(e.message, true); }
-    };
-    li.append(
+    const ia = h('div', { class: 'peq ia-txt' + (/⚠/.test(i.resumo_ia || '') ? ' ia-alerta' : /estimativa/.test(i.resumo_ia || '') ? ' ia-estimativa' : '') }, i.resumo_ia || '');
+    if (!i.resumo_ia) ia.hidden = true;
+    const btIA = h('button', { type: 'button', class: 'btn mini ia-bt', onclick: async ev => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Lendo…';
+      try { const r = await api('ia.resumirIntimacao', { id: i.id }); ia.textContent = r.resumo_ia; ia.hidden = false; ia.className = 'peq ia-txt' + (/⚠/.test(r.resumo_ia) ? ' ia-alerta' : /estimativa/.test(r.resumo_ia) ? ' ia-estimativa' : ''); b.textContent = '✨ Resumir de novo'; }
+      catch (e) { avisar(e.message, true); b.textContent = '✨ Resumir com IA'; }
+      b.disabled = false;
+    } }, i.resumo_ia ? '✨ Resumir de novo' : '✨ Resumir com IA');
+    const pode = sessao.usuario.pode;
+    return h('li', { class: 'item-intim' + (i.terminada_por ? ' terminada' : '') },
       h('div', { class: 'intim-topo' },
         h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), h('span', { class: 'tag mini-tag' }, i.fonte || '—'),
         i.processo_id ? h('a', { class: 'num', href: '#/processo/' + i.processo_id }, i.numero) : h('span', { class: 'num' }, i.numero),
+        i.cliente ? h('span', { class: 'peq' }, '· ' + i.cliente) : null,
         acessoTribunal(i.numero)),
       h('div', { class: 'intim-mov' }, i.movimento || '—'),
-      i.partes_cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
-      i.resumo_ia ? h('div', { class: 'peq ia-txt' + (/⚠/.test(i.resumo_ia) ? ' ia-alerta' : '') }, i.resumo_ia) : null,
+      i.partes_cliente && !i.cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
+      ia,
       i.texto ? h('details', { class: 'intim-texto' }, h('summary', {}, 'Ver o texto'), h('div', { class: 'peq' }, i.texto)) : null,
       h('div', { class: 'intim-acoes' },
-        z ? h('a', { class: 'chip-filtro', href: '#/prazo/' + z.id }, z.fatal ? `Prazo: ${z.descricao ? z.descricao.slice(0, 40) + ' · ' : ''}fatal ${dataBR(z.fatal)}` : 'Prazo: a definir', ['cumprido', 'cancelado'].includes(z.situacao) ? ' (baixado)' : '') : h('span', { class: 'peq' }, 'Sem prazo aberto'),
+        z ? h('a', { class: 'chip-filtro', href: '#/prazo/' + z.id }, z.fatal ? `Prazo: ${z.descricao ? z.descricao.slice(0, 40) + ' · ' : ''}fatal ${dataBR(z.fatal)}` : 'Prazo: a definir', ['cumprido', 'cancelado'].includes(z.situacao) ? ' (feito)' : '') : h('span', { class: 'peq' }, 'Sem prazo aberto'),
         i.ato ? h('a', { class: 'tag ok', href: '#/agenda?data=' + i.ato.data }, '📅 Na agenda: ' + i.ato.tipo + ' ' + dataBR(i.ato.data))
           : botao('📅 Marcar na agenda', () => caixaMarcarAto({ intimacao_id: i.id, processo_id: i.processo_id, numero: i.numero, texto: [i.movimento, i.texto].join(' ') }), 'sec mini'),
-        wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: () => registrarWhats(i, 'intimação') }, 'WhatsApp') : null,
+        btIA),
+      h('div', { class: 'intim-final' },
+        wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: () => registrarWhats(i, 'intimação') }, '1 · WhatsApp ao cliente') : h('span', { class: 'peq' }, 'Cliente sem telefone'),
         i.terminada_por
-          ? h('span', { class: 'terminada-tag' }, '✓ Terminada por ', h('strong', {}, i.terminada_por), i.terminada_em ? ' · ' + new Date(i.terminada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
-            h('button', { type: 'button', class: 'link', onclick: ev => terminar(true, ev.currentTarget) }, 'desfazer'))
-          : h('button', { type: 'button', class: 'btn mini terminei', onclick: ev => terminar(false, ev.currentTarget) }, '✓ Terminei')));
-    return li;
+          ? h('span', { class: 'terminada-tag' }, '✓ Conferida por ', h('strong', {}, i.terminada_por), i.terminada_em ? ' · ' + new Date(i.terminada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
+            i.ok_por ? ' · OK de ' + i.ok_por : ' · aguarda OK')
+          : h('span', { class: 'passo2' }, botaoConferido('intimacao', i.id, 'Quem fez esta intimação?', null, '2 · ✓ Conferido')),
+        i.terminada_por && !i.ok_por && pode.usuarios ? botoesOk('intimacao', i.id) : null));
   }
 
   /** Janela para lançar audiência ou perícia na agenda. O prazo da intimação continua na lista. */
@@ -2828,32 +2956,68 @@
 
   /* ---------- relatórios (administração) ---------- */
 
-  /** O que cada pessoa fez na semana (segunda a domingo), pelo registro do painel. */
-  function blocoSemana(sem) {
-    const caixa = h('section', { class: 'caixa rel-semana' });
-    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando a semana…'));
-    const cab = h('div', { class: 'cab-semana' });
-    caixa.append(cab, corpo);
+  /* Cores e ícones de cada tipo de trabalho no relatório da equipe */
+  const CAT_EQUIPE = {
+    intimacoes: ['📨', '#2f6fd0'], prazos: ['⏱', '#1f8a4c'], iniciais: ['⚖', '#7a4fc0'], whatsapp: ['💬', '#25a35a'],
+    tarefas: ['✓', '#c98a12'], conferidos: ['📅', '#1d8a8a'], prazos_novos: ['✎', '#8a8f99'], agenda: ['🗓', '#d0602d'],
+    clientes: ['👤', '#b08d57'], processos: ['📁', '#2e5f8a'], documentos: ['📄', '#8a6a37'], financeiro: ['💰', '#4a7a2a'], oks: ['✔', '#16171a']
+  };
+  const corCat = id => (CAT_EQUIPE[id] || ['•', '#9aa0aa'])[1];
+  const icoCat = id => (CAT_EQUIPE[id] || ['•'])[0];
+  const CORES_PESSOA = ['#7a4fc0', '#2f6fd0', '#1d8a8a', '#c98a12', '#d0602d', '#1f8a4c', '#b0457a', '#2e5f8a'];
+
+  /** Painel da equipe: o que cada colaborador fez na semana ou no mês. */
+  function blocoSemana(sem, per) {
+    const caixa = h('section', { class: 'equipe-painel' });
+    caixa.append(h('p', { class: 'peq' }, 'Carregando o painel da equipe…'));
     (async () => {
       let r;
-      try { r = await api('relatorio.semana', { inicio: sem || '' }); }
-      catch (e) { corpo.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      try { r = await api('relatorio.semana', { inicio: sem || '', periodo: per }); }
+      catch (e) { caixa.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
       const nomeCat = Object.fromEntries(r.categorias.map(c => [c.id, c.nome]));
-      const ir = d => { location.hash = '#/relatorios' + (d ? '?semana=' + d : ''); };
-      cab.replaceChildren(
-        h('div', {}, h('h2', {}, 'Semana da equipe'), h('p', { class: 'peq' }, `De ${dataBR(r.inicio)} a ${dataBR(r.fim)} · o que cada pessoa fez no painel (intimações terminadas, prazos, tarefas, WhatsApp, cadastros, documentos).`)),
-        h('div', { class: 'barra' }, botao('◀ Semana anterior', () => ir(r.anterior), 'sec mini'),
-          r.proxima ? botao('Próxima ▶', () => ir(r.proxima), 'sec mini') : null,
-          sem ? botao('Esta semana', () => ir(''), 'sec mini') : null));
-      const cartao = p => h('article', { class: 'pessoa-sem' + (p.total ? '' : ' parado') },
-        h('div', { class: 'pessoa-cab' }, h('span', { class: 'cli-ini' }, String(p.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
-          h('div', {}, h('strong', {}, p.nome), h('div', { class: 'peq' }, p.perfil || '')), h('b', { class: 'pessoa-total' }, String(p.total))),
-        p.total ? h('ul', { class: 'pessoa-grupos' }, r.categorias.filter(c => p.grupos[c.id]).map(c => h('li', {}, h('span', {}, c.nome), h('b', {}, String(p.grupos[c.id])))))
-          : h('p', { class: 'peq' }, 'Nada registrado nesta semana.'),
-        p.itens.length ? h('details', {}, h('summary', {}, `Ver o que fez (${p.itens.length})`),
-          h('ol', { class: 'pessoa-itens' }, p.itens.map(x => h('li', {}, h('time', {}, new Date(x.quando).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), ' ',
-            h('span', { class: 'tag mini-tag' }, nomeCat[x.cat] || x.acao), ' ', x.texto)))) : null);
-      corpo.replaceChildren(r.pessoas.length ? h('div', { class: 'grade-semana' }, r.pessoas.map(cartao)) : h('p', { class: 'peq' }, 'Nenhum usuário cadastrado ainda.'));
+      const ir = mud => { const q = new URLSearchParams({ semana: sem || '', per: per || '', ...mud }); [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); }); location.hash = '#/relatorios' + (q.toString() ? '?' + q : ''); };
+      const mes = r.periodo === 'mes';
+      const titPer = mes ? new Date(r.inicio + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' }) : `${dataBR(r.inicio)} a ${dataBR(r.fim)}`;
+      const soma = id => r.pessoas.reduce((t, p) => t + (p.grupos[id] || 0), 0);
+      const total = r.pessoas.reduce((t, p) => t + p.total, 0);
+      const maior = Math.max(1, ...r.pessoas.map(p => p.total));
+      const catsUsadas = r.categorias.filter(c => soma(c.id));
+      const kpi = (id, rot) => h('div', { class: 'eq-kpi' }, h('span', { class: 'eq-kpi-ico', 'data-cor': corCat(id) }, icoCat(id)), h('b', {}, String(soma(id))), h('span', {}, rot));
+      const pinta = el => { el.querySelectorAll('[data-cor]').forEach(x => { x.style.setProperty('--c', x.dataset.cor); }); el.querySelectorAll('[data-w]').forEach(x => { x.style.width = x.dataset.w + '%'; }); return el; };
+      const barra = p => h('div', { class: 'eq-barra' }, r.categorias.filter(c => p.grupos[c.id]).map(c => h('span', { class: 'eq-seg', 'data-cor': corCat(c.id), 'data-w': String(p.grupos[c.id] * 100 / maior), title: `${c.nome}: ${p.grupos[c.id]}` })));
+      const ranking = h('div', { class: 'eq-ranking' }, r.pessoas.map((p, i) => h('div', { class: 'eq-rank-linha' },
+        h('span', { class: 'eq-pos' }, p.total ? String(i + 1) + 'º' : '—'),
+        h('span', { class: 'eq-av', 'data-cor': CORES_PESSOA[i % CORES_PESSOA.length] }, iniciais(p.nome)),
+        h('span', { class: 'eq-rank-nome' }, p.nome),
+        barra(p), h('b', { class: 'eq-rank-n' }, String(p.total)))));
+      const porDia = itens => { const g = {}; itens.forEach(x => { const d = new Date(x.quando).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }); (g[d] = g[d] || []).push(x); }); return Object.entries(g); };
+      const cartao = (p, i) => h('article', { class: 'eq-card' + (p.total ? '' : ' parado') },
+        h('header', { class: 'eq-card-cab', 'data-cor': CORES_PESSOA[i % CORES_PESSOA.length] },
+          h('span', { class: 'eq-av grande', 'data-cor': CORES_PESSOA[i % CORES_PESSOA.length] }, iniciais(p.nome)),
+          h('div', {}, h('strong', {}, p.nome), h('div', { class: 'peq' }, p.perfil || '')),
+          h('div', { class: 'eq-card-total' }, h('b', {}, String(p.total)), h('span', {}, 'ações'))),
+        p.total ? h('div', { class: 'eq-tiles' }, r.categorias.filter(c => p.grupos[c.id]).map(c => h('div', { class: 'eq-tile', 'data-cor': corCat(c.id) },
+          h('span', { class: 'eq-tile-ico' }, icoCat(c.id)), h('b', {}, String(p.grupos[c.id])), h('span', {}, c.nome))))
+          : h('p', { class: 'peq eq-nada' }, 'Nada registrado neste período.'),
+        p.itens.length ? h('details', { class: 'eq-linha-tempo' }, h('summary', {}, `Ver tudo o que fez (${p.itens.length})`),
+          porDia(p.itens).map(([dia, xs]) => h('div', { class: 'eq-dia' }, h('div', { class: 'eq-dia-tit' }, dia),
+            h('ul', {}, xs.map(x => h('li', {}, h('time', {}, new Date(x.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })),
+              h('span', { class: 'eq-ponto', 'data-cor': corCat(x.cat) }), h('span', { class: 'eq-item-cat' }, nomeCat[x.cat] || x.acao), h('span', { class: 'eq-item-txt' }, x.texto))))))) : null);
+      caixa.replaceChildren(pinta(h('div', {},
+        h('div', { class: 'eq-topo' },
+          h('div', {}, h('span', { class: 'carteira-kicker' }, 'Equipe'), h('h2', {}, 'O que cada colaborador fez'), h('p', {}, titPer + ' · tudo o que foi conferido, avisado e cadastrado no painel')),
+          h('div', { class: 'eq-controles' },
+            h('div', { class: 'visoes' }, h('button', { type: 'button', class: 'visao-bt' + (!mes ? ' ativo' : ''), onclick: () => ir({ per: '', semana: '' }) }, 'Semana'),
+              h('button', { type: 'button', class: 'visao-bt' + (mes ? ' ativo' : ''), onclick: () => ir({ per: 'mes', semana: '' }) }, 'Mês')),
+            h('div', { class: 'barra' }, botao('◀', () => ir({ semana: r.anterior }), 'sec mini'), r.proxima ? botao('▶', () => ir({ semana: r.proxima }), 'sec mini') : null,
+              sem ? botao(mes ? 'Este mês' : 'Esta semana', () => ir({ semana: '' }), 'sec mini') : null))),
+        h('div', { class: 'eq-kpis' },
+          h('div', { class: 'eq-kpi total' }, h('b', {}, String(total)), h('span', {}, 'ações da equipe')),
+          kpi('intimacoes', 'intimações conferidas'), kpi('prazos', 'prazos feitos'), kpi('iniciais', 'petições iniciais'), kpi('whatsapp', 'clientes avisados'),
+          r.aguardando ? h('a', { class: 'eq-kpi alerta', href: '#/prazos' }, h('b', {}, String(r.aguardando)), h('span', {}, 'esperando o seu OK')) : null),
+        total ? h('div', { class: 'eq-bloco' }, h('h3', {}, 'Ranking do período'), ranking,
+          h('div', { class: 'eq-legenda' }, catsUsadas.map(c => h('span', {}, h('span', { class: 'eq-ponto', 'data-cor': corCat(c.id) }), c.nome)))) : null,
+        h('div', { class: 'eq-cards' }, r.pessoas.map(cartao)))));
     })();
     return caixa;
   }
@@ -2862,6 +3026,7 @@
     carregando();
     const r = await api('relatorio.geral', {});
     const sem = params && /^\d{4}-\d{2}-\d{2}$/.test(params.get('semana') || '') ? params.get('semana') : '';
+    const per = params && params.get('per') === 'mes' ? 'mes' : '';
     const soma = a => a.reduce((x, y) => x + y, 0);
     const pct = r.percentualNoPrazo;
     const cartaoG = (titulo, sub, corpo) => h('section', { class: 'caixa rel-cartao' }, h('h2', {}, titulo), sub ? h('p', { class: 'peq' }, sub) : null, corpo);
@@ -2869,7 +3034,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Relatórios'), h('p', {}, 'Últimos 12 meses. Clientes e processos importados (GEA, Gmail antigo) não contam como novos.')),
         h('div', { class: 'barra' }, botao('Imprimir', () => window.print(), 'sec'))),
-      blocoSemana(sem),
+      blocoSemana(sem, per),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' }, h('b', {}, String(soma(r.clientesNovos))), h('span', {}, 'clientes novos')),
         h('div', { class: 'numero' }, h('b', {}, String(soma(r.processosNovos))), h('span', {}, 'processos novos')),

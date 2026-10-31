@@ -150,9 +150,19 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Relatórios: no topo a "Semana da equipe" (`relatorio.semana`, segunda a domingo, navegar semanas): por usuário, o que fez,
   lido da aba Log (`CATEGORIAS_LOG`: intimações terminadas, prazos cumpridos/conferidos/lançados, tarefas concluídas, WhatsApp ao
   cliente, agenda, clientes, processos, documentos, financeiro). Depois os gráficos, inclusive por fase e por tribunal.
-- Intimações: botão "✓ Terminei" grava `terminada_por` (nome) e `terminada_em` (só uma vez; "desfazer" reabre) e vai para o
-  relatório. Botão WhatsApp na intimação e no prazo; cada clique é registrado (`registro.whatsapp`). Toda ação nova que deve
-  contar no relatório precisa de `registrar_(u.usuario, ...)` com um nome que caiba em `CATEGORIAS_LOG`.
+- Fluxo da equipe (6.9.6): em cada prazo, intimação e petição inicial (processo "a ajuizar") vêm 1) "WhatsApp" ao cliente e
+  2) "✓ Conferido": abre a lista da equipe (`equipe.listar`, `escolherQuem`), aperta o nome de quem fez e grava (rota
+  `trabalho.conferir`): prazo → situacao "cumprido" + cumprido_por; intimação → terminada_por (e o prazo ligado também,
+  `intimacoesDoPrazo_` liga pelos dois lados); inicial → tarefa "Protocolado" e o processo vai para "Em andamento" (com número)
+  ou "Ajuizado" (sem). O log fica no nome de QUEM FEZ. Some da lista da equipe (intimações: `abertas`) e aparece só para a
+  administração em "Aguardando o seu OK" (topo de Intimações e prazos; `trabalho.aguardando`), com "✓ OK" (`trabalho.ok`, grava
+  ok_por/ok_em, aceita lote) ou "Devolver" (`trabalho.devolver`, volta para a equipe). "Confirmar data" é a conferência da data
+  fatal calculada pelo robô (antigo "Conferir"). "✨ Resumir com IA" também em cada intimação (`ia.resumirIntimacao`).
+- Relatórios: "O que cada colaborador fez" (Semana/Mês, `per=mes`): números da equipe, ranking com barras por tipo de trabalho
+  (`CAT_EQUIPE`: cor e ícone), cartões por pessoa com blocos por tipo e a linha do tempo por dia.
+- Avisos do robô que não sumiam: com a fila vazia o DataJud agora grava "em dia" e apaga o erro; a IA testa o Gemini e apaga o
+  erro antigo quando responde. O cartão do robô avisa quando o Code.gs do Google é mais velho que o painel (`VERSAO_PAINEL` em
+  painel.js = `VERSAO` do Code.gs: suba os dois juntos) e tem "Consertar agora" (`robo.consertar`).
 - Início (simples, pedido da usuária): faixa escura enxuta (data, saudação em Bodoni, frase do dia, alerta de vencidos, botões
   "+ Novo cliente" e "Novo prazo"); 4 números (Prazos, Hoje, Tarefas, Processos); duas colunas: Prazos (vencidos primeiro, até 6)
   e Agenda (hoje e próximos 14 dias numa lista só, até 6); um cartão com 2 gráficos redondos (prazos em aberto e processos ativos
