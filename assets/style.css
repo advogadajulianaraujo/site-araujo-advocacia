@@ -458,3 +458,81 @@ footer.site{background:var(--black);color:#9e9a92;font-size:14px;padding:90px 0 
 @media (max-width:640px){.post-grid,.post-grid.lista{grid-template-columns:1fr}.post-cta{grid-template-columns:1fr}.artigo{font-size:17px}}
 .post-card[hidden]{display:none}
 @media (min-width:921px) and (max-width:1040px){.nav{gap:15px;letter-spacing:.12em}.nav .btn.sm{padding-inline:16px}}
+
+/* ===== Visual 2026: mais quente e humano (fotos coloridas, acento dourado) ===== */
+:root{--gold:#b48a4a;--gold-d:#8c6a35;--gold-l:#e3cda3;--ivory:#f5f0e7;--line:#e4dccd}
+.hero > img,.person img,.shots img,.aside .lawyer img,.bio img{filter:none}
+h1 em,h2 em{color:var(--gold-d)}
+.dark h1 em,.dark h2 em,.hero2 h1 em,.cta h2 em{color:var(--gold-l)}
+.dark .kicker,.hero2 .kicker{color:var(--gold-l)}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#111}
+.btn.gold:hover{background:var(--gold-l);border-color:var(--gold-l);color:#111}
+.more{border-bottom-color:var(--gold)}
+::selection{background:var(--gold-l);color:#111}
+
+/* Abertura com a foto da Dra. Júlian */
+.hero2{position:relative;background:radial-gradient(120% 90% at 85% 10%,#2a2219 0%,#0d0b09 55%,#000 100%);color:#fff;overflow:hidden}
+.hero2-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:clamp(32px,5vw,90px);align-items:center;padding:clamp(48px,7vw,96px) 0 clamp(40px,5vw,64px)}
+.hero2 h1{font-size:clamp(46px,6vw,92px);max-width:780px}
+.hero2 .lead{color:#dcd6cb;max-width:600px;margin:30px 0 38px}
+.selos{list-style:none;margin:34px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:12px 26px;font-size:14.5px;color:#cfc8bb}
+.selos li{display:flex;align-items:center;gap:8px}
+.selos svg{width:18px;height:18px;color:var(--gold-l);flex:none}
+.hero2-foto{position:relative;margin:0;justify-self:end;width:min(100%,460px)}
+.hero2-foto:before{content:'';position:absolute;inset:22px -22px -22px 22px;border:1px solid rgba(227,205,163,.55)}
+.hero2-foto img{position:relative;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;object-position:50% 28%;box-shadow:0 40px 80px -30px rgba(0,0,0,.8)}
+.hero2-foto figcaption{position:absolute;left:-28px;bottom:34px;background:#fff;color:#111;padding:16px 20px;box-shadow:0 18px 40px -18px rgba(0,0,0,.6);max-width:280px}
+.hero2-foto figcaption b{display:block;font:400 21px/1.15 var(--display)}
+.hero2-foto figcaption span{display:block;font:500 11px/1.6 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-d);margin-top:4px}
+.hero2 .hero-meta li b{color:#fff}
+
+/* Cartões "Como podemos ajudar" */
+.q-top{display:flex;align-items:center;justify-content:space-between}
+.q-ico{width:38px;height:38px;color:var(--gold-d);transition:color .3s,transform .3s}
+.quick a:hover{background:#15110c}
+.quick a:hover .q-ico{color:var(--gold-l);transform:scale(1.06)}
+.quick a:hover .go{border-top-color:#3a3127;color:var(--gold-l)}
+
+/* Quem cuida do seu caso */
+.quem{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(36px,6vw,110px);align-items:center}
+.quem-foto{position:relative;margin:0 0 40px}
+.quem-foto img:first-child{width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;object-position:50% 35%}
+.quem-mini{position:absolute;width:40%;aspect-ratio:3/4;object-fit:cover;object-position:50% 25%;right:-28px;bottom:-40px;border:8px solid #fff;box-shadow:0 24px 50px -20px rgba(0,0,0,.45)}
+.quem-txt h2{margin-bottom:24px}
+.quem-txt .lead{color:var(--muted)}
+.credenciais{list-style:none;margin:30px 0 36px;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+.credenciais li{background:#fff;padding:18px 20px}
+.credenciais b{display:block;font:400 21px/1.2 var(--display);color:var(--ink)}
+.credenciais span{display:block;font-size:13.5px;color:var(--muted);margin-top:4px}
+.quem-txt .actions{align-items:center;gap:28px}
+.equipe{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:clamp(28px,5vw,80px);align-items:center;margin-top:clamp(70px,9vw,130px);padding:clamp(24px,3vw,40px);background:var(--ivory)}
+.equipe img{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:50% 30%}
+.equipe h3{font-size:clamp(28px,2.6vw,38px);margin-bottom:16px}
+.equipe p{color:var(--muted);margin:0}
+
+/* Fotos do escritório e chamada final */
+.shots figure:hover img{transform:scale(1.03)}
+.shots img{transition:transform .8s}
+.cta{position:relative;overflow:hidden}
+.cta .wrap{position:relative}
+.cta-foto{width:96px;height:96px;border-radius:50%;object-fit:cover;object-position:50% 30%;margin:0 auto 26px;border:2px solid var(--gold-l)}
+.mbar a:first-child{background:var(--gold)!important;color:#111!important}
+
+@media (max-width:920px){
+  .hero2-grid{grid-template-columns:1fr;padding-top:40px}
+  .hero2-foto{justify-self:center;width:min(100%,460px);margin-top:10px}
+  .hero2-foto:before{inset:16px -12px -16px 12px}
+  .hero2-foto figcaption{left:12px;bottom:18px}
+  .quem{grid-template-columns:1fr}
+  .quem-foto{width:min(100%,520px);margin:0 auto 50px}
+  .quem-mini{right:-8px}
+  .equipe{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .hero2 h1{font-size:44px}
+  .hero2-foto img{aspect-ratio:1/1;object-position:50% 20%}
+  .hero2-foto figcaption{position:relative;left:0;bottom:0;max-width:none;margin-top:-1px}
+  .selos{flex-direction:column;gap:10px}
+  .credenciais{grid-template-columns:1fr}
+}
+.page-top .btn.white{background:var(--gold);border-color:var(--gold);color:#111}.page-top .btn.white:hover{background:var(--gold-l);border-color:var(--gold-l)}

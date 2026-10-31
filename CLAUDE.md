@@ -300,6 +300,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Site público
 
+- Visual 2026 (pedido da usuária: "site parecia morto"): fotos COLORIDAS (sem grayscale), acento dourado (`--gold`, `--gold-d`,
+  `--gold-l`, botão `.btn.gold`), abertura `.hero2` com a foto da Dra. Júlian em frente aos diplomas (`assets/julian-diplomas.webp`)
+  e selos, cartões "Como podemos ajudar" com ícones, seção "Quem cuida do seu caso" (`.quem`, `julian-atual` + `julian-retrato`,
+  credenciais) e "Equipe" (Júlian e Luís), blog logo depois, chamada final com retrato. Imagem com width/height no HTML precisa de
+  `height:auto` no CSS. Fotos dos ensaios ficam no Drive; a ferramenta do Drive só baixa arquivos de até ~4 MB. Não usar fotos com
+  terceiros/crianças (ex.: "FOTO EQUIPE" no restaurante) nem das pastas de clientes.
+- Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
+  "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados). Postar
+  sozinho exigiria a API do Perfil da Empresa (aprovação do Google) — não disponível.
+
 - /acompanhe/ ("Acompanhe seu processo"): o cliente entra com CPF + código de 8 caracteres gerado na ficha
   ("Acesso do cliente ao site"). O código aparece uma vez só e é guardado embaralhado (`acesso_hash`, nunca vai ao painel).
   Rota pública `consulta.processos` devolve só número, área, vara, situação, próximo ato e data/resumo da última

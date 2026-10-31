@@ -2114,7 +2114,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.7.0';
+  const VERSAO_PAINEL = '7.8.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3368,7 +3368,7 @@
           h('div', { class: 'peq' }, [x.cliente, x.numero, x.ato.local].filter(Boolean).join(' · '))),
         botaoWhatsAto(x)) : null,
       x.wa && MOTIVO_WA[x.wa] ? h('div', { class: 'largo' }, botaoWhatsTarefa(x)) : null,
-      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa):[^\]]*\]/g, '').trim(), { area: true, largo: true }),
+      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa|google):[^\]]*\]/g, '').trim(), { area: true, largo: true }),
       h('div', { class: 'largo chk-caixa' }, h('label', {}, 'Checklist'), chkLista, inChk),
       novo ? null : h('div', { class: 'largo coment-caixa' }, h('label', {}, 'Comentários e histórico'),
         h('div', { class: 'barra' }, inComent, botao('Comentar', async () => {

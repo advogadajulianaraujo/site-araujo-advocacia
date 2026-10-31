@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.7.0';
+var VERSAO = '7.8.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4175,7 +4175,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_], ['google', postagemGoogle_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -4376,6 +4376,38 @@ function cobrarAssinaturas_(ctx) {
     feitas++;
   });
   return feitas;
+}
+
+/* 6) Toda segunda: o texto novo do blog vira uma tarefa "Postar no perfil do Google", com o texto pronto e o link. */
+function postagemGoogle_(ctx) {
+  var hoje = hojeSP_(), d = new Date(hoje + 'T12:00:00-03:00');
+  if (d.getDay() !== 1 || config_('GOOGLE_POST_DIA') === hoje) return 0;
+  var xml;
+  try {
+    var r = UrlFetchApp.fetch('https://araujoadvocaciasc.com.br/blog/feed.xml?' + Date.now(), { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return 0;
+    xml = r.getContentText();
+  } catch (e) { return 0; }
+  var desc = function (t) { return String(t || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(); };
+  var itens = (xml.match(/<item>[\s\S]*?<\/item>/g) || []).map(function (it) {
+    var g = function (tag) { var m = new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>').exec(it); return m ? desc(m[1]) : ''; };
+    return { titulo: g('title'), link: g('link'), resumo: g('description'), cat: g('category') };
+  });
+  var ja = config_('GOOGLE_POST_LINKS') || '';
+  var it = itens.filter(function (x) { return x.link && ja.indexOf(x.link) < 0; })[0];
+  setConfig_('GOOGLE_POST_DIA', hoje, 'Último dia em que o robô preparou a postagem do Google');
+  if (!it) return 0;
+  var texto = it.titulo + '\n\n' + it.resumo + '\n\nLeia a explicação completa no site da Araújo Advocacia.';
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  novaTarefaRobo_(tabT, { _motivo: 'texto novo do blog para o Google',
+    titulo: 'Postar no perfil do Google: ' + it.titulo.slice(0, 80),
+    descricao: 'Toda semana o blog ganha textos novos. Poste o desta semana no perfil do Google (mantém o perfil ativo e traz clientes):\n' +
+      '1) Abra https://business.google.com → "Adicionar atualização".\n2) Escolha uma foto do escritório ou da Dra. Júlian.\n3) Cole o texto abaixo.\n4) Botão "Saiba mais" com o link.\n\n' +
+      'TEXTO:\n' + texto + '\n\nLINK:\n' + it.link + '\n[google:' + it.link.replace(/[\[\]]/g, '') + ']',
+    responsavel: respSecretaria_(), vence_em: hoje, prioridade: 'normal',
+    checklist: ['Abrir o perfil do Google', 'Adicionar atualização com foto', 'Colar o texto e o link (botão "Saiba mais")'] });
+  setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google');
+  return 1;
 }
 
 /* 5) Processo encerrado → pedir avaliação no Google (uma vez por cliente) */
@@ -6235,7 +6267,7 @@ function salvarTarefa_(d, u) {
       else {
         dados.historico = historicoMais_(l.historico, u, 'editou');
         // marcas internas (ligação com audiência, intimação, petição inicial, repetição) nunca se perdem ao editar
-        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
+        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa|google):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
         if (marcas.length) dados.descricao = (dados.descricao + '\n' + marcas.join('\n')).slice(0, 2400);
       }
       atualizarLinha_(tab, l, dados);
