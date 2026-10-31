@@ -584,107 +584,76 @@
       (semAcento(e.titulo + ' ' + e.descricao).includes(semAcento(p.numero)) || (p.cliente && semAcento(e.titulo).includes(semAcento(primeiroNome(p.cliente))))));
     const nHoje = deHoje.length + (r.proximos || []).filter(p => p.proximo_ato_data === hoje && !jaNaAgenda(p)).length;
 
-    // atalhos para todos os tópicos
-    const ICO_ATALHO = { '#/prazos': 'prazos', '#/tarefas': 'tarefas', '#/agenda?visao=dia': 'agenda', '#/clientes': 'clientes', '#/processos': 'processos' };
+    // números principais (4)
+    const ICO_ATALHO = { '#/prazos': 'prazos', '#/tarefas': 'tarefas', '#/agenda?visao=dia': 'agenda', '#/processos': 'processos' };
     const atalho = (href, nome, numero, legenda, cls) => h('a', { class: 'atalho ' + (cls || ''), href },
       h('span', { class: 'atalho-ico' }, icone(ICO_ATALHO[href] || 'inicio')),
-      h('span', { class: 'atalho-corpo' }, h('span', { class: 'atalho-nome' }, nome), numero !== null ? h('b', {}, String(numero)) : h('b', { class: 'seta' }, '→'), h('span', { class: 'atalho-leg' }, legenda)));
-    const atalhos = h('nav', { class: 'atalhos', 'aria-label': 'Tópicos do painel' },
-      atalho('#/prazos', 'Intimações', pz.vencidos || pz.vencendo, pz.vencidos ? 'prazo(s) vencido(s) — ver já' : 'prazo(s) vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
-      atalho('#/tarefas', 'Tarefas', (r.tarefas || {}).abertas || 0, (r.tarefas || {}).atrasadas ? `com você · ${r.tarefas.atrasadas} atrasada(s)` : 'com você', (r.tarefas || {}).atrasadas ? 'alerta' : ''),
-      atalho('#/agenda?visao=dia', 'Agenda', nHoje, nHoje === 1 ? 'compromisso hoje' : 'compromissos hoje'),
-      atalho('#/clientes', 'Clientes', t.clientes, (r.clientesNovos || []).length ? `${r.clientesNovos.length} novo(s) em 30 dias` : 'cadastrados'),
-      atalho('#/processos', 'Processos', t.processos, 'em andamento'),
-      null);
+      h('span', { class: 'atalho-corpo' }, h('b', {}, String(numero)), h('span', { class: 'atalho-nome' }, nome), h('span', { class: 'atalho-leg' }, legenda)));
+    const tar = r.tarefas || {};
+    const atalhos = h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
+      atalho('#/prazos', 'Prazos', pz.vencidos || pz.vencendo, pz.vencidos ? 'vencido(s) sem baixa' : 'vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
+      atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
+      atalho('#/tarefas', 'Tarefas', tar.abertas || 0, tar.atrasadas ? `${tar.atrasadas} atrasada(s)` : 'com você', tar.atrasadas ? 'alerta' : ''),
+      atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`));
 
     // prazos: vencidos primeiro, depois os próximos pela data fatal
     const sisIni = sistemaPreferido();
-    const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).filter(z => sisIni === 'todos' || sistemaDoPrazo(z) === sisIni).slice(0, 7);
-    const blocoPrazos = bloco(NOME_SIS[sisIni], '#/prazos', 'ver todos →',
+    const listaPrazos = pz.atrasados.concat(pz.proximos.filter(z => z.fatal)).filter(z => sisIni === 'todos' || sistemaDoPrazo(z) === sisIni).slice(0, 6);
+    const blocoPrazos = bloco(NOME_SIS[sisIni], '#/prazos', 'ver todos',
       h('div', {},
         listaPrazos.length ? h('ul', { class: 'ini-lista' }, listaPrazos.map(z => item(() => { location.hash = '#/prazo/' + z.id; },
           selo(z.fatal, 'faixa-' + faixaPrazo(z)), z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
           : vazio('Nenhum prazo em aberto com data fatal.'),
-        pz.aDefinir ? h('a', { class: 'ini-alerta', href: '#/prazos' }, `${pz.aDefinir} intimação(ões) com prazo a definir`) : null,
-        pz.aConferir ? h('a', { class: 'ini-aviso', href: '#/prazos' }, `${pz.aConferir} prazo(s) calculado(s) pelo robô a conferir`) : null));
+        pz.aConferir ? h('a', { class: 'ini-aviso', href: '#/prazos?ver=conferir' }, `${pz.aConferir} prazo(s) calculado(s) pelo robô para conferir`) : null));
 
-    // audiências e perícias dos próximos 14 dias
-    const atos = evAtos.map(e => ({ data: e.inicio.slice(0, 10), hora: hora(e), el: item(
-      () => { location.hash = '#/agenda?visao=dia&data=' + e.inicio.slice(0, 10); },
-      selo(e.inicio.slice(0, 10)), e.titulo, [hora(e), e.local].filter(Boolean).join(' · '),
-      h('span', { class: 'chip ' + (CORES_AGENDA[e.agenda] || '') }, NOME_CURTO[e.agenda] || e.agenda)) }))
-      .concat((r.proximos || []).filter(p => !jaNaAgenda(p)).map(p => ({ data: p.proximo_ato_data, hora: '', el: item(
-        () => { location.hash = '#/processo/' + p.id; },
-        selo(p.proximo_ato_data), p.proximo_ato, [p.cliente || 'cliente a identificar', p.orgao || p.numero].filter(Boolean).join(' · '),
-        etiquetaDias(p.proximo_ato_data)) })))
-      .sort((a, b) => (a.data + a.hora) < (b.data + b.hora) ? -1 : 1).slice(0, 8).map(x => x.el);
-    const blocoAtos = bloco('Audiências e perícias', '#/agenda?visao=semana', 'agenda →',
-      atos.length ? h('ul', { class: 'ini-lista' }, atos) : vazio('Nenhuma audiência ou perícia nos próximos 14 dias.'));
-
-    // hoje
+    // agenda: hoje (prazos fatais, atendimentos, audiências) e os próximos dias, numa lista só
     const fataisHoje = pz.proximos.filter(z => z.fatal === hoje);
-    const hojeItens = fataisHoje.map(z => item(() => { location.hash = '#/prazo/' + z.id; }, h('div', { class: 'ini-hora prazo' }, '23h59'), 'Prazo fatal: ' + z.descricao, (z.cliente || '') + ' · ' + z.numero))
-      .concat((r.proximos || []).filter(p => p.proximo_ato_data === hoje && !jaNaAgenda(p)).map(p => item(() => { location.hash = '#/processo/' + p.id; },
-        h('div', { class: 'ini-hora' }, (/(\d{1,2})h(\d{2})?|(\d{1,2}):(\d{2})/.exec(p.proximo_ato) || [''])[0] || 'hoje'), p.proximo_ato, [p.cliente || 'cliente a identificar', p.orgao || p.numero].filter(Boolean).join(' · '))))
-      .concat(deHoje.map(e => item(() => { location.hash = '#/agenda?visao=dia&data=' + hoje; }, h('div', { class: 'ini-hora' }, hora(e)), e.titulo,
-        [NOME_CURTO[e.agenda] || e.agenda, e.local].filter(Boolean).join(' · '))));
-    const novos = (r.clientesNovos || []).slice(0, 4);
-    const blocoHoje = bloco('Hoje', '#/agenda?visao=dia', 'dia →',
-      h('div', {},
-        hojeItens.length ? h('ul', { class: 'ini-lista' }, hojeItens) : vazio(ag ? 'Nada marcado para hoje.' : 'Agenda indisponível no momento.'),
-        novos.length ? h('div', { class: 'ini-novos' }, h('h3', {}, 'Clientes novos'),
-          h('ul', { class: 'lista-simples' }, novos.map(c => h('li', { onclick: () => { location.hash = '#/cliente/' + c.id; } },
-            h('strong', {}, c.nome), h('span', { class: 'peq' }, ' · ' + new Date(c.criado_em).toLocaleDateString('pt-BR')))))) : null));
+    const agenda = eventos.map(e => ({ data: e.inicio.slice(0, 10), hora: hora(e), ir: () => { location.hash = '#/agenda?visao=dia&data=' + e.inicio.slice(0, 10); },
+      tit: e.titulo, sub: [hora(e), NOME_CURTO[e.agenda] || e.agenda, e.local].filter(Boolean).join(' · ') }))
+      .concat((r.proximos || []).filter(p => !jaNaAgenda(p)).map(p => ({ data: p.proximo_ato_data, hora: '', ir: () => { location.hash = '#/processo/' + p.id; },
+        tit: p.proximo_ato, sub: [p.cliente || 'cliente a identificar', p.orgao || p.numero].filter(Boolean).join(' · ') })))
+      .filter(x => x.data && x.data >= hoje)
+      .sort((a, b) => (a.data + a.hora) < (b.data + b.hora) ? -1 : 1).slice(0, 6)
+      .map(x => item(x.ir, selo(x.data, x.data === hoje ? 'faixa-hoje' : ''), x.tit, x.sub, x.data === hoje ? h('span', { class: 'tag urgente' }, 'hoje') : etiquetaDias(x.data)));
+    const blocoAgenda = bloco('Agenda', '#/agenda?visao=semana', 'ver semana',
+      agenda.length ? h('ul', { class: 'ini-lista' }, agenda) : vazio(ag ? 'Nada marcado para os próximos 14 dias.' : 'Agenda indisponível no momento.'));
 
-    // carteira de processos por fase (barra colorida)
+    // dois gráficos redondos: prazos em aberto e processos por área
     const ativosIni = (procsIni || []).filter(p => p.status !== 'arquivado' && p.fase !== 'extinto');
-    const porFaseIni = {};
-    ativosIni.forEach(p => { const e = FASE_ETAPA[p.fase] || 'andamento'; porFaseIni[e] = (porFaseIni[e] || 0) + 1; });
-    const etapasIni = ETAPAS_CLIENTE.filter(([id]) => id !== 'atendimento' && id !== 'encerrado' && porFaseIni[id]);
-    const blocoCarteira = ativosIni.length ? h('section', { class: 'ini-carteira' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Carteira de processos'), h('a', { href: '#/processos' }, `${ativosIni.length} ativos →`)),
-      h('div', { class: 'barra-fases', role: 'img', 'aria-label': 'Processos ativos por fase' }, etapasIni.map(([id, nome]) => {
-        const seg = h('a', { class: 'seg-fase et-' + id, href: '#/processos?fase=' + ({ decisao: 'sentenca' }[id] || id), title: `${nome}: ${porFaseIni[id]}` });
-        seg.style.flexGrow = String(porFaseIni[id]); return seg;
-      })),
-      h('ul', { class: 'legenda-fases' }, etapasIni.map(([id, nome]) => h('li', { class: 'et-' + id }, h('i', {}), nome, h('b', {}, String(porFaseIni[id])))))) : null;
-    // visão do escritório em gráficos redondos
-    const porAreaIni = {}, porTribIni = {};
-    ativosIni.forEach(p => { const a = p.area || 'Sem área'; porAreaIni[a] = (porAreaIni[a] || 0) + 1; const tb = p.tribunal || '—'; porTribIni[tb] = (porTribIni[tb] || 0) + 1; });
-    const ordena = o => Object.keys(o).sort((a, b) => o[b] - o[a]);
+    const porAreaIni = {};
+    ativosIni.forEach(p => { const a = p.area || 'Sem área'; porAreaIni[a] = (porAreaIni[a] || 0) + 1; });
+    const areasOrd = Object.keys(porAreaIni).sort((a, b) => porAreaIni[b] - porAreaIni[a]);
+    const areasTop = areasOrd.slice(0, 5).map(a => ({ nome: a, valor: porAreaIni[a], ir: () => { location.hash = '#/processos?area=' + encodeURIComponent(a); } }));
+    const outras = areasOrd.slice(5).reduce((n, a) => n + porAreaIni[a], 0);
+    if (outras) areasTop.push({ nome: 'Outras áreas', valor: outras, cor: '#9aa0aa', ir: () => { location.hash = '#/processos'; } });
     const maisDe5 = Math.max(0, (pz.abertos || 0) - (pz.vencidos || 0) - (pz.vencendo || 0) - (pz.aDefinir || 0));
     const blocoVisao = ativosIni.length || pz.abertos ? h('section', { class: 'ini-visao' },
-      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Visão do escritório'), h('a', { href: pode.usuarios ? '#/relatorios' : '#/processos' }, pode.usuarios ? 'relatórios →' : 'processos →')),
-      h('div', { class: 'ini-roscas' },
+      h('div', { class: 'ini-roscas dois' },
         h('div', { class: 'ini-rosca' }, h('h3', {}, 'Prazos em aberto'), grafRosca([
           { nome: 'Vencidos', valor: pz.vencidos || 0, cor: '#8f1d14', ir: () => { location.hash = '#/prazos?ver=vencido'; } },
-          { nome: 'Vencem em até 5 dias', valor: pz.vencendo || 0, cor: '#e0a23a', ir: () => { location.hash = '#/prazos?ver=urgente'; } },
+          { nome: 'Até 5 dias', valor: pz.vencendo || 0, cor: '#e0a23a', ir: () => { location.hash = '#/prazos?ver=urgente'; } },
           { nome: 'Mais de 5 dias', valor: maisDe5, cor: '#1f8a4c', ir: () => { location.hash = '#/prazos'; } },
           { nome: 'A definir', valor: pz.aDefinir || 0, cor: '#7a4fc0', ir: () => { location.hash = '#/prazos?ver=definir'; } }], { rotulo: 'prazos', titulo: 'Prazos em aberto', vazio: 'Nenhum prazo em aberto.' })),
-        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos por área'), grafRosca(ordena(porAreaIni).slice(0, 7).map(a => ({ nome: a, valor: porAreaIni[a], ir: () => { location.hash = '#/processos?area=' + encodeURIComponent(a); } })), { rotulo: 'ativos', titulo: 'Processos por área' })),
-        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos por tribunal'), grafRosca(ordena(porTribIni).slice(0, 7).map(tb => ({ nome: tb, valor: porTribIni[tb], ir: () => { location.hash = '#/processos?trib=' + encodeURIComponent(tb); } })), { rotulo: 'ativos', titulo: 'Processos por tribunal' })))) : null;
-    const nPrazosHoje = fataisHoje.length, nAtosHoje = nHoje, nTar = (r.tarefas || {}).abertas || 0;
-    const frase = [nPrazosHoje ? `${nPrazosHoje} prazo${nPrazosHoje > 1 ? 's' : ''} fatal${nPrazosHoje > 1 ? 'is' : ''} hoje` : 'nenhum prazo fatal hoje',
-      nAtosHoje ? `${nAtosHoje} compromisso${nAtosHoje > 1 ? 's' : ''} na agenda` : 'agenda livre',
-      nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'nenhuma tarefa pendente com você'].join(' · ');
-    const acaoRapida = (href, txt, ic) => h('a', { class: 'acao-rapida', href }, icone(ic), h('span', {}, txt));
+        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos ativos por área'), grafRosca(areasTop, { rotulo: 'ativos', titulo: 'Processos por área' })))) : null;
+
+    const nTar = tar.abertas || 0;
+    const frase = [fataisHoje.length ? `${fataisHoje.length} prazo${fataisHoje.length > 1 ? 's' : ''} fatal${fataisHoje.length > 1 ? 'is' : ''} hoje` : 'nenhum prazo fatal hoje',
+      nHoje ? `${nHoje} compromisso${nHoje > 1 ? 's' : ''}` : 'agenda livre',
+      nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'sem tarefas pendentes'].join(' · ');
     const robo = r.robo || {};
     mostrar(
-      h('section', { class: 'ini-hero' },
+      h('section', { class: 'ini-hero simples' },
         h('div', { class: 'ini-hero-txt' },
           h('p', { class: 'cap' }, hojeExtenso().replace(/^./, c => c.toUpperCase())),
           h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`),
-          h('p', { class: 'ini-frase' }, frase),
-          pz.vencidos ? h('a', { class: 'ini-hero-alerta', href: '#/prazos?ver=vencido' }, `⚠ ${pz.vencidos} prazo(s) vencido(s) sem baixa — ver agora`) : null),
-        h('nav', { class: 'acoes-rapidas', 'aria-label': 'Ações rápidas' },
-          acaoRapida('#/cliente/novo', 'Novo cliente', 'clientes'),
-          acaoRapida('#/prazo/novo', 'Novo prazo', 'prazos'),
-          acaoRapida('#/compromisso/novo?data=' + hoje, 'Marcar compromisso', 'agenda'),
-          acaoRapida('#/modelos', 'Gerar documentos', 'modelos'))),
+          h('p', { class: 'ini-frase' }, frase)),
+        h('div', { class: 'ini-hero-acoes' },
+          pz.vencidos ? h('a', { class: 'ini-hero-alerta', href: '#/prazos?ver=vencido' }, `${pz.vencidos} prazo(s) vencido(s) — ver`) : null,
+          h('a', { class: 'btn dourado', href: '#/cliente/novo' }, '+ Novo cliente'),
+          h('a', { class: 'btn contorno-claro', href: '#/prazo/novo' }, 'Novo prazo'))),
       atalhos,
-      h('div', { class: 'ini-grade' }, blocoPrazos, blocoAtos, blocoHoje),
+      h('div', { class: 'ini-duas' }, blocoPrazos, blocoAgenda),
       blocoVisao,
-      blocoCarteira,
       h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo)));
   }
 

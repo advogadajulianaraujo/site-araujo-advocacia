@@ -783,3 +783,29 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .proc-graficos .rosca{flex-direction:row}
 .proc-graficos .rosca svg{width:130px;height:130px}
 .rel-grade{align-items:start}
+
+/* Início simples (v2) */
+.ini-hero.simples{padding:24px 28px;align-items:center;margin-bottom:18px}
+.ini-hero.simples::after{display:none}
+.ini-hero.simples h1{font-size:clamp(28px,3vw,36px)}
+.ini-hero-acoes{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:relative;z-index:1}
+.ini-hero-acoes .ini-hero-alerta{margin:0}
+.btn.dourado{background:var(--acento);border-color:var(--acento);color:#16171a}
+.btn.dourado:hover{background:#c29d63}
+.btn.contorno-claro{background:transparent;border-color:rgba(255,255,255,.35);color:#f1ede5}
+.btn.contorno-claro:hover{background:rgba(255,255,255,.08)}
+.ini-numeros{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}
+.ini-numeros .atalho-corpo{gap:0}
+.ini-numeros .atalho b{order:-1;font-size:28px}
+.ini-numeros .atalho-nome{font-size:11px;margin-top:2px}
+.ini-duas{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+.ini-duas .ini-bloco{margin:0}
+.ini-visao{padding:16px 18px}
+.ini-roscas.dois{grid-template-columns:1fr 1fr}
+.ini-roscas.dois .ini-rosca{border:0;padding:4px 6px}
+.ini-roscas.dois .rosca{flex-direction:row;align-items:center}
+.ini-roscas.dois .rosca svg{width:130px;height:130px}
+.ini-roscas.dois .ini-rosca + .ini-rosca{border-left:1px solid var(--linha);padding-left:22px}
+.selo-data.faixa-hoje{border-left-color:var(--acento);background:var(--acento-f)}
+@media (max-width:1000px){.ini-duas,.ini-roscas.dois{grid-template-columns:1fr}.ini-roscas.dois .ini-rosca + .ini-rosca{border-left:0;padding-left:6px;border-top:1px solid var(--linha);padding-top:14px}}
+@media (max-width:700px){.ini-numeros{grid-template-columns:1fr 1fr}.ini-hero.simples{padding:20px 18px}.ini-roscas.dois .rosca{flex-direction:column;align-items:stretch}.ini-roscas.dois .rosca svg{align-self:center}}
