@@ -177,6 +177,25 @@
   function djenLinkPublico(oab, uf, ini, fim) {
     return `https://comunica.pje.jus.br/consulta?numeroOab=${encodeURIComponent(oab)}&ufOab=${encodeURIComponent(uf)}&dataDisponibilizacaoInicio=${ini}&dataDisponibilizacaoFim=${fim}`;
   }
+  /** Um pedido ao DJEN que não desiste fácil: até 4 tentativas (internet caiu, CNJ lento, "muitos pedidos", erro 5xx), 25 s cada. */
+  async function buscarDjen(url) {
+    let ultimo = null;
+    for (let t = 0; t < 4; t++) {
+      if (t) await espera([0, 3000, 8000, 15000][t]);
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 25000) : null;
+      try {
+        const resp = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+        if (resp.ok) return await resp.json();
+        ultimo = new Error('o CNJ respondeu com o código ' + resp.status);
+        if (!(resp.status === 429 || resp.status >= 500)) throw ultimo; // 4xx (fora o 429): não adianta repetir
+      } catch (e) {
+        if (e === ultimo && !(/código (429|5\d\d)/.test(e.message))) throw e;
+        ultimo = e.name === 'AbortError' ? new Error('o CNJ demorou demais para responder') : e instanceof TypeError ? new Error('sem conexão com o site do CNJ (internet ou bloqueio)') : e;
+      } finally { if (timer) clearTimeout(timer); }
+    }
+    throw ultimo || new Error('falha ao ler o DJEN');
+  }
   function lerDjenNavegador(forcar) {
     if (!sessao || djenRodando) return djenRodando;
     let ult = 0;
@@ -184,49 +203,52 @@
     if (!forcar && Date.now() - ult < 2 * 3600e3) return null;
     try { localStorage.setItem('djen_ultimo', String(Date.now())); } catch (e) { /* idem */ }
     djenRodando = (async () => {
+      const falhas = [];
+      let novas = 0, prazos = 0, total = 0;
       try {
         const cfg = await chamar('djen.config', {});
-        const itens = [];
+        // janelas de 7 dias: pedidos menores respondem mais rápido e caem menos
+        const janelas = [];
+        for (let ini = cfg.desde; ini <= cfg.hoje; ini = isoSoma(ini, 7)) { const fim = isoSoma(ini, 6) > cfg.hoje ? cfg.hoje : isoSoma(ini, 6); janelas.push([ini, fim]); }
+        let lote = [], tam = 0;
+        const enviar = async fim => { if (!lote.length && !fim) return; const r = await api('djen.importar', { itens: lote, fim }); novas += r.novas || 0; prazos += r.prazos || 0; lote = []; tam = 0; };
         for (const o of cfg.oabs) {
-          let tentativas = 0;
-          for (let pg = 1; pg <= 20; pg++) {
-            const url = `${DJEN_API}?numeroOab=${encodeURIComponent(o.numero)}&ufOab=${encodeURIComponent(o.uf)}&dataDisponibilizacaoInicio=${cfg.desde}&dataDisponibilizacaoFim=${cfg.hoje}&pagina=${pg}&itensPorPagina=100`;
-            const resp = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
-            if (resp.status === 429 && tentativas++ < 3) { await espera(4000 * tentativas); pg--; continue; }
-            if (!resp.ok) throw new Error('o CNJ respondeu com o código ' + resp.status);
-            const j = await resp.json();
-            const lista = j.items || j.itens || [];
-            lista.forEach(it => itens.push({
-              id: it.id, hash: it.hash, numeroprocessocommascara: it.numeroprocessocommascara, numero_processo: it.numero_processo,
-              data_disponibilizacao: it.data_disponibilizacao || it.dataDisponibilizacao, siglaTribunal: it.siglaTribunal,
-              tipoComunicacao: it.tipoComunicacao, nomeOrgao: it.nomeOrgao, texto: String(it.texto || '').slice(0, 20000)
-            }));
-            if (lista.length < 100) break;
-            await espera(500);
+          for (const [ini, fim] of janelas) {
+            try {
+              for (let pg = 1; pg <= 20; pg++) {
+                const j = await buscarDjen(`${DJEN_API}?numeroOab=${encodeURIComponent(o.numero)}&ufOab=${encodeURIComponent(o.uf)}&dataDisponibilizacaoInicio=${ini}&dataDisponibilizacaoFim=${fim}&pagina=${pg}&itensPorPagina=100`);
+                const lista = j.items || j.itens || [];
+                for (const it of lista) {
+                  const x = { id: it.id, hash: it.hash, numeroprocessocommascara: it.numeroprocessocommascara, numero_processo: it.numero_processo,
+                    data_disponibilizacao: it.data_disponibilizacao || it.dataDisponibilizacao, siglaTribunal: it.siglaTribunal,
+                    tipoComunicacao: it.tipoComunicacao, nomeOrgao: it.nomeOrgao, texto: String(it.texto || '').slice(0, 20000) };
+                  const t = JSON.stringify(x).length;
+                  if (lote.length && (tam + t > 140000 || lote.length >= 150)) await enviar(false); // manda aos poucos: nada se perde se algo cair depois
+                  lote.push(x); tam += t; total++;
+                }
+                if (lista.length < 100) break;
+                await espera(500);
+              }
+            } catch (e) { falhas.push(`OAB ${o.numero}/${o.uf} ${dataBR(ini)}–${dataBR(fim)}: ${e.message}`); }
+            await espera(300);
           }
         }
-        // manda em lotes (o servidor recusa pedidos muito grandes)
-        let novas = 0, prazos = 0, lote = [], tam = 0;
-        const enviar = async fim => { const r = await api('djen.importar', { itens: lote, fim }); novas += r.novas || 0; prazos += r.prazos || 0; lote = []; tam = 0; };
-        for (const it of itens) {
-          const t = JSON.stringify(it).length;
-          if (lote.length && (tam + t > 140000 || lote.length >= 150)) await enviar(false);
-          lote.push(it); tam += t;
-        }
-        await enviar(true);
+        // só marca "lido até hoje" quando TUDO deu certo; senão a próxima rodada volta a buscar o mesmo período
+        await enviar(!falhas.length);
+        if (falhas.length) throw new Error(`${falhas.length} consulta(s) falharam (o resto foi lido): ${falhas[0]}`);
         historicoDjen(cfg).catch(() => {}); // por trás: completa os processos antigos (até 2020)
         if (novas) { avisar(`DJEN: ${novas} comunicação(ões) nova(s), ${prazos} prazo(s) novo(s).`); if (/^#\/(inicio|prazos)?$/.test(location.hash.split('?')[0] || '#/')) pedirRedesenho(); }
-        return { ok: true, total: itens.length, novas, prazos };
+        return { ok: true, total, novas, prazos };
       } catch (e) {
-        const msg = e instanceof TypeError ? 'o navegador não conseguiu falar com o site do CNJ (bloqueio de acesso ou internet)' : e.message;
+        const msg = e.message || String(e);
         chamar('djen.importar', { erro: msg }).catch(() => {});
-        try { localStorage.setItem('djen_ultimo', String(Date.now() - 1.5 * 3600e3)); } catch (e2) { /* tenta de novo em 30 min */ }
-        return { ok: false, erro: msg };
+        try { localStorage.setItem('djen_ultimo', String(Date.now() - 1.75 * 3600e3)); } catch (e2) { /* tenta de novo em 15 min */ }
+        return { ok: false, erro: msg, total, novas };
       } finally { djenRodando = null; }
     })();
     return djenRodando;
   }
-  setInterval(() => { if (sessao) lerDjenNavegador(false); }, 30 * 60e3);
+  setInterval(() => { if (sessao) lerDjenNavegador(false); }, 15 * 60e3);
 
   /** Volta no DJEN, 30 dias por vez, até 2020, e manda só os números dos processos (o servidor cadastra os que faltarem). */
   let histDjenRodando = false;
@@ -2064,7 +2086,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.3.0';
+  const VERSAO_PAINEL = '7.4.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2115,10 +2137,11 @@
     const dj = (robo && robo.djen) || {};
     const hojeD = hojeISO();
     const linkDjen = djenLinkPublico('54832', 'SC', isoSoma(hojeD, -7), hojeD);
-    const linhaDjen = h('div', { class: 'peq djen-linha' + (dj.erro ? ' erro' : '') },
+    const djVelho = !dj.ultima || Date.now() - Date.parse(dj.ultima) > 6 * 3600e3;
+    const linhaDjen = h('div', { class: 'peq djen-linha' + (dj.erro && djVelho ? ' erro' : '') },
       h('strong', {}, 'DJEN: '),
-      dj.ultima ? `lido pelo computador do escritório em ${quando(dj.ultima)} (de 2 em 2 horas com o painel aberto)` : 'ainda não foi lido pelo navegador',
-      dj.erro ? h('span', {}, ' · último problema: ' + dj.erro) : null,
+      dj.ultima ? `lido em ${quando(dj.ultima)} (de 2 em 2 horas com o painel aberto em qualquer computador)` : 'ainda não foi lido pelo navegador',
+      dj.erro ? h('span', {}, djVelho ? ' · problema: ' + dj.erro : ' · a última tentativa falhou, mas o painel tenta de novo sozinho em 15 min') : null,
       ' · ', h('button', { type: 'button', class: 'link escuro', onclick: async ev => {
         ev.target.disabled = true; ev.target.textContent = 'lendo o DJEN…';
         const r = await lerDjenNavegador(true);
@@ -2131,15 +2154,18 @@
     const dj2 = (robo && robo.datajud) || {}, ia = (robo && robo.ia) || {};
     if (dj2.ultima || dj2.erro) status.append(h('div', { class: 'peq' + (dj2.erro ? ' erro' : '') }, h('strong', {}, 'Andamentos (DataJud/CNJ): '),
       dj2.ultima ? dj2.ultima.replace(/^(\S+)/, iso => quando(iso)) : '', dj2.erro ? ' · problema: ' + dj2.erro : ''));
-    if (ia.ligada || ia.erro) status.append(h('div', { class: 'peq' + (ia.erro ? ' erro' : '') }, h('strong', {}, 'Resumo por IA: '),
-      ia.ultima ? ia.ultima.replace(/^(\S+)/, iso => quando(iso)) : 'ligado', ia.erro ? ' · problema: ' + ia.erro : ''));
+    if (robo && robo.agenda) status.append(h('div', { class: 'peq' }, h('strong', {}, 'Google Agenda: '), robo.agenda.replace(/^(\S+)/, iso => quando(iso)), ' · prazos fatais na agenda "PRAZOS FATAIS" do celular'));
+    const iaPassageiro = /\b(503|429|500)\b|high demand|overloaded|try again later/i.test(ia.erro || '');
+    if (ia.ligada || ia.erro) status.append(h('div', { class: 'peq' + (ia.erro && !iaPassageiro ? ' erro' : '') }, h('strong', {}, 'Resumo por IA: '),
+      ia.ultima ? ia.ultima.replace(/^(\S+)/, iso => quando(iso)) : 'ligado',
+      ia.erro ? (iaPassageiro ? ' · o Google estava ocupado na última vez; o robô tenta de novo sozinho (e usa o outro modelo se precisar)' : ' · problema: ' + ia.erro) : ''));
     // o programa do Google ainda é o antigo? (os avisos de 429 e do modelo aposentado só somem com o Code.gs novo)
     const vServ = (robo && robo.versao) || '';
     const velho = !vServ || vServ.localeCompare(VERSAO_PAINEL, undefined, { numeric: true }) < 0;
     if (velho && robo && sessao.usuario.pode.usuarios) status.append(h('div', { class: 'robo-alerta' }, '⚠ O programa do Google está ', vServ ? 'na versão ' + vServ : 'desatualizado',
       ' e o painel é da ' + VERSAO_PAINEL + '. Cole o Code.gs novo no Apps Script e publique uma Nova versão: ',
       h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/painel-backend/Code.gs', target: '_blank', rel: 'noopener noreferrer' }, 'abrir o Code.gs')));
-    if ((dj2.erro || ia.erro) && !velho && sessao.usuario.pode.usuarios) status.append(h('div', {}, h('button', { type: 'button', class: 'btn mini', onclick: async ev => {
+    if ((dj2.erro || (ia.erro && !iaPassageiro)) && !velho && sessao.usuario.pode.usuarios) status.append(h('div', {}, h('button', { type: 'button', class: 'btn mini', onclick: async ev => {
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Consertando (até 2 min)…';
       try { const r = await api('robo.consertar'); const ok = !(r.datajud && r.datajud.erro) && !(r.ia && r.ia.erro); avisar(ok ? 'Pronto: DataJud e IA funcionando.' : 'Ainda há problema: ' + [(r.datajud || {}).erro, (r.ia || {}).erro].filter(Boolean).join(' · '), !ok); rota(); }
       catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Consertar agora'; }

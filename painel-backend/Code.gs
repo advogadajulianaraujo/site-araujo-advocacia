@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.3.0';
+var VERSAO = '7.4.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -58,7 +58,7 @@ var ESQUEMA = {
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
-    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em'],
+    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data'],
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
@@ -2205,7 +2205,7 @@ function estadoRobo_() {
   var ultima = config_('ROBO_ULTIMA_EXECUCAO');
   var r = { ultima: ultima, resultado: config_('ROBO_ULTIMO_RESULTADO'), proxima: '', atrasado: false,
     djen: { ultima: config_('DJEN_NAVEGADOR_ULTIMA') || '', erro: config_('DJEN_NAVEGADOR_ERRO') || '' } };
-  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; r.alertas = ex.alertas; r.versao = ex.versao; } catch (e) { /* segue */ }
+  try { var ex = estadoExtras_(); r.datajud = ex.datajud; r.ia = ex.ia; r.email = ex.email; r.alertas = ex.alertas; r.versao = ex.versao; r.agenda = ex.agenda; } catch (e) { /* segue */ }
   if (ultima) {
     var t = Date.parse(ultima);
     r.proxima = new Date(t + 3600000).toISOString();
@@ -2247,6 +2247,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
+    try { sincronizarAgenda_(ctx, 45000); } catch (eS) { erros.push('Agenda do Google: ' + (eS.message || eS)); }
     try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
@@ -3867,6 +3868,86 @@ function ignorarPix_(d, u) {
     atualizarLinha_(tab, x, { situacao: d.voltar ? 'a conferir' : 'ignorado', motivo: d.voltar ? x.motivo : 'Não é honorário (marcado por ' + (u.nome || u.usuario) + ').', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     return { ok: true };
   });
+}
+
+/* ---------- Robô da Agenda: painel e Google Agenda sempre ligados ---------- */
+
+/** Agenda do Google só dos prazos fatais (aparece no celular). Criada uma vez; o id fica no Config. */
+function agendaPrazos_() {
+  var id = config_('AGENDA_PRAZOS'), cal = id ? CalendarApp.getCalendarById(id) : null;
+  if (!cal) {
+    cal = CalendarApp.getCalendarsByName('PRAZOS FATAIS')[0];
+    if (!cal) { try { cal = CalendarApp.createCalendar('PRAZOS FATAIS', { color: CalendarApp.Color.RED }); } catch (e) { cal = CalendarApp.createCalendar('PRAZOS FATAIS'); } }
+    setConfig_('AGENDA_PRAZOS', cal.getId(), 'Agenda do Google com os prazos fatais (robô da Agenda)');
+    cal = CalendarApp.getCalendarById(cal.getId()) || cal;
+  }
+  return cal;
+}
+
+/**
+ * Toda rodada do robô:
+ * 1) prazos abertos com data fatal (de hoje até 90 dias) ficam como evento de dia inteiro na agenda "PRAZOS FATAIS";
+ *    mudou a data → move o evento; cumprido/cancelado → apaga o evento;
+ * 2) audiência/perícia que alguém mudou de dia ou hora no Google Agenda → atualiza o painel (lembrete, processo, Eventos);
+ *    evento apagado no Google → o lembrete do ato é cancelado (dá para reabrir).
+ */
+function sincronizarAgenda_(ctx, limiteMs) {
+  var t0 = Date.now(), hoje = hojeSP_(), ate = somarDias_(hoje, 90), r = { criados: 0, movidos: 0, apagados: 0, atos: 0 };
+  var cal = agendaPrazos_();
+  var procs = {}, clis = {};
+  ctx.procs.linhas.forEach(function (p) { procs[p.id] = p; });
+  ctx.clientes.linhas.forEach(function (c) { clis[c.id] = c.nome; });
+  ctx.prazos.linhas.forEach(function (z) {
+    if (Date.now() - t0 > (limiteMs || 45000)) return;
+    if (/^ato:/.test(z.observacoes || '')) return; // audiência/perícia já está na agenda própria
+    var aberto = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal >= hoje && z.fatal <= ate;
+    try {
+      if (!aberto) {
+        if (z.agenda_id) { var ev0 = cal.getEventById(z.agenda_id); if (ev0) ev0.deleteEvent(); atualizarLinha_(ctx.prazos, z, { agenda_id: '', agenda_data: '' }); r.apagados++; }
+        return;
+      }
+      var p = procs[z.processo_id] || {}, cli = clis[p.cliente_id] || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '';
+      var titulo = '⏱ ' + String(z.descricao || 'Prazo').slice(0, 70) + (cli ? ' — ' + cli : '') + ' — ' + z.numero;
+      var dia = new Date(z.fatal + 'T12:00:00-03:00');
+      if (z.agenda_id) {
+        var ev = cal.getEventById(z.agenda_id);
+        if (ev && z.agenda_data === z.fatal) return;
+        if (ev) { ev.setAllDayDate(dia); ev.setTitle(titulo); atualizarLinha_(ctx.prazos, z, { agenda_data: z.fatal }); r.movidos++; return; }
+      }
+      var novo = cal.createAllDayEvent(titulo, dia, { description: 'Prazo fatal lançado pelo painel. Responsável: ' + (z.responsavel || '—') + '. Ao cumprir no painel, este evento some sozinho.' });
+      atualizarLinha_(ctx.prazos, z, { agenda_id: novo.getId(), agenda_data: z.fatal }); r.criados++;
+    } catch (e) { /* um evento com problema não para os outros */ }
+  });
+  // audiências e perícias mudadas no Google Agenda voltam para o painel
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  var ids = {};
+  try { ids = agendas_(); } catch (e) { ids = {}; }
+  ctx.eventos.linhas.forEach(function (e) {
+    if (Date.now() - t0 > (limiteMs || 45000)) return;
+    if (!e.evento_id || /^(erro|apagado)/.test(e.evento_id) || !e.data || e.data < somarDias_(hoje, -1)) return;
+    try {
+      var c = ids[e.agenda] && CalendarApp.getCalendarById(ids[e.agenda]);
+      if (!c) return;
+      var ev = c.getEventById(e.evento_id);
+      var z = e.prazo_id ? ctx.prazos.linhas.filter(function (x) { return x.id === e.prazo_id; })[0] : null;
+      if (!ev) { // apagado no Google: cancela o lembrete do ato
+        if (z && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) atualizarLinha_(ctx.prazos, z, { situacao: 'cancelado', observacoes: (z.observacoes || '') + ' | evento apagado no Google Agenda em ' + dataBR_(hoje), atualizado_em: new Date().toISOString(), atualizado_por: 'robô' });
+        atualizarLinha_(ctx.eventos, e, { evento_id: 'apagado no Google' }); r.atos++;
+        return;
+      }
+      var ini = ev.getStartTime(), data = Utilities.formatDate(ini, TZ, 'yyyy-MM-dd'), hora = ev.isAllDayEvent() ? '' : Utilities.formatDate(ini, TZ, 'HH:mm');
+      if (data === e.data && (hora === (e.hora || '') || (!e.hora && ev.isAllDayEvent()))) return;
+      atualizarLinha_(ctx.eventos, e, { data: data, hora: hora });
+      if (z) atualizarLinha_(ctx.prazos, z, { fatal: data, descricao: String(z.descricao || '').replace(/\d{2}\/\d{2}\/\d{4}( às \d{2}:\d{2})?/, dataBR_(data) + (hora ? ' às ' + hora : '')),
+        observacoes: (z.observacoes || '') + ' | data mudada no Google Agenda', atualizado_em: new Date().toISOString(), atualizado_por: 'robô' });
+      var p2 = ctx.porNumero && ctx.porNumero[e.numero];
+      if (p2 && (!p2.proximo_ato_data || p2.proximo_ato_data === e.data || p2.proximo_ato_data < hoje)) atualizarLinha_(ctx.procs, p2, { proximo_ato_data: data, proximo_ato: (e.tipo.charAt(0).toUpperCase() + e.tipo.slice(1)) + (hora ? ' ' + hora : '') });
+      r.atos++;
+    } catch (e2) { /* segue */ }
+  });
+  if (r.criados || r.movidos || r.apagados || r.atos) registrar_('robô', 'agenda do Google', JSON.stringify(r));
+  setConfig_('AGENDA_SINC', new Date().toISOString() + ' · ' + r.criados + ' prazo(s) novo(s), ' + r.movidos + ' movido(s), ' + r.apagados + ' tirado(s), ' + r.atos + ' audiência(s) atualizada(s)', 'Última sincronização com o Google Agenda');
+  return r;
 }
 
 /* ---------- Robô: lembrete de audiência e perícia (2 dias úteis antes) ---------- */
@@ -6816,10 +6897,18 @@ function modeloSugerido_(resp) {
 }
 /** Chama o Gemini; se o modelo tiver sido aposentado, troca pelo indicado e tenta de novo uma vez. */
 function chamarGemini_(texto, chave, contexto) {
-  var ped = pedidoGemini_(texto, chave, modeloIA_(), contexto);
+  var modelo = modeloIA_();
+  var ped = pedidoGemini_(texto, chave, modelo, contexto);
   var resp = UrlFetchApp.fetch(ped.url, ped);
   var novo = modeloSugerido_(resp);
-  if (novo) { ped = pedidoGemini_(texto, chave, novo, contexto); resp = UrlFetchApp.fetch(ped.url, ped); }
+  if (novo) { modelo = novo; ped = pedidoGemini_(texto, chave, novo, contexto); resp = UrlFetchApp.fetch(ped.url, ped); }
+  // Google ocupado (503) ou "muitos pedidos" (429): espera e tenta de novo; persistindo, usa o outro modelo só nesta vez
+  var ocupado = function (r) { var c = r.getResponseCode(); return c === 503 || c === 429 || c === 500; };
+  for (var t = 1; t <= 2 && ocupado(resp); t++) { Utilities.sleep(2500 * t); resp = UrlFetchApp.fetch(ped.url, ped); }
+  if (ocupado(resp)) {
+    var reserva = /lite/.test(modelo) ? modelo.replace(/-lite$/, '') : modelo + '-lite';
+    if (/^gemini-[a-z0-9.\-]{3,50}$/.test(reserva)) { var ped2 = pedidoGemini_(texto, chave, reserva, contexto); var r2 = UrlFetchApp.fetch(ped2.url, ped2); if (r2.getResponseCode() === 200) return r2; }
+  }
   return resp;
 }
 
@@ -7224,7 +7313,7 @@ function andamentosProcesso_(d, u) {
 function estadoExtras_() {
   return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
-    email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO };
+    email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO, agenda: config_('AGENDA_SINC') || '' };
 }
 
 

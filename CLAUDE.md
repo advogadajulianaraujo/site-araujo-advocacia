@@ -29,6 +29,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pelo navegador (`lerDjenNavegador` em painel.js → rotas `djen.config`/`djen.importar`) a cada 2 h, para todas as OABs
   da aba Advogados, e manda para a planilha; se o navegador leu nas últimas 36 h, o robô do servidor nem tenta.
   Se o CNJ recusar também o navegador, o cartão do robô mostra o problema e o link "ver no site do DJEN".
+- DJEN à prova de falhas (7.4.0, `buscarDjen`/`lerDjenNavegador` em painel.js): cada pedido tenta até 4 vezes (internet, 429, 5xx;
+  esperas de 3, 8 e 15 s; 25 s de limite), o período vai em janelas de 7 dias e cada OAB/janela é separada (uma falha não derruba
+  as outras). O que foi lido é mandado aos poucos (nada se perde); "lido até hoje" só é marcado quando tudo deu certo, senão a
+  próxima rodada busca o mesmo período. Falhou → tenta de novo em 15 min. Roda no painel aberto em QUALQUER computador. O cartão do
+  robô só mostra o problema em vermelho se não houve leitura boa nas últimas 6 h.
+- Robô da Agenda (7.4.0, `sincronizarAgenda_`, toda rodada do robô): prazos abertos com data fatal (hoje até +90 dias, fora os de
+  audiência) viram eventos de dia inteiro na agenda do Google "PRAZOS FATAIS" (id em Config AGENDA_PRAZOS; colunas `agenda_id` e
+  `agenda_data` em Prazos): data mudou → move; cumprido/cancelado → apaga. Audiência/perícia mudada de dia/hora no Google Agenda →
+  atualiza Eventos, o lembrete do ato e o próximo ato do processo; apagada no Google → o lembrete do ato é cancelado. Status em
+  Config AGENDA_SINC (cartão do robô).
+- IA ocupada: `chamarGemini_` espera e tenta de novo no 503/429/500 e, persistindo, usa o outro modelo (lite ↔ flash) só naquela vez;
+  o cartão mostra "Google ocupado" como passageiro, não como problema.
 - Cota do Gmail: a leitura dos avisos NOVOS tem prioridade. Histórico antigo e classificação de áreas usam no máximo
   `GMAIL_EXTRA_DIA` (250) leituras por dia e param no dia em que o Google avisar "chamado muitas vezes" (`gmailEsgotado_`).
 - Intimações: filtro por sistema (Todos / eproc · Cível / eproc · Federal / PJe · Trabalhista), guardado em cada computador
