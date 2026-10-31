@@ -92,9 +92,10 @@
     const lista = AFETA[acao.split('.')[0]];
     if (!lista) { esquecerTudo(); return; }
     geracao++;
+    // tudo que a gravação pode ter mudado fica "velho": a tela abre na hora com o que já tinha e se redesenha
+    // sozinha quando o Google responde (normalmente em 1 a 2 segundos)
     for (const [k, m] of memoria) {
-      if (lista.includes(k.split('|')[0].split('.')[0])) memoria.delete(k);
-      else if ('txt' in m) m.t = 0; else memoria.delete(k);
+      if ('txt' in m) { m.t = 0; m.velho = lista.includes(k.split('|')[0].split('.')[0]); m.promessa = null; } else memoria.delete(k);
     }
     salvarMemoria();
   }
@@ -109,7 +110,7 @@
   }
   const GRAVANDO = new Map();
   async function apiBase(acao, dados) {
-    if (!LEITURAS.has(acao)) {
+    if (!LEITURAS.has(acao) && !(acao === 'processos.andamentos' && !(dados && dados.atualizar))) {
       // clique duplo: o mesmo pedido de gravação em andamento não é enviado de novo
       const kg = chaveDe(acao, dados);
       if (GRAVANDO.has(kg)) return GRAVANDO.get(kg);
@@ -122,7 +123,7 @@
     const k = chaveDe(acao, dados);
     const m = memoria.get(k);
     if (m && 'txt' in m) {
-      if (Date.now() - m.t > FRESCO_MS && !m.promessa) conferir(k, acao, dados, m);
+      if ((m.velho || Date.now() - m.t > FRESCO_MS) && !m.promessa) conferir(k, acao, dados, m);
       return JSON.parse(m.txt);
     }
     if (m && m.promessa) return m.promessa.then(v => JSON.parse(JSON.stringify(v)));
@@ -135,15 +136,29 @@
     return promessa;
   }
 
+  /** Busca direto no Google, sem usar o que está guardado (para um item recém-criado). */
+  function apiFresco(acao, dados) { memoria.delete(chaveDe(acao, dados)); return api(acao, dados); }
+
+  /* Faixa dourada no topo enquanto alguma tela velha é conferida no Google. */
+  let conferindo = 0;
+  function fimConferir() { conferindo = Math.max(0, conferindo - 1); if (!conferindo) document.body.classList.remove('atualizando'); }
   function conferir(k, acao, dados, m) {
-    const g = geracao;
+    const g = geracao, velho = !!m.velho;
+    if (velho) { conferindo++; document.body.classList.add('atualizando'); }
     m.promessa = chamar(acao, dados).then(v => {
-      if (g !== geracao) return;
+      if (g !== geracao) {
+        // houve outra gravação no meio: confere de novo, para não ficar com a tela velha
+        const atual = memoria.get(k);
+        if (atual && 'txt' in atual && atual.velho && !atual.promessa) conferir(k, acao, dados, atual);
+        if (velho) fimConferir();
+        return;
+      }
       const txt = JSON.stringify(v);
       const mudou = txt !== m.txt;
       memoria.set(k, { t: Date.now(), txt });
+      if (velho) fimConferir();
       if (mudou) { pedirRedesenho(); salvarMemoria(); }
-    }, () => { m.promessa = null; });
+    }, () => { m.promessa = null; if (velho) fimConferir(); });
   }
 
   function pedirRedesenho() {
@@ -159,6 +174,9 @@
   app.addEventListener('input', () => { sujo = true; });
   // quem abriu uma parte da tela (ex.: "+ Nova tarefa") não perde o que abriu com o redesenho
   app.addEventListener('toggle', ev => { if (ev.target.open && ev.target.tagName === 'DETAILS' && ev.isTrusted) sujo = true; }, true);
+
+  // acorda o programa do Google logo que a página abre: a primeira resposta de verdade vem bem mais rápida
+  try { if (window.PAINEL_API_URL) setTimeout(() => fetch(window.PAINEL_API_URL, { method: 'GET', credentials: 'omit', cache: 'no-store' }).catch(() => {}), 50); } catch (e) { /* sem problema */ }
 
   /** Depois do login, já busca o que as abas principais usam. */
   function preaquecer() {
@@ -1695,7 +1713,8 @@
     carregando();
     const novo = id === 'novo';
     const [clientes, lista, equipe] = await Promise.all([api('clientes.listar', {}), novo ? Promise.resolve([]) : api('processos.listar', {}), api('tarefas.listar', {}).then(t => t.usuarios || []).catch(() => [])]);
-    const p = novo ? { cliente_id: params.get('cliente') || '', status: 'ativo' } : lista.find(x => x.id === id);
+    let p = novo ? { cliente_id: params.get('cliente') || '', status: 'ativo' } : lista.find(x => x.id === id);
+    if (!p) p = (await apiFresco('processos.listar', {})).find(x => x.id === id); // recém-criado: ainda não estava na memória
     if (!p) throw new Error('Processo não encontrado.');
     // cliente cadastrado agora (por outra pessoa ou noutra aba) ainda fora da lista guardada: busca na hora
     if (p.cliente_id && !clientes.some(c => c.id === p.cliente_id)) {
@@ -1777,6 +1796,10 @@
         h('li', { class: seg.backup && seg.backupRecente ? 'ok' : 'alerta' }, h('strong', {}, 'Cópia de segurança diária: '),
           seg.backup ? `última em ${new Date(seg.backup).toLocaleString('pt-BR')} (guarda os últimos 30 dias)` : 'ainda não foi feita',
           seg.backupUrl ? h('span', {}, ' · ', h('a', { href: seg.backupUrl, target: '_blank', rel: 'noopener noreferrer' }, 'abrir pasta das cópias')) : null),
+        h('li', { class: seg.semanal && seg.semanalRecente ? 'ok' : 'alerta' }, h('strong', {}, 'Cópia semanal (toda sexta-feira): '),
+          seg.semanal ? `última em ${new Date(seg.semanal).toLocaleString('pt-BR')} (planilha + Excel, guarda 1 ano)` : 'a primeira sai na próxima sexta-feira, por volta das 18h',
+          seg.semanalErro ? h('span', { class: 'erro' }, ' · problema: ' + seg.semanalErro) : null,
+          seg.semanalUrl ? h('span', {}, ' · ', h('a', { href: seg.semanalUrl, target: '_blank', rel: 'noopener noreferrer' }, 'abrir cópias semanais')) : null),
         h('li', { class: seg.planilhaPrivada ? 'ok' : 'alerta' }, h('strong', {}, 'Planilha de dados: '), seg.planilhaPrivada ? 'privada, só a conta do escritório acessa' : 'ATENÇÃO: compartilhada com ' + seg.compartilhadaCom.join(', ')),
         h('li', { class: 'ok' }, h('strong', {}, 'Senhas: '), 'guardadas embaralhadas com chave secreta; ninguém consegue ler, nem na planilha'),
         h('li', { class: 'ok' }, h('strong', {}, 'Sessões: '), 'caem após 30 minutos parado no painel, 6 horas sem uso ou 12 horas no total; trocar a senha derruba as outras'),
@@ -1978,10 +2001,15 @@
       caixa.showModal();
     });
   }
-  async function conferirTrabalho(tipo, id, titulo, extra) {
+  /** O cartão/linha clicado some na hora (o Google confirma por trás; se der erro, volta). */
+  function sumirNaHora(el) { const alvo = el && el.closest('li, tr, article, .aguarda-item'); if (alvo) alvo.classList.add('saindo'); return alvo; }
+  async function conferirTrabalho(tipo, id, titulo, extra, origem) {
     const q = await escolherQuem(titulo, extra);
     if (!q) return false;
-    const r = await api('trabalho.conferir', { tipo, id, por: q.usuario, numero: q.extra || '' });
+    const alvo = sumirNaHora(origem);
+    let r;
+    try { r = await api('trabalho.conferir', { tipo, id, por: q.usuario, numero: q.extra || '' }); }
+    catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; }
     avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
     rota();
     return true;
@@ -1990,7 +2018,7 @@
   function botaoConferido(tipo, id, titulo, extra, rotulo) {
     return h('button', { type: 'button', class: 'btn mini terminei', onclick: async ev => {
       ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true;
-      try { if (!(await conferirTrabalho(tipo, id, titulo, extra))) b.disabled = false; } catch (e) { b.disabled = false; avisar(e.message, true); }
+      try { if (!(await conferirTrabalho(tipo, id, titulo, extra, b))) b.disabled = false; } catch (e) { b.disabled = false; avisar(e.message, true); }
     } }, rotulo || '✓ Conferido');
   }
   /** "🙋 Eu faço" (pega para si; vai para as Tarefas da pessoa) e, para a administração, "Passar para…". */
@@ -2012,9 +2040,9 @@
 
   /** Para a administração: OK final ou devolver para a equipe. */
   function botoesOk(tipo, id) {
-    const parar = fn => async ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; try { await fn(); } catch (e) { b.disabled = false; avisar(e.message, true); } };
+    const parar = fn => async ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; try { await fn(b); } catch (e) { b.disabled = false; avisar(e.message, true); } };
     return [
-      h('button', { type: 'button', class: 'btn mini ok-bt', onclick: parar(async () => { await api('trabalho.ok', { tipo, id }); avisar('OK dado.'); rota(); }) }, '✓ OK'),
+      h('button', { type: 'button', class: 'btn mini ok-bt', onclick: parar(async b => { const alvo = sumirNaHora(b); try { await api('trabalho.ok', { tipo, id }); } catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; } avisar('OK dado.'); rota(); }) }, '✓ OK'),
       h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { const m = prompt('Devolver para a equipe. Motivo (opcional):', ''); if (m === null) throw new Error('Cancelado.'); await api('trabalho.devolver', { tipo, id, motivo: m }); avisar('Devolvido: voltou para a lista da equipe.'); rota(); }) }, 'Devolver')];
   }
 
@@ -2086,7 +2114,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.5.0';
+  const VERSAO_PAINEL = '7.6.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2382,7 +2410,8 @@
     carregando();
     const novo = id === 'novo';
     const [procs, lista] = await Promise.all([api('processos.listar', {}), novo ? Promise.resolve([]) : api('prazos.listar', { encerrados: true })]);
-    const z = novo ? { processo_id: params.get('processo') || '', contagem: 'uteis', ciencia: hojeISO() } : lista.find(x => x.id === id);
+    let z = novo ? { processo_id: params.get('processo') || '', contagem: 'uteis', ciencia: hojeISO() } : lista.find(x => x.id === id);
+    if (!z) z = (await apiFresco('prazos.listar', { encerrados: true })).find(x => x.id === id);
     if (!z) throw new Error('Prazo não encontrado.');
     const opcoes = [['', '— escolha o processo —']].concat(procs.filter(p => p.numero).map(p => [p.id, p.numero + ' · ' + (p.cliente_nome || 'cliente a identificar')]));
     const form = h('form', { class: 'caixa', novalidate: true },
@@ -2977,7 +3006,8 @@
 
   async function telaModelos(params) {
     carregando();
-    const [info, clientes] = await Promise.all([carregarModelos(), api('clientes.listar', {})]);
+    let [info, clientes] = await Promise.all([carregarModelos(), api('clientes.listar', {})]);
+    if (params.get('cliente') && !clientes.some(c => c.id === params.get('cliente'))) clientes = await apiFresco('clientes.listar', {}); // cliente recém-cadastrado
     const pode = sessao.usuario.pode;
     const grupos = {};
     info.modelos.forEach(m => { (grupos[m.grupo] = grupos[m.grupo] || []).push(m); });

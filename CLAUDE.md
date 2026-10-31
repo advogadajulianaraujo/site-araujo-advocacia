@@ -266,6 +266,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   toda gravação na planilha chama `marcarMudanca_` e a memória é descartada na hora. Toda escrita nova deve passar
   pelos helpers (`inserirLinha_`, `atualizarLinha_`, `gravarLote_`, `regravarMudadas_`), que já marcam a mudança.
 
+- Instantâneo (7.6.0): depois de gravar, a memória NÃO é apagada — fica "velha" (`m.velho`), a tela abre na hora com o que já
+  tinha e se redesenha quando o Google responde (faixa dourada `body.atualizando` enquanto confere; contador `conferindo`). Se
+  outra gravação acontecer no meio, `conferir` confere de novo. Item recém-criado que não está na lista: `apiFresco`.
+  `processos.andamentos` sem `atualizar` é leitura (não apaga a memória). Botão Conferido/OK some na hora (`sumirNaHora`).
+  index.html faz preconnect a script.google.com e o painel "acorda" o servidor ao abrir.
 - No navegador, a memória das telas também fica na aba (sessionStorage `painel_memoria`) para o F5 abrir na hora;
   é apagada ao sair, ao cair a sessão e ao fechar o navegador.
 - Contratos: CONTRATADA qualificada com o(a) advogado(a) só pela OAB (sem repetir endereço); assinaturas com nome em
@@ -339,5 +344,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   mudar perfil ou desativar aumenta `sessao_versao` e derruba as sessões abertas.
 - Login: 5 erros bloqueiam o usuário por 15 min; 30 erros no painel em 15 min travam todos os logins por 15 min.
 - Cópia de segurança diária da planilha às 3h em "BACKUPS DO PAINEL (não compartilhar)", guardando 30 dias.
+- Cópia SEMANAL (7.6.0, pedido da usuária): toda sexta-feira ~18h (`backupSemanalGatilho` → `backupSemanal`) a planilha inteira
+  + um .xlsx vão para "CÓPIAS SEMANAIS — SEXTA-FEIRA (guarda 1 ano)" dentro da pasta de backups, por 52 semanas. A primeira sai
+  no `configurar`; se atrasar mais de 7,5 dias, a cópia diária das 3h faz a da semana. Status no quadro "Segurança dos dados".
 - Abas da planilha protegidas com aviso contra edição manual. Pedidos acima de 200 mil caracteres são recusados.
 - Nunca colocar senha, CPF ou dado de cliente no repositório (é público).

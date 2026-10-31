@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.5.0';
+var VERSAO = '7.6.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -100,6 +100,7 @@ function onOpen() {
     .addItem('4. Importar tudo do GEA (clientes e financeiro)', 'importarGEA')
     .addItem('5. Buscar processos antigos e arquivados no Gmail', 'buscarProcessosAntigos')
     .addItem('Fazer cópia de segurança agora', 'backupDiario')
+    .addItem('Fazer a cópia semanal agora', 'backupSemanal')
     .addItem('Gerar novo código de primeiro acesso', 'gerarCodigoPrimeiroAcesso')
     .addToUi();
 }
@@ -132,6 +133,7 @@ function configurar() {
   try { garantirGatilho_(); } catch (e) { /* sem permissão de gatilho ainda */ }
   try { protegerAbas_(); } catch (e) { /* segue */ }
   try { if (!config_('BACKUP_ULTIMO')) backupDiario(); } catch (e) { /* tenta no gatilho */ }
+  try { if (!config_('BACKUP_SEMANAL_ULTIMO')) backupSemanal(); } catch (e) { /* sai na sexta */ }
   var gea = importarGEASeguro_(false);
   try { var lig = vincularPastas_(); if (lig) gea = (gea ? gea + '\n' : '') + lig + ' clientes ligados às pastas do Drive (veja a aba PastasConferir).'; } catch (e) { /* pasta 02. CLIENTES não configurada */ }
   try { var areas = classificarAreas_(Math.max(0, 300000 - (Date.now() - inicioConfig))); if (areas) gea = (gea ? gea + '\n' : '') + areas + ' processos ganharam área (conferir).'; } catch (e) { /* sem Gmail */ }
@@ -2111,6 +2113,12 @@ function garantirGatilho_() {
     ScriptApp.newTrigger('backupDiario').timeBased().everyDays(1).atHour(3).inTimezone(TZ).create();
     registrar_('sistema', 'cópia de segurança ligada', 'todo dia por volta das 3h');
   }
+  if (nomes.indexOf('backupSemanalGatilho') < 0) {
+    try {
+      ScriptApp.newTrigger('backupSemanalGatilho').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(18).inTimezone(TZ).create();
+      registrar_('sistema', 'cópia semanal ligada', 'toda sexta-feira por volta das 18h (guarda 1 ano)');
+    } catch (eS) { /* tenta no próximo login */ }
+  }
   if (nomes.indexOf('roboRapidoGatilho') < 0) {
     ScriptApp.newTrigger('roboRapidoGatilho').timeBased().everyHours(1).create();
     registrar_('sistema', 'robô de hora em hora ligado', 'lê os avisos novos do Gmail a cada hora');
@@ -2137,6 +2145,9 @@ function estadoSeguranca_() {
   var r = { backup: config_('BACKUP_ULTIMO'), backupUrl: '', backupRecente: false, planilhaPrivada: true, compartilhadaCom: [], falhasRecentes: 0 };
   r.backupRecente = !!r.backup && Date.now() - Date.parse(r.backup) < 2 * 86400000;
   if (config_('PASTA_BACKUPS_ID')) r.backupUrl = 'https://drive.google.com/drive/folders/' + config_('PASTA_BACKUPS_ID');
+  r.semanal = config_('BACKUP_SEMANAL_ULTIMO') || ''; r.semanalErro = config_('BACKUP_SEMANAL_ERRO') || '';
+  r.semanalRecente = !!r.semanal && !semanalAtrasado_();
+  if (config_('PASTA_BACKUPS_SEMANAIS_ID')) r.semanalUrl = 'https://drive.google.com/drive/folders/' + config_('PASTA_BACKUPS_SEMANAIS_ID');
   try {
     var f = DriveApp.getFileById(SpreadsheetApp.getActive().getId());
     var dono = Session.getEffectiveUser().getEmail();
@@ -2170,6 +2181,7 @@ function pastaBackups_() {
  * Se algo der errado no painel, basta abrir a cópia do dia anterior.
  */
 function backupDiario() {
+  try { if (config_('BACKUP_SEMANAL_ULTIMO') && semanalAtrasado_()) backupSemanal(); } catch (eS) { /* tenta de novo amanhã */ }
   var hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   var pasta = pastaBackups_();
   var nome = 'BACKUP PAINEL ' + hoje;
@@ -2184,6 +2196,58 @@ function backupDiario() {
   setConfig_('BACKUP_ULTIMO', new Date().toISOString(), 'Última cópia de segurança da planilha');
   registrar_('sistema', 'cópia de segurança', nome + (apagadas ? ' (' + apagadas + ' antigas na lixeira)' : ''));
   return nome;
+}
+
+/* ---------- Cópia semanal (toda sexta-feira) ----------
+   Além da diária (30 dias), toda sexta à tarde guarda uma cópia da semana numa pasta à parte, por 1 ano (52 semanas):
+   a planilha inteira (abre no Google) e um arquivo Excel (.xlsx), que abre em qualquer computador mesmo sem o Google.
+   Se a sexta falhar (Google fora do ar), a cópia diária das 3h faz a da semana no dia seguinte. */
+var BACKUPS_SEMANAIS_MANTER = 52; // semanas
+
+function pastaBackupsSemanais_() {
+  var id = config_('PASTA_BACKUPS_SEMANAIS_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* recria */ } }
+  var pasta = pastaBackups_().createFolder('CÓPIAS SEMANAIS — SEXTA-FEIRA (guarda 1 ano)');
+  setConfig_('PASTA_BACKUPS_SEMANAIS_ID', pasta.getId(), 'Pasta das cópias semanais (sexta-feira) da planilha');
+  return pasta;
+}
+
+function backupSemanalGatilho() {
+  try { backupSemanal(); } catch (e) {
+    setConfig_('BACKUP_SEMANAL_ERRO', String(e && e.message || e).slice(0, 300), 'Erro da última cópia semanal');
+    registrar_('sistema', 'cópia semanal falhou', String(e && e.message || e).slice(0, 300));
+  }
+}
+
+function backupSemanal() {
+  var hoje = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  var pasta = pastaBackupsSemanais_();
+  var nome = 'BACKUP SEMANAL ' + hoje;
+  if (pasta.getFilesByName(nome).hasNext()) return 'Já existe a cópia desta semana.';
+  var id = SpreadsheetApp.getActive().getId();
+  DriveApp.getFileById(id).makeCopy(nome, pasta);
+  var excel = false;
+  try {
+    var r = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + id + '/export?format=xlsx',
+      { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (r.getResponseCode() === 200) { pasta.createFile(r.getBlob().setName(nome + '.xlsx')); excel = true; }
+  } catch (eX) { /* fica só a cópia do Google */ }
+  var limite = Date.now() - BACKUPS_SEMANAIS_MANTER * 7 * 86400000, apagadas = 0;
+  var it = pasta.getFiles();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (/^BACKUP SEMANAL \d{4}-\d{2}-\d{2}(\.xlsx)?$/.test(f.getName()) && f.getDateCreated().getTime() < limite) { f.setTrashed(true); apagadas++; }
+  }
+  setConfig_('BACKUP_SEMANAL_ULTIMO', new Date().toISOString(), 'Última cópia semanal (sexta-feira) da planilha');
+  setConfig_('BACKUP_SEMANAL_ERRO', '', 'Erro da última cópia semanal');
+  registrar_('sistema', 'cópia semanal', nome + (excel ? ' + Excel' : '') + (apagadas ? ' (' + apagadas + ' antigas na lixeira)' : ''));
+  return nome + (excel ? ' (planilha + Excel)' : '');
+}
+
+/** A cópia semanal ficou para trás (mais de 7 dias e meio)? */
+function semanalAtrasado_() {
+  var u = config_('BACKUP_SEMANAL_ULTIMO');
+  return !u || Date.now() - Date.parse(u) > 7.5 * 86400000;
 }
 
 /**

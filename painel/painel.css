@@ -1188,3 +1188,8 @@ a.fin-num:hover{transform:translateY(-2px)}
 .fin-corpo .pix-caixa{border:0;background:none;padding:0;box-shadow:none}
 @media (max-width:900px){.fin-nums{grid-template-columns:1fr 1fr}.fin-num b{font-size:22px}}
 .pix-sugestao{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;background:#f4f8ff;border:1px solid #d4e2fb;border-radius:8px;padding:6px 10px;font-size:13px}
+/* velocidade: item some na hora; fio fino no topo enquanto o Google confirma */
+.saindo{opacity:.35;pointer-events:none;transition:opacity .15s}
+body.atualizando::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;background:linear-gradient(90deg,transparent,var(--acento,#b08d57),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:fio-atualiza 1s linear infinite}
+@keyframes fio-atualiza{from{background-position:-40% 0}to{background-position:140% 0}}
+@media (prefers-reduced-motion:reduce){body.atualizando::before{animation:none;background:var(--acento,#b08d57);opacity:.5}}
