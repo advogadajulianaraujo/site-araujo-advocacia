@@ -1367,8 +1367,15 @@
 
   /* ---------- processos ---------- */
 
-  const FASES = { contratado: 'Petição inicial', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
-    homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
+  // Etapas do processo, na ordem em que acontecem
+  const FASES = { contratado: 'Petição inicial', ajuizado: 'Ajuizado (citação)', conciliacao: 'Audiência de conciliação', andamento: 'Em andamento (defesa e réplica)',
+    pericia: 'Perícia', instrucao: 'Audiência de instrução', sentenca: 'Sentença', acordo: 'Acordo', homologacao: 'Homologação', recurso: 'Recurso',
+    execucao: 'Execução / cumprimento', extinto: 'Encerrado / arquivado' };
+  // colunas do quadro (Acordo e Homologação ficam juntos)
+  const COLUNAS_PROC = [['contratado', ['contratado']], ['ajuizado', ['ajuizado']], ['conciliacao', ['conciliacao']], ['andamento', ['andamento']],
+    ['pericia', ['pericia']], ['instrucao', ['instrucao']], ['sentenca', ['sentenca']], ['acordo', ['acordo', 'homologacao']], ['recurso', ['recurso']],
+    ['execucao', ['execucao']], ['extinto', ['extinto']]];
+  const NOME_COLUNA = { acordo: 'Acordo / homologação' };
   function etiquetaFase(f) { return f ? h('span', { class: 'tag fase fase-' + f }, FASES[f] || f) : '—'; }
 
   /** Mensagem pronta para avisar o cliente do processo (opcional: com um código novo de acesso ao site). */
@@ -1385,6 +1392,15 @@
       : `\n\nVocê também pode acompanhar pelo nosso site: ${site} (se ainda não tem o código de acesso, é só pedir para nós).`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(corpo + acomp);
   }
+  /** Campo do número do processo na janela "Quem fez a petição inicial?". */
+  function campoNumeroInicial() {
+    const inp = h('input', { id: 'f-num-inicial', inputmode: 'numeric', maxlength: 25, placeholder: '0000000-00.0000.0.00.0000 (deixe vazio se ainda não saiu)' });
+    const el = h('div', { class: 'campo-inicial' }, h('label', { for: 'f-num-inicial' }, 'Número do processo (se já protocolou)'), inp,
+      h('p', { class: 'peq' }, 'Com o número, o processo vai para "Em andamento". Sem ele, vai para "Ajuizado" até o número sair.'));
+    el.valor = () => inp.value.trim();
+    return el;
+  }
+
   /** Processo "a ajuizar": 1) avisar o cliente no WhatsApp; 2) Conferido (quem fez a inicial e, se já tiver, o número). */
   function caixaPeticaoInicial(p, cliente) {
     const msgFeita = (() => {
@@ -1392,13 +1408,7 @@
       const nome = nomeProprioJS(String(cliente.nome || '').split(' ')[0]);
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e está sendo protocolada na Justiça. Assim que sair o número do processo, enviamos para você. Você poderá acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
     })();
-    const extra = () => {
-      const inp = h('input', { id: 'f-num-inicial', inputmode: 'numeric', maxlength: 25, placeholder: '0000000-00.0000.0.00.0000 (deixe vazio se ainda não saiu)' });
-      const el = h('div', { class: 'campo-inicial' }, h('label', { for: 'f-num-inicial' }, 'Número do processo (se já protocolou)'), inp,
-        h('p', { class: 'peq' }, 'Com o número, o processo vai para "Em andamento". Sem ele, vai para "Ajuizado" até o número sair.'));
-      el.valor = () => inp.value.trim();
-      return el;
-    };
+    const extra = campoNumeroInicial;
     return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
       h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
         h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Ninguém pegou ainda. Aperte "Eu faço" para ir para as suas Tarefas.')),
@@ -1436,7 +1446,7 @@
     const cli = params.get('cli') || '';
     const ato = params.get('ato') === '1';
     const fase = params.get('fase') || '';
-    const visao = params.get('visao') === 'quadro' ? 'quadro' : 'lista';
+    const visao = params.get('visao') === 'lista' ? 'lista' : params.get('visao') === 'quadro' ? 'quadro' : params.get('fase') ? 'lista' : (localStorageGet('proc_visao') || 'quadro');
     lembrarVisao('processos');
     const [todosSit, nClientes] = await Promise.all([api('processos.listar', { busca, semCliente }), api('clientes.listar', {}).then(l => l.length).catch(() => 0)]);
     const totalProc = busca || semCliente ? (await api('processos.listar', {}).catch(() => todosSit)).length : todosSit.length;
@@ -1458,33 +1468,56 @@
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, fase, visao: visao === 'quadro' ? 'quadro' : '', sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, fase, visao, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
     const corEt = el => { if (el.dataset.cor) el.style.setProperty('--cor-et', el.dataset.cor); return el; };
     const etapasProc = h('div', {},
-      h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, 'Clique numa etapa para filtrar'),
+      h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, visao === 'quadro' ? 'Arraste entre as etapas' : 'Clique numa etapa para filtrar'),
         h('div', { class: 'alternar', role: 'group', 'aria-label': 'Ver como' },
-          h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', 'aria-pressed': String(visao === 'lista'), onclick: () => ir({ visao: '' }) }, 'Lista'),
-          h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', 'aria-pressed': String(visao === 'quadro'), onclick: () => ir({ visao: 'quadro' }) }, 'Quadro por etapa'))),
+          h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', 'aria-pressed': String(visao === 'quadro'), onclick: () => { localStorageSet('proc_visao', 'quadro'); ir({ visao: 'quadro', fase: '' }); } }, 'Quadro por etapa'),
+          h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', 'aria-pressed': String(visao === 'lista'), onclick: () => { localStorageSet('proc_visao', 'lista'); ir({ visao: 'lista' }); } }, 'Lista'))),
+      visao === 'quadro' ? h('p', { class: 'peq quadro-dica' }, 'Arraste o cartão para a próxima etapa (ou use a seta →). Audiência e perícia marcadas pelo robô, petição inicial conferida e audiência de conciliação concluída mudam a etapa sozinhas.') : null,
+      visao === 'quadro' ? null :
       h('div', { class: 'etapas-cli etapas-proc', role: 'group', 'aria-label': 'Etapas' },
         h('button', { type: 'button', class: 'etapa-card todas' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) },
           h('span', { class: 'etapa-n' }, String(todos.filter(p => !area || nomeArea(p) === area).length)), h('span', { class: 'etapa-nome' }, 'Todas')),
         Object.keys(FASES).map(f => corEt(h('button', { type: 'button', 'data-cor': CORES_FASE[f] || '', class: 'etapa-card' + (fase === f ? ' ativo' : ''), onclick: () => ir({ fase: fase === f ? '' : f }) },
           h('span', { class: 'etapa-n' }, String(porFaseArea[f] || 0)), h('span', { class: 'etapa-nome' }, FASES[f]))))));
-    const quadroProc = h('div', { class: 'quadro-cli' }, Object.keys(FASES).filter(f => !fase || f === fase).map(f => {
-      const daFase = lista.filter(p => p.fase === f);
-      return corEt(h('section', { class: 'coluna-cli', 'data-cor': CORES_FASE[f] || '' },
-        h('h2', {}, h('span', {}, FASES[f]), h('span', { class: 'seg-n' }, String(daFase.length))),
-        daFase.slice(0, 60).map(p => h('a', { class: 'cartao-cli', href: '#/processo/' + p.id },
-          h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar')),
-          h('span', { class: 'peq num' }, p.numero || '(a ajuizar)'),
-          h('span', { class: 'peq' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
-          p.responsavel ? h('span', { class: 'peq' }, '👤 ' + p.responsavel) : null,
-          p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'peq' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data)) : null)),
-        daFase.length > 60 ? h('p', { class: 'peq' }, `+ ${daFase.length - 60} (use a busca ou os filtros)`) : null,
-        !daFase.length ? h('p', { class: 'peq vazio-t' }, 'Nenhum processo nesta etapa.') : null));
+    const moverFase = async (p, f, el) => {
+      if (el) el.classList.add('movendo');
+      try { const r2 = await api('processos.fase', { id: p.id, fase: f }); avisar('Etapa: ' + (r2.nome || FASES[f])); rota(); }
+      catch (e) { avisar(e.message, true); if (el) el.classList.remove('movendo'); }
+    };
+    const ordemCol = COLUNAS_PROC.map(c => c[0]);
+    const colDe = f => (COLUNAS_PROC.find(c => c[1].includes(f)) || ['andamento'])[0];
+    const quadroProc = h('div', { class: 'quadro-cli quadro-proc' }, COLUNAS_PROC.map(([col, fasesCol]) => {
+      const daFase = lista.filter(p => fasesCol.includes(p.fase || 'andamento'))
+        .sort((a, b) => ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1));
+      const sec = corEt(h('section', { class: 'coluna-cli', 'data-cor': CORES_FASE[col] || '', 'data-fase': col,
+        ondragover: ev => { ev.preventDefault(); sec.classList.add('sobre'); }, ondragleave: () => sec.classList.remove('sobre'),
+        ondrop: ev => { ev.preventDefault(); sec.classList.remove('sobre'); const id = ev.dataTransfer.getData('text/plain'); const p = lista.find(x => x.id === id); if (p && colDe(p.fase) !== col) moverFase(p, col); } },
+        h('h2', {}, h('span', {}, NOME_COLUNA[col] || FASES[col]), h('span', { class: 'seg-n' }, String(daFase.length))),
+        daFase.slice(0, 40).map(p => {
+          const i = ordemCol.indexOf(col);
+          const card = h('article', { class: 'cartao-cli cartao-proc', draggable: 'true', tabindex: 0,
+            ondragstart: ev => { ev.dataTransfer.setData('text/plain', p.id); card.classList.add('arrastando'); }, ondragend: () => card.classList.remove('arrastando'),
+            onclick: () => { location.hash = '#/processo/' + p.id; }, onkeydown: ev => { if (ev.key === 'Enter') card.click(); } },
+            h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar')),
+            h('span', { class: 'peq num' }, p.numero || '(a ajuizar)'),
+            h('span', { class: 'peq' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
+            p.responsavel ? h('span', { class: 'peq' }, '👤 ' + p.responsavel) : null,
+            p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'cartao-ato' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null,
+            h('div', { class: 'cartao-proc-pe', onclick: ev => ev.stopPropagation() },
+              i > 0 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1], card) }, '←') : h('span'),
+              col === 'contratado' ? botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →')
+                : i < ordemCol.length - 1 ? h('button', { type: 'button', class: 'btn mini', title: 'Concluir etapa e passar para ' + (NOME_COLUNA[ordemCol[i + 1]] || FASES[ordemCol[i + 1]]), onclick: () => moverFase(p, ordemCol[i + 1], card) }, 'Concluir etapa →') : null));
+          return card;
+        }),
+        daFase.length > 40 ? h('a', { class: 'peq', href: '#/processos?visao=lista&fase=' + col }, `+ ${daFase.length - 40} — ver na lista`) : null,
+        !daFase.length ? h('p', { class: 'peq vazio-t' }, 'Arraste um processo para cá.') : null));
+      return sec;
     }));
     const filtrosProc = h('div', { class: 'filtros-proc' },
         h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
@@ -1882,7 +1915,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '6.9.7';
+  const VERSAO_PAINEL = '6.9.8';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2764,7 +2797,8 @@
   }
   /** Barras deitadas (ex.: processos por área). */
   /** Gráfico de rosca (redondo) com legenda clicável. itens: [{ nome, valor, cor?, ir? }] */
-  const CORES_FASE = { contratado: '#7a4fc0', ajuizado: '#2f6fd0', andamento: '#1d8a8a', sentenca: '#c98a12', acordo: '#e0a23a', homologacao: '#b08d57', recurso: '#d0602d', execucao: '#1f8a4c', extinto: '#9aa0aa' };
+  const CORES_FASE = { contratado: '#7a4fc0', ajuizado: '#2f6fd0', conciliacao: '#2a9fd6', andamento: '#1d8a8a', pericia: '#8a6a37', instrucao: '#1d5fa8',
+    sentenca: '#c98a12', acordo: '#e0a23a', homologacao: '#b08d57', recurso: '#d0602d', execucao: '#1f8a4c', extinto: '#9aa0aa' };
   const CORES_GRAF = ['#2b2d33', '#b08d57', '#2f6fd0', '#1d8a8a', '#7a4fc0', '#d0602d', '#1f8a4c', '#c98a12', '#5b6ee1', '#9aa0aa'];
   function grafRosca(itens, opc) {
     opc = opc || {};

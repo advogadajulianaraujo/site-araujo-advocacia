@@ -21,11 +21,14 @@
   var ETAPAS = [
     { id: 'contratado', nome: 'Preparação' }, { id: 'ajuizado', nome: 'Ajuizado' }, { id: 'andamento', nome: 'Em andamento' },
     { id: 'sentenca', nome: 'Decisão' }, { id: 'recurso', nome: 'Recurso' }, { id: 'execucao', nome: 'Recebimento' }, { id: 'extinto', nome: 'Concluído' }];
-  var POS = { contratado: 0, ajuizado: 1, andamento: 2, sentenca: 3, acordo: 3, homologacao: 3, recurso: 4, execucao: 5, extinto: 6 };
+  var POS = { contratado: 0, ajuizado: 1, conciliacao: 2, andamento: 2, pericia: 2, instrucao: 2, sentenca: 3, acordo: 3, homologacao: 3, recurso: 4, execucao: 5, extinto: 6 };
   var EXPLICA = {
     contratado: 'Estamos reunindo os documentos e preparando a ação. Assim que ela for protocolada, o número do processo aparece aqui.',
     ajuizado: 'A ação foi protocolada na Justiça. Agora o juízo vai analisar o pedido e chamar a outra parte.',
     andamento: 'O processo está tramitando normalmente: o juízo e as partes estão praticando os atos do processo.',
+    conciliacao: 'Foi marcada (ou aconteceu) a audiência de conciliação, em que se tenta um acordo. Avisaremos você da data e do que levar.',
+    pericia: 'O processo está na fase de perícia: um perito vai examinar o caso. Avisaremos a data e o que você precisa levar.',
+    instrucao: 'Foi marcada a audiência de instrução, em que são ouvidas as partes e as testemunhas. Vamos preparar você antes.',
     sentenca: 'O juízo já decidiu o pedido (sentença). Estamos analisando a decisão e os próximos passos.',
     acordo: 'Houve acordo entre as partes. Agora é aguardar a homologação e o cumprimento do que foi combinado.',
     homologacao: 'O acordo ou o cálculo foi homologado pelo juízo. Falta o cumprimento (pagamento ou providência).',

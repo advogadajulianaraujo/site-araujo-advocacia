@@ -55,10 +55,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Processos
 
-- Fase de cada processo (`fase`, `FASES`): Contrato assinado (a ajuizar) → Ajuizado → Em andamento → Sentença / Acordo /
-  Homologação → Recurso → Execução → Extinto/arquivado. Muda sozinha pela última movimentação (`faseDoMovimento_`), sem
-  voltar de fase adiantada por "juntada"; escolhida à mão (`fase_auto` = "nao") fica fixa. Processos antigos sem fase usam
-  `faseDe_`. Gerar procuração/contrato para quem não tem processo cria um "a ajuizar" (sem número).
+- Etapas do processo (6.9.8, `FASES` + `ORDEM_FASE`, na ordem): Petição inicial (a ajuizar, chave `contratado`) → Ajuizado
+  (citação) → Audiência de conciliação → Em andamento (defesa e réplica) → Perícia → Audiência de instrução → Sentença →
+  Acordo / Homologação → Recurso → Execução / cumprimento → Encerrado / arquivado (`extinto`). `avancaFase_`: a etapa automática
+  só anda para a frente (acordo, execução e encerramento a qualquer hora; conciliação pode vir de "Em andamento"; arquivado só
+  reabre com "desarquivamento"). Liga sozinho: movimentação (`faseDoMovimento_`: citação, audiência de conciliação/instrução
+  designada, perícia designada, sentença…), audiência/perícia marcada na agenda (`marcarAto_`), conciliação já passada
+  (`varrerAgenda_` → Em andamento), lembrete da conciliação conferido (→ Em andamento) e petição inicial conferida (→ Ajuizado ou
+  Em andamento com número). Escolhida à mão no formulário (`fase_auto` = "nao") fica fixa; arrastar no quadro
+  (`processos.fase`) muda a etapa e deixa o automático seguir para a frente. Sem número não passa de "Ajuizado".
+- Processos abrem no QUADRO POR ETAPA (`COLUNAS_PROC`; lembra a escolha em `proc_visao`): arrastar o cartão para outra coluna ou
+  "Concluir etapa →" (na Petição inicial é "Inicial feita →", que abre o Conferido com o número). O site do cliente (acompanhe.js)
+  mostra conciliação, perícia e instrução dentro de "Em andamento", com explicação própria.
 - Ao criar processo (ou colocar o número no "a ajuizar") a tela mostra "Informar o cliente no WhatsApp" com o link do
   Acompanhe (opcional: gera código de acesso novo e põe na mensagem).
 

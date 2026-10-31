@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.7';
+var VERSAO = '6.9.8';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -355,6 +355,7 @@ var ROTAS = {
   'tarefas.comentar': { fn: comentarTarefa_ },
   'eu.painel': { fn: meuPainel_ },
   'trabalho.assumir': { fn: assumirTrabalho_ },
+  'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
   'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
   'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
@@ -1876,8 +1877,20 @@ function statusPeloMovimento_(mov) {
 
 /** Guarda a última movimentação do processo e ajusta ativo/arquivado. */
 /* Fase do processo (aba Processos). A fase muda sozinha pela última movimentação, até alguém escolher à mão. */
-var FASES = { contratado: 'Petição inicial (a ajuizar)', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
-  homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
+// Etapas do processo, na ordem em que acontecem (o quadro de Processos segue esta ordem)
+var FASES = { contratado: 'Petição inicial (a ajuizar)', ajuizado: 'Ajuizado (citação)', conciliacao: 'Audiência de conciliação',
+  andamento: 'Em andamento (defesa e réplica)', pericia: 'Perícia', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
+  acordo: 'Acordo', homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução / cumprimento', extinto: 'Encerrado / arquivado' };
+var ORDEM_FASE = { contratado: 1, ajuizado: 2, conciliacao: 3, andamento: 4, pericia: 5, instrucao: 6, sentenca: 7, acordo: 7, homologacao: 8, recurso: 8, execucao: 9, extinto: 10 };
+/** A etapa nova vale? Só para a frente (acordo, execução e encerramento podem vir a qualquer hora). */
+function avancaFase_(atual, nova) {
+  if (!nova || nova === atual) return false;
+  if (!atual || !ORDEM_FASE[atual]) return true;
+  if (/^(acordo|homologacao|execucao|extinto)$/.test(nova)) return true;
+  if (atual === 'extinto') return false; // reabrir arquivado só com "desarquivamento" (atualizarMovimento_)
+  if (nova === 'conciliacao') return ORDEM_FASE[atual] <= ORDEM_FASE.andamento; // audiência marcada no meio do andamento: volta a ser a etapa atual
+  return ORDEM_FASE[nova] > ORDEM_FASE[atual];
+}
 /** Fase guardada ou, nos processos antigos sem fase, a calculada pela situação e pela última movimentação. */
 function faseDe_(p) {
   if (p.fase && FASES[p.fase]) return p.fase;
@@ -1894,8 +1907,11 @@ function faseDoMovimento_(mov) {
   if (/acordo/.test(t) && !/acordao/.test(t)) return 'acordo';
   if (/cumprimento de sentenca|execucao|penhora|sisbajud|bacenjud|renajud|alvara|requisicao de pequeno valor|\brpv\b|precatorio/.test(t)) return 'execucao';
   if (/recurso|apelac|agravo|acordao|embargos de declaracao|contrarraz|remetidos? os autos .*(tribunal|instancia|turma|tst|stj)|2o grau|\(2º grau\)/.test(t)) return 'recurso';
+  if (/audiencia/.test(t) && /instrucao/.test(t) && !/realizada|cancelad/.test(t)) return 'instrucao';
+  if (/(pericia|perito|pericial)/.test(t) && /(designad|nomead|agendad|marcad|data)/.test(t)) return 'pericia';
+  if ((/audiencia/.test(t) && /(conciliacao|mediacao|inicial|\buna\b)/.test(t) || /cejusc/.test(t)) && /(designad|redesignad|marcad|agendad|pauta)/.test(t)) return 'conciliacao';
   if (/sentenca|julgad[oa] (im)?procedente|procedencia|improcedencia|julgamento/.test(t)) return 'sentenca';
-  if (/distribuid|peticionamento|protocolad/.test(t)) return 'ajuizado';
+  if (/distribuid|peticionamento|protocolad|citacao|citad[oa]|mandado de citacao/.test(t)) return 'ajuizado';
   return 'andamento';
 }
 
@@ -1905,8 +1921,8 @@ function atualizarMovimento_(tab, proc, mov, quando) {
   var m = { ultimo_movimento: String(mov).slice(0, 200), ultimo_movimento_em: quando };
   if (proc.fase_auto !== 'nao') {
     var f = faseDoMovimento_(mov);
-    // movimentação comum ("juntada", "conclusão") não tira o processo de uma fase mais adiantada
-    if (f && !(f === 'andamento' && /sentenca|acordo|homologacao|recurso|execucao/.test(proc.fase || ''))) m.fase = f;
+    // a etapa só anda para a frente: "juntada", "conclusão" etc. não tiram o processo de uma etapa mais adiantada
+    if (f && (avancaFase_(proc.fase, f) || (proc.fase === 'extinto' && /desarquiv/.test(normalizar_(mov))))) m.fase = f;
   }
   var st = statusPeloMovimento_(mov);
   if (st === 'arquivado' && proc.status !== 'arquivado') m.status = 'arquivado';
@@ -3473,6 +3489,9 @@ function marcarAto_(ctx, ato, info, proc) {
   if (!proc.proximo_ato_data || proc.proximo_ato_data < hojeSP_() || ato.data < proc.proximo_ato_data) {
     atualizarLinha_(ctx.procs, proc, { proximo_ato: ato.tipo.charAt(0).toUpperCase() + ato.tipo.slice(1) + (ato.hora ? ' ' + ato.hora : ''), proximo_ato_data: ato.data });
   }
+  // audiência ou perícia marcada: o processo vai para essa etapa
+  var faseAto = ato.ehPericia ? 'pericia' : /instru/.test(ato.tipo) ? 'instrucao' : 'conciliacao';
+  if (proc.fase_auto !== 'nao' && avancaFase_(proc.fase, faseAto)) atualizarLinha_(ctx.procs, proc, { fase: faseAto });
   return true;
 }
 
@@ -3529,6 +3548,13 @@ function varrerAgenda_(ctx, limiteMs) {
       if (ato.semData) { if ((mv.d || '') >= recente.slice(0, 10) && tarefaAtoSemData_(ctx, ato, info, p, 'D:' + String(mv.d).slice(0, 10))) tarefas++; }
       else if (marcarAto_(ctx, ato, info, p)) marcados++;
     });
+  });
+  // passou a audiência de conciliação (e não há outra marcada): segue para "Em andamento (defesa e réplica)"
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  ctx.procs.linhas.forEach(function (p) {
+    if (p.fase !== 'conciliacao' || p.fase_auto === 'nao') return;
+    var ev = ctx.eventos.linhas.filter(function (e) { return e.numero === p.numero && !/per[ií]cia|instru/.test(e.tipo); });
+    if (ev.length && !ev.some(function (e) { return e.data >= hoje; })) atualizarLinha_(ctx.procs, p, { fase: 'andamento' });
   });
   // eventos que não foram para o Google Agenda (agenda sem acesso, erro do Google): tenta de novo
   ctx.eventos = ctx.eventos || tabela_('Eventos');
@@ -5824,6 +5850,23 @@ function assumirTrabalho_(d, u) {
   });
 }
 
+/** Quadro de Processos: arrastar para outra etapa (ou "Concluir etapa"). A etapa segue andando sozinha para a frente. */
+function mudarFaseProcesso_(d, u) {
+  if (!FASES[d.fase]) throw falha_('Etapa inválida.');
+  return comTrava_(function () {
+    var tab = tabela_('Processos'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Processo não encontrado.');
+    if (p.fase === d.fase) return { ok: true, repetido: true };
+    if (d.fase !== 'contratado' && !p.numero && ORDEM_FASE[d.fase] > ORDEM_FASE.ajuizado) throw falha_('Coloque o número do processo antes de passar desta etapa (abra o processo).');
+    var m = { fase: d.fase, fase_auto: '', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario };
+    if (d.fase === 'extinto' && p.status !== 'arquivado') m.status = 'arquivado';
+    if (p.status === 'arquivado' && d.fase !== 'extinto') m.status = 'ativo';
+    atualizarLinha_(tab, p, m);
+    registrar_(u.usuario, 'processo etapa', (p.numero || 'a ajuizar') + ' → ' + FASES[d.fase]);
+    return { ok: true, fase: d.fase, nome: FASES[d.fase] };
+  });
+}
+
 /* ---------- Conferido (colaborador) → OK (administração) ---------- */
 
 /** Intimações ligadas ao prazo (pelo prazo ou pela intimação: prazo lançado à mão às vezes só tem um lado). */
@@ -5868,6 +5911,10 @@ function conferirTrabalho_(d, u) {
       if (!z) throw falha_('Prazo não encontrado.');
       if (!cumprirPrazo(z)) return { ok: true, repetido: true };
       intimacoesDoPrazo_(tabI, z).forEach(terminarIntim);
+      if (/^ato:audiência (de conciliação|inicial|de mediação)/.test(z.observacoes || '')) {
+        var tabPz = tabela_('Processos'), pz = tabPz.linhas.filter(function (x) { return x.id === z.processo_id; })[0];
+        if (pz && pz.fase === 'conciliacao') atualizarLinha_(tabPz, pz, { fase: 'andamento', atualizado_em: agora, atualizado_por: u.usuario });
+      }
       registrar_(quem.usuario, 'prazo cumprido', z.numero + ' · ' + String(z.descricao || '').slice(0, 80) + marcado);
       return { ok: true, por: quem.nome };
     }
@@ -6101,7 +6148,7 @@ var CATEGORIAS_LOG = [
   ['whatsapp', 'Clientes avisados no WhatsApp', /^whatsapp ao cliente$/],
   ['agenda', 'Audiências, perícias e compromissos na agenda', /^(ato na agenda|compromisso criado)$/],
   ['clientes', 'Clientes cadastrados ou atualizados', /^(cliente criado|cliente alterado|observação no cliente)$/],
-  ['processos', 'Processos cadastrados ou atualizados', /^(processo criado|processo alterado)$/],
+  ['processos', 'Processos cadastrados, atualizados ou que mudaram de etapa', /^(processo criado|processo alterado|processo etapa)$/],
   ['documentos', 'Documentos gerados', /^documentos gerados$/],
   ['financeiro', 'Financeiro (parcelas, honorários, despesas)', /^(parcela paga|parcela criada|parcela alterada|honorário criado|honorário alterado|despesa lançada|despesa alterada|alvará lançado|cobrança: )/]
 ];
