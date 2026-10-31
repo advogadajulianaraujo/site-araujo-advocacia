@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.6.0';
+var VERSAO = '7.7.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -375,6 +375,7 @@ var ROTAS = {
   'inicio.extras': { fn: inicioExtras_ },
   'agenda.avisado': { fn: marcarAvisado_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
+  'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
   'fin.pix': { permissao: 'financeiro', fn: listarPix_ },
@@ -392,7 +393,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'resumo': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -1965,6 +1966,7 @@ function atualizarMovimento_(tab, proc, mov, quando) {
   if (st === 'arquivado' && proc.status !== 'arquivado') m.status = 'arquivado';
   else if (proc.status === 'arquivado' && st !== 'arquivado' && !/decorrid|certid|juntad|baixa|transit/.test(normalizar_(mov))) m.status = 'ativo';
   atualizarLinha_(tab, proc, m);
+  if (m.fase === 'extinto' && Date.parse(quando) > Date.now() - 30 * 86400000) { try { pedirAvaliacao_(proc, 'robô'); } catch (eV) { /* segue */ } }
 }
 
 /**
@@ -2311,6 +2313,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
+    try { robosEscritorio_(ctx); } catch (eR) { erros.push('Robôs do escritório: ' + (eR.message || eR)); }
     try { sincronizarAgenda_(ctx, 45000); } catch (eS) { erros.push('Agenda do Google: ' + (eS.message || eS)); }
     try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
     definirPendentes_(ctx);
@@ -3419,6 +3422,7 @@ function salvarRecebimento_(d, u) {
     p.pago_em = data; p.valor_pago = txtDinheiro_(hon); p.forma = 'alvará'; p.observacoes = 'Êxito ' + pct + '% sobre R$ ' + txtDinheiro_(bruto);
     inserirLinha_(parc, p);
     registrar_(u.usuario, 'alvará lançado', h.id + ' bruto ' + txtDinheiro_(bruto));
+    try { fecharValoresLancados_(h, u); } catch (eF) { /* segue */ }
     return rec;
   });
 }
@@ -4126,6 +4130,266 @@ function lembrarAudiencias_(ctx) {
   });
   if (feitos) registrar_('robô', 'lembretes de audiência', feitos + ' tarefa(s) "lembrar o cliente"');
   return feitos;
+}
+
+/* ---------- Robôs do escritório (7.7.0) ----------
+ * 1) Alvará / RPV / precatório nas intimações → tarefa "levantar o valor" + lista "A levantar" no Financeiro
+ * 2) Processo parado há 60 dias → tarefa "verificar andamento / pedir impulso" (até 10 por dia)
+ * 3) Cliente em atendimento há 7 dias sem contrato → tarefa "retomar contato" com WhatsApp pronto (secretaria)
+ * 4) Documentos para assinar ainda na pasta 1 dia depois → tarefa "cobrar assinatura" (secretaria); some sozinha quando a pasta esvazia
+ * 5) Processo encerrado → tarefa "pedir avaliação no Google" com WhatsApp pronto (secretaria)
+ */
+var RE_VALOR_LEVANTAR = /alvar[aá]|requisi[cç][aã]o de pequeno valor|\bRPV\b|precat[oó]rio|levantamento d[eo]s? (valor|dep[oó]sito|quantia|cr[eé]dito)|libera[cç][aã]o d[eo]s? (valor|cr[eé]dito|dep[oó]sito)|transfer[eê]ncia d[eo]s? valor/i;
+var LINK_AVALIACAO_PADRAO = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Rua%20Silvino%20Moreira%20Lima%20Sobrinho%2C%20888%2C%20Tubar%C3%A3o%20-%20SC';
+
+/** Quem cuida da secretaria (assinaturas, retomar contato, avaliação): Config RESP_SECRETARIA ou a primeira pessoa com perfil secretaria. */
+function respSecretaria_() {
+  var r = config_('RESP_SECRETARIA');
+  if (r) return r;
+  var s = usuarios_().filter(function (x) { return x.ativo === 'sim' && x.perfil === 'secretario'; })[0];
+  return s ? s.usuario : (config_('RESP_PADRAO') || '');
+}
+
+function novaTarefaRobo_(tab, t) {
+  var agora = new Date().toISOString();
+  var base = { id: novoId_('T'), titulo: '', descricao: '', responsavel: '', processo_id: '', numero: '', cliente_id: '', vence_em: hojeSP_(),
+    etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '', historico: '', criado_em: agora, criado_por: 'robô',
+    atualizado_em: agora, atualizado_por: 'robô', prioridade: 'normal', checklist: '', repetir: '', ok_por: '', ok_em: '' };
+  Object.keys(t).forEach(function (k) { base[k] = t[k]; });
+  if (Array.isArray(base.checklist)) base.checklist = JSON.stringify(base.checklist.map(function (x) { return { t: x, ok: false }; }));
+  base.historico = historicoMais_('', { nome: 'robô' }, t._motivo || 'criada pelo robô');
+  delete base._motivo;
+  inserirLinha_(tab, base);
+  return base;
+}
+function marcasDe_(tab, nome) {
+  var r = {}, re = new RegExp('\\[' + nome + ':([^\\]]+)\\]');
+  tab.linhas.forEach(function (t) { var m = re.exec(t.descricao || ''); if (m) (r[m[1]] = r[m[1]] || []).push(t); });
+  return r;
+}
+var abertaT_ = function (t) { return !t.concluida_em && t.situacao !== 'cancelada' && !/protocolado|concluido/.test(t.etapa || ''); };
+function nomeClienteDe_(ctx, p) {
+  var c = p && p.cliente_id ? ctx.clientes.linhas.filter(function (x) { return x.id === p.cliente_id; })[0] : null;
+  return c ? c.nome : (p && p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : '');
+}
+
+function robosEscritorio_(ctx) {
+  var r = {}, erros = [];
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_]].forEach(function (x) {
+    try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
+  });
+  var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
+  if (feitas) registrar_('robô', 'robôs do escritório', JSON.stringify(r));
+  if (erros.length) throw new Error(erros.join(' | '));
+  return r;
+}
+
+/* 1) Alvará, RPV, precatório */
+function tipoValor_(t) {
+  if (/pequeno valor|\bRPV\b/i.test(t)) return 'RPV';
+  if (/precat[oó]rio/i.test(t)) return 'precatório';
+  if (/alvar[aá]/i.test(t)) return 'alvará';
+  return 'levantamento de valores';
+}
+function valoresALevantar_(ctx) {
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var desde = new Date(Date.now() - 30 * 86400000).toISOString();
+  var porIntim = {}, abertasProc = {};
+  tabT.linhas.forEach(function (t) {
+    var m = /\[valor:([^|\]]*)\|([^|\]]*)\|([^\]]*)\]/.exec(t.descricao || '');
+    if (!m) return;
+    porIntim[m[3]] = 1;
+    if (abertaT_(t)) abertasProc[m[1] + '|' + m[2]] = 1;
+  });
+  var porNumero = {}, porId = {};
+  ctx.procs.linhas.forEach(function (p) { porId[p.id] = p; if (p.numero) porNumero[p.numero] = p; });
+  var feitas = 0, hoje = hojeSP_();
+  ctx.intim.linhas.concat(ctx.intim.buffer || []).forEach(function (i) {
+    if (feitas >= 15 || porIntim[i.id] || (i.recebido_em || '') < desde) return;
+    var txt = [i.movimento, i.evento, i.texto].filter(Boolean).join(' \n ');
+    var m = RE_VALOR_LEVANTAR.exec(txt);
+    if (!m || /alvar[aá] de soltura|mandado de pris/i.test(txt)) return;
+    var p = porId[i.processo_id] || porNumero[i.numero] || {};
+    var tipo = tipoValor_(txt);
+    porIntim[i.id] = 1;
+    if (abertasProc[(p.id || i.numero) + '|' + tipo]) return;
+    abertasProc[(p.id || i.numero) + '|' + tipo] = 1;
+    var ini = Math.max(0, m.index - 120), trecho = txt.slice(ini, m.index + 220).replace(/\s+/g, ' ').trim();
+    var mv = /R\$\s?([\d.]+,\d{2})/.exec(txt.slice(m.index, m.index + 500)) || /R\$\s?([\d.]+,\d{2})/.exec(txt);
+    var nome = nomeClienteDe_(ctx, p);
+    novaTarefaRobo_(tabT, { _motivo: tipo + ' encontrado na intimação',
+      titulo: '💰 ' + tipo.charAt(0).toUpperCase() + tipo.slice(1) + ': levantar o valor' + (nome ? ' — ' + nome : ''),
+      descricao: 'O robô achou ' + tipo + ' na intimação de ' + dataBR_(diaSP_(i.recebido_em)) + (i.numero ? ' (processo ' + i.numero + ')' : '') + ':\n«' + trecho + '»' +
+        (mv ? '\nValor citado no texto: R$ ' + mv[1] + ' (conferir).' : '') +
+        '\nConfira no processo, faça o levantamento e lance em Financeiro › honorário do cliente › "Lançar alvará ou depósito" (a tarefa fecha sozinha).' +
+        '\n[valor:' + (p.id || '') + '|' + tipo + '|' + i.id + ']' + (p.cliente_id ? '\n[wa:valor]' : ''),
+      responsavel: p.responsavel || responsavelPadrao_(p, i.numero) || '', processo_id: p.id || '', numero: i.numero || '', cliente_id: p.cliente_id || '',
+      vence_em: somarDias_(hoje, 3), prioridade: 'alta', peso: '2',
+      checklist: ['Conferir o valor e a conta no processo', 'Levantar / transferir o valor', 'Lançar no Financeiro (honorários e repasse)', 'Repassar ao cliente e mandar o recibo'] });
+    feitas++;
+  });
+  return feitas;
+}
+/** Lista "A levantar" do Financeiro: tarefas de alvará/RPV abertas, com o honorário de êxito do cliente e a previsão. */
+function aLevantar_(d, u) {
+  var tabT = tabela_('Tarefas'), hons = tabela_('Honorarios').linhas, nomes = nomesUsuarios_(), cli = {};
+  tabela_('Clientes').linhas.forEach(function (c) { cli[c.id] = c; });
+  var lista = [];
+  tabT.linhas.forEach(function (t) {
+    var m = /\[valor:([^|\]]*)\|([^|\]]*)\|([^\]]*)\]/.exec(t.descricao || '');
+    if (!m || !abertaT_(t)) return;
+    var mv = /Valor citado no texto: R\$ ([\d.]+,\d{2})/.exec(t.descricao || '');
+    var valor = mv ? dinheiro_(mv[1]) : 0;
+    var h = hons.filter(function (x) { return x.cliente_id === t.cliente_id && x.tipo === 'exito' && x.situacao !== 'encerrado' && (!m[1] || !x.processo_id || x.processo_id === m[1]); })
+      .sort(function (a, b) { return (b.processo_id === m[1]) - (a.processo_id === m[1]); })[0];
+    var pct = h ? dinheiro_(h.percentual) : 0;
+    lista.push({ tarefa_id: t.id, tipo: m[2], cliente: (cli[t.cliente_id] || {}).nome || '', cliente_id: t.cliente_id || '', telefone: (cli[t.cliente_id] || {}).telefone || '',
+      numero: t.numero || '', processo_id: t.processo_id || '', responsavel: nomes[t.responsavel] || t.responsavel || '', criado_em: t.criado_em, vence_em: t.vence_em,
+      valor: valor || null, honorario_id: h ? h.id : '', percentual: pct || null, valor_previsto: valor && pct ? Math.round(valor * pct) / 100 : null });
+  });
+  lista.sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; });
+  return lista;
+}
+/** Lançou o alvará no honorário: fecha a tarefa "levantar o valor" daquele cliente/processo. */
+function fecharValoresLancados_(h, u) {
+  var tab = tabela_('Tarefas'), agora = new Date().toISOString(), n = 0;
+  tab.linhas.forEach(function (t) {
+    var m = /\[valor:([^|\]]*)\|/.exec(t.descricao || '');
+    if (!m || !abertaT_(t) || t.cliente_id !== h.cliente_id || (h.processo_id && m[1] && m[1] !== h.processo_id)) return;
+    atualizarLinha_(tab, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: t.responsavel || u.usuario,
+      historico: historicoMais_(t.historico, u, 'valor lançado no Financeiro'), atualizado_em: agora, atualizado_por: u.usuario });
+    n++;
+  });
+  return n;
+}
+
+/* 2) Processo parado */
+function processosParados_(ctx) {
+  var hoje = hojeSP_();
+  if (config_('PARADOS_DIA') === hoje) return 0;
+  var dias = parseInt(config_('PARADO_DIAS'), 10) || 60, max = parseInt(config_('PARADOS_POR_DIA'), 10) || 10;
+  var limite = somarDias_(hoje, -dias);
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var marcas = marcasDe_(tabT, 'parado');
+  var ultIntim = {};
+  ctx.intim.linhas.forEach(function (i) { if (i.numero && (i.recebido_em || '') > (ultIntim[i.numero] || '')) ultIntim[i.numero] = i.recebido_em; });
+  var cands = [];
+  ctx.procs.linhas.forEach(function (p) {
+    if (!p.numero || p.status === 'arquivado' || /^(extinto|contratado)$/.test(faseDe_(p))) return;
+    var ult = [p.ultimo_movimento_em, ultIntim[p.numero]].filter(Boolean).sort().pop();
+    if (!ult || diaSP_(ult) >= limite) return;
+    if (/suspens|sobrest|arquiv|baixa definitiva|remetidos? ao arquivo/.test(normalizar_(p.ultimo_movimento || ''))) return;
+    var ja = (marcas[p.id] || []).some(function (t) { return abertaT_(t) || diaSP_(t.criado_em) >= limite; });
+    if (!ja) cands.push({ p: p, ult: diaSP_(ult) });
+  });
+  cands.sort(function (a, b) { return a.ult < b.ult ? -1 : 1; });
+  cands.slice(0, max).forEach(function (c) {
+    var p = c.p, nome = nomeClienteDe_(ctx, p), n = diffDias_(hoje, c.ult);
+    novaTarefaRobo_(tabT, { _motivo: 'processo parado há ' + n + ' dias',
+      titulo: 'Processo parado há ' + n + ' dias — verificar andamento' + (nome ? ' — ' + nome : ''),
+      descricao: 'Última movimentação em ' + dataBR_(c.ult) + (p.ultimo_movimento ? ': «' + String(p.ultimo_movimento).slice(0, 160) + '»' : '') + '.\n' +
+        'Abra o processo no sistema do tribunal. Se estiver parado sem motivo, peça o andamento (petição de impulso). Se estiver suspenso ou esperando algo, anote nos detalhes e conclua.\n[parado:' + p.id + ']',
+      responsavel: p.responsavel || responsavelPadrao_(p, p.numero) || '', processo_id: p.id, numero: p.numero, cliente_id: p.cliente_id || '',
+      vence_em: somarDias_(hoje, 5), checklist: ['Conferir no sistema do tribunal', 'Petição de impulso, se for o caso', 'Anotar a situação'] });
+  });
+  setConfig_('PARADOS_DIA', hoje, 'Último dia em que o robô procurou processos parados');
+  return Math.min(cands.length, max);
+}
+
+/* 3) Cliente em atendimento que não fechou */
+function retomarAtendimentos_(ctx) {
+  var hoje = hojeSP_();
+  if (config_('RETOMAR_DIA') === hoje) return 0;
+  var dias = parseInt(config_('RETOMAR_DIAS'), 10) || 7;
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var marcas = marcasDe_(tabT, 'retomar'), comAcao = {}, comHon = {};
+  ctx.procs.linhas.forEach(function (p) { if (p.cliente_id) comAcao[p.cliente_id] = 1; });
+  try { tabela_('Honorarios').linhas.forEach(function (h) { comHon[h.cliente_id] = 1; }); } catch (e) { /* sem aba */ }
+  var resp = respSecretaria_(), feitas = 0;
+  ctx.clientes.linhas.forEach(function (c) {
+    if (feitas >= 10 || comAcao[c.id] || comHon[c.id] || marcas[c.id] || !c.criado_em) return;
+    if (/gea|import|revis|hist|processo|djen|gmail/i.test(c.origem || '') || /inativ/i.test(c.situacao || '')) return;
+    var d = diaSP_(c.criado_em), n = diffDias_(hoje, d);
+    if (n < dias || n > 45) return;
+    novaTarefaRobo_(tabT, { _motivo: 'em atendimento há ' + n + ' dias',
+      titulo: 'Retomar contato — ' + c.nome + ' (atendido há ' + n + ' dias, sem contrato)',
+      descricao: 'O cliente foi atendido em ' + dataBR_(d) + ' e ainda não contratou. Mande a mensagem pelo botão de WhatsApp desta tarefa.\n' +
+        'Se contratou: abra a ficha e use "Cliente contratou: abrir ação". Se não tiver interesse: anote nas observações do cliente e conclua.\n[retomar:' + c.id + ']\n[wa:retomar]',
+      responsavel: resp, cliente_id: c.id, vence_em: somarDias_(hoje, 1) });
+    feitas++;
+  });
+  setConfig_('RETOMAR_DIA', hoje, 'Último dia em que o robô procurou clientes em atendimento para retomar');
+  return feitas;
+}
+
+/* 4) Documentos para assinar */
+function cobrarAssinaturas_(ctx) {
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var marcas = marcasDe_(tabT, 'assinar'), resp = respSecretaria_(), agora = Date.now(), feitas = 0, olhadas = 0;
+  var cli = {};
+  ctx.clientes.linhas.forEach(function (c) { cli[c.id] = c; });
+  var arquivosPara = function (c) {
+    if (!c || !c.pasta_id) return -1;
+    try {
+      var sub = acharPasta_(DriveApp.getFolderById(c.pasta_id), PASTA_PARA_ASSINAR);
+      if (!sub) return 0;
+      var it = sub.getFiles(), n = 0;
+      while (it.hasNext() && n < 50) { var f = it.next(); if (!/^IMPRIMIR/i.test(f.getName()) && !/\.pdf$/i.test(f.getName())) n++; }
+      return n;
+    } catch (e) { return -1; }
+  };
+  // tarefas abertas: pasta esvaziou → fecha sozinha
+  Object.keys(marcas).forEach(function (k) {
+    marcas[k].forEach(function (t) {
+      if (!abertaT_(t) || olhadas >= 20) return;
+      olhadas++;
+      if (arquivosPara(cli[t.cliente_id]) === 0) {
+        var ag = new Date().toISOString();
+        atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: ag, concluida_por: t.responsavel || 'robô',
+          historico: historicoMais_(t.historico, { nome: 'robô' }, 'a pasta DOCUMENTOS PARA ASSINAR esvaziou'), atualizado_em: ag, atualizado_por: 'robô' });
+      }
+    });
+  });
+  // documentos gerados entre 1 e 14 dias atrás
+  var ultimo = {};
+  tabela_('Log').linhas.forEach(function (l) {
+    if (l.acao !== 'documentos gerados') return;
+    var t = Date.parse(l.quando); if (!(t < agora - 86400000 && t > agora - 14 * 86400000)) return;
+    var partes = String(l.detalhe || '').split(' '), cid = partes[0], quais = (partes[1] || '').split(',');
+    if (!cli[cid] || !quais.some(function (k) { return MODELOS[k] && MODELOS[k].assinaCliente; })) return;
+    if (!ultimo[cid] || ultimo[cid] < l.quando) ultimo[cid] = l.quando;
+  });
+  Object.keys(ultimo).forEach(function (cid) {
+    if (feitas >= 10 || olhadas >= 40) return;
+    var dia = diaSP_(ultimo[cid]), chave = cid + '|' + dia;
+    if (marcas[chave] || (marcas[cid] || []).length) return;
+    if (Object.keys(marcas).some(function (k) { return k.indexOf(cid + '|') === 0 && k >= chave; })) return;
+    olhadas++;
+    var n = arquivosPara(cli[cid]);
+    if (n <= 0) return;
+    marcas[chave] = [1];
+    novaTarefaRobo_(tabT, { _motivo: n + ' documento(s) esperando assinatura',
+      titulo: 'Cobrar assinatura — ' + cli[cid].nome + ' (' + n + ' documento(s) desde ' + dataBR_(dia) + ')',
+      descricao: 'Os documentos gerados em ' + dataBR_(dia) + ' ainda estão na pasta "DOCUMENTOS PARA ASSINAR" do cliente. Combine a assinatura pelo botão de WhatsApp.\n' +
+        'Quando o cliente assinar, guarde o documento assinado na pasta do cliente e tire os rascunhos da pasta "DOCUMENTOS PARA ASSINAR": a tarefa fecha sozinha.\n[assinar:' + chave + ']\n[wa:assinar]',
+      responsavel: resp, cliente_id: cid, vence_em: hojeSP_(), prioridade: 'alta' });
+    feitas++;
+  });
+  return feitas;
+}
+
+/* 5) Processo encerrado → pedir avaliação no Google (uma vez por cliente) */
+function pedirAvaliacao_(p, quem) {
+  if (!p || !p.cliente_id) return false;
+  var tabT = tabela_('Tarefas');
+  if (tabT.linhas.some(function (t) { return (t.descricao || '').indexOf('[avaliacao:' + p.cliente_id + ']') >= 0; })) return false;
+  var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === p.cliente_id; })[0];
+  if (!c) return false;
+  novaTarefaRobo_(tabT, { _motivo: 'processo encerrado' + (quem ? ' (' + quem + ')' : ''),
+    titulo: 'Pedir avaliação no Google — ' + c.nome + ' (processo encerrado)',
+    descricao: 'O processo ' + (p.numero || '') + ' foi encerrado. Se o cliente ficou satisfeito com o atendimento, mande a mensagem pelo botão de WhatsApp pedindo a avaliação no Google. Se não for o caso, apenas conclua a tarefa.\n[avaliacao:' + c.id + ']\n[wa:avaliacao]',
+    responsavel: respSecretaria_(), processo_id: p.id, numero: p.numero || '', cliente_id: c.id, vence_em: somarDias_(hojeSP_(), 2), prioridade: 'baixa' });
+  return true;
 }
 
 /* ---------- Relatório de prazos cumpridos (aba Usuários) ---------- */
@@ -5844,7 +6108,8 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
     concluida_em: t.concluida_em || '', concluida_por: t.concluida_por || '', criado_por: t.criado_por || '',
     no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '',
     prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '',
-    inicial: /\[inicial:/.test(t.descricao || ''), ato: atoDaTarefa_(t.descricao), telefone: (telCli || {})[t.cliente_id] || '' };
+    inicial: /\[inicial:/.test(t.descricao || ''), ato: atoDaTarefa_(t.descricao), telefone: (telCli || {})[t.cliente_id] || '',
+    wa: ((/\[wa:([a-z]+)\]/.exec(t.descricao || '') || [])[1]) || '' };
 }
 function atoDaTarefa_(desc) {
   var m = /\[ato:([a-z]+)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(desc || '');
@@ -5920,7 +6185,9 @@ function listarTarefas_(d, u) {
     hoje: hoje, dias: dias, eu: u.usuario, etapas: ETAPAS_TAREFA.map(function (e) { return { id: e, nome: NOMES_ETAPA[e] }; }),
     usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome }; }),
     itens: itens, todos: todos, pontos: pontosPorPessoa_(itens, desde, nomesU).filter(function (p) { return todos || p.usuario === u.usuario; }),
-    responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '', inicial: config_('RESP_INICIAL') || '' }
+    responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '', inicial: config_('RESP_INICIAL') || '',
+      secretaria: config_('RESP_SECRETARIA') || '', secretaria_auto: respSecretaria_(), avaliacao: config_('LINK_AVALIACAO') || '' },
+    link_avaliacao: config_('LINK_AVALIACAO') || LINK_AVALIACAO_PADRAO
   };
 }
 
@@ -5968,7 +6235,7 @@ function salvarTarefa_(d, u) {
       else {
         dados.historico = historicoMais_(l.historico, u, 'editou');
         // marcas internas (ligação com audiência, intimação, petição inicial, repetição) nunca se perdem ao editar
-        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
+        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
         if (marcas.length) dados.descricao = (dados.descricao + '\n' + marcas.join('\n')).slice(0, 2400);
       }
       atualizarLinha_(tab, l, dados);
@@ -6040,6 +6307,8 @@ function configTarefas_(d, u) {
       var tz = tabela_('Prazos'); tz.adiar = true;
       var n = atribuirResponsaveis_(tz, tabela_('Processos')); regravarMudadas_(tz);
       if (d.inicial !== undefined) setConfig_('RESP_INICIAL', validarResponsavel_(d.inicial), 'Quem faz a petição inicial dos clientes novos com ação');
+      if (d.secretaria !== undefined) setConfig_('RESP_SECRETARIA', validarResponsavel_(d.secretaria), 'Secretaria: cobrar assinaturas, retomar contato e pedir avaliação');
+      if (d.avaliacao !== undefined) setConfig_('LINK_AVALIACAO', /^https:\/\/[^\s]+$/.test(String(d.avaliacao).trim()) ? String(d.avaliacao).trim() : '', 'Link "Pedir avaliações" do perfil do Google');
       registrar_(u.usuario, 'responsáveis automáticos', 'PJe ' + (d.pje || '—') + ', eproc ' + (d.eproc || '—') + ', inicial ' + (d.inicial || '—') + '; ' + n + ' prazos distribuídos');
       return { distribuidos: n };
     }
@@ -6400,6 +6669,7 @@ function mudarFaseProcesso_(d, u) {
     if (d.fase === 'extinto' && p.status !== 'arquivado') m.status = 'arquivado';
     if (p.status === 'arquivado' && d.fase !== 'extinto') m.status = 'ativo';
     atualizarLinha_(tab, p, m);
+    if (d.fase === 'extinto') { try { pedirAvaliacao_(p, u.usuario); } catch (eV) { /* segue */ } }
     registrar_(u.usuario, 'processo etapa', (p.numero || 'a ajuizar') + ' → ' + FASES[d.fase]);
     return { ok: true, fase: d.fase, nome: FASES[d.fase] };
   });

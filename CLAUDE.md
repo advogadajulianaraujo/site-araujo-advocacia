@@ -71,6 +71,28 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Ao revisar prazos, procure em tudo que tiver acesso: avisos do eproc e do PJe no Gmail (conta advogadajulianaraujo),
   DJEN (a consulta pública recusa o Google e esta nuvem, código 403) e a agenda. Nunca invente o conteúdo de um ato.
 
+## Robôs do escritório (7.7.0, `robosEscritorio_`, toda rodada do robô)
+
+- Alvará/RPV/precatório (`valoresALevantar_`, `RE_VALOR_LEVANTAR`; fora "alvará de soltura"): intimação de até 30 dias → tarefa
+  "💰 … levantar o valor" (marca `[valor:procId|tipo|intimId]`, valor citado "R$ x" quando houver) para o responsável do processo;
+  Financeiro › aba "💰 A levantar" (rota `fin.alevantar`: honorário de êxito do cliente e previsão = valor × %). Lançar o alvará no
+  honorário (`salvarRecebimento_`) fecha a tarefa (`fecharValoresLancados_`).
+- Processo parado (`processosParados_`, 1 vez por dia, Config PARADOS_DIA): sem movimentação nem intimação há PARADO_DIAS (60),
+  ativo, com número, fora "a ajuizar"/encerrado/suspenso → tarefa "verificar andamento / pedir impulso" (`[parado:procId]`), no
+  máximo PARADOS_POR_DIA (10), os mais parados primeiro; não repete antes de 60 dias.
+- Retomar contato (`retomarAtendimentos_`, 1 vez por dia): cliente cadastrado pelo painel há 7 a 45 dias, sem processo nem
+  honorário → tarefa da secretaria com WhatsApp pronto (`[retomar:cliId]` `[wa:retomar]`). Importados (GEA etc.) ficam de fora.
+- Cobrar assinatura (`cobrarAssinaturas_`): log "documentos gerados" (com documento `assinaCliente`) entre 1 e 14 dias e a pasta
+  "DOCUMENTOS PARA ASSINAR" ainda com documentos → tarefa da secretaria (`[assinar:cliId|dia]` `[wa:assinar]`); a pasta esvaziou → a
+  tarefa fecha sozinha.
+- Pedir avaliação (`pedirAvaliacao_`): processo foi para "Encerrado" (arrastado no quadro ou movimentação de até 30 dias) → tarefa
+  da secretaria "Pedir avaliação no Google" com WhatsApp pronto (`[avaliacao:cliId]` `[wa:avaliacao]`, uma vez por cliente).
+  NUNCA pedir avaliação no site (pedido da usuária: só depois do processo pronto). Link em Config LINK_AVALIACAO (Tarefas ›
+  Responsáveis automáticos); sem ele, vai o link do mapa.
+- Secretaria = Config RESP_SECRETARIA (Tarefas › Responsáveis automáticos) ou a primeira pessoa com perfil secretaria (`respSecretaria_`).
+- Tarefa com `[wa:tipo]` ganha o botão de WhatsApp com a mensagem pronta (`whatsTarefa` em painel.js). As marcas novas também
+  ficam protegidas ao editar a tarefa.
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em

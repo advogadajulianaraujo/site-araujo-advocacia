@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -325,7 +325,7 @@
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
-  const EM_LOTE = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+  const EM_LOTE = new Set(['fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
@@ -2114,7 +2114,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.6.0';
+  const VERSAO_PAINEL = '7.7.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2836,7 +2836,7 @@
   async function telaFinanceiro(params) {
     carregando();
     const busca = params.get('busca') || '';
-    const [r, hons, px] = await Promise.all([api('fin.resumo'), api('fin.honorarios', { busca }), api('fin.pix', {}).catch(() => null)]);
+    const [r, hons, px, lev] = await Promise.all([api('fin.resumo'), api('fin.honorarios', { busca }), api('fin.pix', {}).catch(() => null), api('fin.alevantar', {}).catch(() => [])]);
     const t = r.totais, rh = sessao.usuario.pode.ocultarValores;
     const nPix = px ? px.conferir : 0;
     const ver = params.get('ver') || (r.atrasadas.length ? 'atraso' : 'proximas');
@@ -2855,6 +2855,16 @@
         tabelaParcelas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉', true))
       : ver === 'proximas' ? tabelaParcelas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.', true)
       : ver === 'pix' ? blocoPix()
+      : ver === 'levantar' ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'O robô acha alvará, RPV e precatório nas intimações e cria a tarefa para quem cuida do processo. Depois de levantar, abra o honorário e use "Lançar alvará ou depósito": a tarefa fecha sozinha.'),
+        tabela(['Cliente', 'Processo', 'Tipo', 'Valor citado', 'Honorário previsto', 'Com quem', ''], lev, x => [
+          h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente || '—')),
+          h('td', { 'data-r': 'Processo' }, x.numero || '—'),
+          h('td', { 'data-r': 'Tipo' }, h('span', { class: 'tag atencao' }, x.tipo)),
+          h('td', { class: 'num', 'data-r': 'Valor citado' }, x.valor ? reais(x.valor) : h('span', { class: 'peq' }, 'conferir no processo')),
+          h('td', { class: 'num', 'data-r': 'Honorário previsto' }, x.valor_previsto ? h('strong', {}, reais(x.valor_previsto)) : x.honorario_id ? h('span', { class: 'peq' }, x.percentual ? x.percentual + '% do valor' : '—') : h('span', { class: 'peq' }, 'sem honorário de êxito')),
+          h('td', { 'data-r': 'Com quem' }, x.responsavel || '—'),
+          h('td', {}, x.honorario_id ? h('a', { class: 'btn mini', href: '#/honorario/' + x.honorario_id, onclick: ev => ev.stopPropagation() }, 'Lançar') : rh ? null : h('a', { class: 'btn mini sec', href: '#/honorario/novo', onclick: ev => ev.stopPropagation() }, 'Criar honorário'))
+        ], x => { location.hash = '#/tarefas?q=' + encodeURIComponent(x.cliente || x.numero || ''); }, 'Nenhum alvará ou RPV esperando levantamento.'))
       : h('div', {}, form,
         tabela(['Cliente', 'Tipo', 'Contratado', 'Recebido', 'Em atraso', 'Situação'], hons, x => [
           h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente), x.descricao ? h('div', { class: 'peq' }, x.descricao) : null),
@@ -2883,7 +2893,7 @@
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
           aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'Próximos 30 dias', r.proximas.length),
-          aba('pix', '⚡ PIX recebidos', nPix || null), aba('honorarios', 'Honorários', hons.length)),
+          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length)),
         conteudo));
   }
 
@@ -3148,6 +3158,30 @@
     const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para lembrar: sua ${(NOME_ATO[x.ato.tipo] || 'audiência').toLowerCase()}${x.numero ? ' do processo nº ' + x.numero : ''} é ${quando}.${onde}\n\n${extra}\n\nPor favor, confirme respondendo esta mensagem. Qualquer dúvida, estamos à disposição.`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
   }
+  /* Tarefas dos robôs do escritório: mensagem pronta conforme o tipo ([wa:tipo] na tarefa). */
+  let LINK_AVAL = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Tubar%C3%A3o%20-%20SC';
+  const MOTIVO_WA = { retomar: 'retomar contato', assinar: 'cobrar assinatura', avaliacao: 'pedido de avaliação', valor: 'aviso de alvará/RPV' };
+  function whatsTarefa(x) {
+    let tel = String(x.telefone || '').replace(/\D/g, '');
+    if (!tel || !x.wa) return null;
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(primeiroNome(x.cliente)) || 'tudo bem';
+    const ola = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia.`;
+    const msg = {
+      retomar: `${ola} Passando para saber se ficou alguma dúvida depois do nosso atendimento e se podemos ajudar no próximo passo do seu caso. Estamos à disposição!`,
+      assinar: `${ola} Os documentos do seu caso já estão prontos e aguardam a sua assinatura. Qual o melhor dia e horário para você passar no escritório para assinar? Se preferir, combinamos outro jeito.`,
+      avaliacao: `${ola} Foi uma satisfação acompanhar o seu processo. Se puder, deixe a sua avaliação sobre o nosso atendimento no Google — leva menos de um minuto e ajuda outras pessoas a nos encontrarem:\n${LINK_AVAL}\n\nMuito obrigada pela confiança!`,
+      valor: `${ola} Houve uma movimentação sobre a liberação de valores no seu processo${x.numero ? ' nº ' + x.numero : ''}. Já estamos conferindo e, em breve, entramos em contato com os detalhes.`
+    }[x.wa];
+    return msg ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) : null;
+  }
+  function botaoWhatsTarefa(x) {
+    if (!x.wa || !MOTIVO_WA[x.wa]) return null;
+    const l = whatsTarefa(x);
+    return l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ numero: x.numero, cliente: x.cliente }, MOTIVO_WA[x.wa]); } },
+      x.wa === 'avaliacao' ? '⭐ Pedir avaliação' : x.wa === 'assinar' ? 'Cobrar assinatura' : 'WhatsApp ao cliente')
+      : h('span', { class: 'peq' }, 'Cliente sem telefone');
+  }
   function botaoWhatsAto(x) {
     const l = whatsAto(x);
     return l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ numero: x.numero, cliente: x.cliente }, 'lembrete de audiência'); } }, 'WhatsApp ao cliente')
@@ -3161,6 +3195,7 @@
   async function telaTarefas(params) {
     carregando();
     const r = await api('tarefas.listar', {});
+    if (r.link_avaliacao) LINK_AVAL = r.link_avaliacao;
     const eu = sessao.usuario.usuario, pode = sessao.usuario.pode;
     const quem = r.todos === false ? 'todos' : (params.get('quem') || (localStorageGet('tarefas_quem') || 'eu'));
     const tipo = params.get('tipo') || '';
@@ -3215,6 +3250,7 @@
         x.cliente || x.numero ? h('div', { class: 'peq' }, [x.cliente, x.numero].filter(Boolean).join(' · ')) : null,
         x.resumo_ia ? h('div', { class: 'peq ia-txt', title: x.resumo_ia }, x.resumo_ia) : null,
         x.ato ? h('div', { class: 'ct-ato', onclick: ev => ev.stopPropagation() }, h('span', {}, (x.ato.tipo === 'pericia' ? '🩺 ' : '⚖ ') + dataBR(x.ato.data) + (x.ato.hora ? ' ' + x.ato.hora : '')), botaoWhatsAto(x)) : null,
+        x.wa && MOTIVO_WA[x.wa] ? h('div', { class: 'ct-ato', onclick: ev => ev.stopPropagation() }, botaoWhatsTarefa(x)) : null,
         x.tipo === 'tarefa' && (x.checklist || []).length || nComent(x) ? h('div', { class: 'ct-meta' }, progresso(x), nComent(x) ? h('span', { class: 'peq' }, '💬 ' + nComent(x)) : null) : null,
         h('div', { class: 'ct-pe' }, sel,
           h('span', { class: 'ct-mover' },
@@ -3262,8 +3298,10 @@
         campo('pje', 'Prazos novos do PJe (trabalhista) vão para', r.responsaveis.pje, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
         campo('eproc', 'Prazos novos do eproc (cível e federal) vão para', r.responsaveis.eproc, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
         campo('inicial', 'Petições iniciais (cliente novo com ação) vão para', r.responsaveis.inicial || '', { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
+        campo('secretaria', 'Secretaria (cobrar assinaturas, retomar contato, pedir avaliação)', r.responsaveis.secretaria || '', { opcoes: [['', '— automático: ' + ((r.usuarios.find(u => u.usuario === r.responsaveis.secretaria_auto) || {}).nome || 'ninguém') + ' —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
+        campo('avaliacao', 'Link "Pedir avaliações" do perfil do Google', r.responsaveis.avaliacao || '', { tipo: 'url', largo: true, dica: 'No perfil do Google, clique em "Pedir avaliações" e cole aqui o link (g.page/r/…). Sem ele, a mensagem leva o link do mapa.' }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn sec' }, 'Salvar e distribuir os prazos sem responsável')), h('p', { class: 'erro largo' }));
-      aoEnviar(f, async fd => { const x = await api('tarefas.config', { salvar: true, pje: fd.get('pje'), eproc: fd.get('eproc'), inicial: fd.get('inicial'), padrao: '' }); avisar(`Salvo. ${x.distribuidos} prazo(s) ganharam responsável.`); rota(); });
+      aoEnviar(f, async fd => { const x = await api('tarefas.config', { salvar: true, pje: fd.get('pje'), eproc: fd.get('eproc'), inicial: fd.get('inicial'), secretaria: fd.get('secretaria'), avaliacao: fd.get('avaliacao'), padrao: '' }); avisar(`Salvo. ${x.distribuidos} prazo(s) ganharam responsável.`); rota(); });
       cfg = secao('Responsáveis automáticos', () => h('div', {}, h('p', { class: 'peq' }, 'Quando o robô lê uma intimação nova, o prazo já entra no quadro de quem cuida daquele sistema. Cliente que contrata vai para Processos › Petição inicial e a tarefa vai para quem faz as iniciais.'), f), !r.responsaveis.pje && !r.responsaveis.eproc);
     }
     const opQuem = [['eu', 'Minhas'], ['todos', 'Toda a equipe'], ['ninguem', 'Sem responsável']].concat(r.usuarios.filter(u => u.usuario !== eu).map(u => [u.usuario, u.nome]));
@@ -3329,7 +3367,8 @@
         h('div', {}, h('strong', {}, (NOME_ATO[x.ato.tipo] || 'Audiência') + ' em ' + dataBR(x.ato.data) + (x.ato.hora ? ' às ' + x.ato.hora : '')),
           h('div', { class: 'peq' }, [x.cliente, x.numero, x.ato.local].filter(Boolean).join(' · '))),
         botaoWhatsAto(x)) : null,
-      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial|intim|ato|lembrete|agenda):[^\]]*\]/g, '').trim(), { area: true, largo: true }),
+      x.wa && MOTIVO_WA[x.wa] ? h('div', { class: 'largo' }, botaoWhatsTarefa(x)) : null,
+      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa):[^\]]*\]/g, '').trim(), { area: true, largo: true }),
       h('div', { class: 'largo chk-caixa' }, h('label', {}, 'Checklist'), chkLista, inChk),
       novo ? null : h('div', { class: 'largo coment-caixa' }, h('label', {}, 'Comentários e histórico'),
         h('div', { class: 'barra' }, inComent, botao('Comentar', async () => {
