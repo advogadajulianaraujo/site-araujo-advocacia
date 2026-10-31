@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.0.1';
+var VERSAO = '7.1.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -357,6 +357,7 @@ var ROTAS = {
   'eu.painel': { fn: meuPainel_ },
   'trabalho.assumir': { fn: assumirTrabalho_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
+  'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
   'fin.pix': { permissao: 'financeiro', fn: listarPix_ },
   'fin.pixBaixar': { permissao: 'financeiro', fn: baixarPix_ },
@@ -408,9 +409,14 @@ function versaoDados_() {
 function marcarMudanca_() {
   try { CacheService.getScriptCache().put('versao_dados', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue sem memória */ }
 }
+var MEMORIA_POR_PERFIL = { 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
 function comMemoria_(acao, u, dados, fn) {
   var cache = CacheService.getScriptCache();
-  var dig = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, acao + '|' + u.id + '|' + u.perfil + '|' + JSON.stringify(dados || {}), Utilities.Charset.UTF_8)).slice(0, 32);
+  var limpo = {};
+  Object.keys(dados || {}).sort().forEach(function (k) { var v = dados[k]; if (v !== '' && v !== false && v !== null && v !== undefined) limpo[k] = v; });
+  // listas iguais para todos do mesmo perfil ficam guardadas uma vez só (o robô da velocidade já deixa prontas)
+  var quem = MEMORIA_POR_PERFIL[acao] ? 'perfil' : u.id;
+  var dig = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, acao + '|' + quem + '|' + u.perfil + '|' + JSON.stringify(limpo), Utilities.Charset.UTF_8)).slice(0, 32);
   var k = 'r' + versaoDados_().slice(-10) + dig;
   try {
     var n = cache.get(k + ':n');
@@ -2094,6 +2100,12 @@ function garantirGatilho_() {
     ScriptApp.newTrigger('andamentosGatilho').timeBased().everyHours(4).create();
     registrar_('sistema', 'andamentos (DataJud) ligado', 'de 4 em 4 horas');
   }
+  if (nomes.indexOf('aquecerGatilho') < 0) {
+    try {
+      ScriptApp.newTrigger('aquecerGatilho').timeBased().everyMinutes(10).create();
+      registrar_('sistema', 'robô da velocidade ligado', 'deixa as listas prontas de 10 em 10 minutos');
+    } catch (eQ) { /* sem permissão agora: tenta no próximo login */ }
+  }
   return faltava;
 }
 
@@ -2551,7 +2563,13 @@ function lerAvisoPje_(msg) {
   while ((mE = reEv.exec(corpo))) {
     var data = mE[3] + '-' + mE[2] + '-' + mE[1];
     var mov = mE[4].trim();
-    if (/documento sigiloso/i.test(mov) || /^:\d/.test(mov)) continue;
+    if (/^:\d/.test(mov)) continue;
+    if (/documento sigiloso/i.test(mov)) { // registra a movimentação (sem prazo): fica visível e atualiza o processo
+      itens.push({ fonte: 'PJe ' + tribunal, chave: 'pje|' + numero + '|' + data + '|' + mov + '|' + mE.index, recebido_em: msg.getDate().toISOString(),
+        numero: numero, tribunal: tribunal, sistema: 'PJe', movimento: 'Documento sigiloso (ver no PJe)' + (orgao ? ' — ' + orgao : ''), evento: '',
+        texto: '', nomes: nomes, tipo: '', ciencia: data, ciencia_tipo: '' });
+      continue;
+    }
     var intimacao = /intima[çc][ãa]o/i.test(mov) && /expedid/i.test(mov);
     var paraNos = !nomes.length || nomes.some(function (n) { return normalizar_(mov).indexOf(normalizar_(n)) >= 0; });
     itens.push({
@@ -2560,6 +2578,15 @@ function lerAvisoPje_(msg) {
       texto: '', nomes: nomes, tipo: intimacao && paraNos ? 'expedida' : '',
       ciencia: somarDias_(data, 10), ciencia_tipo: 'tácita: 10 dias após a expedição (' + dataBR_(data) + ')'
     });
+  }
+  // "Notificação de Documento Anexado": o PJe manda o documento em PDF (muitas vezes a notificação inicial ou a citação).
+  // Sem lista de eventos: entra como intimação com prazo PROVISÓRIO (regra do escritório: na dúvida, o mais curto).
+  if (!itens.length && /documento anexado/i.test(msg.getSubject() + ' ' + corpo)) {
+    var dia = diaSP_(msg.getDate().toISOString());
+    itens.push({ fonte: 'PJe ' + tribunal, chave: 'pje-anexo|' + numero + '|' + msg.getId(), recebido_em: msg.getDate().toISOString(),
+      numero: numero, tribunal: tribunal, sistema: 'PJe', movimento: 'Notificação com documento anexado (PDF no e-mail: pode ser notificação inicial ou citação)' + (orgao ? ' — ' + orgao : ''),
+      evento: '', texto: 'O PJe enviou o documento em PDF anexo ao e-mail. Abra o PDF no Gmail ou o processo no PJe para ver o ato e o prazo.', nomes: nomes,
+      tipo: 'expedida', ciencia: dia, ciencia_tipo: 'notificação recebida por e-mail em ' + dataBR_(dia) + ' (conferir no PJe)' });
   }
   return itens;
 }
@@ -6170,6 +6197,92 @@ function mudarFaseProcesso_(d, u) {
   });
 }
 
+/* ---------- Revisão geral dos dados (botão da administração e, a parte segura, o robô de 6 em 6 h) ---------- */
+
+/**
+ * Confere e arruma o que dá para arrumar sozinho:
+ *  - etapa (fase) gravada em todos os processos; arquivado = "Encerrado"; tribunal e área pelo número/vara;
+ *  - processo sem cliente ligado a um cliente com o MESMO nome (só quando há um único cliente com aquele nome);
+ *  - cadastros "importado — conferir" passam a "completo" (os campos que faltam aparecem na ficha);
+ *  - prazos "a definir" ganham data (regra do prazo mais curto); Gmail dos últimos 10 dias relido (sem duplicar).
+ * d.aplicar = false só conta (prévia).
+ */
+function revisaoGeral_(d, u) {
+  var aplicar = !!d.aplicar, r = { fase: 0, encerrados: 0, tribunal: 0, area: 0, clienteLigado: 0, clientesCriados: 0, cadastros: 0, semNumero: [], semCliente: 0, prazosDefinidos: 0, faltando: {} };
+  comTrava_(function () {
+    var tabP = tabela_('Processos'), tabC = tabela_('Clientes');
+    var porNome = {};
+    tabC.linhas.forEach(function (c) { var k = normalizar_(c.nome); (porNome[k] = porNome[k] || []).push(c); });
+    tabP.adiar = true; tabC.adiar = true; tabC.buffer = [];
+    tabP.linhas.forEach(function (p) {
+      var m = {};
+      if (!p.fase || !FASES[p.fase]) { m.fase = faseDe_(p); r.fase++; }
+      if (p.status === 'arquivado' && (m.fase || p.fase) !== 'extinto' && p.fase_auto !== 'nao') { m.fase = 'extinto'; r.encerrados++; }
+      if (p.numero && !p.tribunal) { m.tribunal = tribunalDoNumero_(p.numero); r.tribunal++; }
+      if (!p.area) {
+        var trib = m.tribunal || p.tribunal || tribunalDoNumero_(p.numero);
+        var a = /^(TRT|TST)/.test(trib || '') || /\.5\.\d{2}\.\d{4}$/.test(p.numero || '') ? 'Trabalhista' : areaPeloOrgao_(p.orgao || '') || (/^TRF/.test(trib || '') ? 'Federal' : '');
+        if (a) { m.area = a; r.area++; }
+      }
+      if (!p.cliente_id && p.cliente_nome && p.cliente_nome !== 'a identificar') {
+        var kn = normalizar_(p.cliente_nome), cs = porNome[kn] || [];
+        if (cs.length === 1) { m.cliente_id = cs[0].id; m.cliente_nome = ''; r.clienteLigado++; }
+        else if (!cs.length && kn.length >= 5 && !/sigil|segredo|a identificar|\bltda\b.*\be outros?\b/.test(kn)) {
+          // o aviso do tribunal trouxe o nome do nosso cliente, mas ele não tem cadastro: cria (só o nome, sem pasta nova no Drive)
+          var agoraC = new Date().toISOString();
+          var novoC = { id: novoId_('C'), tipo: /\b(ltda|eireli|s\/?a|me|epp|condominio|associacao|cooperativa|residencial)\b/.test(kn) ? 'PJ' : 'PF', nome: String(p.cliente_nome).trim(),
+            origem: 'processo (revisão geral)', situacao: 'completo', area: p.area || '', criado_em: agoraC, atualizado_em: agoraC, atualizado_por: 'revisão geral' };
+          if (aplicar) inserirLinha_(tabC, novoC);
+          porNome[kn] = [novoC];
+          m.cliente_id = novoC.id; m.cliente_nome = ''; r.clientesCriados++; r.clienteLigado++;
+        }
+      }
+      if (!p.cliente_id && !m.cliente_id) r.semCliente++;
+      if (!p.numero && (m.fase || p.fase) !== 'contratado') r.semNumero.push({ id: p.id, cliente: p.cliente_nome || '', origem: p.origem || '' });
+      if (aplicar && Object.keys(m).length) atualizarLinha_(tabP, p, m);
+    });
+    tabC.linhas.forEach(function (c) {
+      ['cpf_cnpj', 'endereco', 'telefone', 'profissao', 'rg'].forEach(function (k) { if (!c[k] && !(c.tipo === 'PJ' && /rg|profissao/.test(k))) r.faltando[k] = (r.faltando[k] || 0) + 1; });
+      if (c.situacao && c.situacao !== 'completo') { r.cadastros++; if (aplicar) atualizarLinha_(tabC, c, { situacao: 'completo' }); }
+    });
+    if (aplicar) { regravarMudadas_(tabP); regravarMudadas_(tabC); gravarLote_(tabC); }
+  });
+  if (aplicar) {
+    try { var ctx = contextoRobo_(); var antes = ctx.prazos.linhas.filter(function (z) { return z.situacao === 'a definir'; }).length;
+      definirPendentes_(ctx); [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
+      r.prazosDefinidos = antes - ctx.prazos.linhas.filter(function (z) { return z.situacao === 'a definir'; }).length; } catch (e) { r.erroPrazos = String(e.message || e); }
+    setConfig_('ROBO_GMAIL_DESDE', String(Date.now() - 10 * 86400000), 'Desde quando o robô lê o Gmail (a revisão geral manda reler 10 dias)');
+    registrar_(u.usuario, 'revisão geral', JSON.stringify({ fase: r.fase, encerrados: r.encerrados, area: r.area, clientes: r.clienteLigado, cadastros: r.cadastros }));
+  }
+  r.semNumero = r.semNumero.slice(0, 30);
+  r.aplicado = aplicar;
+  return r;
+}
+
+/* ---------- Robô da velocidade: deixa as listas prontas na memória do servidor ---------- */
+
+/** As listas que todo mundo abre ficam calculadas antes de alguém pedir (por perfil). Roda de 10 em 10 min e depois do robô. */
+function aquecerMemoria_() {
+  var t0 = Date.now(), perfis = {};
+  usuarios_().forEach(function (x) { if (x.ativo === 'sim' && PERFIS[x.perfil]) perfis[x.perfil] = x; });
+  var pedidos = [['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['intimacoes.listar', { limite: 30, abertas: true }], ['relatorio.geral', {}], ['fin.honorarios', {}]];
+  var n = 0;
+  Object.keys(perfis).forEach(function (pf) {
+    var u = perfis[pf];
+    pedidos.forEach(function (pd) {
+      if (Date.now() - t0 > 240000) return;
+      var rota = ROTAS[pd[0]];
+      if (!rota || (rota.permissao && !PERFIS[pf][rota.permissao])) return;
+      try {
+        comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return PERFIS[pf].ocultarValores ? semValores_(x) : x; });
+        n++;
+      } catch (e) { /* segue */ }
+    });
+  });
+  return n;
+}
+function aquecerGatilho() { try { aquecerMemoria_(); } catch (e) { /* segue */ } }
+
 /* ---------- Conferido (colaborador) → OK (administração) ---------- */
 
 /** Intimações ligadas ao prazo (pelo prazo ou pela intimação: prazo lançado à mão às vezes só tem um lado). */
@@ -7082,6 +7195,7 @@ function contatoSite_(d) {
 /** De hora em hora: lê os avisos novos do Gmail (e o DJEN, se o navegador não leu), recalcula prazos e confere se algo está parado. */
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
+  try { aquecerMemoria_(); } catch (eQ) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
 }
 

@@ -1282,6 +1282,9 @@
     const r = await api('clientes.obter', { id });
     const c = r.cliente;
     const incompleto = c.situacao && c.situacao !== 'completo';
+    const pfFalta = c.tipo !== 'PJ';
+    const faltam = [['cpf_cnpj', pfFalta ? 'CPF' : 'CNPJ'], ['rg', 'RG'], ['profissao', 'profissão'], ['endereco', 'endereço'], ['telefone', 'telefone']]
+      .filter(([k]) => !c[k] && !(!pfFalta && /rg|profissao/.test(k))).map(x => x[1]);
     const pf = c.tipo !== 'PJ';
 
     // Descrição do cliente: os dados num cartão, lado a lado
@@ -1351,7 +1354,8 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
         h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos')),
-      incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
+      incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
+        : faltam.length ? h('div', { class: 'nota' }, 'Falta no cadastro: ', h('strong', {}, faltam.join(', ')), '. Complete em "Editar cadastro" antes de gerar procuração ou contrato.') : null,
       r.processos.length ? null : h('div', { class: 'nota faixa-atend' },
         h('div', {}, h('span', { class: 'tag grupo-atend' }, 'Em atendimento'), ' Este cliente ainda não tem ação (sem contrato, procuração ou processo). ',
           'Quando contratar, ele vai para Processos › ', h('strong', {}, 'Petição inicial'), ' e a tarefa vai para quem faz as iniciais.'),
@@ -1655,10 +1659,39 @@
         h('table', { class: 'mini-tab permissoes' }, h('thead', {}, h('tr', {}, ['Perfil', 'Clientes, processos, intimações, agenda e modelos', 'Conferir prazos', 'Financeiro e contratos', 'Usuários'].map(x => h('th', {}, x)))),
           h('tbody', {}, [['Administrador', '✓', '✓', '✓', '✓'], ['Advogada', '✓', '✓', '—', '—'], ['RH', '✓', '—', '✓ (sem valores)', '—'], ['Secretário', '✓', '—', '—', '—'], ['Estagiário', '✓', '—', '—', '—']]
             .map(l => h('tr', {}, l.map((x, i) => h(i ? 'td' : 'th', { scope: i ? null : 'row' }, x))))))),
+      caixaRevisao(),
       form,
       caixaEmailDiario(lista),
       caixaIA(),
       await relatorioCumpridos());
+  }
+
+  /** Revisão geral dos dados: prévia e "Corrigir agora" (etapas, encerrados, área, cliente ligado, cadastros, prazos sem data, releitura do Gmail). */
+  function caixaRevisao() {
+    const corpo = h('div', {});
+    const desenhar = r => {
+      const f = r.faltando || {};
+      corpo.replaceChildren(h('ul', { class: 'revisao-lista' },
+        h('li', {}, h('b', {}, String(r.fase)), ' processo(s) sem etapa gravada → recebem a etapa certa'),
+        h('li', {}, h('b', {}, String(r.encerrados)), ' arquivado(s) → vão para "Encerrado / arquivado"'),
+        h('li', {}, h('b', {}, String(r.area)), ' sem área → área pelo tribunal ou pela vara', r.tribunal ? ` · ${r.tribunal} sem tribunal` : ''),
+        h('li', {}, h('b', {}, String(r.clienteLigado)), ' processo(s) ligados ao cliente', r.clientesCriados ? ` (${r.clientesCriados} cadastro(s) novo(s) criado(s) com o nome que veio do tribunal, sem pasta nova)` : '', ' · ', h('span', { class: 'peq' }, `${r.semCliente} continuam "a identificar" (o aviso não trouxe o nome ou é sigiloso)`)),
+        h('li', {}, h('b', {}, String(r.cadastros)), ' cadastro(s) "importado — conferir" → concluídos ', h('span', { class: 'peq' }, `(na ficha aparece o que falta: sem CPF ${f.cpf_cnpj || 0}, sem endereço ${f.endereco || 0}, sem telefone ${f.telefone || 0}, sem RG ${f.rg || 0}, sem profissão ${f.profissao || 0})`)),
+        r.aplicado ? h('li', {}, h('b', {}, String(r.prazosDefinidos || 0)), ' prazo(s) "a definir" ganharam data · Gmail dos últimos 10 dias será relido na próxima rodada do robô') : h('li', {}, 'Prazos "a definir" ganham data (prazo mais curto) e o Gmail dos últimos 10 dias é relido.'),
+        r.semNumero.length ? h('li', {}, h('b', {}, String(r.semNumero.length)), ' processo(s) sem número (não estão em "Petição inicial"): ',
+          r.semNumero.map((x, i) => [i ? ', ' : '', h('a', { href: '#/processo/' + x.id }, x.cliente || 'sem cliente')])) : h('li', {}, '✓ Todos os processos têm número (fora os de "Petição inicial").')),
+        r.aplicado ? h('p', { class: 'nota ok' }, '✓ Correções feitas.') : null);
+    };
+    const bPrevia = botao('Ver o que será corrigido', async ev => { ev.target.disabled = true; try { desenhar(await api('revisao.geral', { aplicar: false })); } catch (e) { avisar(e.message, true); } ev.target.disabled = false; }, 'sec');
+    const bAplicar = botao('Corrigir agora', async ev => {
+      if (!confirm('Fazer a revisão geral agora? Uma cópia de segurança da planilha é feita todo dia às 3h.')) return;
+      ev.target.disabled = true; ev.target.textContent = 'Corrigindo… (até 2 min)';
+      try { desenhar(await api('revisao.geral', { aplicar: true })); avisar('Revisão geral feita.'); } catch (e) { avisar(e.message, true); }
+      ev.target.disabled = false; ev.target.textContent = 'Corrigir agora';
+    });
+    return h('section', { class: 'caixa' }, h('h2', {}, 'Revisão geral dos dados'),
+      h('p', { class: 'peq' }, 'Confere processos, clientes e prazos e arruma o que dá para arrumar sozinho. Não apaga nada.'),
+      h('div', { class: 'barra' }, bPrevia, bAplicar), corpo);
   }
 
   async function relatorioCumpridos() {
@@ -1915,7 +1948,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.0.1';
+  const VERSAO_PAINEL = '7.1.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3407,6 +3440,7 @@
     }
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
+    if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['clientes', 'prazos', 'tarefas', 'inicio'].forEach(preBuscar), 2500); }
     sujo = false;
     const detAg = document.getElementById('ag-detalhe'); if (detAg) detAg.hidden = true;
     window.scrollTo(0, 0);

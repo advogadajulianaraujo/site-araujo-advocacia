@@ -61,6 +61,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Processos
 
+- Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em
+  todo processo (`faseDe_`), arquivado → Encerrado, tribunal e área pelo número/vara, liga o processo ao cliente de MESMO nome e,
+  se o nome veio do tribunal e não há cadastro, cria o cadastro só com o nome (origem "processo (revisão geral)", sem pasta nova;
+  "SIGILO" fica de fora); cadastros "importado — conferir" viram "completo" e a ficha mostra "Falta no cadastro: …"; prazos "a
+  definir" ganham data; manda o robô reler 10 dias de Gmail (sem duplicar).
+- PJe: "Notificação de Documento Anexado" (PDF no e-mail, sem lista de eventos) entra como intimação com prazo PROVISÓRIO e cria
+  o processo se for novo; evento "Documento sigiloso" do push é registrado como movimentação (sem prazo).
+
 - Etapas do processo (6.9.8, `FASES` + `ORDEM_FASE`, na ordem): Petição inicial (a ajuizar, chave `contratado`) → Ajuizado
   (citação) → Audiência de conciliação → Em andamento (defesa e réplica) → Perícia → Audiência de instrução → Sentença →
   Acordo / Homologação → Recurso → Execução / cumprimento → Encerrado / arquivado (`extinto`). `avancaFase_`: a etapa automática
@@ -214,6 +222,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade
+
+- Robô da velocidade (7.1.0): `aquecerMemoria_` (gatilho `aquecerGatilho` de 10 em 10 min e logo depois do robô de hora em hora)
+  deixa prontas na memória do servidor as listas grandes (clientes, processos, prazos, intimações abertas, relatório, honorários)
+  para cada perfil. Essas listas são guardadas por PERFIL (`MEMORIA_POR_PERFIL`), não por pessoa, e a chave ignora campos vazios
+  (`busca: ''`, `false`). O painel, 2,5 s depois de abrir, já busca em segundo plano Clientes, Prazos, Tarefas e Início.
 
 - Servidor guarda por até 10 min as listas grandes (clientes, processos, prazos, intimações, honorários) em `comMemoria_`;
   toda gravação na planilha chama `marcarMudanca_` e a memória é descartada na hora. Toda escrita nova deve passar

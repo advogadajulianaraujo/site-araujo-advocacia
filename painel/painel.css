@@ -1155,3 +1155,4 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .pix-cfg{margin-top:10px}
 .pix-cfg summary{cursor:pointer;font-size:13px;color:var(--mudo)}
 .pix-cfg input{width:70px;display:inline-block;margin:0 4px}
+.revisao-lista{margin:10px 0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px}
