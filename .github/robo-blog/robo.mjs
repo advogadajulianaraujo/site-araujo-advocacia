@@ -32,8 +32,8 @@ async function http(url, op = {}, ms = 25000) {
 /* Gemini com nova tentativa no 429/500/503 e troca de modelo quando o Google aposenta um.
    Se a Busca do Google for recusada para esta chave, tenta sem ela (os links continuam sendo conferidos um a um). */
 let semBusca = false;
-async function gemini(corpo) {
-  const modelos = MODELOS.slice(), erros = [];
+async function gemini(corpo, lista) {
+  const modelos = (lista || MODELOS).slice(), erros = [];
   for (let i = 0; i < modelos.length; i++) {
     const m = modelos[i];
     for (let tent = 0; tent < 3; tent++) {
@@ -54,7 +54,8 @@ async function gemini(corpo) {
       if (/API key not valid|API_KEY_INVALID|API key expired|invalid api key/i.test(msg)) {
         throw new Error('A chave do Gemini no GitHub (segredo GEMINI_API_KEY) não foi aceita pelo Google. Copie de novo a chave inteira, sem espaços nem aspas, e salve o segredo outra vez. Resposta do Google: ' + msg);
       }
-      if (r.status === 400 && c.tools && !semBusca) { semBusca = true; log('A Busca do Google foi recusada para esta chave; seguindo sem ela.'); tent--; continue; }
+      const temBusca = !!(c.tools && c.tools.some(t => t.google_search));
+      if (temBusca && !semBusca && (r.status === 400 || (r.status === 429 && /quota/i.test(msg)))) { semBusca = true; log('A Busca do Google foi recusada para esta chave (sem cota); seguindo sem ela.'); throw new Error('Busca do Google indisponível para esta chave.'); }
       if ([429, 500, 503].includes(r.status)) { await espera(8000 * (tent + 1)); continue; }
       const sug = /use (?:models\/)?([a-z0-9.\-]+)/i.exec(msg);
       if (r.status === 404 && sug && !modelos.includes(sug[1])) modelos.splice(i + 1, 0, sug[1]);
@@ -70,13 +71,6 @@ function jsonDe(t) {
   return JSON.parse(s.slice(i));
 }
 
-/* Link de redirecionamento da busca → endereço de verdade. */
-async function resolver(uri) {
-  try {
-    const r = await http(uri, { redirect: 'manual' }, 15000);
-    return r.headers.get('location') || uri;
-  } catch (e) { return uri; }
-}
 const normal = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, '') + x.pathname.replace(/\/+$/, '')).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
 
 function textoDaPagina(html) {
@@ -92,48 +86,131 @@ function parecidos(a, b) {
   let c = 0; A.forEach(x => { if (B.has(x)) c++; }); return c / Math.min(A.size, B.size);
 }
 
-async function buscarCandidatas(jaTem) {
-  const desde = new Date(Date.now() - 12 * 86400000).toISOString().slice(0, 10);
-  const pedido = `Você é pesquisador jurídico de um escritório de advocacia de Tubarão/SC. Use a Busca do Google.
-Encontre ${QUANTOS * 3} NOTÍCIAS publicadas desde ${desde} (até ${HOJE}) nos SITES OFICIAIS dos tribunais brasileiros sobre decisões
-judiciais interessantes para trabalhadores, aposentados, famílias, consumidores e pequenas empresas.
-Prioridade: Justiça do Trabalho (tst.jus.br, trt12.jus.br e outros TRTs) — pelo menos metade. Depois: STJ (stj.jus.br), STF (portal.stf.jus.br),
-TRF4 (trf4.jus.br), TJSC (tjsc.jus.br), CNJ (cnj.jus.br), TNU/CJF (cjf.jus.br).
-Só notícias de sites terminados em .jus.br. Nada de blogs, jornais ou escritórios. Não repita estes assuntos: ${jaTem.slice(0, 40).map(t => '"' + t + '"').join('; ') || 'nenhum'}.
-Responda SÓ com um bloco \`\`\`json contendo uma lista, cada item:
-{"titulo":"título da notícia como está no site","url":"endereço exato da notícia no site oficial","tribunal":"sigla","data":"AAAA-MM-DD",
- "area":"trabalhista|previdenciario|familia|civil|criminal|empresarial","fatos":"o que a notícia diz, fiel, 80 a 160 palavras, sem nome de pessoa física"}`;
-  const r = await gemini({ contents: [{ role: 'user', parts: [{ text: pedido }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.2 } });
-  let lista = [];
-  try { lista = jsonDe(textoDe(r)); } catch (e) { log('resposta da busca sem JSON:', textoDe(r).slice(0, 300)); }
-  if (!Array.isArray(lista)) lista = [];
-  // endereços que vieram de verdade da busca
-  const chunks = ((r.candidates || [])[0]?.groundingMetadata?.groundingChunks || []).map(c => c.web).filter(Boolean);
-  const reais = [];
-  for (const w of chunks.slice(0, 30)) reais.push({ url: await resolver(w.uri), titulo: w.title || '' });
-  log('busca:', lista.length, 'notícias sugeridas,', reais.length, 'links da busca');
-  return { lista, reais };
+const MODELOS_LEITURA = [...new Set(['gemini-3.5-flash-lite'].concat(MODELOS))];
+const slugTST = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function dataISO(d) {
+  const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(String(d || ''));
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const x = new Date(d); return isNaN(x) ? '' : x.toISOString().slice(0, 10);
 }
 
-async function conferirCandidata(c, reais) {
+/* O Google abre a página (os sites dos tribunais às vezes recusam o GitHub) e devolve o que está nela. */
+async function lerComGoogle(url, pedido) {
+  const r = await gemini({ contents: [{ role: 'user', parts: [{ text: pedido + '\n\nPágina: ' + url }] }], tools: [{ url_context: {} }],
+    generationConfig: { temperature: 0 } }, MODELOS_LEITURA);
+  const meta = r.candidates?.[0]?.urlContextMetadata?.urlMetadata || [];
+  if (!meta.some(m => /SUCCESS/.test(m.urlRetrievalStatus || ''))) return '';
+  const t = textoDe(r);
+  return /NAO ABRIU|NÃO ABRIU/i.test(t.slice(0, 40)) ? '' : t;
+}
+
+/* Fonte principal: notícias do TST (Justiça do Trabalho). O endereço de cada notícia é tst.jus.br/-/<título>. */
+async function noticiasTST() {
+  try {
+    const t = await lerComGoogle('https://www.tst.jus.br/noticias',
+      'Liste TODAS as notícias que aparecem nesta página (até 25), na ordem. Responda só um bloco ```json com a lista [{"titulo":"título exatamente como está","data":"dd/mm/aaaa se aparecer"}]. Não invente nada.');
+    const l = t ? jsonDe(t) : [];
+    const itens = (Array.isArray(l) ? l : []).filter(x => x && x.titulo && x.titulo.length > 20)
+      .map(x => ({ titulo: String(x.titulo).trim(), data: dataISO(x.data), tribunal: 'TST', url: 'https://www.tst.jus.br/-/' + slugTST(x.titulo) }));
+    log('TST:', itens.length, 'notícias na página');
+    return itens;
+  } catch (e) { log('TST não respondeu:', e.message); return []; }
+}
+
+/* Fontes extras lidas direto (quando o site do tribunal aceita o GitHub): RSS ou lista de notícias. */
+const FONTES_DIRETAS = [
+  { tribunal: 'TST', url: 'https://www.tst.jus.br/noticias' },
+  { tribunal: 'TRT-SC', url: 'https://portal.trt12.jus.br/noticias' },
+  { tribunal: 'STF', url: 'https://noticias.stf.jus.br/feed/' },
+  { tribunal: 'STJ', url: 'https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Ultimas-noticias.aspx' },
+  { tribunal: 'CNJ', url: 'https://www.cnj.jus.br/feed/' }
+];
+const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'pt-BR,pt;q=0.9' };
+const semTags = h => textoDaPagina(String(h).replace(/<!\[CDATA\[|\]\]>/g, ''));
+async function noticiasDiretas() {
+  const todas = [];
+  await Promise.all(FONTES_DIRETAS.map(async f => {
+    try {
+      const r = await http(f.url, { headers: UA }, 20000); if (!r.ok) { log(f.tribunal, 'direto:', r.status); return; }
+      const html = await r.text(), base = new URL(f.url), achadas = [];
+      if (/<item[\s>]/i.test(html)) {
+        for (const m of html.matchAll(/<item[\s>][\s\S]*?<\/item>/gi)) {
+          const it = m[0], g = re => (re.exec(it) || [])[1] || '';
+          achadas.push({ titulo: semTags(g(/<title>([\s\S]*?)<\/title>/i)), url: semTags(g(/<link>([\s\S]*?)<\/link>/i)), data: dataISO(semTags(g(/<pubDate>([\s\S]*?)<\/pubDate>/i))) });
+        }
+      } else {
+        for (const m of html.matchAll(/<a\s[^>]*href="([^"#]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+          const tit = semTags(m[2]).replace(/\s+/g, ' ').trim();
+          if (tit.length < 35 || tit.length > 220) continue;
+          let u; try { u = new URL(m[1], base); } catch (e) { continue; }
+          if (u.hostname !== base.hostname || u.pathname.replace(/\/+$/, '') === base.pathname.replace(/\/+$/, '')) continue;
+          achadas.push({ titulo: tit, url: u.href, data: '' });
+        }
+      }
+      const vistos = new Set();
+      achadas.filter(x => x.titulo && x.url && !vistos.has(x.url) && vistos.add(x.url)).slice(0, 25)
+        .forEach(x => todas.push({ ...x, tribunal: f.tribunal }));
+      log(f.tribunal, 'direto:', achadas.length, 'notícias');
+    } catch (e) { log(f.tribunal, 'direto: não abriu (' + (e.message || e) + ')'); }
+  }));
+  return todas;
+}
+
+/* Último recurso: Busca do Google (só funciona se a chave tiver cota para isso). */
+async function noticiasPelaBusca(jaTem) {
+  const desde = new Date(Date.now() - 12 * 86400000).toISOString().slice(0, 10);
+  const pedido = `Use a Busca do Google. Encontre ${QUANTOS * 3} notícias publicadas desde ${desde} nos sites oficiais dos tribunais (.jus.br),
+com prioridade para a Justiça do Trabalho (tst.jus.br e TRTs), sobre decisões judiciais interessantes para o público. Não repita: ${jaTem.slice(0, 30).join('; ') || 'nenhum'}.
+Responda só um bloco \`\`\`json com a lista [{"titulo":"título como está no site","url":"endereço exato","tribunal":"sigla","data":"AAAA-MM-DD"}]`;
+  try {
+    const r = await gemini({ contents: [{ role: 'user', parts: [{ text: pedido }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.2 } });
+    const l = jsonDe(textoDe(r));
+    return (Array.isArray(l) ? l : []).filter(x => x && x.url && x.titulo);
+  } catch (e) { log('busca do Google:', e.message); return []; }
+}
+
+/* O Gemini escolhe as melhores para o público (decisões, não eventos), com a Justiça do Trabalho primeiro. */
+async function escolher(cands) {
+  if (cands.length <= 1) return cands.map(c => ({ ...c, area: c.area || 'trabalhista' }));
+  const pedido = `Você ajuda um escritório de advocacia de Tubarão/SC a escolher notícias para o blog. Da lista abaixo, escolha até ${QUANTOS * 3}
+que sejam DECISÕES JUDICIAIS interessantes e úteis para trabalhadores, aposentados, famílias, consumidores ou pequenas empresas.
+Fora: eventos, homenagens, posses, sessões, campanhas, estatísticas, notícias institucionais e assuntos penais de grande repercussão política.
+Prioridade: Justiça do Trabalho (pelo menos metade, se houver). Ordene da mais interessante para a menos.
+Responda JSON: [{"n": número da lista, "area": "${Object.keys(AREAS).join('|')}"}]
+
+${cands.map((c, i) => `${i}. [${c.tribunal}] ${c.titulo}`).join('\n')}`;
+  try {
+    const r = await gemini({ contents: [{ role: 'user', parts: [{ text: pedido }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }, MODELOS_LEITURA);
+    const l = jsonDe(textoDe(r));
+    const out = [];
+    for (const x of Array.isArray(l) ? l : []) { const c = cands[+x.n]; if (c && !out.includes(c)) out.push({ ...c, area: AREAS[x.area] ? x.area : 'trabalhista' }); }
+    return out;
+  } catch (e) { log('escolha:', e.message); return cands.map(c => ({ ...c, area: 'trabalhista' })); }
+}
+
+/* Lê a notícia inteira: direto do site; se o site recusar, pelo Google. Confere que é a notícia certa. */
+async function conferirCandidata(c) {
   if (!c || !c.url || !c.titulo) return null;
   let host = '';
   try { host = new URL(c.url).hostname; } catch (e) { return null; }
   if (!OFICIAL.test(host)) { log('fora (não é site oficial):', c.url); return null; }
   if (!AREAS[c.area]) c.area = 'trabalhista';
-  const daBusca = reais.some(x => normal(x.url) === normal(c.url));
-  let texto = '';
+  let texto = '', como = '';
   try {
-    const r = await http(c.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AraujoAdvocaciaBlog/1.0)', 'Accept-Language': 'pt-BR' } });
-    if (r.ok) texto = textoDaPagina(await r.text());
-  } catch (e) { /* site fora do ar */ }
-  if (texto && parecidos(c.titulo, texto) >= 0.5) {
-    // recorta o trecho da notícia (perto do título)
-    const ini = Math.max(0, texto.indexOf(palavras(c.titulo)[0] || '') - 200);
-    return { ...c, base: texto.slice(ini, ini + 9000), confirmada: 'página' };
+    const r = await http(c.url, { headers: UA });
+    if (r.ok) { texto = textoDaPagina(await r.text()); como = 'página'; }
+  } catch (e) { /* o site recusou o GitHub */ }
+  if (!texto || parecidos(c.titulo, texto) < 0.5) {
+    try {
+      texto = await lerComGoogle(c.url, 'Copie o texto COMPLETO da notícia desta página (título, data e todos os parágrafos), exatamente como está, sem resumir e sem comentar. Se a página não abrir ou não for uma notícia, responda só: NAO ABRIU.');
+      como = 'página (lida pelo Google)';
+    } catch (e) { texto = ''; }
   }
-  if (daBusca && c.fatos && palavras(c.fatos).length > 25) return { ...c, base: c.fatos, confirmada: 'busca' };
-  log('fora (link não confirmado):', c.url);
+  if (texto && parecidos(c.titulo, texto) >= 0.5 && palavras(texto).length > 60) {
+    const ini = Math.max(0, texto.indexOf(palavras(c.titulo)[0] || '') - 200);
+    return { ...c, base: texto.slice(ini, ini + 9000), confirmada: como };
+  }
+  log('fora (notícia não abriu):', c.url);
   return null;
 }
 
@@ -141,7 +218,7 @@ async function escrever(c) {
   const pedido = `Escreva um texto para o blog de um escritório de advocacia (Araújo Advocacia, Tubarão/SC), em português do Brasil,
 explicando a decisão abaixo para o público leigo. REGRAS (Provimento 205/2021 da OAB — obrigatórias):
 - Use SOMENTE os fatos da NOTÍCIA OFICIAL abaixo. Não invente números, valores, artigos de lei, datas ou detalhes que não estejam nela.
-- Não cite nome de pessoa física (trabalhador, autor, réu, vítima). Empresa só se a notícia citar e for necessário.
+- Não cite nomes de pessoas nem de empresas (diga "uma empresa de telefonia", "uma trabalhadora"). Valores de condenação podem ser citados se estiverem na notícia.
 - Tom informativo e sóbrio. Sem promessas ("garantimos", "você vai ganhar"), sem preço, sem comparação com outros escritórios, sem sensacionalismo.
 - Diga claramente que cada caso depende de análise individual e que a decisão pode ser objeto de recurso, quando a notícia indicar.
 - Título novo, claro e útil (até 90 caracteres), sem ponto de exclamação. Resumo de 110 a 160 caracteres.
@@ -180,16 +257,20 @@ async function principal() {
   const posts = lerPosts();
   const jaUrls = new Set(posts.map(p => p.fonte && normal(p.fonte.url)).filter(Boolean));
   const jaTitulos = posts.map(p => p.fonte?.titulo || p.titulo);
-  const { lista, reais } = await buscarCandidatas(jaTitulos);
-  // Justiça do Trabalho primeiro, mais novas primeiro
-  lista.sort((a, b) => ((b.area === 'trabalhista') - (a.area === 'trabalhista')) || String(b.data).localeCompare(String(a.data)));
+  const jaVisto = c => jaUrls.has(normal(c.url)) || jaTitulos.some(t => parecidos(t, c.titulo) >= 0.7);
+  let cands = (await noticiasTST()).concat(await noticiasDiretas());
+  const vistos = new Set();
+  cands = cands.filter(c => { const k = normal(c.url); if (vistos.has(k) || jaVisto(c)) return false; vistos.add(k); return true; });
+  if (!cands.length) cands = (await noticiasPelaBusca(jaTitulos)).filter(c => !jaVisto(c));
+  log('candidatas:', cands.length);
+  const lista = await escolher(cands.slice(0, 60));
   const novos = []; let falhas = 0;
   for (const c of lista) {
     if (novos.length >= QUANTOS) break;
     if (!c || !c.url || jaUrls.has(normal(c.url))) continue;
     if (jaTitulos.concat(novos.map(p => p.fonte.titulo)).some(t => parecidos(t, c.titulo) >= 0.7)) continue;
     try {
-      const ok = await conferirCandidata(c, reais); if (!ok) continue;
+      const ok = await conferirCandidata(c); if (!ok) continue;
       let texto = await escrever(ok), erros = conferirTexto(texto);
       if (erros.length) { log('refazendo (', erros.join(', '), '):', c.titulo); texto = await escrever(ok); erros = conferirTexto(texto); }
       if (erros.length) { log('descartada (', erros.join(', '), '):', c.titulo); falhas++; continue; }
@@ -197,7 +278,7 @@ async function principal() {
       while (posts.concat(novos).some(p => p.slug === slug)) slug = slugDe(texto.titulo) + '-' + k++;
       const dataFonte = /^\d{4}-\d{2}-\d{2}$/.test(c.data || '') ? c.data : '';
       novos.push({ slug, titulo: texto.titulo.trim(), resumo: texto.resumo.trim(), area: texto.area, data: HOJE, origem: 'robo',
-        fonte: { nome: `Notícia oficial — ${c.tribunal || new URL(c.url).hostname}`, url: c.url, titulo: c.titulo, data: dataFonte, conferida: ok.confirmada },
+        fonte: { nome: `Notícia oficial — ${{ TST: 'Tribunal Superior do Trabalho (TST)', STF: 'Supremo Tribunal Federal (STF)', STJ: 'Superior Tribunal de Justiça (STJ)', 'TRT-SC': 'TRT da 12ª Região (SC)', CNJ: 'Conselho Nacional de Justiça (CNJ)' }[c.tribunal] || c.tribunal || new URL(c.url).hostname}`, url: c.url, titulo: c.titulo, data: dataFonte, conferida: ok.confirmada },
         corpo: texto.corpo.map(s => String(s).trim()).filter(Boolean) });
       jaUrls.add(normal(c.url));
       log('novo texto:', texto.titulo);

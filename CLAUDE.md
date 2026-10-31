@@ -291,8 +291,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (cabeçalho/rodapé copiados de contato/index.html; bloco "Do blog" no Início e nas páginas de área entre `<!--BLOG:INICIO-->` e
   `<!--BLOG:FIM-->`; sitemap entre as mesmas marcas; RSS em /blog/feed.xml). Para tirar um texto: `"oculto": true` no posts.json e
   rodar o gerar. ROBÔ (`robo.mjs`, GitHub Actions `blog-semanal.yml`, segunda 7h17 de Brasília, também "Run workflow" à mão):
-  Gemini com Busca do Google acha decisões recentes em sites .jus.br (Justiça do Trabalho primeiro), o link precisa abrir ou vir da
-  busca, o texto é escrito SÓ com o que está na notícia oficial (sem nome de pessoa física, sem promessa/preço — Provimento 205),
+  fonte principal = TST lido PELO GOOGLE (ferramenta `url_context` do Gemini: lista em tst.jus.br/noticias, notícia em
+  tst.jus.br/-/<título sem acento>), mais STF/STJ/TRT-SC/CNJ lidos direto quando o site aceita o GitHub; a Busca do Google
+  (`google_search`) é só o último recurso (a chave do escritório NÃO tem cota para ela: 429). O Gemini escolhe as decisões
+  (nada institucional), a notícia é conferida pelo título, o texto é escrito SÓ com o que está na notícia oficial (sem nome de pessoa nem de empresa, sem promessa/preço — Provimento 205),
   passa por conferência (tamanho, palavras proibidas) e cita a fonte. Chave no segredo GEMINI_API_KEY do repositório. O robô faz
   commit direto no main: antes de dar push no main, SEMPRE `git fetch origin main` e rebase (senão o push é recusado).
 - Perfil do Google: textos prontos em docs/GOOGLE-PERFIL.md (sem acesso direto ao Google Meu Negócio daqui).
