@@ -239,6 +239,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   direto para aquele cliente (nome que apontou para 2 clientes é ignorado). A trava "já lançado à mão" ignora parcelas que já
   vieram de um PIX (`pagasPeloPix`). Cada baixa guarda o recibo (coluna `recibo`) e tem "Mandar recibo no WhatsApp"
   (agradecimento pronto; o PDF é anexado à mão).
+  Cruzamentos 7.5.0: nome abreviado pelo banco (primeiro + último nome iguais) e nome parecido valem quando valor e data da parcela
+  batem (±20 dias); sem cliente pelo nome, `parcelaPeloValorEData_` acha a ÚNICA parcela aberta de mesmo valor vencendo entre −10 e
+  +5 dias do PIX: com sobrenome em comum (`sobrenomeComum_`, familiar pagando) dá baixa sozinho; sem, vira SUGESTÃO (coluna
+  `sugestao`) com botão "✓ Confirmar" no quadro.
+- Financeiro 7.5.0 (`telaFinanceiro`): sem gráficos — faixa escura, 4 números (Recebido no mês, A receber 30 dias, Em atraso, PIX
+  para conferir), pílulas de atraso por faixa e abas Em atraso / Próximos 30 dias / PIX recebidos / Honorários (`ver=`).
 - Parcelas a vencer têm "Lembrar no WhatsApp" e as atrasadas "Cobrar no WhatsApp", com a mensagem pronta (wa.me).
 
 ## Velocidade

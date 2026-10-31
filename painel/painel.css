@@ -1168,3 +1168,23 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .ini-mais{padding:8px 4px;color:var(--mudo)}
 .ini-bloco h2{display:flex;align-items:center;gap:6px}
 .ini-lista li .btn.wa{white-space:nowrap}
+/* ===== Financeiro (7.5.0): só números, abas ===== */
+.fin-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.fin-num{display:flex;flex-direction:column;gap:4px;background:var(--papel);border:1px solid var(--linha);border-radius:14px;padding:18px;box-shadow:var(--sombra);text-decoration:none;color:var(--texto);border-top:4px solid var(--c,#c8c3b8);transition:transform .12s}
+a.fin-num:hover{transform:translateY(-2px)}
+.fin-num b{font:600 28px/1.1 var(--sans);color:var(--tinta);letter-spacing:-.01em}
+.fin-num-rot{font:600 11px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--mudo)}
+.fin-num-sub{font-size:12.5px;color:var(--mudo)}
+.fin-num.verde{--c:#1f8a4c}.fin-num.verde b{color:#1f6b3f}
+.fin-num.dourado{--c:#b08d57}
+.fin-num.vermelho{--c:#c2372c}.fin-num.vermelho b{color:#a3221a}
+.fin-num.azul{--c:#2f6fd0}.fin-num.azul.alerta{background:#f4f8ff}
+.fin-faixas{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.fin-faixa{background:#fff;border:1px solid var(--linha);border-radius:999px;padding:5px 12px;font-size:13px}
+.fin-faixa.f0{border-color:#f0d9a8;background:#fffaf0}.fin-faixa.f1{border-color:#f1c3a6;background:#fff5ef}.fin-faixa.f2{border-color:#e9b4ae;background:#fdf1f0}
+.fin-corpo{padding-top:12px}
+.fin-abas{margin-bottom:14px;flex-wrap:wrap}
+.fin-dica{margin:0 0 10px}
+.fin-corpo .pix-caixa{border:0;background:none;padding:0;box-shadow:none}
+@media (max-width:900px){.fin-nums{grid-template-columns:1fr 1fr}.fin-num b{font-size:22px}}
+.pix-sugestao{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;background:#f4f8ff;border:1px solid #d4e2fb;border-radius:8px;padding:6px 10px;font-size:13px}

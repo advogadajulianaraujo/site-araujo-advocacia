@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.4.0';
+var VERSAO = '7.5.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -74,7 +74,7 @@ var ESQUEMA = {
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
-  Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo'],
+  Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
@@ -3688,7 +3688,32 @@ function clienteDoPagador_(pagador, clientes) {
   if (iguais.length > 1) return null;
   var pal = alvo.split(' ');
   var parecidos = clientes.filter(function (c) { var cn = nomeComparavel_(c.nome).split(' '); return pal.length >= 2 && pal.every(function (w) { return cn.indexOf(w) >= 0; }); });
-  return parecidos.length === 1 ? { cliente: parecidos[0], certeza: false } : null;
+  if (parecidos.length === 1) return { cliente: parecidos[0], certeza: false };
+  // o banco às vezes encurta o nome do meio ("Ana P Souza"): primeiro e último nome iguais
+  var pal2 = pal.filter(function (w) { return w.length > 1; });
+  if (pal2.length >= 2) {
+    var pe = clientes.filter(function (c) { var cn = nomeComparavel_(c.nome).split(' '); return cn.length >= 2 && cn[0] === pal2[0] && cn[cn.length - 1] === pal2[pal2.length - 1]; });
+    if (pe.length === 1) return { cliente: pe[0], certeza: false };
+  }
+  return null;
+}
+
+/** Sobrenome em comum (pai, mãe, cônjuge pagando pelo cliente). Ignora sobrenomes muito comuns sozinhos. */
+function sobrenomeComum_(a, b) {
+  var comuns = ['silva', 'santos', 'souza', 'oliveira', 'pereira', 'lima', 'costa', 'ferreira', 'rodrigues', 'almeida', 'alves', 'nascimento', 'carvalho', 'araujo', 'ribeiro'];
+  var x = nomeComparavel_(a).split(' ').slice(1), y = nomeComparavel_(b).split(' ').slice(1);
+  var iguais = x.filter(function (w) { return w.length > 2 && y.indexOf(w) >= 0; });
+  return iguais.filter(function (w) { return comuns.indexOf(w) < 0; }).length >= 1 || iguais.length >= 2;
+}
+
+/** PIX sem cliente pelo nome: procura a ÚNICA parcela em aberto (de qualquer cliente) com o mesmo valor e vencimento perto do dia do PIX. */
+function parcelaPeloValorEData_(tabParc, valor, diaPix, pagasPeloPix) {
+  var v = Math.round(valor * 100);
+  var c = tabParc.linhas.filter(function (p) {
+    return !p.pago_em && !pagasPeloPix[p.id] && p.vencimento && Math.round(dinheiro_(p.valor) * 100) === v &&
+      p.vencimento >= somarDias_(diaPix, -10) && p.vencimento <= somarDias_(diaPix, 5);
+  });
+  return c.length === 1 ? c[0] : null;
 }
 
 /** Quem já pagou por qual cliente (aprendido dos PIX já baixados, inclusive os feitos à mão). Nome que apontou para 2 clientes é ignorado. */
@@ -3772,14 +3797,27 @@ function lerPix_(limiteMs) {
       var cA = cidA && clientes.filter(function (c) { return c.id === cidA; })[0];
       if (cA) achou = { cliente: cA, certeza: true, apelido: true };
     }
-    if (!achou) { linha.motivo = 'Nenhum cliente com este nome (pode ser um parente pagando ou outro recebimento). Ao dar baixa à mão, o robô aprende para a próxima vez.'; inserirLinha_(tabPix, linha); r.conferir++; continue; }
+    var diaPix0 = diaSP_(quando);
+    if (!achou) {
+      // sem cliente pelo nome: cruza VALOR + DATA (a única parcela aberta com esse valor vencendo perto do dia do PIX)
+      var porValor = parcelaPeloValorEData_(tabParc, dados.valor, diaPix0, pagasPeloPix);
+      var cliV = porValor && clientes.filter(function (c) { return c.id === porValor.cliente_id; })[0];
+      if (cliV && sobrenomeComum_(dados.pagador, cliV.nome)) {
+        achou = { cliente: cliV, certeza: true, familia: true }; // mesmo sobrenome + valor e data batendo: é da família pagando
+      } else {
+        if (cliV) { linha.cliente_id = cliV.id; linha.sugestao = porValor.id; linha.motivo = 'Provável: ' + cliV.nome + ' — ' + (porValor.numero ? porValor.numero + 'ª parcela' : 'parcela') + ' de mesmo valor vencendo em ' + dataBR_(porValor.vencimento) + '. Confira e confirme.'; }
+        else linha.motivo = 'Nenhum cliente com este nome nem parcela de mesmo valor vencendo nestes dias (pode ser outro recebimento). Ao dar baixa à mão, o robô aprende para a próxima vez.';
+        inserirLinha_(tabPix, linha); r.conferir++; continue;
+      }
+    }
     linha.cliente_id = achou.cliente.id;
     var abertas = parcelasAbertasDe_(achou.cliente.id, tabParc);
     var diaPix = diaSP_(quando);
     var plano = planoDeBaixa_(abertas, dados.valor, diaPix, tol);
     // esse pagamento já foi lançado à mão? (parcela igual paga perto da data do PIX) → não baixa outra
     var jaLancado = tabParc.linhas.some(function (p) { return p.cliente_id === achou.cliente.id && p.pago_em && !pagasPeloPix[p.id] && Math.abs(dinheiro_(p.valor_pago || p.valor) - dados.valor) < 0.01 && Math.abs(diffDias_(p.pago_em, diaPix)) <= 7; });
-    if (!achou.certeza) linha.motivo = 'Nome parecido com o do cliente (' + achou.cliente.nome + '): confira. Ao dar baixa, o robô aprende.';
+    if (!achou.certeza && plano && plano.tipo === 'igual' && plano.itens[0].p.vencimento && Math.abs(diffDias_(plano.itens[0].p.vencimento, diaPix)) <= 20) achou.certeza = true; // nome parecido + valor + data
+    if (!achou.certeza) { linha.motivo = 'Nome parecido com o do cliente (' + achou.cliente.nome + '): confira. Ao dar baixa, o robô aprende.'; if (plano && plano.itens.length === 1) linha.sugestao = plano.itens[0].p.id; }
     else if (!abertas.length) linha.motivo = 'O cliente não tem parcela em aberto.';
     else if (jaLancado) linha.motivo = 'Parece já lançado: há uma parcela de mesmo valor paga perto desta data. Confira antes de dar baixa.';
     else if (!plano) linha.motivo = 'O valor não bate com nenhuma parcela (nem soma de parcelas, nem parcela vencida com até ' + tol + '% de juros). Pode ter pago parte ou adiantado.';
@@ -3792,7 +3830,7 @@ function lerPix_(limiteMs) {
         });
         linha.situacao = 'baixado'; linha.parcela_id = ids.join(','); linha.recibo = recibos.join(' ');
         ids.forEach(function (id) { pagasPeloPix[id] = 1; });
-        linha.motivo = (achou.apelido ? 'Pagador já conhecido deste cliente. ' : '') +
+        linha.motivo = (achou.apelido ? 'Pagador já conhecido deste cliente. ' : achou.familia ? 'Pago por familiar (mesmo sobrenome, valor e data batendo). ' : '') +
           (plano.tipo === 'soma' ? 'Baixa automática de ' + ids.length + ' parcelas (o PIX é a soma delas).'
             : plano.tipo === 'juros' ? 'Baixa automática da parcela vencida, paga com ' + reaisTxt_(dados.valor - dinheiro_(plano.itens[0].p.valor)) + ' a mais (multa/juros).'
             : 'Baixa automática' + (plano.iguais > 1 ? ' na parcela mais antiga (havia ' + plano.iguais + ' do mesmo valor)' : '') + '.');
@@ -3837,6 +3875,8 @@ function listarPix_(d) {
       o.cliente = c ? c.nome : ''; o.telefone = c ? (c.telefone || '') : '';
       o.recibos = String(x.recibo || '').split(' ').filter(String);
       if (ps.length) { o.parcela = { numero: ps[0].numero, vencimento: ps[0].vencimento, valor: ps[0].valor }; o.parcelas = ps.map(function (q) { return { numero: q.numero, vencimento: q.vencimento, valor: q.valor_pago || q.valor }; }); }
+      var sg = x.situacao === 'a conferir' && parc[x.sugestao];
+      if (sg) o.sugestao = { id: sg.id, numero: sg.numero, vencimento: sg.vencimento, valor: sg.valor, cliente: (clientes[sg.cliente_id] || {}).nome || '' };
       if (x.situacao === 'a conferir' && c) o.abertas = (abertasPor[c.id] || []).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12)
         .map(function (q) { return { id: q.id, numero: q.numero, vencimento: q.vencimento, valor: q.valor }; });
       return o;
