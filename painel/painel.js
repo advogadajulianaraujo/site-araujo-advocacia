@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -84,7 +84,7 @@
   const AFETA = {
     clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
     advogados: ['modelos'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo']
   };
@@ -287,7 +287,7 @@
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
   const EM_LOTE = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
-    'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
+    'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
   function chamar(acao, dados) {
     if (!EM_LOTE.has(acao) || loteDesligado || !sessao) return chamarUm(acao, dados);
@@ -600,6 +600,8 @@
     const hoje = hojeISO();
     const [r, ag, procsIni, meu, aguarda] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }).catch(() => null), api('processos.listar', {}).catch(() => []),
       api('eu.painel').catch(() => null), sessao.usuario.pode.usuarios ? api('trabalho.aguardando').catch(() => []) : Promise.resolve([])]);
+    const secretaria = ['secretario', 'rh'].includes(sessao.usuario.perfil);
+    const extras = secretaria || sessao.usuario.pode.usuarios ? await api('inicio.extras').catch(() => null) : null;
     const t = r.totais, pode = sessao.usuario.pode;
     const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
     const eventos = ag ? ag.eventos.slice().sort((a, b) => a.inicio < b.inicio ? -1 : 1) : [];
@@ -620,7 +622,7 @@
     const nHoje = deHoje.length + (r.proximos || []).filter(p => p.proximo_ato_data === hoje && !jaNaAgenda(p)).length;
 
     // números principais (4)
-    const ICO_ATALHO = { '#/prazos': 'prazos', '#/tarefas': 'tarefas', '#/agenda?visao=dia': 'agenda', '#/processos': 'processos' };
+    const ICO_ATALHO = { '#/prazos': 'prazos', '#/tarefas': 'tarefas', '#/agenda?visao=dia': 'agenda', '#/agenda?visao=semana': 'agenda', '#/processos': 'processos', '#/clientes': 'clientes', '#/': 'financeiro' };
     const atalho = (href, nome, numero, legenda, cls) => h('a', { class: 'atalho ' + (cls || ''), href },
       h('span', { class: 'atalho-ico' }, icone(ICO_ATALHO[href] || 'inicio')),
       h('span', { class: 'atalho-corpo' }, h('b', {}, String(numero)), h('span', { class: 'atalho-nome' }, nome), h('span', { class: 'atalho-leg' }, legenda)));
@@ -697,31 +699,100 @@
       el.querySelectorAll('[data-cor]').forEach(x => x.style.setProperty('--c', x.dataset.cor));
       return el;
     })() : null;
-    const colaborador = !pode.usuarios;
-    const frase = [fataisHoje.length ? `${fataisHoje.length} prazo${fataisHoje.length > 1 ? 's' : ''} fatal${fataisHoje.length > 1 ? 'is' : ''} hoje` : 'nenhum prazo fatal hoje',
-      nHoje ? `${nHoje} compromisso${nHoje > 1 ? 's' : ''}` : 'agenda livre',
-      nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'sem tarefas pendentes'].concat(meu && meu.semana.total ? [`${meu.semana.total} feita(s) na semana`] : []).join(' · ');
+    const admin = !!pode.usuarios;
     const robo = r.robo || {};
-    mostrar(
-      h('section', { class: 'ini-hero simples' },
-        h('div', { class: 'ini-hero-txt' },
-          h('p', { class: 'cap' }, hojeExtenso().replace(/^./, c => c.toUpperCase())),
-          h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`),
-          h('p', { class: 'ini-frase' }, frase)),
-        h('div', { class: 'ini-hero-acoes' },
-          pz.vencidos ? h('a', { class: 'ini-hero-alerta', href: '#/prazos?ver=vencido' }, `${pz.vencidos} prazo(s) vencido(s) — ver`) : null,
-          aguarda && aguarda.length ? h('a', { class: 'ini-hero-alerta ok', href: '#/prazos' }, `✓ ${aguarda.length} esperando o seu OK`) : null,
-          h('a', { class: 'btn dourado', href: '#/cliente/novo' }, '+ Novo cliente'),
-          h('a', { class: 'btn contorno-claro', href: '#/prazo/novo' }, 'Novo prazo'))),
-      colaborador && meu ? h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Meu resumo' },
-        atalho('#/tarefas', 'Comigo', meu.abertas, meu.hoje ? `${meu.hoje} para hoje` : 'tarefas e prazos', ''),
-        atalho('#/tarefas', 'Atrasadas', meu.atrasadas, meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu.atrasadas ? 'alerta' : ''),
+    const ext = extras || { audiencias: [], aniversarios: [], cobrancas: [] };
+
+    // ----- audiências e perícias da semana, com "Avisar no WhatsApp" (o robô marca; aqui se avisa o cliente) -----
+    const NOME_A = { conciliacao: 'Conciliação', instrucao: 'Instrução', pericia: 'Perícia' };
+    const blocoAudiencias = bloco('⚖ Audiências e perícias · 7 dias', '#/agenda?visao=semana', 'agenda',
+      ext.audiencias.length ? h('ul', { class: 'ini-lista' }, ext.audiencias.slice(0, 8).map(a => {
+        const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
+        const lado = a.avisado_em ? h('span', { class: 'tag ok mini-tag', title: 'Avisado por ' + a.avisado_por }, '✓ avisado')
+          : link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); api('agenda.avisado', { chave: a.chave }).then(() => { avisar('Marcado como avisado.'); rota(); }).catch(e => avisar(e.message, true)); } }, 'Avisar')
+          : h('span', { class: 'peq' }, 'sem telefone');
+        return item(() => { location.hash = a.processo_id ? '#/processo/' + a.processo_id : '#/agenda?visao=dia&data=' + a.data; },
+          selo(a.data, a.data === hoje ? 'faixa-hoje' : ''), `${NOME_A[a.tipo] || a.nome}${a.hora ? ' · ' + a.hora : ''} — ${a.cliente || 'cliente a identificar'}`,
+          [a.numero, a.local].filter(Boolean).join(' · '), lado);
+      })) : vazio('Nenhuma audiência ou perícia nos próximos 7 dias.'));
+
+    // ----- aniversariantes de hoje -----
+    const parabens = c => { let tel = String(c.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.nome).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Hoje é o seu dia e não podíamos deixar passar: feliz aniversário! Desejamos muita saúde, paz e conquistas. Conte sempre com a gente. 🎉`); };
+    const blocoAniversarios = bloco('🎂 Aniversariantes de hoje', null, null,
+      ext.aniversarios.length ? h('ul', { class: 'ini-lista' }, ext.aniversarios.map(c => item(() => { location.hash = '#/cliente/' + c.id; },
+        h('div', { class: 'selo-data niver' }, h('b', {}, '🎉')), c.nome, c.idade ? c.idade + ' anos' : '',
+        parabens(c) ? h('a', { class: 'btn mini wa', href: parabens(c), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ cliente: c.nome }, 'aniversário'); } }, 'Parabéns') : h('span', { class: 'peq' }, 'sem telefone'))))
+        : vazio('Ninguém faz aniversário hoje.'));
+
+    // ----- cobranças do dia (parcelas que vencem hoje e atrasadas) -----
+    const cobrar = x => { let tel = String(x.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      const nome = nomeProprioJS(String(x.cliente).split(' ')[0]), parc = x.numero ? `a ${x.numero}ª parcela` : 'uma parcela';
+      const valor = x.valor !== null && x.valor !== undefined ? `, no valor de ${reais(+x.valor)},` : '';
+      const msg = x.dias === 0 ? `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para lembrar que ${parc} dos honorários${valor} vence hoje. O pagamento pode ser feito por PIX. Se já pagou, desconsidere. Obrigado!`
+        : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto ${parc} dos honorários${valor} vencida em ${dataBR(x.vencimento)}. Pedimos, por gentileza, que regularize o pagamento por PIX ou entre em contato para combinarmos. Se já pagou, por favor nos envie o comprovante. Obrigado!`;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg); };
+    const blocoCobrancas = bloco('💬 Cobranças do dia', pode.financeiro ? '#/financeiro/receber' : null, 'a receber',
+      ext.cobrancas.length ? h('ul', { class: 'ini-lista' }, ext.cobrancas.slice(0, 8).map(x => item(() => {},
+        h('div', { class: 'selo-data ' + (x.dias === 0 ? 'faixa-hoje' : 'faixa-vencido') }, h('b', {}, x.dias === 0 ? 'hoje' : String(x.dias)), h('span', {}, x.dias === 0 ? '' : 'dias')),
+        x.cliente, [x.numero ? x.numero + 'ª parcela' : 'parcela', 'venc. ' + dataBR(x.vencimento), x.valor !== null && x.valor !== undefined ? reais(+x.valor) : ''].filter(Boolean).join(' · '),
+        cobrar(x) ? h('a', { class: 'btn mini wa', href: cobrar(x), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ cliente: x.cliente }, 'cobrança'); } }, x.dias === 0 ? 'Lembrar' : 'Cobrar') : h('span', { class: 'peq' }, 'sem telefone'))),
+        ext.cobrancas.length > 8 ? h('li', { class: 'peq ini-mais' }, `+ ${ext.cobrancas.length - 8} parcela(s) em aberto`) : null)
+        : vazio('Nenhuma parcela vencendo hoje ou em atraso. 👏'));
+
+    const naoAvisadas = ext.audiencias.filter(a => !a.avisado_em).length;
+    const vencemHoje = ext.cobrancas.filter(x => x.dias === 0).length;
+    const frase = secretaria
+      ? [`${ext.audiencias.length} audiência(s)/perícia(s) na semana`, naoAvisadas ? `${naoAvisadas} para avisar` : 'todos avisados', `${ext.cobrancas.length} cobrança(s)`, ext.aniversarios.length ? `${ext.aniversarios.length} aniversariante(s) 🎂` : ''].filter(Boolean).join(' · ')
+      : admin
+        ? [pz.vencidos ? `${pz.vencidos} prazo(s) vencido(s)` : 'nenhum prazo vencido', fataisHoje.length ? `${fataisHoje.length} fatal(is) hoje` : 'nenhum fatal hoje', `${ext.audiencias.length} audiência(s) na semana`].join(' · ')
+        : [nTar ? `${nTar} tarefa${nTar > 1 ? 's' : ''} com você` : 'nada pendente com você', meu && meu.atrasadas ? `${meu.atrasadas} atrasada(s)` : '', nHoje ? `${nHoje} compromisso(s) hoje` : 'agenda livre'].filter(Boolean).join(' · ');
+
+    const hero = h('section', { class: 'ini-hero simples' },
+      h('div', { class: 'ini-hero-txt' },
+        h('p', { class: 'cap' }, hojeExtenso().replace(/^./, c => c.toUpperCase())),
+        h('h1', {}, `${saudacao()}, ${primeiroNome(r.usuario.nome)}`),
+        h('p', { class: 'ini-frase' }, frase)),
+      h('div', { class: 'ini-hero-acoes' },
+        admin && pz.vencidos ? h('a', { class: 'ini-hero-alerta', href: '#/prazos?ver=vencido' }, `${pz.vencidos} prazo(s) vencido(s) — ver`) : null,
+        admin && aguarda && aguarda.length ? h('a', { class: 'ini-hero-alerta ok', href: '#/prazos' }, `✓ ${aguarda.length} esperando o seu OK`) : null,
+        h('a', { class: 'btn dourado', href: '#/cliente/novo' }, '+ Novo cliente'),
+        secretaria ? h('a', { class: 'btn contorno-claro', href: '#/compromisso' }, 'Novo compromisso') : h('a', { class: 'btn contorno-claro', href: '#/prazo/novo' }, 'Novo prazo')));
+    const pill = h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo));
+
+    if (secretaria) {
+      mostrar(hero,
+        h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
+          atalho('#/agenda?visao=semana', 'Audiências', ext.audiencias.length, 'nos próximos 7 dias'),
+          atalho('#/agenda?visao=semana', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
+          atalho('#/', 'Cobranças', ext.cobrancas.length, vencemHoje ? `${vencemHoje} vencem hoje` : 'em atraso', ext.cobrancas.length ? 'alerta' : ''),
+          atalho('#/clientes', 'Aniversários', ext.aniversarios.length, 'hoje')),
+        h('div', { class: 'ini-duas' }, blocoAudiencias, blocoCobrancas),
+        h('div', { class: 'ini-duas' }, blocoAniversarios, blocoMinhas || blocoAgenda),
+        pill);
+      return;
+    }
+    if (!admin) {
+      mostrar(hero,
+        h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Meu resumo' },
+          atalho('#/tarefas', 'Minhas tarefas', meu ? meu.abertas : 0, meu && meu.hoje ? `${meu.hoje} para hoje` : 'tarefas e prazos'),
+          atalho('#/tarefas', 'Atrasadas', meu ? meu.atrasadas : 0, meu && meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu && meu.atrasadas ? 'alerta' : ''),
+          atalho('#/prazos', 'Prazos', pz.abertos || 0, pz.vencendo ? `${pz.vencendo} vencem em 5 dias` : 'em aberto no escritório', pz.vencidos ? 'atencao' : ''),
+          atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
+        h('div', { class: 'ini-duas' }, blocoMinhas, blocoAgenda),
+        pill);
+      return;
+    }
+    // administração: o essencial
+    mostrar(hero,
+      h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
+        atalho('#/prazos', 'Prazos', pz.vencidos || pz.vencendo, pz.vencidos ? 'vencido(s) sem baixa' : 'vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
+        atalho('#/prazos', 'Seu OK', aguarda ? aguarda.length : 0, 'esperando aprovação', aguarda && aguarda.length ? 'atencao' : ''),
         atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
-        atalho('#/processos', 'Feitas', meu.semana.total, 'nesta semana')) : atalhos,
-      colaborador ? h('div', { class: 'ini-duas' }, blocoMinhas, blocoAgenda) : h('div', { class: 'ini-duas' }, blocoPrazos, blocoAgenda),
-      colaborador ? h('div', { class: 'ini-duas' }, blocoMinhaSemana, blocoPrazos) : h('div', { class: 'ini-duas' }, blocoMinhas, blocoMinhaSemana),
-      colaborador ? null : blocoVisao,
-      h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo)));
+        atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
+      h('div', { class: 'ini-duas' }, blocoPrazos, blocoAudiencias),
+      ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
+      pill);
   }
 
   function saudacao() { const hr = new Date().getHours(); return hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite'; }
@@ -738,6 +809,17 @@
   }
 
   /* ---------- clientes ---------- */
+
+  /** Quadro largo (colunas de etapas): setas ◀ ▶ para andar para o lado, sem precisar da barra de rolagem. */
+  function comSetas(quadro) {
+    const passo = dir => () => quadro.scrollBy({ left: dir * Math.max(240, quadro.clientWidth * 0.8), behavior: 'smooth' });
+    const esq = h('button', { type: 'button', class: 'seta-quadro esq', 'aria-label': 'Ver etapas anteriores', onclick: passo(-1) }, '‹');
+    const dir = h('button', { type: 'button', class: 'seta-quadro dir', 'aria-label': 'Ver próximas etapas', onclick: passo(1) }, '›');
+    const atualizar = () => { esq.hidden = quadro.scrollLeft <= 4; dir.hidden = quadro.scrollLeft + quadro.clientWidth >= quadro.scrollWidth - 4; };
+    quadro.addEventListener('scroll', atualizar, { passive: true });
+    setTimeout(atualizar, 50); window.addEventListener('resize', atualizar);
+    return h('div', { class: 'quadro-com-setas' }, esq, quadro, dir);
+  }
 
   /* ---------- Clientes e processos (uma aba, duas visões) ---------- */
 
@@ -1570,7 +1652,7 @@
         (sit !== 'todos' || trib || cli || ato || area || busca || fase) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null);
     const principal = h('div', { class: 'col-principal' },
       etapasProc,
-      visao === 'quadro' ? quadroProc : compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
+      visao === 'quadro' ? comSetas(quadroProc) : compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase), p.responsavel ? h('div', { class: 'peq' }, '👤 ' + p.responsavel) : null),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
@@ -1982,7 +2064,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.2.0';
+  const VERSAO_PAINEL = '7.3.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3132,7 +3214,7 @@
           [['', 'Tudo'], ['prazo', 'Só prazos'], ['tarefa', 'Só tarefas']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (tipo === v ? ' ativo' : ''), onclick: () => ir({ tipo: v }) }, rot)),
           [['atrasadas', 'Atrasadas'], ['hoje', 'Para hoje'], ['semana', 'Próximos 7 dias']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (so === v ? ' ativo' : ''), onclick: () => ir({ so: so === v ? '' : v }) }, rot)),
           PRIORIDADES.slice(0, 2).map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro pri-chip-' + v + (pri === v ? ' ativo' : ''), onclick: () => ir({ pri: pri === v ? '' : v }) }, '⚑ ' + rot)))),
-      visao === 'lista' ? tabelaLista() : h('div', { class: 'quadro-t' }, colunas),
+      visao === 'lista' ? tabelaLista() : comSetas(h('div', { class: 'quadro-t' }, colunas)),
       placar, cfg);
   }
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }

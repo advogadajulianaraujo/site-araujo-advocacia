@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '7.2.0';
+var VERSAO = '7.3.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -65,7 +65,7 @@ var ESQUEMA = {
     'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
-  Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em'],
+  Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
@@ -370,6 +370,8 @@ var ROTAS = {
   'tarefas.comentar': { fn: comentarTarefa_ },
   'eu.painel': { fn: meuPainel_ },
   'trabalho.assumir': { fn: assumirTrabalho_ },
+  'inicio.extras': { fn: inicioExtras_ },
+  'agenda.avisado': { fn: marcarAvisado_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
@@ -388,7 +390,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'resumo': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'resumo': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -6303,6 +6305,63 @@ function aquecerMemoria_() {
   return n;
 }
 function aquecerGatilho() { try { aquecerMemoria_(); } catch (e) { /* segue */ } }
+
+/* ---------- Início: audiências para avisar, aniversariantes e cobranças do dia ---------- */
+
+/** Dia e mês do nascimento ("1990-05-03" ou "03/05/1990"). */
+function diaMesNasc_(v) {
+  v = String(v || '').trim();
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v); if (m) return m[2] + '-' + m[3];
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(v); if (m) return ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  return '';
+}
+
+function inicioExtras_(d, u) {
+  var hoje = hojeSP_(), ate = somarDias_(hoje, 7), pf = PERFIS[u.perfil];
+  var clis = {}, procs = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
+  // audiências e perícias dos próximos 7 dias (o robô marca; aqui a secretaria avisa o cliente)
+  var audiencias = tabela_('Eventos').linhas.filter(function (e) { return e.data >= hoje && e.data <= ate; })
+    .sort(function (a, b) { return (a.data + a.hora) < (b.data + b.hora) ? -1 : 1; }).slice(0, 30)
+    .map(function (e) {
+      var p = procs[e.numero] || {}, c = clis[p.cliente_id] || {};
+      return { chave: e.chave, tipo: tipoAtoDe_(e.tipo), nome: e.tipo, data: e.data, hora: e.hora || '', numero: e.numero, local: p.orgao || '',
+        cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', telefone: c.telefone || '', processo_id: p.id || '',
+        avisado_em: e.avisado_em || '', avisado_por: e.avisado_por || '' };
+    });
+  // aniversariantes de hoje
+  var dm = hoje.slice(5);
+  var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
+    .filter(function (c) { return diaMesNasc_(c.nascimento) === dm; })
+    .map(function (c) { var a = /^(\d{4})/.exec(String(c.nascimento)) || /(\d{4})$/.exec(String(c.nascimento)); return { id: c.id, nome: c.nome, telefone: c.telefone || '', idade: a ? (+hoje.slice(0, 4) - +a[1]) : null }; });
+  // cobranças do dia: parcelas que vencem hoje e as atrasadas (até 30), para a secretaria cobrar no WhatsApp
+  var cobrancas = [];
+  if (pf.financeiro || u.perfil === 'secretario') {
+    var hons = {};
+    tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+    var verValor = pf.financeiro && !pf.ocultarValores;
+    cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje; })
+      .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
+      .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
+        return { id: q.id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',
+          dias: diffDias_(hoje, q.vencimento), valor: verValor ? q.valor : null, mensagem_em: q.mensagem_em || '' }; })
+      .filter(function (x) { return x.cliente && x.dias <= 90; })
+      .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
+  }
+  return { audiencias: audiencias, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
+}
+
+/** "Avisei o cliente" da audiência: fica marcado para a equipe não avisar duas vezes. */
+function marcarAvisado_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Eventos'), e = tab.linhas.filter(function (x) { return x.chave === d.chave; })[0];
+    if (!e) throw falha_('Audiência não encontrada.');
+    atualizarLinha_(tab, e, { avisado_em: new Date().toISOString(), avisado_por: u.nome || u.usuario });
+    registrar_(u.usuario, 'whatsapp ao cliente', (e.numero || '') + ' · aviso de ' + e.tipo + ' em ' + dataBR_(e.data));
+    return { ok: true };
+  });
+}
 
 /* ---------- Conferido (colaborador) → OK (administração) ---------- */
 

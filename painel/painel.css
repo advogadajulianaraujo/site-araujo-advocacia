@@ -1156,3 +1156,15 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .pix-cfg summary{cursor:pointer;font-size:13px;color:var(--mudo)}
 .pix-cfg input{width:70px;display:inline-block;margin:0 4px}
 .revisao-lista{margin:10px 0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+/* setas dos quadros */
+.quadro-com-setas{position:relative}
+.seta-quadro{position:absolute;top:8px;z-index:5;width:40px;height:40px;border-radius:50%;border:1px solid var(--linha);background:#fff;color:var(--tinta);font-size:26px;line-height:1;cursor:pointer;box-shadow:0 4px 14px -4px rgba(0,0,0,.3);display:grid;place-items:center;min-height:0;padding:0}
+.seta-quadro:hover{background:var(--tinta);color:#fff}
+.seta-quadro.esq{left:-6px}.seta-quadro.dir{right:-6px}
+.seta-quadro[hidden]{display:none}
+/* Início */
+.selo-data.niver{background:#fdf0f5;border-color:#f3cfe0}
+.selo-data.niver b{font-size:20px}
+.ini-mais{padding:8px 4px;color:var(--mudo)}
+.ini-bloco h2{display:flex;align-items:center;gap:6px}
+.ini-lista li .btn.wa{white-space:nowrap}

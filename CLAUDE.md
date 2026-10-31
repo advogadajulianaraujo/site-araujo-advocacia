@@ -185,6 +185,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Avisos do robô que não sumiam: com a fila vazia o DataJud agora grava "em dia" e apaga o erro; a IA testa o Gemini e apaga o
   erro antigo quando responde. O cartão do robô avisa quando o Code.gs do Google é mais velho que o painel (`VERSAO_PAINEL` em
   painel.js = `VERSAO` do Code.gs: suba os dois juntos) e tem "Consertar agora" (`robo.consertar`).
+- Início por perfil (7.3.0, `telaInicio`): SECRETARIA (perfis secretario e rh) — números Audiências (7 dias), Para avisar,
+  Cobranças, Aniversários; blocos "Audiências e perícias · 7 dias" (botão "Avisar" no WhatsApp com a mensagem do `whatsAto`;
+  marca `avisado_em/avisado_por` na aba Eventos, rota `agenda.avisado`), "Cobranças do dia" (parcelas que vencem hoje e atrasadas
+  até 90 dias, "Lembrar"/"Cobrar" no WhatsApp; valor só para quem vê financeiro), "Aniversariantes de hoje" ("Parabéns") e
+  Minhas tarefas. EQUIPE (advogada, estagiário) — simples: Minhas tarefas, Atrasadas, Prazos, Processos + Minhas tarefas e
+  Agenda. ADMINISTRAÇÃO — o essencial: Prazos, Seu OK, Hoje, Processos + Prazos e Audiências (com Avisar) + Cobranças e
+  Aniversários só quando houver. Dados extras na rota `inicio.extras`. Gráficos do Início saíram (estão em Relatórios).
+- Quadros largos (Processos por etapa e Tarefas) têm setas ‹ › para andar para o lado (`comSetas`).
 - Início (simples, pedido da usuária): faixa escura enxuta (data, saudação em Bodoni, frase do dia, alerta de vencidos, botões
   "+ Novo cliente" e "Novo prazo"); 4 números (Prazos, Hoje, Tarefas, Processos); duas colunas: Prazos (vencidos primeiro, até 6)
   e Agenda (hoje e próximos 14 dias numa lista só, até 6); um cartão com 2 gráficos redondos (prazos em aberto e processos ativos
