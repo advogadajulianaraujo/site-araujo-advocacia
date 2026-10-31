@@ -907,3 +907,59 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .tag.grupo-atend{background:#fbf0d9;color:#8a5d06}
 .faixa-atend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
 @media (max-width:700px){.grupos-cli{grid-template-columns:1fr}}
+
+/* ===== Clientes e processos (aba única) ===== */
+.carteira-topo{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-end;margin-bottom:16px;padding:22px 24px;border-radius:16px;
+  background:radial-gradient(120% 140% at 100% 0%,rgba(176,141,87,.22),transparent 55%),linear-gradient(135deg,#17181c,#25262c);color:#f4f1ea;box-shadow:0 10px 30px -18px rgba(0,0,0,.6)}
+.carteira-kicker{font:600 11px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;color:#d8bf8f}
+.carteira-tit h1{color:#fff;margin:6px 0 4px;font-size:28px}
+.carteira-tit p{margin:0;color:#c9c5bc;font-size:14px}
+.carteira-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.carteira-topo .btn.sec{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+.carteira-topo .btn.sec:hover{background:rgba(255,255,255,.08)}
+.carteira-busca{gap:14px}
+.visoes{display:inline-flex;gap:4px;padding:4px;background:#f1efe9;border-radius:12px;align-self:flex-start;max-width:100%}
+.visao-bt{display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:9px;padding:9px 16px;font:500 14px/1 var(--sans);color:var(--mudo);cursor:pointer;min-height:0;width:auto}
+.visao-bt .ico{width:18px;height:18px}
+.visao-bt:hover{color:var(--tinta)}
+.visao-bt.ativo{background:#fff;color:var(--tinta);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.visao-n{font-size:12px;background:#e6e2d9;color:#4a4a50;border-radius:999px;padding:3px 8px}
+.visao-bt.ativo .visao-n{background:var(--acento,#b08d57);color:#fff}
+.lista-cli{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.cli-card{display:flex;gap:14px;align-items:center;background:var(--papel);border:1px solid var(--linha);border-left:4px solid var(--cor-g,#c8c3b8);border-radius:12px;padding:14px 16px;cursor:pointer;box-shadow:var(--sombra);transition:transform .12s,box-shadow .12s,border-color .12s}
+.cli-card:hover,.cli-card:focus-visible{transform:translateY(-1px);box-shadow:0 8px 22px -14px rgba(0,0,0,.35);border-color:#d8cfbd;outline:none}
+.cli-card.com-acao{--cor-g:#7a4fc0}.cli-card.atendimento{--cor-g:#c98a12}
+.cli-card .cli-ini{width:42px;height:42px;font-size:13px;background:linear-gradient(135deg,#f3eee3,#e6dfcf);color:#5d4a2a}
+.cli-card-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.cli-card-nome{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cli-card-nome strong{font-size:15.5px;color:var(--tinta);font-weight:600}
+.proc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.proc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--linha);background:#faf9f6;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--texto);text-decoration:none}
+.proc-chip:hover{border-color:var(--tinta);background:#fff}
+.proc-chip.bate{border-color:var(--acento,#b08d57);background:#fbf5e9;font-weight:600}
+.proc-chip.arq{opacity:.6}
+.proc-ponto{width:8px;height:8px;border-radius:50%;flex:none}
+.proc-fase{color:var(--mudo)}
+.cli-card-lado{display:flex;align-items:center;gap:14px;flex:none}
+.cli-prox{display:flex;flex-direction:column;align-items:flex-end;font-size:13px;text-align:right}
+.cli-seta{font-size:26px;color:#c3bdb0;line-height:1}
+.cli-card:hover .cli-seta{color:var(--tinta)}
+@media (max-width:700px){
+  .carteira-topo{padding:18px}
+  .carteira-tit h1{font-size:23px}
+  .visoes{display:flex;width:100%}.visao-bt{flex:1;justify-content:center;padding:9px 8px}
+  .cli-card{align-items:flex-start}
+  .cli-card-lado .cli-prox{display:none}
+}
+.etapas-proc{grid-template-columns:repeat(10,minmax(88px,1fr));gap:8px}
+.etapas-proc .etapa-card{padding:10px 10px 8px}
+.carteira-busca .filtros-proc{margin:0}
+@media (max-width:700px){
+  .grupos-cli{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .grupo-card{padding:10px;border-left-width:4px}
+  .grupo-card .peq{display:none}
+  .grupo-card b{font-size:20px}
+  .grupo-card .grupo-nome{font-size:12.5px;line-height:1.2}
+  .visao-bt{font-size:13px;white-space:nowrap;gap:6px}
+  .visao-bt .ico{display:none}
+}

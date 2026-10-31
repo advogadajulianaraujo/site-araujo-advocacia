@@ -78,8 +78,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 - A geração de documentos fica só na aba Modelos (a ficha do cliente tem apenas o botão "Gerar documentos").
 - Escolha dos documentos (pedido da usuária: menos informação na tela): botão "📂 Escolher documentos (n)" + chips do que foi
-  escolhido; a janela (`seletorDocumentos`) tem pacotes prontos (Cliente novo, Previdenciário, Filhos menores, Assessoria,
-  Habilitação), busca e categorias (`CATEGORIAS_DOC`: Procurações, Contratos de honorários, Declarações e termos, Recibos e
+  escolhido; a janela (`seletorDocumentos`) tem busca e categorias (sem pacotes prontos: retirados a pedido da usuária) (`CATEGORIAS_DOC`: Procurações, Contratos de honorários, Declarações e termos, Recibos e
   cobrança, Petições, Notificações e outros).
 - Padrão visual de TODOS os modelos (tirado do modelo de juntada enviado pela usuária): fonte EB Garamond 12,
   texto sempre justificado, espaço depois de cada parágrafo, nome da parte em negrito, títulos centralizados em
@@ -134,7 +133,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ícones SVG (`ICONES`/`ABAS` em painel.js). Embaixo, o cartão da pessoa (iniciais, nome, perfil) abre Ver o site, Trocar senha e Sair.
   No celular (≤ 900 px) o menu vira gaveta pelo botão ☰ da barra preta. Visual: fundo claro, cartões brancos com cantos de 12 px,
   botões sem caixa-alta, títulos em Jost (Bodoni só na saudação do Início e no login).
-- Clientes: título com o total e cartão de busca (área, "só a completar"); SEM etapas (pedido da usuária: etapas só em Processos).
+- "Clientes e processos" é UMA aba no menu (pedido da usuária), com duas visões que dividem o cabeçalho escuro e a busca única
+  (`cabCarteira`): "Por cliente" (#/clientes: cartões de cliente com os processos em chips coloridos pela fase e o próximo ato;
+  a busca acha também pelo nº do processo, parte contrária ou vara) e "Por processo" (#/processos: filtros dentro do cartão de
+  busca, etapas, lista/quadro). A última visão usada fica no computador (`carteira_visao`). Clientes SEM etapas.
 - Dois grupos de clientes (6.9.5): "Com ação" (tem processo, inclusive o "a ajuizar" criado ao gerar procuração/contrato) e
   "Em atendimento" (sem contrato, procuração nem processo). Cartões no topo de Clientes (`grupo=acao|atendimento`) e etiqueta
   na lista. Cadastro novo cria a pasta no Drive sozinho e fica "Em atendimento"; na ficha, "Cliente contratou: abrir ação"
