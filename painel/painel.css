@@ -1130,3 +1130,8 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .cartao-ato{font-size:12px;color:var(--tinta);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .cartao-proc-pe{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--linha)}
 .quadro-dica{margin:-4px 0 10px}
+/* lembrete de audiência */
+.ct-ato{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;background:#eef6fc;border:1px solid #d3e7f5;border-radius:8px;padding:6px 8px;margin-top:4px;font-size:12.5px;color:#17648a}
+.ato-caixa{display:flex;gap:12px;align-items:center;background:#eef6fc;border:1px solid #d3e7f5;border-radius:12px;padding:12px}
+.ato-caixa > div{flex:1}
+.ato-ico{font-size:22px}

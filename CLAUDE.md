@@ -17,6 +17,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Google Agenda os eventos que falharam. Ato designado SEM data no texto (PJe sigiloso) vira tarefa "abrir o processo e lançar na
   agenda" (`tarefaAtoSemData_`). O lembrete do ato é À PARTE: o prazo "para fazer" da intimação nunca é tirado.
   Botão "📅 Marcar na agenda" em cada intimação e na tela do prazo (rota `agenda.marcarAto`); conclui a tarefa de lançar.
+- Robô do lembrete (6.9.9, `lembrarAudiencias_`, toda rodada do robô): 2 dias úteis antes de cada audiência ou perícia (aba Eventos
+  e as agendas do Google AUDIÊNCIA CONCILIAÇÃO / INSTRUÇÃO / PERÍCIAS, inclusive as lançadas à mão) cria UMA tarefa "Lembrar o
+  cliente: … em dd/mm às hh:mm — cliente" para o responsável do processo (ou o do sistema), prioridade alta (urgente se for amanhã),
+  entrega no dia anterior, checklist por tipo (`CHECK_ATO`) e as marcas `[ato:tipo|data|hora|local]` e `[lembrete:chave]` (não
+  repete). No painel a tarefa mostra o ato e o botão "WhatsApp ao cliente" com a mensagem pronta (`whatsAto`: dia, hora, local,
+  o que levar; testemunhas na instrução; exames na perícia). Editar a tarefa nunca apaga as marcas internas (`salvarTarefa_`).
 - Intimações sempre à vista: lista aberta na tela Intimações e prazos (busca, filtro do sistema, prazo de cada uma, "Na agenda"),
   da mais nova para a mais antiga; nada é apagado, nem depois da baixa do prazo (`intimacoes.listar` devolve {total, lista}).
 - DJEN: a consulta do CNJ recusa os servidores do Google (403). O painel aberto no computador do escritório lê o DJEN

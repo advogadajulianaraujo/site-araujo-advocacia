@@ -1915,7 +1915,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '6.9.8';
+  const VERSAO_PAINEL = '6.9.9';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2837,6 +2837,30 @@
 
   /* ---------- tarefas da equipe (quadro) ---------- */
 
+  const NOME_ATO = { conciliacao: 'Audiência de conciliação', instrucao: 'Audiência de instrução', pericia: 'Perícia' };
+  /** Mensagem pronta para lembrar o cliente da audiência ou perícia (tarefa criada pelo robô 2 dias úteis antes). */
+  function whatsAto(x) {
+    let tel = String(x.telefone || '').replace(/\D/g, '');
+    if (!tel || !x.ato) return null;
+    if (tel.length <= 11) tel = '55' + tel;
+    const nome = nomeProprioJS(String(x.cliente || '').split(' ')[0]) || 'tudo bem';
+    const dia = new Date(x.ato.data + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' });
+    const quando = dia + (x.ato.hora ? ', às ' + x.ato.hora : '');
+    const onde = x.ato.local ? ` Local: ${x.ato.local}.` : ' Se for por vídeo, enviaremos o link antes.';
+    const extra = x.ato.tipo === 'pericia'
+      ? 'Leve documento com foto e todos os exames, laudos, receitas e atestados que tiver. Chegue com 30 minutos de antecedência.'
+      : x.ato.tipo === 'instrucao'
+        ? 'Leve documento com foto e chegue com 30 minutos de antecedência. Confirme com as suas testemunhas: elas precisam comparecer com documento com foto.'
+        : 'Leve documento com foto e chegue com 30 minutos de antecedência. Nessa audiência pode haver proposta de acordo; vamos conversar antes.';
+    const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para lembrar: sua ${(NOME_ATO[x.ato.tipo] || 'audiência').toLowerCase()}${x.numero ? ' do processo nº ' + x.numero : ''} é ${quando}.${onde}\n\n${extra}\n\nPor favor, confirme respondendo esta mensagem. Qualquer dúvida, estamos à disposição.`;
+    return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
+  }
+  function botaoWhatsAto(x) {
+    const l = whatsAto(x);
+    return l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ numero: x.numero, cliente: x.cliente }, 'lembrete de audiência'); } }, 'WhatsApp ao cliente')
+      : h('span', { class: 'peq' }, 'Cliente sem telefone');
+  }
+
   const PRIORIDADES = [['urgente', 'Urgente'], ['alta', 'Alta'], ['normal', 'Normal'], ['baixa', 'Baixa']];
   const NOME_PRI = Object.fromEntries(PRIORIDADES);
   const ORD_PRI = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
@@ -2897,6 +2921,7 @@
         h('div', { class: 'ct-tit' }, x.titulo),
         x.cliente || x.numero ? h('div', { class: 'peq' }, [x.cliente, x.numero].filter(Boolean).join(' · ')) : null,
         x.resumo_ia ? h('div', { class: 'peq ia-txt', title: x.resumo_ia }, x.resumo_ia) : null,
+        x.ato ? h('div', { class: 'ct-ato', onclick: ev => ev.stopPropagation() }, h('span', {}, (x.ato.tipo === 'pericia' ? '🩺 ' : '⚖ ') + dataBR(x.ato.data) + (x.ato.hora ? ' ' + x.ato.hora : '')), botaoWhatsAto(x)) : null,
         x.tipo === 'tarefa' && (x.checklist || []).length || nComent(x) ? h('div', { class: 'ct-meta' }, progresso(x), nComent(x) ? h('span', { class: 'peq' }, '💬 ' + nComent(x)) : null) : null,
         h('div', { class: 'ct-pe' }, sel,
           h('span', { class: 'ct-mover' },
@@ -3007,7 +3032,11 @@
       h('div', {}, h('label', { for: 'f-t-cliente' }, 'Cliente (opcional)'), inCli, h('datalist', { id: 'dl-t-clientes' }, clientes.map(c => h('option', { value: rotCli(c) })))),
       h('div', {}, h('label', { for: 'f-t-numero' }, 'Processo (opcional)'), inProc, h('datalist', { id: 'dl-t-procs' }, procs.filter(p => p.numero).map(p => h('option', { value: p.numero }, p.cliente_nome || '')))),
       campo('peso', 'Pontos', String(x.peso || 1), { opcoes: [['1', '1 (simples)'], ['2', '2'], ['3', '3 (como um prazo)'], ['5', '5 (peça grande)']] }),
-      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial):[^\]]+\]/g, ''), { area: true, largo: true }),
+      x.ato ? h('div', { class: 'largo ato-caixa' }, h('span', { class: 'ato-ico' }, x.ato.tipo === 'pericia' ? '🩺' : '⚖'),
+        h('div', {}, h('strong', {}, (NOME_ATO[x.ato.tipo] || 'Audiência') + ' em ' + dataBR(x.ato.data) + (x.ato.hora ? ' às ' + x.ato.hora : '')),
+          h('div', { class: 'peq' }, [x.cliente, x.numero, x.ato.local].filter(Boolean).join(' · '))),
+        botaoWhatsAto(x)) : null,
+      campo('descricao', 'Detalhes', String(x.descricao || '').replace(/\n?\[(rep|inicial|intim|ato|lembrete|agenda):[^\]]*\]/g, '').trim(), { area: true, largo: true }),
       h('div', { class: 'largo chk-caixa' }, h('label', {}, 'Checklist'), chkLista, inChk),
       novo ? null : h('div', { class: 'largo coment-caixa' }, h('label', {}, 'Comentários e histórico'),
         h('div', { class: 'barra' }, inComent, botao('Comentar', async () => {
