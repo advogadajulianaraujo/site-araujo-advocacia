@@ -1,0 +1,46 @@
+name: Robô do blog (toda segunda-feira)
+
+on:
+  schedule:
+    - cron: '17 10 * * 1'   # segunda-feira, 7h17 de Brasília
+  workflow_dispatch:
+    inputs:
+      quantos:
+        description: 'Quantos textos novos (1 a 6)'
+        required: false
+        default: '3'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: blog
+  cancel-in-progress: false
+
+jobs:
+  blog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Buscar decisões e escrever os textos
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODELO: ${{ vars.GEMINI_MODELO }}
+          BLOG_POSTS_SEMANA: ${{ github.event.inputs.quantos || vars.BLOG_POSTS_SEMANA || '3' }}
+        run: node .github/robo-blog/robo.mjs
+      - name: Publicar no site
+        if: always()
+        run: |
+          git config user.name "Robô do blog"
+          git config user.email "robo-blog@users.noreply.github.com"
+          git add -A blog sitemap.xml index.html trabalhista previdenciario familia civil criminal empresarial .github/robo-blog/posts.json
+          if git diff --cached --quiet; then echo "Nada novo para publicar."; exit 0; fi
+          git commit -m "Blog: textos novos da semana (robô)"
+          for i in 1 2 3 4; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep $((i*5)); done
+          exit 1

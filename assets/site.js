@@ -80,6 +80,14 @@
     });
   }
 
+  // Blog: filtro por área na lista de textos.
+  const filtro = document.querySelector('.post-filtro');
+  if (filtro) filtro.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    filtro.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('.post-grid.lista .post-card').forEach(c => { c.hidden = !!b.dataset.area && c.dataset.area !== b.dataset.area; });
+  });
+
   // Entrada suave dos blocos ao rolar a página.
   const items = document.querySelectorAll('.reveal');
   if (!('IntersectionObserver' in window)) { items.forEach(el => el.classList.add('in')); return; }

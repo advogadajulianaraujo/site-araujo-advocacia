@@ -287,6 +287,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Conversão: WhatsApp é o botão principal da primeira tela; "Prefere que a gente ligue?" (site.js) em todas as páginas →
   rota pública `site.contato` (campo-isca anti-spam, 40/h no total, 1 por telefone a cada 6 h) grava na aba Contatos, cria
   tarefa "Ligar para…" (Config RESP_SITE) e manda e-mail (Config CONTATO_EMAIL ou a conta dona).
+- Blog (7.7.0): /blog/ com páginas estáticas montadas por `.github/robo-blog/gerar.mjs` a partir de `.github/robo-blog/posts.json`
+  (cabeçalho/rodapé copiados de contato/index.html; bloco "Do blog" no Início e nas páginas de área entre `<!--BLOG:INICIO-->` e
+  `<!--BLOG:FIM-->`; sitemap entre as mesmas marcas; RSS em /blog/feed.xml). Para tirar um texto: `"oculto": true` no posts.json e
+  rodar o gerar. ROBÔ (`robo.mjs`, GitHub Actions `blog-semanal.yml`, segunda 7h17 de Brasília, também "Run workflow" à mão):
+  Gemini com Busca do Google acha decisões recentes em sites .jus.br (Justiça do Trabalho primeiro), o link precisa abrir ou vir da
+  busca, o texto é escrito SÓ com o que está na notícia oficial (sem nome de pessoa física, sem promessa/preço — Provimento 205),
+  passa por conferência (tamanho, palavras proibidas) e cita a fonte. Chave no segredo GEMINI_API_KEY do repositório. O robô faz
+  commit direto no main: antes de dar push no main, SEMPRE `git fetch origin main` e rebase (senão o push é recusado).
+- Perfil do Google: textos prontos em docs/GOOGLE-PERFIL.md (sem acesso direto ao Google Meu Negócio daqui).
 - SEO: páginas de área com 6 a 8 perguntas frequentes (texto e schema FAQPage iguais) e BreadcrumbList. Conteúdo
   informativo, citando a lei, sem promessas nem preços (Provimento 205/2021 da OAB).
 
