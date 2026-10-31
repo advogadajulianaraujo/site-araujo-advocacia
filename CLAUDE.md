@@ -11,6 +11,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   contrarrazões 15/10/8; laudo 15 (TRT 5); despacho/decisão 5 (art. 218, § 3º, CPC).
 - `definirPendentes_` define qualquer prazo antigo que tenha ficado "a definir"; roda no `configurar` e em toda rodada do robô.
 - Prazo de audiência ou perícia (observações começando com "ato:") usa a data do ato e nunca é recalculado.
+- Agenda sempre em dia (6.9.3): `acharAto_` lê audiência (conciliação, instrução, inicial/una, mediação/CEJUSC) e perícia com data em
+  "dd/mm/aaaa", "dd/mm/aa" ou "26 de novembro de 2026" e hora "14h30"/"14:30". `varrerAgenda_` roda em toda rodada do robô: relê as
+  intimações de 180 dias e as movimentações do DataJud, marca o que falta (sem duplicar: mesmo processo + data + tipo) e refaz no
+  Google Agenda os eventos que falharam. Ato designado SEM data no texto (PJe sigiloso) vira tarefa "abrir o processo e lançar na
+  agenda" (`tarefaAtoSemData_`). O lembrete do ato é À PARTE: o prazo "para fazer" da intimação nunca é tirado.
+  Botão "📅 Marcar na agenda" em cada intimação e na tela do prazo (rota `agenda.marcarAto`); conclui a tarefa de lançar.
+- Intimações sempre à vista: lista aberta na tela Intimações e prazos (busca, filtro do sistema, prazo de cada uma, "Na agenda"),
+  da mais nova para a mais antiga; nada é apagado, nem depois da baixa do prazo (`intimacoes.listar` devolve {total, lista}).
 - DJEN: a consulta do CNJ recusa os servidores do Google (403). O painel aberto no computador do escritório lê o DJEN
   pelo navegador (`lerDjenNavegador` em painel.js → rotas `djen.config`/`djen.importar`) a cada 2 h, para todas as OABs
   da aba Advogados, e manda para a planilha; se o navegador leu nas últimas 36 h, o robô do servidor nem tenta.
@@ -69,6 +77,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 ## Modelos de documentos
 
 - A geração de documentos fica só na aba Modelos (a ficha do cliente tem apenas o botão "Gerar documentos").
+- Escolha dos documentos (pedido da usuária: menos informação na tela): botão "📂 Escolher documentos (n)" + chips do que foi
+  escolhido; a janela (`seletorDocumentos`) tem pacotes prontos (Cliente novo, Previdenciário, Filhos menores, Assessoria,
+  Habilitação), busca e categorias (`CATEGORIAS_DOC`: Procurações, Contratos de honorários, Declarações e termos, Recibos e
+  cobrança, Petições, Notificações e outros).
 - Padrão visual de TODOS os modelos (tirado do modelo de juntada enviado pela usuária): fonte EB Garamond 12,
   texto sempre justificado, espaço depois de cada parágrafo, nome da parte em negrito, títulos centralizados em
   negrito, logo (assets/logo-documentos.png) no topo com linha, rodapé em itálico com endereço, telefone,
@@ -122,9 +134,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ícones SVG (`ICONES`/`ABAS` em painel.js). Embaixo, o cartão da pessoa (iniciais, nome, perfil) abre Ver o site, Trocar senha e Sair.
   No celular (≤ 900 px) o menu vira gaveta pelo botão ☰ da barra preta. Visual: fundo claro, cartões brancos com cantos de 12 px,
   botões sem caixa-alta, títulos em Jost (Bodoni só na saudação do Início e no login).
-- Clientes: título com o total, cartão de busca (área, "só a completar", Lista / Quadro por etapa) e embaixo as ETAPAS (Sem processo,
-  Contrato assinado, Ajuizado, Em andamento, Sentença/acordo, Recurso, Execução, Encerrado), calculadas pela fase mais adiantada
-  dos processos do cliente (`etapaDoCliente`); clicar filtra, e o "Quadro por etapa" mostra os clientes em colunas.
+- Clientes: título com o total e cartão de busca (área, "só a completar"); SEM etapas (pedido da usuária: etapas só em Processos).
+- Processos: cartões de ETAPAS (as fases de `FASES`, com as cores de `CORES_FASE`; clicar filtra) e "Lista / Quadro por etapa"
+  (quadro = processos em colunas por fase).
 - Início (simples, pedido da usuária): faixa escura enxuta (data, saudação em Bodoni, frase do dia, alerta de vencidos, botões
   "+ Novo cliente" e "Novo prazo"); 4 números (Prazos, Hoje, Tarefas, Processos); duas colunas: Prazos (vencidos primeiro, até 6)
   e Agenda (hoje e próximos 14 dias numa lista só, até 6); um cartão com 2 gráficos redondos (prazos em aberto e processos ativos

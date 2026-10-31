@@ -84,7 +84,7 @@
   const AFETA = {
     clientes: ['clientes', 'processos', 'resumo', 'modelos'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
     processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['intimacoes', 'prazos', 'resumo'], agenda: ['agenda', 'resumo'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    intimacoes: ['intimacoes', 'prazos', 'resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
     advogados: ['modelos'], usuarios: ['usuarios'], feriados: ['feriados', 'prazos', 'resumo']
   };
@@ -672,50 +672,22 @@
 
   /* ---------- clientes ---------- */
 
-  /* Etapas do cliente (pela fase mais adiantada dos processos dele), como no quadro do ADVBOX */
-  const ETAPAS_CLIENTE = [
-    ['atendimento', 'Sem processo', 'Atendimento ou consulta, sem ação cadastrada'],
-    ['contratado', 'Contrato assinado', 'Procuração e contrato prontos; ação a ajuizar'],
-    ['ajuizado', 'Ajuizado', 'Ação protocolada'],
-    ['andamento', 'Em andamento', 'Processo tramitando'],
-    ['decisao', 'Sentença / acordo', 'Sentença, acordo ou homologação'],
-    ['recurso', 'Recurso', 'Em grau de recurso'],
-    ['execucao', 'Execução', 'Cumprimento e recebimento'],
-    ['encerrado', 'Encerrado', 'Todos os processos arquivados']
-  ];
-  const ORDEM_FASE = { contratado: 1, ajuizado: 2, andamento: 3, sentenca: 4, acordo: 4, homologacao: 4, recurso: 5, execucao: 6 };
-  const FASE_ETAPA = { contratado: 'contratado', ajuizado: 'ajuizado', andamento: 'andamento', sentenca: 'decisao', acordo: 'decisao', homologacao: 'decisao', recurso: 'recurso', execucao: 'execucao' };
-  function etapaDoCliente(procsDoCliente) {
-    if (!procsDoCliente || !procsDoCliente.length) return 'atendimento';
-    const abertos = procsDoCliente.filter(p => p.fase !== 'extinto' && p.status !== 'arquivado');
-    if (!abertos.length) return 'encerrado';
-    const top = abertos.reduce((m, p) => (ORDEM_FASE[p.fase] || 3) > (ORDEM_FASE[m.fase] || 3) ? p : m, abertos[0]);
-    return FASE_ETAPA[top.fase] || 'andamento';
-  }
-
   async function telaClientes(params) {
     carregando();
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
-    const etapa = params.get('etapa') || '';
-    const visao = params.get('visao') === 'quadro' ? 'quadro' : 'lista';
     const limite = Math.max(150, parseInt(params.get('mais'), 10) || 150);
-    const [todos, procs] = await Promise.all([api('clientes.listar', { busca }), api('processos.listar', {})]);
-    const porCli = {};
-    procs.forEach(p => { if (p.cliente_id) (porCli[p.cliente_id] = porCli[p.cliente_id] || []).push(p); });
-    todos.forEach(c => { c._etapa = etapaDoCliente(porCli[c.id]); });
+    const todos = await api('clientes.listar', { busca });
     let base = todos;
     if (soConferir) base = base.filter(c => c.situacao !== 'completo');
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
-    const porEtapa = {};
-    base.forEach(c => { porEtapa[c._etapa] = (porEtapa[c._etapa] || 0) + 1; });
-    const lista = etapa ? base.filter(c => c._etapa === etapa) : base;
+    const lista = base;
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const comProc = todos.filter(c => c.processos > 0).length;
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const ir = (mud) => {
-      const q = new URLSearchParams({ busca, area, etapa, visao: visao === 'quadro' ? 'quadro' : '', conferir: soConferir ? '1' : '', mais: '', ...mud });
+      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', mais: '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
     };
@@ -728,50 +700,27 @@
       h('label', { class: 'filtro-sel' }, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
         h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, a)))),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: soConferir, onchange: e => ir({ conferir: e.target.checked ? '1' : '' }) }), `Só cadastros a completar (${aConferir})`),
-      (busca || area || etapa || soConferir) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes' + (visao === 'quadro' ? '?visao=quadro' : ''); } }, 'Limpar filtros') : null,
-      h('div', { class: 'alternar', role: 'group', 'aria-label': 'Ver como' },
-        h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', 'aria-pressed': String(visao === 'lista'), onclick: () => ir({ visao: '' }) }, 'Lista'),
-        h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', 'aria-pressed': String(visao === 'quadro'), onclick: () => ir({ visao: 'quadro' }) }, 'Quadro por etapa')));
-    const etapas = h('div', { class: 'etapas-cli', role: 'group', 'aria-label': 'Etapas' },
-      h('button', { type: 'button', class: 'etapa-card todas' + (!etapa ? ' ativo' : ''), onclick: () => ir({ etapa: '' }) },
-        h('span', { class: 'etapa-n' }, String(base.length)), h('span', { class: 'etapa-nome' }, 'Todos')),
-      ETAPAS_CLIENTE.map(([id, nome, dica]) => h('button', { type: 'button', title: dica, class: 'etapa-card et-' + id + (etapa === id ? ' ativo' : ''), onclick: () => ir({ etapa: etapa === id ? '' : id }) },
-        h('span', { class: 'etapa-n' }, String(porEtapa[id] || 0)), h('span', { class: 'etapa-nome' }, nome))));
+      (busca || area || soConferir) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
     const linha = c => [
       h('td', { 'data-r': 'Cliente' }, h('div', { class: 'cli-linha' }, h('span', { class: 'cli-ini' }, String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
         h('div', {}, h('strong', {}, c.nome), h('div', { class: 'peq' }, [c.cpf_cnpj, c.cidade].filter(Boolean).join(' · '))))),
-      h('td', { 'data-r': 'Etapa' }, h('span', { class: 'tag etapa et-' + c._etapa }, (ETAPAS_CLIENTE.find(e => e[0] === c._etapa) || [])[1])),
       h('td', { 'data-r': 'Área' }, c.area || h('span', { class: 'peq' }, '—'), c.tipo_acao ? h('div', { class: 'peq' }, c.tipo_acao) : null),
       h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone || '—'),
       h('td', { class: 'num', 'data-r': 'Processos' }, String(c.processos)),
       h('td', { 'data-r': 'Cadastro' }, etiquetaSituacao(c.situacao))
     ];
-    let corpo;
-    if (visao === 'quadro') {
-      corpo = h('div', { class: 'quadro-cli' }, ETAPAS_CLIENTE.filter(([id]) => !etapa || id === etapa).map(([id, nome]) => {
-        const daEtapa = lista.filter(c => c._etapa === id);
-        return h('section', { class: 'coluna-cli et-' + id },
-          h('h2', {}, h('span', {}, nome), h('span', { class: 'seg-n' }, String(daEtapa.length))),
-          daEtapa.slice(0, 60).map(c => h('a', { class: 'cartao-cli', href: '#/cliente/' + c.id },
-            h('strong', {}, c.nome), h('span', { class: 'peq' }, [c.area, c.telefone].filter(Boolean).join(' · ') || '—'),
-            c.processos ? h('span', { class: 'peq' }, `${c.processos} processo${c.processos === 1 ? '' : 's'}`) : null)),
-          daEtapa.length > 60 ? h('p', { class: 'peq' }, `+ ${daEtapa.length - 60} (use a busca)`) : null,
-          !daEtapa.length ? h('p', { class: 'peq vazio-t' }, 'Ninguém nesta etapa.') : null);
-      }));
-    } else {
-      corpo = h('div', {},
+    const corpo = (() => {
+      return h('div', {},
         h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'} na lista`),
-        tabela(['Cliente', 'Etapa', 'Área', 'Telefone', 'Processos', 'Cadastro'], lista.slice(0, limite), linha, c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
+        tabela(['Cliente', 'Área', 'Telefone', 'Processos', 'Cadastro'], lista.slice(0, limite), linha, c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
         lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(150, lista.length - limite)}`, () => ir({ mais: String(limite + 150) }), 'sec')) : null);
-    }
+    })();
     mostrar(
       h('div', { class: 'cab cab-pagina' },
         h('div', {}, h('div', { class: 'titulo-linha' }, h('h1', {}, 'Clientes'), h('span', { class: 'contador', title: 'clientes cadastrados' }, String(todos.length))),
           h('p', {}, `${comProc} com processo · ${todos.length - comProc} sem processo`)),
         h('div', { class: 'barra' }, botao('+ Novo cliente', () => { location.hash = '#/cliente/novo'; }))),
       h('section', { class: 'painel-busca' }, form, filtros),
-      h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, 'Clique numa etapa para filtrar')),
-      etapas,
       corpo);
   }
 
@@ -789,6 +738,86 @@
 
   const FORMAS_HON = [['percentual', 'Percentual (êxito)'], ['avista', 'Valor fixo à vista'], ['parcelado', 'Valor fixo parcelado'],
     ['misto', 'Fixo + percentual'], ['mensal', 'Mensal (assessoria)'], ['cadastrado', 'Usar honorário já cadastrado']];
+
+  /* Escolha dos documentos: um botão abre a janela com categorias, busca e pacotes prontos. */
+  const CATEGORIAS_DOC = [
+    { id: 'procuracoes', nome: 'Procurações', ico: '⚖', desc: 'Ad judicia, filhos menores, inventário', tem: m => /^procuracao/.test(m.chave) },
+    { id: 'contratos', nome: 'Contratos de honorários', ico: '✍', desc: 'Êxito, extrajudicial, mensal, INSS', tem: m => ['contrato', 'prestacao', 'assessoria', 'contrato_previdenciario'].includes(m.chave) },
+    { id: 'declaracoes', nome: 'Declarações e termos', ico: '📝', desc: 'Justiça gratuita, residência, LGPD…', tem: m => ['hipossuficiencia', 'residencia', 'lgpd', 'comparecimento', 'isencao_irpf'].includes(m.chave) },
+    { id: 'financeiro', nome: 'Recibos e cobrança', ico: '💰', desc: 'Recibo, promissórias, cobrança', tem: m => ['recibo', 'cobranca', 'promissoria'].includes(m.chave) },
+    { id: 'peticoes', nome: 'Petições', ico: '📄', desc: 'Precisam do nº do processo', tem: m => m.processo || /^Petições \(precisam/.test(m.grupo || '') },
+    { id: 'outros', nome: 'Notificações e outros', ico: '✉', desc: 'Notificação e modelos do Drive', tem: () => true }
+  ];
+  const PACOTES_DOC = [
+    { nome: 'Cliente novo', desc: 'Procuração, contrato, justiça gratuita, residência e LGPD', chaves: ['procuracao', 'contrato', 'hipossuficiencia', 'residencia', 'lgpd'] },
+    { nome: 'Previdenciário (INSS)', desc: 'Procuração, contrato previdenciário, justiça gratuita e residência', chaves: ['procuracao', 'contrato_previdenciario', 'hipossuficiencia', 'residencia'] },
+    { nome: 'Filhos menores', desc: 'Procuração dos menores, contrato e justiça gratuita', chaves: ['procuracao_menor', 'contrato', 'hipossuficiencia'] },
+    { nome: 'Assessoria mensal', desc: 'Procuração e contrato de assessoria', chaves: ['procuracao', 'assessoria'] },
+    { nome: 'Habilitação no processo', desc: 'Procuração e petição de habilitação', chaves: ['procuracao', 'habilitacao'] }
+  ];
+
+  function seletorDocumentos(modelos, marcados) {
+    const semAcento = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const catDe = m => CATEGORIAS_DOC.find(c => c.tem(m)).id;
+    const itens = modelos.map(m => {
+      const cx = h('input', { type: 'checkbox', name: 'doc', value: m.chave, checked: marcados.includes(m.chave) });
+      const el = h('label', { class: 'doc-op', 'data-cat': catDe(m) }, cx, h('span', { class: 'doc-op-txt' }, h('strong', {}, m.nome),
+        h('span', { class: 'doc-op-tags' }, m.processo ? h('span', { class: 'tag mini-tag' }, 'precisa do nº') : null,
+          m.escritorio ? h('span', { class: 'tag mini-tag' }, 'modelo do Drive') : null)));
+      return { m, cx, el, cat: catDe(m), busca: semAcento(m.nome) };
+    });
+    const cats = CATEGORIAS_DOC.filter(c => itens.some(i => i.cat === c.id));
+    let catAtual = cats[0] ? cats[0].id : '';
+
+    const chips = h('div', { class: 'doc-chips' });
+    const btAbrir = h('button', { type: 'button', class: 'btn doc-abrir' });
+    const busca = h('input', { type: 'search', class: 'doc-busca', placeholder: 'Buscar documento… (ex.: procuração, recibo)', 'aria-label': 'Buscar documento' });
+    const abas = h('div', { class: 'doc-abas', role: 'tablist' });
+    const lista = h('div', { class: 'doc-lista' }, itens.map(i => i.el));
+    const contador = h('span', { class: 'doc-conta' });
+    const marcar = (chaves, so) => {
+      itens.forEach(i => { if (so) i.cx.checked = chaves.includes(i.m.chave); else if (chaves.includes(i.m.chave)) i.cx.checked = true; });
+      itens[0] && itens[0].cx.dispatchEvent(new Event('change', { bubbles: true }));
+      resumo();
+    };
+    const pacotes = h('div', { class: 'doc-pacotes' }, PACOTES_DOC.filter(p => p.chaves.every(k => itens.some(i => i.m.chave === k))).map(p =>
+      h('button', { type: 'button', class: 'doc-pacote', title: p.desc, onclick: () => marcar(p.chaves, true) }, h('strong', {}, p.nome), h('span', {}, p.desc))));
+    const janela = h('dialog', { class: 'dialogo doc-janela', 'aria-label': 'Escolher documentos' },
+      h('div', { class: 'doc-jan-topo' }, h('h2', {}, 'Escolher documentos'), h('button', { type: 'button', class: 'doc-fechar', 'aria-label': 'Fechar', onclick: () => janela.close() }, '×')),
+      h('div', { class: 'doc-sub' }, 'Pacotes prontos (marcam tudo de uma vez)'), pacotes,
+      busca,
+      h('div', { class: 'doc-corpo' }, abas, lista),
+      h('div', { class: 'doc-rodape' }, contador,
+        h('button', { type: 'button', class: 'btn sec mini', onclick: () => marcar([], true) }, 'Limpar'),
+        h('button', { type: 'button', class: 'btn', onclick: () => janela.close() }, 'Pronto')));
+
+    function filtrar() {
+      const q = semAcento(busca.value.trim());
+      itens.forEach(i => { i.el.hidden = q ? !i.busca.includes(q) : i.cat !== catAtual; });
+      abas.querySelectorAll('.doc-aba').forEach(b => { const on = !q && b.dataset.cat === catAtual; b.classList.toggle('ativa', on); b.setAttribute('aria-selected', on); });
+    }
+    function resumo() {
+      const esc = itens.filter(i => i.cx.checked);
+      btAbrir.replaceChildren(h('span', { 'aria-hidden': 'true' }, '📂 '), esc.length ? `Escolher documentos (${esc.length})` : 'Escolher documentos');
+      contador.textContent = esc.length ? `${esc.length} selecionado${esc.length === 1 ? '' : 's'}` : 'Nenhum selecionado';
+      chips.replaceChildren(...(esc.length ? esc.map(i => h('span', { class: 'doc-chip' }, h('span', { class: 'doc-chip-ico', 'aria-hidden': 'true' }, CATEGORIAS_DOC.find(c => c.id === i.cat).ico), i.m.nome,
+        h('button', { type: 'button', 'aria-label': 'Tirar ' + i.m.nome, onclick: () => { i.cx.checked = false; i.cx.dispatchEvent(new Event('change', { bubbles: true })); resumo(); } }, '×')))
+        : [h('span', { class: 'peq' }, 'Nenhum documento escolhido ainda.')]));
+      abas.replaceChildren(...cats.map(c => {
+        const n = itens.filter(i => i.cat === c.id && i.cx.checked).length;
+        return h('button', { type: 'button', role: 'tab', class: 'doc-aba', 'data-cat': c.id, onclick: () => { catAtual = c.id; busca.value = ''; filtrar(); } },
+          h('span', { class: 'doc-aba-ico', 'aria-hidden': 'true' }, c.ico),
+          h('span', { class: 'doc-aba-txt' }, h('strong', {}, c.nome), h('span', {}, c.desc)),
+          n ? h('span', { class: 'doc-aba-n' }, String(n)) : null);
+      }));
+      filtrar();
+    }
+    busca.addEventListener('input', filtrar);
+    btAbrir.addEventListener('click', () => { busca.value = ''; filtrar(); janela.showModal(); });
+    janela.addEventListener('change', resumo);
+    resumo();
+    return { el: h('div', { class: 'doc-escolha' }, h('div', { class: 'doc-linha' }, btAbrir, chips), janela), resumo };
+  }
 
   /** Formulário de geração. opc: { cliente } (ficha) ou { clientes, clienteInicial } (aba Modelos). */
   function formGerar(info, opc) {
@@ -836,14 +865,9 @@
     if (opc.cliente) carregarProcessos(opc.cliente.id);
     else if (opc.clienteInicial) carregarProcessos(opc.clienteInicial);
 
-    const grupos = {};
-    info.modelos.forEach(m => { (grupos[m.grupo] = grupos[m.grupo] || []).push(m); });
     const marcados = opc.marcar || ['procuracao', 'contrato'];
-    const ORDEM_GRUPOS = ['Procuração e declarações', 'Petições (precisam do nº do processo)', 'Contratos, recibos e cobrança', 'Modelos do escritório (Drive)'];
-    const posGrupo = g => { const i = ORDEM_GRUPOS.indexOf(g); return i < 0 ? 99 : i; };
-    const docs = h('div', { class: 'docs-escolha' }, Object.keys(grupos).sort((a, b) => posGrupo(a) - posGrupo(b)).map(g => h('div', { class: 'grupo-docs' },
-      h('div', { class: 'grupo-tit' }, g),
-      grupos[g].map(m => h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'doc', value: m.chave, checked: marcados.includes(m.chave) }), m.nome)))));
+    const seletor = seletorDocumentos(info.modelos, marcados);
+    const docs = seletor.el;
 
     const campoF = (nome, rotulo, valor, extra, formas) => { const el = campo(nome, rotulo, valor, extra); el.dataset.formas = formas.join(' '); return el; };
     const lancar = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'lancar', checked: true }), 'Lançar também no Financeiro (cria o honorário e as parcelas)');
@@ -901,7 +925,7 @@
       rotProc.textContent = precisaProc ? 'Número do processo *' : 'Número do processo (opcional)';
       notaCobranca.hidden = !escolhidos.some(m => m && m.cobranca);
     };
-    form.addEventListener('change', ev => { if (ev.target.name === 'forma') form.dataset.mexeu = '1'; atualizar(); });
+    form.addEventListener('change', ev => { if (ev.target.name === 'forma') form.dataset.mexeu = '1'; if (ev.target.name === 'doc') seletor.resumo(); atualizar(); });
     // ao escolher o processo, mostra a vara cadastrada (o painel completa o que ficar vazio)
     form.numero_processo.addEventListener('input', () => {
       const o = orgaos[form.numero_processo.value.trim()];
@@ -1281,6 +1305,7 @@
     const cli = params.get('cli') || '';
     const ato = params.get('ato') === '1';
     const fase = params.get('fase') || '';
+    const visao = params.get('visao') === 'quadro' ? 'quadro' : 'lista';
     const todosSit = await api('processos.listar', { busca, semCliente });
     const nAtivos = todosSit.filter(p => p.status !== 'arquivado').length, nArq = todosSit.length - nAtivos;
     const tribunais = [...new Set(todosSit.map(p => p.tribunal || '—'))].sort();
@@ -1293,12 +1318,14 @@
     const porFase = {};
     todos.forEach(p => { porFase[p.fase] = (porFase[p.fase] || 0) + 1; });
     const lista = (area ? todos.filter(p => nomeArea(p) === area) : todos).filter(p => !fase || p.fase === fase);
+    const porFaseArea = {};
+    todos.filter(p => !area || nomeArea(p) === area).forEach(p => { porFaseArea[p.fase] = (porFaseArea[p.fase] || 0) + 1; });
     const porArea = {}, porTrib = {};
     todos.forEach(p => { porArea[nomeArea(p)] = (porArea[nomeArea(p)] || 0) + 1; const t = p.tribunal || '—'; porTrib[t] = (porTrib[t] || 0) + 1; });
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, fase, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, fase, visao: visao === 'quadro' ? 'quadro' : '', sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
@@ -1315,6 +1342,29 @@
         grafRosca(Object.keys(FASES).map(f => ({ nome: FASES[f], valor: porFase[f] || 0, cor: CORES_FASE[f], ir: () => ir({ fase: f }) })), { rotulo: 'processos', titulo: 'Processos por fase' })),
       h('div', { class: 'ini-rosca' }, h('h3', {}, 'Por tribunal'),
         grafRosca(porTribOrd.slice(0, 8).map(t => ({ nome: t, valor: porTrib[t], ir: () => ir({ trib: t, area: '' }) })), { rotulo: 'processos', titulo: 'Processos por tribunal' })));
+    const corEt = el => { if (el.dataset.cor) el.style.setProperty('--cor-et', el.dataset.cor); return el; };
+    const etapasProc = h('div', {},
+      h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, 'Clique numa etapa para filtrar'),
+        h('div', { class: 'alternar', role: 'group', 'aria-label': 'Ver como' },
+          h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', 'aria-pressed': String(visao === 'lista'), onclick: () => ir({ visao: '' }) }, 'Lista'),
+          h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', 'aria-pressed': String(visao === 'quadro'), onclick: () => ir({ visao: 'quadro' }) }, 'Quadro por etapa'))),
+      h('div', { class: 'etapas-cli etapas-proc', role: 'group', 'aria-label': 'Etapas' },
+        h('button', { type: 'button', class: 'etapa-card todas' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) },
+          h('span', { class: 'etapa-n' }, String(todos.filter(p => !area || nomeArea(p) === area).length)), h('span', { class: 'etapa-nome' }, 'Todas')),
+        Object.keys(FASES).map(f => corEt(h('button', { type: 'button', 'data-cor': CORES_FASE[f] || '', class: 'etapa-card' + (fase === f ? ' ativo' : ''), onclick: () => ir({ fase: fase === f ? '' : f }) },
+          h('span', { class: 'etapa-n' }, String(porFaseArea[f] || 0)), h('span', { class: 'etapa-nome' }, FASES[f]))))));
+    const quadroProc = h('div', { class: 'quadro-cli' }, Object.keys(FASES).filter(f => !fase || f === fase).map(f => {
+      const daFase = lista.filter(p => p.fase === f);
+      return corEt(h('section', { class: 'coluna-cli', 'data-cor': CORES_FASE[f] || '' },
+        h('h2', {}, h('span', {}, FASES[f]), h('span', { class: 'seg-n' }, String(daFase.length))),
+        daFase.slice(0, 60).map(p => h('a', { class: 'cartao-cli', href: '#/processo/' + p.id },
+          h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar')),
+          h('span', { class: 'peq num' }, p.numero || '(a ajuizar)'),
+          h('span', { class: 'peq' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
+          p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'peq' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data)) : null)),
+        daFase.length > 60 ? h('p', { class: 'peq' }, `+ ${daFase.length - 60} (use a busca ou os filtros)`) : null,
+        !daFase.length ? h('p', { class: 'peq vazio-t' }, 'Nenhum processo nesta etapa.') : null));
+    }));
     const principal = h('div', { class: 'col-principal' },
       h('div', { class: 'filtros-proc' },
         h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
@@ -1327,12 +1377,9 @@
           [['', 'Todos'], ['com', 'Com cliente cadastrado'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
         h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
         (sit !== 'todos' || trib || cli || ato || area || busca || fase) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null),
-      h('div', { class: 'chips fases-chips', role: 'group', 'aria-label': 'Fase' },
-        h('button', { type: 'button', class: 'chip-filtro' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) }, `Todas as fases (${todos.length})`),
-        Object.keys(FASES).map(f => h('button', { type: 'button', class: 'chip-filtro fase-' + f + (fase === f ? ' ativo' : ''), onclick: () => ir({ fase: fase === f ? '' : f }) },
-          FASES[f], ' ', h('span', { class: 'seg-n' }, String(porFase[f] || 0))))),
+      etapasProc,
       form,
-      compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
+      visao === 'quadro' ? quadroProc : compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
         h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase)),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
@@ -1762,28 +1809,78 @@
       h('section', { class: 'bloco-prazos' }, h('h2', {}, `Prazos (${todosOrdenados.length})`),
         h('div', { class: 'legenda-prazos peq' }, h('span', { class: 'lg vencido' }, 'vencido'), h('span', { class: 'lg urgente' }, 'até 2 dias'), h('span', { class: 'lg atencao' }, '3 a 5 dias'), h('span', { class: 'lg tranquilo' }, 'mais de 5 dias')),
         tabelaPrazos(todosOrdenados, ver === 'todos' ? 'Nenhum prazo em aberto.' : 'Nenhum prazo neste filtro.', ordem)),
+      blocoIntimacoes(sis),
       h('details', { class: 'caixa' }, h('summary', {}, 'Como o robô calcula os prazos'),
         h('p', {}, 'A ciência é a data em que a intimação é aberta (confirmada) ou, se ninguém abrir, a tácita: 10 dias após a expedição. No DJEN, é o dia útil seguinte à disponibilização. A contagem usa dias úteis, os feriados cadastrados e o recesso de 20/12 a 20/01, até as 23h59 do dia fatal.'),
         h('p', {}, 'O robô roda sozinho de 6 em 6 horas (0h, 6h, 12h, 18h, aproximadamente) e recalcula os prazos em aberto. Todo prazo calculado pelo robô fica marcado até a advogada conferir no eproc ou no PJe.')),
-      blocoIntimacoes(),
       sessao.usuario.pode.usuarios ? blocoFeriados() : null);
   }
 
-  function blocoIntimacoes() {
-    const det = h('details', { class: 'caixa' }, h('summary', {}, 'Últimas intimações lidas pelo robô'));
-    det.addEventListener('toggle', async () => {
-      if (!det.open || det.dataset.ok) return;
-      det.dataset.ok = '1';
+  /** Lista das intimações, sempre aberta na tela: busca, filtro do sistema, prazo de cada uma e "Marcar na agenda". */
+  function blocoIntimacoes(sis) {
+    const caixa = h('section', { class: 'caixa bloco-intim', id: 'intimacoes' });
+    let limite = 30, busca = '';
+    const campoBusca = h('input', { type: 'search', placeholder: 'Buscar intimação por número, cliente ou texto', 'aria-label': 'Buscar intimação' });
+    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando as intimações…'));
+    const titulo = h('h2', {}, 'Intimações recebidas');
+    const carregar = async () => {
       try {
-        const lista = await api('intimacoes.listar', { limite: 40 });
-        det.append(lista.length ? h('ul', { class: 'lista-int' }, lista.map(i => h('li', {},
-          h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), ' · ', i.fonte, ' · ', h('span', { class: 'num' }, i.numero), ' · ', i.movimento,
-          i.partes_cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
-          i.resumo_ia ? h('div', { class: 'peq ia-txt' }, i.resumo_ia) : null,
-          i.texto ? h('div', { class: 'peq' }, i.texto) : null))) : h('p', { class: 'peq' }, 'Nenhuma intimação lida ainda.'));
-      } catch (e) { det.append(h('p', { class: 'erro' }, e.message)); }
+        let r = await api('intimacoes.listar', { limite: sis === 'todos' ? limite : limite * 3, busca });
+        if (Array.isArray(r)) r = { total: r.length, lista: r };
+        const lista = r.lista.filter(i => sis === 'todos' || sistemaDoPrazo({ sistema: i.fonte, tribunal: i.tribunal, numero: i.numero }) === sis).slice(0, limite);
+        titulo.textContent = `Intimações recebidas (${r.total})`;
+        corpo.replaceChildren(...[lista.length ? h('ul', { class: 'lista-intim' }, lista.map(itemIntimacao)) : h('p', { class: 'peq' }, busca ? 'Nenhuma intimação com essa busca.' : 'Nenhuma intimação lida ainda.'),
+          r.total > limite ? h('div', { class: 'acoes' }, botao('Mostrar mais 30', () => { limite += 30; carregar(); }, 'sec')) : null].filter(Boolean));
+      } catch (e) { corpo.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+    };
+    let t;
+    campoBusca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { busca = campoBusca.value.trim(); limite = 30; carregar(); }, 350); });
+    caixa.append(h('div', { class: 'cab-intim' }, titulo, campoBusca),
+      h('p', { class: 'peq' }, 'Tudo o que o robô leu (Gmail do eproc e do PJe, DJEN), da mais nova para a mais antiga. Nada é apagado daqui, mesmo depois de dar baixa no prazo.'), corpo);
+    carregar();
+    return caixa;
+  }
+
+  function itemIntimacao(i) {
+    const z = i.prazo;
+    return h('li', { class: 'item-intim' },
+      h('div', { class: 'intim-topo' },
+        h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), h('span', { class: 'tag mini-tag' }, i.fonte || '—'),
+        i.processo_id ? h('a', { class: 'num', href: '#/processo/' + i.processo_id }, i.numero) : h('span', { class: 'num' }, i.numero),
+        acessoTribunal(i.numero)),
+      h('div', { class: 'intim-mov' }, i.movimento || '—'),
+      i.partes_cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
+      i.resumo_ia ? h('div', { class: 'peq ia-txt' + (/⚠/.test(i.resumo_ia) ? ' ia-alerta' : '') }, i.resumo_ia) : null,
+      i.texto ? h('details', { class: 'intim-texto' }, h('summary', {}, 'Ver o texto'), h('div', { class: 'peq' }, i.texto)) : null,
+      h('div', { class: 'intim-acoes' },
+        z ? h('a', { class: 'chip-filtro', href: '#/prazo/' + z.id }, z.fatal ? `Prazo: ${z.descricao ? z.descricao.slice(0, 40) + ' · ' : ''}fatal ${dataBR(z.fatal)}` : 'Prazo: a definir', ['cumprido', 'cancelado'].includes(z.situacao) ? ' (baixado)' : '') : h('span', { class: 'peq' }, 'Sem prazo aberto'),
+        i.ato ? h('a', { class: 'tag ok', href: '#/agenda?data=' + i.ato.data }, '📅 Na agenda: ' + i.ato.tipo + ' ' + dataBR(i.ato.data))
+          : botao('📅 Marcar na agenda', () => caixaMarcarAto({ intimacao_id: i.id, processo_id: i.processo_id, numero: i.numero, texto: [i.movimento, i.texto].join(' ') }), 'sec mini')));
+  }
+
+  /** Janela para lançar audiência ou perícia na agenda. O prazo da intimação continua na lista. */
+  function caixaMarcarAto(o) {
+    const t = String(o.texto || '').toLowerCase();
+    const tipoSug = /per[ií]cia|perito/.test(t) ? 'pericia' : /instru/.test(t) ? 'instrucao' : /media[cç][aã]o/.test(t) ? 'mediacao' : /inicial|\buna\b/.test(t) ? 'inicial' : 'conciliacao';
+    const caixa = h('dialog', { class: 'dialogo' });
+    const form = h('form', { class: 'campos', novalidate: true },
+      h('h2', { class: 'largo' }, 'Marcar na agenda'),
+      h('p', { class: 'largo peq' }, 'Processo ', h('span', { class: 'num' }, o.numero || ''), '. Abra o processo no sistema do tribunal, confira a data e o horário e lance aqui. Vai para o Google Agenda certo e vira um lembrete na lista de prazos; o prazo da intimação continua lá.'),
+      campo('tipo', 'O que é', tipoSug, { opcoes: [['conciliacao', 'Audiência de conciliação'], ['instrucao', 'Audiência de instrução'], ['inicial', 'Audiência inicial / una'], ['mediacao', 'Audiência de mediação (CEJUSC)'], ['pericia', 'Perícia']] }),
+      campo('data', 'Data', '', { tipo: 'date', obrigatorio: true }),
+      campo('hora', 'Horário', '', { tipo: 'time' }),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Marcar na agenda'), botao('Cancelar', () => caixa.close(), 'sec')),
+      h('p', { class: 'erro largo' }));
+    aoEnviar(form, async fd => {
+      const r = await api('agenda.marcarAto', { intimacao_id: o.intimacao_id || '', processo_id: o.processo_id || '', tipo: fd.get('tipo'), data: fd.get('data'), hora: fd.get('hora') });
+      caixa.close();
+      avisar(r.erro_agenda ? 'Lembrete criado, mas o Google Agenda recusou (' + r.erro_agenda + '). O robô tenta de novo sozinho.' : 'Marcado na agenda.', !!r.erro_agenda);
+      rota();
     });
-    return det;
+    caixa.append(form);
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa);
+    caixa.showModal();
   }
 
   function blocoFeriados() {
@@ -1850,6 +1947,8 @@
           try { await api('ia.resumirPrazo', { id: z.id }); avisar('Resumo da IA pronto.'); telaPrazo(z.id, new URLSearchParams()); }
           catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Resumir com IA'; }
         }, 'sec mini')),
+      /^ato:/.test(z.observacoes || '') ? null : h('div', { class: 'acoes-sec' }, botao('📅 Marcar audiência ou perícia na agenda', () => caixaMarcarAto({ intimacao_id: z.intimacao_id || '', processo_id: z.processo_id, numero: z.numero, texto: [z.descricao, z.observacoes, z.resumo_ia].join(' ') }), 'sec mini'),
+        h('span', { class: 'peq' }, ' Este prazo continua na lista.')),
       h('p', { class: 'peq' }, 'Origem: ' + z.origem + (z.observacoes ? ' · ' + z.observacoes : '')));
     mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, form);
   }

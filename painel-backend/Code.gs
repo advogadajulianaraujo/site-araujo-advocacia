@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.2';
+var VERSAO = '6.9.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -313,6 +313,7 @@ var ROTAS = {
   'djen.historico': { fn: djenHistorico_ },
   'agenda.listar': { fn: listarAgenda_ },
   'agenda.criar': { fn: criarCompromisso_ },
+  'agenda.marcarAto': { fn: marcarAtoPainel_ },
   'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
   'clientes.documentos': { fn: documentosCliente_ },
   'modelos.listar': { fn: listarModelos_ },
@@ -2096,6 +2097,7 @@ function rodarRobo_(quem) {
     var navRecente = djenNav && (Date.now() - new Date(djenNav).getTime()) < 36 * 3600000;
     try { if (!ctx.gmailParcial && !navRecente) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
+    try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
     try { ctx.prazos.adiar = true; atribuirResponsaveis_(ctx.prazos, ctx.procs); regravarMudadas_(ctx.prazos); } catch (e3) { ctx.prazos.adiar = false; }
@@ -2707,11 +2709,26 @@ function mudarSituacaoPrazo_(d, u) {
 }
 
 function listarIntimacoes_(d) {
-  var lim = Math.min(parseInt(d.limite, 10) || 50, 200);
-  return tabela_('Intimacoes').linhas
+  var lim = Math.min(parseInt(d.limite, 10) || 50, 300);
+  var q = normalizar_(d.busca || '');
+  var prazos = {}, atos = {};
+  tabela_('Prazos').linhas.forEach(function (z) {
+    prazos[z.id] = z;
+    if (/^ato:/.test(z.observacoes || '') && z.intimacao_id) atos[z.intimacao_id] = { tipo: String(z.observacoes).slice(4).split(' | ')[0], data: z.fatal, prazo_id: z.id };
+  });
+  var lista = tabela_('Intimacoes').linhas;
+  if (q) lista = lista.filter(function (i) { return normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto].join(' ')).indexOf(q) >= 0; });
+  var total = lista.length;
+  return { total: total, lista: lista.slice()
     .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; })
     .slice(0, lim)
-    .map(function (i) { var x = limpar_(i); x.texto = String(x.texto || '').slice(0, 600); return x; });
+    .map(function (i) {
+      var x = limpar_(i); x.texto = String(x.texto || '').slice(0, 600);
+      var z = prazos[i.prazo_id];
+      if (z) x.prazo = { id: z.id, fatal: z.fatal, situacao: z.situacao, descricao: String(z.descricao || '').slice(0, 120) };
+      if (atos[i.id]) x.ato = atos[i.id];
+      return x;
+    }) };
 }
 
 function resumoPrazos_() {
@@ -3255,57 +3272,203 @@ function dataPlanilha_(v) {
 
 /**
  * Procura audiência ou perícia marcada no texto da intimação (DJEN, eproc ou PJe).
- * Se achar data, marca na agenda certa e cria um prazo-lembrete com a data do ato.
+ * Se achar a data, marca na agenda certa e cria um prazo-lembrete com a data do ato. O prazo "para fazer"
+ * da intimação continua existindo (é criado à parte em registrarIntimacao_). Sem data no texto, cria uma
+ * tarefa "lançar na agenda" para a equipe abrir o processo e marcar pelo painel.
  */
-function detectarAudienciaPericia_(ctx, d, proc, intim) {
-  var texto = [d.movimento, d.texto].join(' ');
+function detectarAudienciaPericia_(ctx, d, proc, intim, semTarefa) {
+  var ato = acharAto_([d.movimento, d.texto].join(' '));
+  if (!ato) return false;
+  var info = { numero: d.numero, fonte: d.fonte, movimento: d.movimento, ciencia: d.ciencia, intimacao_id: intim ? intim.id : '' };
+  if (ato.semData) { if (!semTarefa) tarefaAtoSemData_(ctx, ato, info, proc, intim ? 'I:' + intim.id : ''); return false; }
+  return marcarAto_(ctx, ato, info, proc);
+}
+
+var MESES_ATO = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
+
+/** Lê o texto e devolve { ehPericia, tipo, agenda, data, hora } ou { semData: true, ... } (designado, mas sem a data no texto) ou null. */
+function acharAto_(texto) {
   var t = normalizar_(texto);
-  var ehPericia = /per[ií]cia|pericial|perito/.test(t) && /(designad|marcad|agendad|realizar|comparecer|data)/.test(t);
-  var ehAudiencia = /audiencia/.test(t) && /(designad|redesignad|marcad|agendad|pauta|comparecer|para o dia|realizar)/.test(t);
-  if (!ehPericia && !ehAudiencia) return false;
-  if (/cancelad|retirad[ao] de pauta|realizada|nao realizada|adiada sem/.test(t) && !/redesignad/.test(t)) return false;
-  var palavra = ehPericia ? /per[ií]cia|perito/i : /audi[eê]ncia/i;
-  var pos = texto.search(palavra);
-  var trecho = texto.slice(Math.max(0, pos), pos + 400);
-  var m = /(\d{2})\/(\d{2})\/(\d{4})(?:[^\d]{1,25}(\d{1,2})\s*(?:h|:)\s*(\d{2})?)?/.exec(trecho);
-  if (!m) return false;
-  var data = m[3] + '-' + m[2] + '-' + m[1];
-  var hora = m[4] ? ('0' + m[4]).slice(-2) + ':' + (m[5] || '00') : '';
-  if (data < hojeSP_()) return false;
-  var tipo = ehPericia ? 'perícia' : /instru/.test(t) ? 'audiência de instrução' : /inicial|una/.test(t) ? 'audiência inicial' : 'audiência de conciliação';
-  var agenda = ehPericia ? 'PERÍCIAS' : /instru/.test(t) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
-  var chave = 'ato|' + d.numero + '|' + tipo + '|' + data + '|' + hora;
-  ctx.eventos = ctx.eventos || tabela_('Eventos');
-  if (ctx.eventos.linhas.some(function (e) { return e.chave === chave; })) return false;
-  var cliente = proc.cliente_id ? ((ctx.clientes.linhas.filter(function (c) { return c.id === proc.cliente_id; })[0] || {}).nome) : (proc.cliente_nome || '');
-  var titulo = (tipo.charAt(0).toUpperCase() + tipo.slice(1)) + (cliente ? ' — ' + cliente : '') + ' — ' + d.numero;
-  var evId = '';
+  if (!t) return null;
+  var ehPericia = /pericia|perito/.test(t) && /(designad|marcad|agendad|realizar|realizacao|comparecer|data|dia|local)/.test(t);
+  var ehAudiencia = /audiencia|sessao de (conciliacao|mediacao)|cejusc/.test(t) &&
+    /(designad|redesignad|marcad|agendad|pauta|comparecer|comparecimento|para o dia|realizar|realizacao|intimad|intimacao)/.test(t);
+  if (!ehPericia && !ehAudiencia) return null;
+  if (ehPericia && ehAudiencia) ehPericia = t.search(/pericia|perito/) < t.search(/audiencia|sessao de|cejusc/);
+  if (/cancelad|retirad[ao] d[ae] pauta|nao realizada|adiada sem|audiencia realizada|pericia realizada|termo de audiencia|ata de audiencia/.test(t) && !/redesignad|designo|designad[ao] (para|o dia|a data)/.test(t)) return null;
+  var tipo = ehPericia ? 'perícia'
+    : /instrucao|instrucao e julgamento/.test(t) ? 'audiência de instrução'
+    : /\bmediacao\b/.test(t) ? 'audiência de mediação'
+    : /inicial|\buna\b/.test(t) ? 'audiência inicial' : 'audiência de conciliação';
+  var agenda = ehPericia ? 'PERÍCIAS' : /instrucao/.test(t) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
+  var pos = t.search(ehPericia ? /pericia|perito/ : /audiencia|sessao de|cejusc/);
+  var trecho = t.slice(Math.max(0, pos), pos + 600);
+  var hoje = hojeSP_(), achada = null;
+  var re = /(\d{1,2})\s*(?:\/|\.|-)\s*(\d{1,2})\s*(?:\/|\.|-)\s*(\d{4}|\d{2})(?!\d)|(\d{1,2})(?:º|o)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g, m;
+  while ((m = re.exec(trecho))) {
+    var dia = +(m[1] || m[4]), mes = m[2] ? +m[2] : MESES_ATO[m[5]], ano = +(m[3] || m[6]);
+    if (ano < 100) ano += 2000;
+    if (!(dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 && ano >= 2000 && ano <= 2100)) continue;
+    var data = ano + '-' + ('0' + mes).slice(-2) + '-' + ('0' + dia).slice(-2);
+    if (data < hoje) continue;
+    var depois = trecho.slice(m.index + m[0].length, m.index + m[0].length + 45);
+    var hm = /^[^\d]{0,30}?(\d{1,2})\s*(?:h|:|horas?)\s*(\d{2})?/.exec(depois);
+    var hora = hm && +hm[1] <= 23 && (!hm[2] || +hm[2] <= 59) ? ('0' + hm[1]).slice(-2) + ':' + (hm[2] || '00') : '';
+    achada = { data: data, hora: hora };
+    break;
+  }
+  var r = { ehPericia: ehPericia, tipo: tipo, agenda: agenda };
+  if (achada) { r.data = achada.data; r.hora = achada.hora; return r; }
+  if (/designad|redesignad|designo|marcad|agendad|incluid[ao] em pauta/.test(t)) { r.semData = true; return r; }
+  return null;
+}
+
+/** Cria o evento no Google Agenda. Devolve o id do evento ou "erro: …". */
+function criarEventoAto_(agenda, titulo, data, hora, descricao) {
   try {
     var ids = agendas_();
     var cal = ids[agenda] && CalendarApp.getCalendarById(ids[agenda]);
-    if (cal) {
-      var ev = hora
-        ? cal.createEvent(titulo, new Date(data + 'T' + hora + ':00-03:00'), new Date(new Date(data + 'T' + hora + ':00-03:00').getTime() + 60 * 60000), { description: 'Marcado pelo robô a partir de: ' + d.fonte + '. ' + String(d.movimento || '').slice(0, 300) })
-        : cal.createAllDayEvent(titulo + ' (conferir horário)', new Date(data + 'T12:00:00-03:00'), { description: 'Horário não encontrado na intimação. Fonte: ' + d.fonte });
-      evId = ev.getId();
-    }
-  } catch (e) { evId = 'erro: ' + (e.message || e); }
+    if (!cal) return 'erro: agenda ' + agenda + ' não encontrada';
+    var ev = hora
+      ? cal.createEvent(titulo, new Date(data + 'T' + hora + ':00-03:00'), new Date(new Date(data + 'T' + hora + ':00-03:00').getTime() + 60 * 60000), { description: descricao })
+      : cal.createAllDayEvent(titulo + ' (conferir horário)', new Date(data + 'T12:00:00-03:00'), { description: descricao + ' Horário não encontrado: conferir no processo.' });
+    return ev.getId();
+  } catch (e) { return 'erro: ' + (e.message || e); }
+}
+
+function tituloAto_(ctx, tipo, numero, proc) {
+  var cliente = proc && proc.cliente_id ? ((ctx.clientes.linhas.filter(function (c) { return c.id === proc.cliente_id; })[0] || {}).nome) : ((proc && proc.cliente_nome) || '');
+  if (cliente === 'a identificar') cliente = '';
+  return (tipo.charAt(0).toUpperCase() + tipo.slice(1)) + (cliente ? ' — ' + cliente : '') + ' — ' + numero;
+}
+
+/** Já existe na agenda este ato (mesmo processo, mesma data e mesmo tipo: audiência ou perícia)? */
+function atoJaMarcado_(ctx, numero, data, ehPericia) {
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  return ctx.eventos.linhas.some(function (e) { return e.numero === numero && e.data === data && (/per[ií]cia/.test(e.tipo) === !!ehPericia); });
+}
+
+/** Marca o ato na agenda e cria o lembrete com a data do ato (nunca apaga nem muda o prazo da intimação). */
+function marcarAto_(ctx, ato, info, proc) {
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  if (atoJaMarcado_(ctx, info.numero, ato.data, ato.ehPericia)) return false;
+  var titulo = tituloAto_(ctx, ato.tipo, info.numero, proc);
+  var evId = criarEventoAto_(ato.agenda, titulo, ato.data, ato.hora, 'Marcado ' + (info.por ? 'por ' + info.por : 'pelo robô') + ' a partir de: ' + info.fonte + '. ' + String(info.movimento || '').slice(0, 300));
   var agora = new Date().toISOString();
   var prazo = {
-    id: novoId_('Z'), processo_id: proc.id, numero: d.numero, intimacao_id: intim.id,
-    descricao: (ehPericia ? 'Perícia' : 'Audiência') + ' em ' + dataBR_(data) + (hora ? ' às ' + hora : '') + ': ' +
-      (ehPericia ? 'avisar o cliente e preparar quesitos/documentos' : 'preparar audiência, cliente e testemunhas'),
-    dias: '', contagem: 'corridos', ciencia: d.ciencia || '', ciencia_tipo: 'data do ato marcada pelo juízo', fatal: data,
-    situacao: 'calculado', conferido_por: '', conferido_em: '', origem: 'robô', observacoes: 'ato:' + tipo + ' | ' + d.fonte,
-    criado_em: agora, atualizado_em: agora, atualizado_por: 'robô', cumprido_por: '', cumprido_em: ''
+    id: novoId_('Z'), processo_id: proc.id, numero: info.numero, intimacao_id: info.intimacao_id || '',
+    descricao: (ato.ehPericia ? 'Perícia' : 'Audiência') + ' em ' + dataBR_(ato.data) + (ato.hora ? ' às ' + ato.hora : '') + ': ' +
+      (ato.ehPericia ? 'avisar o cliente e preparar quesitos/documentos' : 'preparar audiência, cliente e testemunhas'),
+    dias: '', contagem: 'corridos', ciencia: info.ciencia || hojeSP_(), ciencia_tipo: 'data do ato marcada pelo juízo', fatal: ato.data,
+    situacao: info.por ? 'conferido' : 'calculado', conferido_por: info.por || '', conferido_em: info.por ? agora : '',
+    origem: info.por ? 'painel' : 'robô', observacoes: 'ato:' + ato.tipo + ' | ' + info.fonte,
+    criado_em: agora, atualizado_em: agora, atualizado_por: info.por || 'robô', cumprido_por: '', cumprido_em: ''
   };
   inserirLinha_(ctx.prazos, prazo);
-  inserirLinha_(ctx.eventos, { chave: chave, tipo: tipo, numero: d.numero, data: data, hora: hora, agenda: agenda,
-    evento_id: evId, prazo_id: prazo.id, criado_em: agora });
-  if (!proc.proximo_ato_data || proc.proximo_ato_data < hojeSP_() || data < proc.proximo_ato_data) {
-    atualizarLinha_(ctx.procs, proc, { proximo_ato: tipo.charAt(0).toUpperCase() + tipo.slice(1) + (hora ? ' ' + hora : ''), proximo_ato_data: data });
+  inserirLinha_(ctx.eventos, { chave: 'ato|' + info.numero + '|' + ato.tipo + '|' + ato.data + '|' + (ato.hora || ''), tipo: ato.tipo, numero: info.numero,
+    data: ato.data, hora: ato.hora || '', agenda: ato.agenda, evento_id: evId, prazo_id: prazo.id, criado_em: agora });
+  if (!proc.proximo_ato_data || proc.proximo_ato_data < hojeSP_() || ato.data < proc.proximo_ato_data) {
+    atualizarLinha_(ctx.procs, proc, { proximo_ato: ato.tipo.charAt(0).toUpperCase() + ato.tipo.slice(1) + (ato.hora ? ' ' + ato.hora : ''), proximo_ato_data: ato.data });
   }
   return true;
+}
+
+/** Ato designado sem a data no texto (PJe "documento sigiloso", DataJud): tarefa para abrir o processo e lançar na agenda. */
+function tarefaAtoSemData_(ctx, ato, info, proc, ref) {
+  ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var marca = '[agenda:' + info.numero + ':' + (ref || '') + ']';
+  var hoje = hojeSP_();
+  // já tem ato futuro do mesmo tipo na agenda, ou tarefa igual aberta/recente: não repete
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  if (ctx.eventos.linhas.some(function (e) { return e.numero === info.numero && e.data >= hoje && /per[ií]cia/.test(e.tipo) === !!ato.ehPericia; })) return false;
+  var desde = new Date(Date.now() - 20 * 86400000).toISOString();
+  if (ctx.tarefas.linhas.some(function (x) {
+    return x.numero === info.numero && /lançar na agenda/.test(x.titulo || '') &&
+      ((x.descricao || '').indexOf(marca) >= 0 || (x.situacao === 'ativa' && !x.concluida_em) || (x.criado_em || '') >= desde);
+  })) return false;
+  var agora = new Date().toISOString();
+  inserirLinha_(ctx.tarefas, { id: novoId_('T'),
+    titulo: (ato.ehPericia ? 'Perícia' : 'Audiência') + ' designada — abrir o processo e lançar na agenda (' + info.numero + ')',
+    descricao: 'O ' + (info.fonte || 'aviso') + ' indica ' + ato.tipo + ' designada, mas sem a data no texto. Abra o processo no sistema do tribunal, ' +
+      'veja a data e o horário e use "Marcar na agenda" em Intimações e prazos. O prazo da intimação continua na lista.\n' +
+      'Movimento: ' + String(info.movimento || '').slice(0, 200) + '\n' + marca,
+    responsavel: responsavelPadrao_(proc, info.numero), processo_id: proc.id, numero: info.numero, cliente_id: proc.cliente_id || '',
+    vence_em: hoje, etapa: 'afazer', peso: '2', situacao: 'ativa', concluida_por: '', concluida_em: '',
+    historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô: ato designado sem data', criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô' });
+  return true;
+}
+
+/**
+ * Agenda sempre em dia (toda rodada do robô): relê as intimações dos últimos 180 dias e as movimentações do DataJud
+ * à procura de audiência ou perícia ainda não marcada, e refaz no Google Agenda o que tinha falhado.
+ */
+function varrerAgenda_(ctx, limiteMs) {
+  var t0 = Date.now(), hoje = hojeSP_(), marcados = 0, tarefas = 0, refeitos = 0;
+  var desde = new Date(Date.now() - 180 * 86400000).toISOString();
+  var recente = new Date(Date.now() - 15 * 86400000).toISOString();
+  var porId = {};
+  ctx.procs.linhas.forEach(function (p) { porId[p.id] = p; });
+  var nT = (ctx.tarefas || tabela_('Tarefas')).linhas.length;
+  ctx.intim.linhas.forEach(function (i) {
+    if (Date.now() - t0 > (limiteMs || 60000) || (i.recebido_em || '') < desde) return;
+    var p = porId[i.processo_id] || ctx.porNumero[i.numero];
+    if (!p) return;
+    if (detectarAudienciaPericia_(ctx, { numero: i.numero, fonte: i.fonte, movimento: i.movimento, texto: i.texto, ciencia: (i.recebido_em || '').slice(0, 10) }, p, i, (i.recebido_em || '') < recente)) marcados++;
+  });
+  ctx.procs.linhas.forEach(function (p) {
+    if (Date.now() - t0 > (limiteMs || 60000) || !p.andamentos || p.andamentos === '-' || p.status === 'arquivado') return;
+    var movs; try { movs = JSON.parse(p.andamentos); } catch (e) { return; }
+    (movs || []).forEach(function (mv) {
+      if (!mv || !mv.n || (mv.d || '') < desde.slice(0, 10)) return;
+      var ato = acharAto_(mv.n);
+      if (!ato) return;
+      var info = { numero: p.numero, fonte: 'DataJud (movimentação de ' + dataBR_(String(mv.d).slice(0, 10)) + ')', movimento: mv.n, ciencia: String(mv.d).slice(0, 10) };
+      if (ato.semData) { if ((mv.d || '') >= recente.slice(0, 10) && tarefaAtoSemData_(ctx, ato, info, p, 'D:' + String(mv.d).slice(0, 10))) tarefas++; }
+      else if (marcarAto_(ctx, ato, info, p)) marcados++;
+    });
+  });
+  // eventos que não foram para o Google Agenda (agenda sem acesso, erro do Google): tenta de novo
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  ctx.eventos.linhas.filter(function (e) { return e.data >= hoje && (!e.evento_id || /^erro/.test(e.evento_id)); }).slice(0, 15).forEach(function (e) {
+    if (Date.now() - t0 > (limiteMs || 60000)) return;
+    var p = ctx.porNumero[e.numero];
+    var id = criarEventoAto_(e.agenda, tituloAto_(ctx, e.tipo, e.numero, p), e.data, e.hora, 'Marcado pelo robô (nova tentativa).');
+    if (!/^erro/.test(id)) { atualizarLinha_(ctx.eventos, e, { evento_id: id }); refeitos++; }
+  });
+  tarefas += (ctx.tarefas ? ctx.tarefas.linhas.length : nT) - nT;
+  if (marcados || tarefas || refeitos) registrar_('robô', 'agenda', marcados + ' ato(s) marcado(s), ' + tarefas + ' tarefa(s) "lançar na agenda", ' + refeitos + ' evento(s) refeito(s)');
+  return { marcados: marcados, tarefas: tarefas, refeitos: refeitos };
+}
+
+/** Painel: "Marcar na agenda" a partir de uma intimação, de um prazo ou de um processo. O prazo da intimação continua. */
+function marcarAtoPainel_(d, u) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.data || '')) throw falha_('Informe a data do ato.');
+  if (d.hora && !/^\d{2}:\d{2}$/.test(d.hora)) throw falha_('Hora inválida (use 14:30).');
+  if (d.data < hojeSP_()) throw falha_('A data do ato já passou.');
+  var TIPOS = { conciliacao: ['audiência de conciliação', 'AUDIÊNCIA CONCILIAÇÃO'], instrucao: ['audiência de instrução', 'AUDIÊNCIA INSTRUÇÃO'],
+    inicial: ['audiência inicial', 'AUDIÊNCIA CONCILIAÇÃO'], mediacao: ['audiência de mediação', 'AUDIÊNCIA CONCILIAÇÃO'], pericia: ['perícia', 'PERÍCIAS'] };
+  var tp = TIPOS[d.tipo];
+  if (!tp) throw falha_('Escolha o tipo do ato.');
+  return comTrava_(function () {
+    var ctx = { prazos: tabela_('Prazos'), procs: tabela_('Processos'), clientes: tabela_('Clientes'), eventos: tabela_('Eventos'), tarefas: tabela_('Tarefas') };
+    var intim = d.intimacao_id ? tabela_('Intimacoes').linhas.filter(function (i) { return i.id === d.intimacao_id; })[0] : null;
+    var proc = ctx.procs.linhas.filter(function (p) { return p.id === (d.processo_id || (intim && intim.processo_id)); })[0];
+    if (!proc && intim) proc = ctx.procs.linhas.filter(function (p) { return p.numero === intim.numero; })[0];
+    if (!proc) throw falha_('Processo não encontrado.');
+    var ato = { ehPericia: d.tipo === 'pericia', tipo: tp[0], agenda: tp[1], data: d.data, hora: d.hora || '' };
+    if (atoJaMarcado_(ctx, proc.numero, d.data, ato.ehPericia)) throw falha_('Este ato já está na agenda (mesmo processo e mesma data).');
+    var ok = marcarAto_(ctx, ato, { numero: proc.numero, fonte: intim ? intim.fonte + ' (lançado por ' + (u.nome || u.usuario) + ')' : 'painel', movimento: intim ? intim.movimento : '',
+      ciencia: hojeSP_(), intimacao_id: intim ? intim.id : '', por: u.usuario }, proc);
+    // tarefa "lançar na agenda" deste processo: concluída
+    ctx.tarefas.linhas.forEach(function (x) {
+      if (x.numero === proc.numero && x.situacao === 'ativa' && !x.concluida_em && /lançar na agenda/.test(x.titulo || '') && /per[ií]cia/i.test(x.titulo) === ato.ehPericia) {
+        atualizarLinha_(ctx.tarefas, x, { etapa: 'concluido', historico: historicoMais_(x.historico, u, 'lançou na agenda'), concluida_por: u.usuario, concluida_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+      }
+    });
+    var ev = ctx.eventos.linhas[ctx.eventos.linhas.length - 1] || {};
+    registrar_(u.usuario, 'ato na agenda', proc.numero + ' ' + ato.tipo + ' ' + d.data + ' ' + (d.hora || ''));
+    return { ok: ok, erro_agenda: /^erro/.test(ev.evento_id || '') ? ev.evento_id : '' };
+  });
 }
 
 /* ---------- Relatório de prazos cumpridos (aba Usuários) ---------- */
