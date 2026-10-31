@@ -13,9 +13,9 @@
  */
 import { gerar, lerPosts, salvarPosts, slugDe, AREAS } from './gerar.mjs';
 
-const CHAVE = process.env.GEMINI_API_KEY || '';
+const CHAVE = String(process.env.GEMINI_API_KEY || '').replace(/^[\s"']+|[\s"']+$/g, '');
 const QUANTOS = Math.max(1, Math.min(6, parseInt(process.env.BLOG_POSTS_SEMANA || '3', 10) || 3));
-const MODELOS = [process.env.GEMINI_MODELO, 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'].filter(Boolean);
+const MODELOS = [...new Set([process.env.GEMINI_MODELO, 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))];
 const HOJE = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10); // dia de Brasília
 const SECO = process.argv.includes('--seco'); // testa sem gravar
 
@@ -29,28 +29,39 @@ async function http(url, op = {}, ms = 25000) {
   try { return await fetch(url, { ...op, signal: c.signal }); } finally { clearTimeout(t); }
 }
 
-/* Gemini com nova tentativa no 429/500/503 e troca de modelo quando o Google aposenta um. */
+/* Gemini com nova tentativa no 429/500/503 e troca de modelo quando o Google aposenta um.
+   Se a Busca do Google for recusada para esta chave, tenta sem ela (os links continuam sendo conferidos um a um). */
+let semBusca = false;
 async function gemini(corpo) {
-  let modelos = MODELOS.slice(), ultimoErro = '';
+  const modelos = MODELOS.slice(), erros = [];
   for (let i = 0; i < modelos.length; i++) {
     const m = modelos[i];
     for (let tent = 0; tent < 3; tent++) {
+      const c = semBusca && corpo.tools ? { ...corpo, tools: undefined } : corpo;
       let r;
       try {
         r = await http(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': CHAVE }, body: JSON.stringify(corpo)
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': CHAVE }, body: JSON.stringify(c)
         }, 120000);
-      } catch (e) { ultimoErro = String(e.message || e); await espera(5000 * (tent + 1)); continue; }
+      } catch (e) { erros.push(`${m}: sem conexão (${e.message || e})`); await espera(5000 * (tent + 1)); continue; }
       const txt = await r.text();
       if (r.ok) return JSON.parse(txt);
-      ultimoErro = `${m}: ${r.status} ${txt.slice(0, 300)}`;
+      let msg = txt;
+      try { const j = JSON.parse(txt); msg = (j.error && (j.error.message || j.error.status)) || txt; } catch (e) { /* texto puro */ }
+      msg = String(msg).replace(/\s+/g, ' ').slice(0, 300);
+      erros.push(`${m}: ${r.status} ${msg}`);
+      log('Gemini', m, r.status, msg);
+      if (/API key not valid|API_KEY_INVALID|API key expired|invalid api key/i.test(msg)) {
+        throw new Error('A chave do Gemini no GitHub (segredo GEMINI_API_KEY) não foi aceita pelo Google. Copie de novo a chave inteira, sem espaços nem aspas, e salve o segredo outra vez. Resposta do Google: ' + msg);
+      }
+      if (r.status === 400 && c.tools && !semBusca) { semBusca = true; log('A Busca do Google foi recusada para esta chave; seguindo sem ela.'); tent--; continue; }
       if ([429, 500, 503].includes(r.status)) { await espera(8000 * (tent + 1)); continue; }
-      const sug = /use (?:models\/)?([a-z0-9.\-]+)/i.exec(txt);
+      const sug = /use (?:models\/)?([a-z0-9.\-]+)/i.exec(msg);
       if (r.status === 404 && sug && !modelos.includes(sug[1])) modelos.splice(i + 1, 0, sug[1]);
       break; // outro modelo
     }
   }
-  throw new Error('Gemini não respondeu: ' + ultimoErro);
+  throw new Error('Gemini não respondeu. ' + erros.join(' | '));
 }
 const textoDe = r => ((r.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
 function jsonDe(t) {
