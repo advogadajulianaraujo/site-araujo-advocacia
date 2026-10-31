@@ -122,6 +122,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   vencidos) com 4 ações rápidas (Novo cliente, Novo prazo, Marcar compromisso, Gerar documentos); cartões com ícone colorido
   (Intimações, Tarefas, Agenda, Clientes, Processos); três quadros (Prazos com vencidos primeiro, Audiências e perícias sem
   repetir, Hoje); "Carteira de processos" (barra colorida por fase, mesmas cores das etapas) e a pílula de status do robô.
+- Gráficos redondos (`grafRosca` em painel.js, SVG próprio; legenda clicável que filtra): Início › "Visão do escritório" (prazos em
+  aberto, processos por área, por tribunal), Processos (faixa acima da tabela: área, fase, tribunal), Financeiro (situação do mês e
+  atrasos por tempo; escondido para o RH) e Relatórios (ativos e arquivados por área). Cores das fases em `CORES_FASE`.
 - Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.
 - Tabelas de Processos e Intimações compactas: na coluna "Próximo ato" só o ato com a data completa ("Audiência 26/10/2026");
   o resumo da última movimentação aparece só ao abrir o processo.

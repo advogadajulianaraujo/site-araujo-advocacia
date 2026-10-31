@@ -648,6 +648,21 @@
         seg.style.flexGrow = String(porFaseIni[id]); return seg;
       })),
       h('ul', { class: 'legenda-fases' }, etapasIni.map(([id, nome]) => h('li', { class: 'et-' + id }, h('i', {}), nome, h('b', {}, String(porFaseIni[id])))))) : null;
+    // visão do escritório em gráficos redondos
+    const porAreaIni = {}, porTribIni = {};
+    ativosIni.forEach(p => { const a = p.area || 'Sem área'; porAreaIni[a] = (porAreaIni[a] || 0) + 1; const tb = p.tribunal || '—'; porTribIni[tb] = (porTribIni[tb] || 0) + 1; });
+    const ordena = o => Object.keys(o).sort((a, b) => o[b] - o[a]);
+    const maisDe5 = Math.max(0, (pz.abertos || 0) - (pz.vencidos || 0) - (pz.vencendo || 0) - (pz.aDefinir || 0));
+    const blocoVisao = ativosIni.length || pz.abertos ? h('section', { class: 'ini-visao' },
+      h('div', { class: 'bloco-cab' }, h('h2', {}, 'Visão do escritório'), h('a', { href: pode.usuarios ? '#/relatorios' : '#/processos' }, pode.usuarios ? 'relatórios →' : 'processos →')),
+      h('div', { class: 'ini-roscas' },
+        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Prazos em aberto'), grafRosca([
+          { nome: 'Vencidos', valor: pz.vencidos || 0, cor: '#8f1d14', ir: () => { location.hash = '#/prazos?ver=vencido'; } },
+          { nome: 'Vencem em até 5 dias', valor: pz.vencendo || 0, cor: '#e0a23a', ir: () => { location.hash = '#/prazos?ver=urgente'; } },
+          { nome: 'Mais de 5 dias', valor: maisDe5, cor: '#1f8a4c', ir: () => { location.hash = '#/prazos'; } },
+          { nome: 'A definir', valor: pz.aDefinir || 0, cor: '#7a4fc0', ir: () => { location.hash = '#/prazos?ver=definir'; } }], { rotulo: 'prazos', titulo: 'Prazos em aberto', vazio: 'Nenhum prazo em aberto.' })),
+        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos por área'), grafRosca(ordena(porAreaIni).slice(0, 7).map(a => ({ nome: a, valor: porAreaIni[a], ir: () => { location.hash = '#/processos?area=' + encodeURIComponent(a); } })), { rotulo: 'ativos', titulo: 'Processos por área' })),
+        h('div', { class: 'ini-rosca' }, h('h3', {}, 'Processos por tribunal'), grafRosca(ordena(porTribIni).slice(0, 7).map(tb => ({ nome: tb, valor: porTribIni[tb], ir: () => { location.hash = '#/processos?trib=' + encodeURIComponent(tb); } })), { rotulo: 'ativos', titulo: 'Processos por tribunal' })))) : null;
     const nPrazosHoje = fataisHoje.length, nAtosHoje = nHoje, nTar = (r.tarefas || {}).abertas || 0;
     const frase = [nPrazosHoje ? `${nPrazosHoje} prazo${nPrazosHoje > 1 ? 's' : ''} fatal${nPrazosHoje > 1 ? 'is' : ''} hoje` : 'nenhum prazo fatal hoje',
       nAtosHoje ? `${nAtosHoje} compromisso${nAtosHoje > 1 ? 's' : ''} na agenda` : 'agenda livre',
@@ -668,6 +683,7 @@
           acaoRapida('#/modelos', 'Gerar documentos', 'modelos'))),
       atalhos,
       h('div', { class: 'ini-grade' }, blocoPrazos, blocoAtos, blocoHoje),
+      blocoVisao,
       blocoCarteira,
       h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo)));
   }
@@ -1322,13 +1338,14 @@
 
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim() }); });
-    const relatorio = h('aside', { class: 'caixa relatorio' },
-      h('h3', {}, 'Quantas ações por área'),
-      h('table', { class: 'mini-tab' }, h('tbody', {}, areas.map(a => h('tr', { onclick: () => ir({ area: a }) },
-        h('td', {}, a), h('td', { class: 'num' }, h('strong', {}, String(porArea[a]))),
-        h('td', { class: 'barra-cel' }, h('span', { class: 'barrinha', 'data-w': Math.round(porArea[a] / todos.length * 100) })))))),
-      h('h3', { class: 'mt' }, 'Por tribunal'),
-      h('table', { class: 'mini-tab' }, h('tbody', {}, Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]).map(t => h('tr', {}, h('td', {}, t), h('td', { class: 'num' }, String(porTrib[t])))))));
+    const porTribOrd = Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]);
+    const relatorio = h('section', { class: 'proc-graficos' },
+      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Ações por área'),
+        grafRosca(areas.map(a => ({ nome: a, valor: porArea[a], ir: () => ir({ area: a }) })), { rotulo: 'processos', titulo: 'Processos por área' })),
+      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Por fase'),
+        grafRosca(Object.keys(FASES).map(f => ({ nome: FASES[f], valor: porFase[f] || 0, cor: CORES_FASE[f], ir: () => ir({ fase: f }) })), { rotulo: 'processos', titulo: 'Processos por fase' })),
+      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Por tribunal'),
+        grafRosca(porTribOrd.slice(0, 8).map(t => ({ nome: t, valor: porTrib[t], ir: () => ir({ trib: t, area: '' }) })), { rotulo: 'processos', titulo: 'Processos por tribunal' })));
     const principal = h('div', { class: 'col-principal' },
       h('div', { class: 'filtros-proc' },
         h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
@@ -1359,7 +1376,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}${trib ? ' · ' + trib : ''}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
-      h('div', { class: 'duas-colunas' }, principal, relatorio));
+      relatorio, principal);
     document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
   }
 
@@ -2191,6 +2208,12 @@
         h('div', { class: 'numero' }, h('b', {}, reais(t.recebidoMes)), h('span', {}, 'recebido neste mês')),
         h('div', { class: 'numero' }, h('b', {}, r.aConferir), h('span', {}, 'honorários importados a conferir'))),
       h('div', { class: 'faixas' }, r.faixas.map(f => h('div', { class: 'faixa' }, h('span', { class: 'peq' }, 'Atraso ' + f.nome), h('strong', {}, reais(f.valor)), h('span', { class: 'peq' }, f.qtd + ' parcela(s)')))),
+      t.atrasado === null ? null : h('div', { class: 'graf-duplo' },
+        h('section', { class: 'caixa' }, h('h2', {}, 'Situação do mês'), grafRosca([
+          { nome: 'Recebido neste mês', valor: t.recebidoMes, cor: '#1f8a4c' }, { nome: 'A receber em 30 dias', valor: t.aReceber30, cor: '#b08d57' }, { nome: 'Em atraso', valor: t.atrasado, cor: '#c0392b' }],
+          { dinheiro: true, rotulo: 'no total', titulo: 'Situação financeira', vazio: 'Sem valores ainda.' })),
+        h('section', { class: 'caixa' }, h('h2', {}, 'Atrasos por tempo'), grafRosca(r.faixas.map((f, i) => ({ nome: 'Atraso ' + f.nome, valor: f.valor, cor: ['#e0a23a', '#d0602d', '#8f1d14'][i] })),
+          { dinheiro: true, rotulo: 'em atraso', titulo: 'Atrasos por tempo', vazio: 'Nenhuma parcela em atraso.' }))),
       h('h2', { class: 'mt' }, 'Em atraso'),
       h('p', { class: 'peq' }, 'Fluxo: parcela atrasou → mensagem pelo WhatsApp (o painel já escreve o texto) → se não pagar, marque "Ação" e entre com a cobrança.'),
       tabelaParcelas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉', true),
@@ -2408,6 +2431,35 @@
       series.length > 1 ? h('figcaption', { class: 'gf-legenda' }, series.map(sr => h('span', {}, h('i', { class: 'gf-ponto ' + (sr.cor || '') }), sr.nome))) : null);
   }
   /** Barras deitadas (ex.: processos por área). */
+  /** Gráfico de rosca (redondo) com legenda clicável. itens: [{ nome, valor, cor?, ir? }] */
+  const CORES_FASE = { contratado: '#7a4fc0', ajuizado: '#2f6fd0', andamento: '#1d8a8a', sentenca: '#c98a12', acordo: '#e0a23a', homologacao: '#b08d57', recurso: '#d0602d', execucao: '#1f8a4c', extinto: '#9aa0aa' };
+  const CORES_GRAF = ['#2b2d33', '#b08d57', '#2f6fd0', '#1d8a8a', '#7a4fc0', '#d0602d', '#1f8a4c', '#c98a12', '#5b6ee1', '#9aa0aa'];
+  function grafRosca(itens, opc) {
+    opc = opc || {};
+    const lista = itens.filter(x => x.valor > 0);
+    const total = lista.reduce((t, x) => t + x.valor, 0);
+    const R = 62, C = 2 * Math.PI * R;
+    let acum = 0;
+    const segs = lista.map((x, i) => {
+      const cor = x.cor || CORES_GRAF[i % CORES_GRAF.length];
+      const parte = total ? x.valor / total * C : 0;
+      const seg = s('circle', { cx: 80, cy: 80, r: R, fill: 'none', stroke: cor, 'stroke-width': 22, 'stroke-dasharray': `${Math.max(0, parte - (lista.length > 1 ? 2 : 0))} ${C}`,
+        'stroke-dashoffset': String(-acum), transform: 'rotate(-90 80 80)', class: 'rosca-seg' + (x.ir ? ' clicavel' : '') },
+        s('title', {}, `${x.nome}: ${opc.dinheiro ? reais(x.valor) : x.valor} (${total ? Math.round(x.valor * 100 / total) : 0}%)`));
+      if (x.ir) seg.addEventListener('click', x.ir);
+      acum += parte; x._cor = cor; return seg;
+    });
+    const centro = opc.centro !== undefined ? opc.centro : (opc.dinheiro ? reais(total) : String(total));
+    return h('figure', { class: 'rosca' },
+      s('svg', { viewBox: '0 0 160 160', role: 'img', 'aria-label': opc.titulo || 'gráfico' },
+        s('circle', { cx: 80, cy: 80, r: R, fill: 'none', class: 'rosca-fundo', 'stroke-width': 22 }), segs,
+        s('text', { x: 80, y: 78, 'text-anchor': 'middle', class: 'rosca-num' + (String(centro).length > 7 ? ' longo' : '') }, centro),
+        s('text', { x: 80, y: 98, 'text-anchor': 'middle', class: 'rosca-rot' }, opc.rotulo || 'total')),
+      lista.length ? h('ul', { class: 'rosca-leg' }, lista.map(x => h('li', { class: x.ir ? 'clicavel' : '', onclick: x.ir || null, tabindex: x.ir ? 0 : null, onkeydown: x.ir ? (e => { if (e.key === 'Enter') x.ir(); }) : null },
+        (() => { const i = h('i', {}); i.style.background = x._cor; return i; })(), h('span', { class: 'rosca-nome' }, x.nome),
+        h('b', {}, opc.dinheiro ? reais(x.valor) : String(x.valor)), h('small', {}, total ? Math.round(x.valor * 100 / total) + '%' : '')))) : h('p', { class: 'peq' }, opc.vazio || 'Sem dados ainda.'));
+  }
+
   function grafBarras(itens, opc) {
     opc = opc || {};
     const max = Math.max(1, ...itens.map(x => x.valor));
@@ -2647,7 +2699,8 @@
         cartaoG('Prazos entregues e % no prazo', pctMes.some(Boolean) ? '% no prazo por mês: ' + r.meses.map((m, i) => r.prazosEntregues[i] ? `${MES_CURTO(m)} ${pctMes[i]}%` : null).filter(Boolean).join(' · ') : null,
           grafColunas(r.meses, [{ nome: 'Entregues', valores: r.prazosEntregues, cor: 'c-tinta' }, { nome: 'No prazo', valores: r.prazosNoPrazo, cor: 'c-verde' }])),
         cartaoG('Intimações recebidas por mês', null, grafColunas(r.meses, [{ nome: 'Intimações', valores: r.intimacoes, cor: 'c-azul' }])),
-        cartaoG('Processos por área', 'Ativos (o número ao lado mostra os arquivados).', grafBarras(r.porArea.slice(0, 12).map(a => ({ nome: a.area, valor: a.ativos, extra: a.arquivados ? `+ ${a.arquivados} arquivados` : '' }))))),
+        cartaoG('Processos por área', 'Processos ativos; passe o mouse para ver a porcentagem.', grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.ativos })), { rotulo: 'ativos', titulo: 'Processos por área' })),
+        cartaoG('Arquivados por área', null, grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.arquivados })), { rotulo: 'arquivados', titulo: 'Arquivados por área', vazio: 'Nenhum arquivado.' }))),
       h('section', { class: 'caixa' }, h('h2', {}, `Produtividade por pessoa · últimos ${r.diasProdutividade} dias`),
         r.produtividade.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab placar' }, h('thead', {}, h('tr', {}, ['Pessoa', 'Pontos', 'Entregues', 'No prazo', 'Atrasadas', 'Em aberto', 'Vencidas agora'].map(t => h('th', {}, t)))),
           h('tbody', {}, r.produtividade.map(p => h('tr', {}, h('th', { scope: 'row' }, p.nome), h('td', {}, h('b', {}, String(p.pontos))), h('td', {}, String(p.entregues)),
