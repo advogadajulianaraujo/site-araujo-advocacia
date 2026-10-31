@@ -136,7 +136,13 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   botões sem caixa-alta, títulos em Jost (Bodoni só na saudação do Início e no login).
 - Clientes: título com o total e cartão de busca (área, "só a completar"); SEM etapas (pedido da usuária: etapas só em Processos).
 - Processos: cartões de ETAPAS (as fases de `FASES`, com as cores de `CORES_FASE`; clicar filtra) e "Lista / Quadro por etapa"
-  (quadro = processos em colunas por fase).
+  (quadro = processos em colunas por fase). Sem gráficos (foram para Relatórios a pedido da usuária).
+- Relatórios: no topo a "Semana da equipe" (`relatorio.semana`, segunda a domingo, navegar semanas): por usuário, o que fez,
+  lido da aba Log (`CATEGORIAS_LOG`: intimações terminadas, prazos cumpridos/conferidos/lançados, tarefas concluídas, WhatsApp ao
+  cliente, agenda, clientes, processos, documentos, financeiro). Depois os gráficos, inclusive por fase e por tribunal.
+- Intimações: botão "✓ Terminei" grava `terminada_por` (nome) e `terminada_em` (só uma vez; "desfazer" reabre) e vai para o
+  relatório. Botão WhatsApp na intimação e no prazo; cada clique é registrado (`registro.whatsapp`). Toda ação nova que deve
+  contar no relatório precisa de `registrar_(u.usuario, ...)` com um nome que caiba em `CATEGORIAS_LOG`.
 - Início (simples, pedido da usuária): faixa escura enxuta (data, saudação em Bodoni, frase do dia, alerta de vencidos, botões
   "+ Novo cliente" e "Novo prazo"); 4 números (Prazos, Hoje, Tarefas, Processos); duas colunas: Prazos (vencidos primeiro, até 6)
   e Agenda (hoje e próximos 14 dias numa lista só, até 6); um cartão com 2 gráficos redondos (prazos em aberto e processos ativos

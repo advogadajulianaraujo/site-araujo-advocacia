@@ -84,7 +84,7 @@
   const AFETA = {
     clientes: ['clientes', 'processos', 'resumo', 'modelos'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
     processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
-    intimacoes: ['intimacoes', 'prazos', 'resumo'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
+    intimacoes: ['intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['relatorio'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
     advogados: ['modelos'], usuarios: ['usuarios'], feriados: ['feriados', 'prazos', 'resumo']
   };
@@ -1334,14 +1334,6 @@
 
       h('button', { type: 'submit', class: 'btn sec' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim() }); });
-    const porTribOrd = Object.keys(porTrib).sort((a, b) => porTrib[b] - porTrib[a]);
-    const relatorio = h('section', { class: 'proc-graficos' },
-      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Ações por área'),
-        grafRosca(areas.map(a => ({ nome: a, valor: porArea[a], ir: () => ir({ area: a }) })), { rotulo: 'processos', titulo: 'Processos por área' })),
-      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Por fase'),
-        grafRosca(Object.keys(FASES).map(f => ({ nome: FASES[f], valor: porFase[f] || 0, cor: CORES_FASE[f], ir: () => ir({ fase: f }) })), { rotulo: 'processos', titulo: 'Processos por fase' })),
-      h('div', { class: 'ini-rosca' }, h('h3', {}, 'Por tribunal'),
-        grafRosca(porTribOrd.slice(0, 8).map(t => ({ nome: t, valor: porTrib[t], ir: () => ir({ trib: t, area: '' }) })), { rotulo: 'processos', titulo: 'Processos por tribunal' })));
     const corEt = el => { if (el.dataset.cor) el.style.setProperty('--cor-et', el.dataset.cor); return el; };
     const etapasProc = h('div', {},
       h('div', { class: 'secao-tit' }, h('h2', {}, 'Etapas'), h('span', { class: 'peq' }, 'Clique numa etapa para filtrar'),
@@ -1392,7 +1384,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, area || 'Processos'), h('p', {}, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' nesta área' : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}${trib ? ' · ' + trib : ''}`)),
         botao('Novo processo', () => { location.hash = '#/processo/novo'; })),
-      relatorio, principal);
+      principal);
     document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
   }
 
@@ -1622,6 +1614,8 @@
   }
 
   /** WhatsApp para o cliente: avisa que chegou intimação e que o escritório já está cuidando do prazo. */
+  /** Guarda no relatório que o cliente foi avisado pelo WhatsApp (não atrapalha se falhar). */
+  function registrarWhats(z, motivo) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo }).catch(() => {}); }
   function whatsPrazo(z) {
     let tel = String(z.telefone || '').replace(/\D/g, '');
     if (!tel || !z.cliente) return null;
@@ -1649,7 +1643,7 @@
       SITUACOES_ABERTAS.includes(z.situacao)
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'cumprido' }, 'Prazo marcado como cumprido.')) }, 'Cumprido')
         : h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir'),
-      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => ev.stopPropagation() }, 'WhatsApp') : null);
+      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => { ev.stopPropagation(); registrarWhats(z, 'intimação'); } }, 'WhatsApp') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
 
@@ -1843,7 +1837,14 @@
 
   function itemIntimacao(i) {
     const z = i.prazo;
-    return h('li', { class: 'item-intim' },
+    const wa = whatsPrazo({ telefone: i.telefone, cliente: i.cliente, numero: i.numero, descricao: z ? z.descricao : '' });
+    const li = h('li', { class: 'item-intim' + (i.terminada_por ? ' terminada' : '') });
+    const terminar = async (desfazer, b) => {
+      b.disabled = true;
+      try { await api('intimacoes.terminar', { id: i.id, desfazer }); avisar(desfazer ? 'Intimação reaberta.' : 'Registrado: você terminou esta intimação.'); const n = itemIntimacao(Object.assign({}, i, desfazer ? { terminada_por: '', terminada_em: '' } : { terminada_por: sessao.usuario.nome || sessao.usuario.usuario, terminada_em: new Date().toISOString() })); li.replaceWith(n); }
+      catch (e) { b.disabled = false; avisar(e.message, true); }
+    };
+    li.append(
       h('div', { class: 'intim-topo' },
         h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), h('span', { class: 'tag mini-tag' }, i.fonte || '—'),
         i.processo_id ? h('a', { class: 'num', href: '#/processo/' + i.processo_id }, i.numero) : h('span', { class: 'num' }, i.numero),
@@ -1855,7 +1856,13 @@
       h('div', { class: 'intim-acoes' },
         z ? h('a', { class: 'chip-filtro', href: '#/prazo/' + z.id }, z.fatal ? `Prazo: ${z.descricao ? z.descricao.slice(0, 40) + ' · ' : ''}fatal ${dataBR(z.fatal)}` : 'Prazo: a definir', ['cumprido', 'cancelado'].includes(z.situacao) ? ' (baixado)' : '') : h('span', { class: 'peq' }, 'Sem prazo aberto'),
         i.ato ? h('a', { class: 'tag ok', href: '#/agenda?data=' + i.ato.data }, '📅 Na agenda: ' + i.ato.tipo + ' ' + dataBR(i.ato.data))
-          : botao('📅 Marcar na agenda', () => caixaMarcarAto({ intimacao_id: i.id, processo_id: i.processo_id, numero: i.numero, texto: [i.movimento, i.texto].join(' ') }), 'sec mini')));
+          : botao('📅 Marcar na agenda', () => caixaMarcarAto({ intimacao_id: i.id, processo_id: i.processo_id, numero: i.numero, texto: [i.movimento, i.texto].join(' ') }), 'sec mini'),
+        wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: () => registrarWhats(i, 'intimação') }, 'WhatsApp') : null,
+        i.terminada_por
+          ? h('span', { class: 'terminada-tag' }, '✓ Terminada por ', h('strong', {}, i.terminada_por), i.terminada_em ? ' · ' + new Date(i.terminada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
+            h('button', { type: 'button', class: 'link', onclick: ev => terminar(true, ev.currentTarget) }, 'desfazer'))
+          : h('button', { type: 'button', class: 'btn mini terminei', onclick: ev => terminar(false, ev.currentTarget) }, '✓ Terminei')));
+    return li;
   }
 
   /** Janela para lançar audiência ou perícia na agenda. O prazo da intimação continua na lista. */
@@ -2744,9 +2751,40 @@
 
   /* ---------- relatórios (administração) ---------- */
 
-  async function telaRelatorios() {
+  /** O que cada pessoa fez na semana (segunda a domingo), pelo registro do painel. */
+  function blocoSemana(sem) {
+    const caixa = h('section', { class: 'caixa rel-semana' });
+    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando a semana…'));
+    const cab = h('div', { class: 'cab-semana' });
+    caixa.append(cab, corpo);
+    (async () => {
+      let r;
+      try { r = await api('relatorio.semana', { inicio: sem || '' }); }
+      catch (e) { corpo.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      const nomeCat = Object.fromEntries(r.categorias.map(c => [c.id, c.nome]));
+      const ir = d => { location.hash = '#/relatorios' + (d ? '?semana=' + d : ''); };
+      cab.replaceChildren(
+        h('div', {}, h('h2', {}, 'Semana da equipe'), h('p', { class: 'peq' }, `De ${dataBR(r.inicio)} a ${dataBR(r.fim)} · o que cada pessoa fez no painel (intimações terminadas, prazos, tarefas, WhatsApp, cadastros, documentos).`)),
+        h('div', { class: 'barra' }, botao('◀ Semana anterior', () => ir(r.anterior), 'sec mini'),
+          r.proxima ? botao('Próxima ▶', () => ir(r.proxima), 'sec mini') : null,
+          sem ? botao('Esta semana', () => ir(''), 'sec mini') : null));
+      const cartao = p => h('article', { class: 'pessoa-sem' + (p.total ? '' : ' parado') },
+        h('div', { class: 'pessoa-cab' }, h('span', { class: 'cli-ini' }, String(p.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
+          h('div', {}, h('strong', {}, p.nome), h('div', { class: 'peq' }, p.perfil || '')), h('b', { class: 'pessoa-total' }, String(p.total))),
+        p.total ? h('ul', { class: 'pessoa-grupos' }, r.categorias.filter(c => p.grupos[c.id]).map(c => h('li', {}, h('span', {}, c.nome), h('b', {}, String(p.grupos[c.id])))))
+          : h('p', { class: 'peq' }, 'Nada registrado nesta semana.'),
+        p.itens.length ? h('details', {}, h('summary', {}, `Ver o que fez (${p.itens.length})`),
+          h('ol', { class: 'pessoa-itens' }, p.itens.map(x => h('li', {}, h('time', {}, new Date(x.quando).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), ' ',
+            h('span', { class: 'tag mini-tag' }, nomeCat[x.cat] || x.acao), ' ', x.texto)))) : null);
+      corpo.replaceChildren(r.pessoas.length ? h('div', { class: 'grade-semana' }, r.pessoas.map(cartao)) : h('p', { class: 'peq' }, 'Nenhum usuário cadastrado ainda.'));
+    })();
+    return caixa;
+  }
+
+  async function telaRelatorios(params) {
     carregando();
     const r = await api('relatorio.geral', {});
+    const sem = params && /^\d{4}-\d{2}-\d{2}$/.test(params.get('semana') || '') ? params.get('semana') : '';
     const soma = a => a.reduce((x, y) => x + y, 0);
     const pct = r.percentualNoPrazo;
     const cartaoG = (titulo, sub, corpo) => h('section', { class: 'caixa rel-cartao' }, h('h2', {}, titulo), sub ? h('p', { class: 'peq' }, sub) : null, corpo);
@@ -2754,6 +2792,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Relatórios'), h('p', {}, 'Últimos 12 meses. Clientes e processos importados (GEA, Gmail antigo) não contam como novos.')),
         h('div', { class: 'barra' }, botao('Imprimir', () => window.print(), 'sec'))),
+      blocoSemana(sem),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' }, h('b', {}, String(soma(r.clientesNovos))), h('span', {}, 'clientes novos')),
         h('div', { class: 'numero' }, h('b', {}, String(soma(r.processosNovos))), h('span', {}, 'processos novos')),
@@ -2768,6 +2807,8 @@
           grafColunas(r.meses, [{ nome: 'Entregues', valores: r.prazosEntregues, cor: 'c-tinta' }, { nome: 'No prazo', valores: r.prazosNoPrazo, cor: 'c-verde' }])),
         cartaoG('Intimações recebidas por mês', null, grafColunas(r.meses, [{ nome: 'Intimações', valores: r.intimacoes, cor: 'c-azul' }])),
         cartaoG('Processos por área', 'Processos ativos; passe o mouse para ver a porcentagem.', grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.ativos })), { rotulo: 'ativos', titulo: 'Processos por área' })),
+        r.porFase ? cartaoG('Processos por fase', 'Ativos. Clique para abrir em Processos.', grafRosca(Object.keys(FASES).map(f => ({ nome: FASES[f], valor: r.porFase[f] || 0, cor: CORES_FASE[f], ir: () => { location.hash = '#/processos?fase=' + f; } })), { rotulo: 'ativos', titulo: 'Processos por fase' })) : null,
+        r.porTribunal ? cartaoG('Processos por tribunal', 'Ativos.', grafRosca(r.porTribunal.slice(0, 8).map(t => ({ nome: t.tribunal, valor: t.n, ir: () => { location.hash = '#/processos?trib=' + encodeURIComponent(t.tribunal); } })), { rotulo: 'ativos', titulo: 'Processos por tribunal' })) : null,
         cartaoG('Arquivados por área', null, grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.arquivados })), { rotulo: 'arquivados', titulo: 'Arquivados por área', vazio: 'Nenhum arquivado.' }))),
       h('section', { class: 'caixa' }, h('h2', {}, `Produtividade por pessoa · últimos ${r.diasProdutividade} dias`),
         r.produtividade.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab placar' }, h('thead', {}, h('tr', {}, ['Pessoa', 'Pontos', 'Entregues', 'No prazo', 'Atrasadas', 'Em aberto', 'Vencidas agora'].map(t => h('th', {}, t)))),
@@ -2883,7 +2924,7 @@
         case 'prazo': await telaPrazo(id, params); break;
         case 'financeiro': if (id === 'receber') await telaAReceber(params); else if (id === 'caixa') await telaCaixa(params); else await telaFinanceiro(params); break;
         case 'tarefas': await telaTarefas(params); break;
-        case 'relatorios': await telaRelatorios(); break;
+        case 'relatorios': await telaRelatorios(params); break;
         case 'honorario': await telaHonorario(id, params); break;
         default: await telaInicio();
       }

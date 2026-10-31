@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.3';
+var VERSAO = '6.9.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -55,7 +55,7 @@ var ESQUEMA = {
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
-    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia'],
+    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
     'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia'],
@@ -314,6 +314,9 @@ var ROTAS = {
   'agenda.listar': { fn: listarAgenda_ },
   'agenda.criar': { fn: criarCompromisso_ },
   'agenda.marcarAto': { fn: marcarAtoPainel_ },
+  'intimacoes.terminar': { fn: terminarIntimacao_ },
+  'registro.whatsapp': { fn: registrarWhatsapp_ },
+  'relatorio.semana': { permissao: 'usuarios', fn: relatorioSemana_ },
   'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
   'clientes.documentos': { fn: documentosCliente_ },
   'modelos.listar': { fn: listarModelos_ },
@@ -2716,6 +2719,9 @@ function listarIntimacoes_(d) {
     prazos[z.id] = z;
     if (/^ato:/.test(z.observacoes || '') && z.intimacao_id) atos[z.intimacao_id] = { tipo: String(z.observacoes).slice(4).split(' | ')[0], data: z.fatal, prazo_id: z.id };
   });
+  var procs = {}, clis = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   var lista = tabela_('Intimacoes').linhas;
   if (q) lista = lista.filter(function (i) { return normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto].join(' ')).indexOf(q) >= 0; });
   var total = lista.length;
@@ -2727,6 +2733,8 @@ function listarIntimacoes_(d) {
       var z = prazos[i.prazo_id];
       if (z) x.prazo = { id: z.id, fatal: z.fatal, situacao: z.situacao, descricao: String(z.descricao || '').slice(0, 120) };
       if (atos[i.id]) x.ato = atos[i.id];
+      var c = clis[(procs[i.processo_id] || {}).cliente_id];
+      if (c) { x.cliente = c.nome; x.telefone = c.telefone || ''; }
       return x;
     }) };
 }
@@ -5321,6 +5329,7 @@ function moverTarefa_(d, u) {
     if (!fim) { mt.concluida_em = ''; mt.concluida_por = ''; }
     if (!t.responsavel && !fim) mt.responsavel = u.usuario;
     atualizarLinha_(tab, t, mt);
+    if (fim) registrar_(u.usuario, 'tarefa: ' + NOMES_ETAPA[etapa], String(t.titulo || '').slice(0, 140));
     return { ok: true };
   });
 }
@@ -5550,8 +5559,9 @@ function relatorioGeral_(d) {
     var k = (c.criado_em || '').slice(0, 7);
     if (idx[k] !== undefined && !importado.test(c.origem || '') && !importado.test(c.atualizado_por || '')) clientesNovos[idx[k]]++;
   });
-  var porArea = {};
+  var porArea = {}, porFase = {}, porTribunal = {};
   tabela_('Processos').linhas.forEach(function (p) {
+    if (p.status !== 'arquivado') { porFase[p.fase || 'andamento'] = (porFase[p.fase || 'andamento'] || 0) + 1; var tb = p.tribunal || '—'; porTribunal[tb] = (porTribunal[tb] || 0) + 1; }
     var a = p.area || 'Sem área';
     var o = porArea[a] = porArea[a] || { area: a, ativos: 0, arquivados: 0 };
     if (p.status === 'arquivado') o.arquivados++; else o.ativos++;
@@ -5573,10 +5583,92 @@ function relatorioGeral_(d) {
     hoje: hoje, meses: meses, clientesNovos: clientesNovos, processosNovos: processosNovos, intimacoes: intimacoes,
     prazosEntregues: prazosEntregues, prazosNoPrazo: prazosNoPrazo, percentualNoPrazo: ent ? Math.round(np * 100 / ent) : null, prazosVencidosAbertos: abertosVencidos,
     porArea: Object.keys(porArea).map(function (k) { return porArea[k]; }).sort(function (a, b) { return b.ativos - a.ativos; }),
+    porFase: porFase,
+    porTribunal: Object.keys(porTribunal).map(function (k) { return { tribunal: k, n: porTribunal[k] }; }).sort(function (a, b) { return b.n - a.n; }),
     areasNovas: Object.keys(areasNovas).map(function (k) { return { area: k, n: areasNovas[k] }; }).sort(function (a, b) { return b.n - a.n; }),
     entradas: fluxo.map(function (f) { return f.entradas; }), saidas: fluxo.map(function (f) { return f.saidas; }),
     produtividade: t.pontos, diasProdutividade: t.dias
   };
+}
+
+/* ---------- Quem fez o quê (relatório semanal) ---------- */
+
+/** "Terminei": a pessoa marca que terminou a intimação; fica o nome e a hora (e vai para o relatório da semana). */
+function terminarIntimacao_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Intimacoes');
+    var i = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!i) throw falha_('Intimação não encontrada.');
+    if (d.desfazer) {
+      if (!i.terminada_por) return { ok: true };
+      atualizarLinha_(tab, i, { terminada_por: '', terminada_em: '' });
+      registrar_(u.usuario, 'intimação reaberta', i.numero);
+      return { ok: true };
+    }
+    if (i.terminada_por) return { ok: true, terminada_por: i.terminada_por, terminada_em: i.terminada_em, repetido: true };
+    var agora = new Date().toISOString(), nome = u.nome || u.usuario;
+    atualizarLinha_(tab, i, { terminada_por: nome, terminada_em: agora });
+    registrar_(u.usuario, 'intimação terminada', i.numero + ' · ' + String(i.movimento || '').slice(0, 120));
+    return { ok: true, terminada_por: nome, terminada_em: agora };
+  });
+}
+
+/** O painel abriu o WhatsApp para avisar o cliente: fica registrado para o relatório. */
+function registrarWhatsapp_(d, u) {
+  var o = String(d.motivo || 'aviso').slice(0, 40);
+  registrar_(u.usuario, 'whatsapp ao cliente', [String(d.cliente || '').slice(0, 80), String(d.numero || '').slice(0, 30), o].filter(String).join(' · '));
+  return { ok: true };
+}
+
+var CATEGORIAS_LOG = [
+  ['intimacoes', 'Intimações terminadas', /^intimação terminada$/],
+  ['prazos', 'Prazos cumpridos / protocolados', /^prazo (cumprido)$|^prazo: (Protocolado|Conferido e concluído)/],
+  ['conferidos', 'Prazos conferidos', /^prazo conferido$/],
+  ['prazos_novos', 'Prazos lançados ou corrigidos', /^prazo (criado|alterado)$/],
+  ['tarefas', 'Tarefas concluídas', /^tarefa: /],
+  ['whatsapp', 'Clientes avisados no WhatsApp', /^whatsapp ao cliente$/],
+  ['agenda', 'Audiências, perícias e compromissos na agenda', /^(ato na agenda|compromisso criado)$/],
+  ['clientes', 'Clientes cadastrados ou atualizados', /^(cliente criado|cliente alterado|observação no cliente)$/],
+  ['processos', 'Processos cadastrados ou atualizados', /^(processo criado|processo alterado)$/],
+  ['documentos', 'Documentos gerados', /^documentos gerados$/],
+  ['financeiro', 'Financeiro (parcelas, honorários, despesas)', /^(parcela paga|parcela criada|parcela alterada|honorário criado|honorário alterado|despesa lançada|despesa alterada|alvará lançado|cobrança: )/]
+];
+
+/** Relatório da semana (segunda a domingo): o que cada usuário fez, pelo registro do painel. */
+function relatorioSemana_(d) {
+  var hoje = hojeSP_();
+  var ref = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : hoje;
+  var dow = new Date(ref + 'T12:00:00Z').getUTCDay();
+  var ini = somarDias_(ref, -((dow + 6) % 7)), fim = somarDias_(ini, 6);
+  var usuarios = {};
+  usuarios_().forEach(function (x) { usuarios[x.usuario] = x; });
+  var pessoas = {};
+  var sh = aba_('Log'), ult = sh.getLastRow();
+  var n = Math.min(Math.max(ult - 1, 0), 30000);
+  var vals = n ? sh.getRange(ult - n + 1, 1, n, 4).getDisplayValues() : [];
+  vals.forEach(function (v) {
+    var dia = diaSP_(v[0]);
+    if (!dia || dia < ini || dia > fim) return;
+    var quem = v[1], acao = v[2];
+    if (!usuarios[quem]) return; // robô, sistema, site
+    var cat = null;
+    CATEGORIAS_LOG.some(function (c) { if (c[2].test(acao)) { cat = c; return true; } return false; });
+    if (!cat) return;
+    var pss = pessoas[quem] = pessoas[quem] || { usuario: quem, nome: usuarios[quem].nome || quem, perfil: usuarios[quem].perfil, total: 0, grupos: {}, itens: [] };
+    pss.total++;
+    pss.grupos[cat[0]] = (pss.grupos[cat[0]] || 0) + 1;
+    var det = String(v[3] || '').replace(/\b[A-Z][0-9a-f]{10}\b\s*/g, '').trim();
+    if (pss.itens.length < 300) pss.itens.push({ quando: v[0], cat: cat[0], acao: acao, texto: det.slice(0, 160) });
+  });
+  // quem não fez nada também aparece (ativos)
+  Object.keys(usuarios).forEach(function (k) {
+    var x = usuarios[k];
+    if (x.ativo === 'sim' && !pessoas[k]) pessoas[k] = { usuario: k, nome: x.nome || k, perfil: x.perfil, total: 0, grupos: {}, itens: [] };
+  });
+  var lista = Object.keys(pessoas).map(function (k) { var x = pessoas[k]; x.itens.sort(function (a, b) { return a.quando < b.quando ? 1 : -1; }); return x; })
+    .sort(function (a, b) { return b.total - a.total || (a.nome < b.nome ? -1 : 1); });
+  return { inicio: ini, fim: fim, hoje: hoje, anterior: somarDias_(ini, -7), proxima: somarDias_(ini, 7) <= hoje ? somarDias_(ini, 7) : '',
+    categorias: CATEGORIAS_LOG.map(function (c) { return { id: c[0], nome: c[1] }; }), pessoas: lista };
 }
 
 /* ---------- Resumo do dia por e-mail (7h) ---------- */
