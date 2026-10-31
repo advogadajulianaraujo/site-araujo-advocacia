@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -86,7 +86,7 @@
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
-    advogados: ['modelos'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo']
+    advogados: ['modelos'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
   };
   function esquecerDepois(acao) {
     const lista = AFETA[acao.split('.')[0]];
@@ -524,6 +524,22 @@
     ['relatorios', 'Relatórios', 'Gestão', 'usuarios'],
     ['usuarios', 'Usuários', 'Gestão', 'usuarios']
   ];
+  ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
+  ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
+  ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
+  ICONES.energia = 'M13 3 6 13.5h5.5L10.5 21 18 10h-5.5z';
+  ICONES.pessoas = ICONES.clientes;
+  const ABAS_FUTURE = [
+    ['future', 'Visão geral', 'Edifício Future', 'predio'],
+    ['future/unidades', 'Apartamentos e salas', 'Edifício Future', 'inicio'],
+    ['future/cobrancas', 'Cobranças', 'Edifício Future', 'cobranca'],
+    ['future/caixa', 'Caixa do prédio', 'Edifício Future', 'financeiro'],
+    ['future/energia', 'Energia', 'Edifício Future', 'energia'],
+    ['future/relatorio', 'Relatório do mês', 'Relatórios', 'relatorios'],
+    ['future/pessoas', 'Locatários', 'Relatórios', 'pessoas'],
+    ['future/config', 'Configurações', 'Relatórios', 'usuarios']
+  ];
+  const modoFuture = () => /^#\/future(\/|\?|$)/.test(location.hash || '');
   const icone = id => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'ico');
     const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICONES[id] || ''); svg.append(p); return svg; };
 
@@ -531,10 +547,21 @@
     const pode = sessao.usuario.pode;
     const itens = [];
     let grupo = '';
-    ABAS.filter(a => !a[3] || pode[a[3]]).forEach(([id, nome, g]) => {
+    const fut = !!pode.future && modoFuture();
+    montarTopo.modo = fut;
+    document.body.classList.toggle('modo-future', fut);
+    const marca = document.querySelector('.lateral .marca span'); if (marca) marca.textContent = fut ? 'Edifício Future' : 'Painel jurídico';
+    if (fut) ABAS_FUTURE.forEach(([id, nome, g, ic]) => {
+      if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
+      itens.push(h('a', { href: '#/' + id, 'data-aba': id, onclick: () => abrirLateral(false) }, icone(ic), h('span', {}, nome)));
+    });
+    else ABAS.filter(a => !a[3] || pode[a[3]]).forEach(([id, nome, g]) => {
       if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
       itens.push(h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id), onclick: () => abrirLateral(false) }, icone(id), h('span', {}, nome)));
     });
+    // botão de trocar de painel (só para quem tem acesso ao Edifício Future)
+    if (pode.future) itens.push(h('a', { class: 'trocar-painel', href: fut ? '#/inicio' : '#/future', onclick: () => abrirLateral(false) },
+      icone(fut ? 'trocar' : 'predio'), h('span', {}, fut ? 'Voltar ao escritório' : 'Painel Edifício Future')));
     abasEl.replaceChildren(...itens);
     const nome = sessao.usuario.nome || sessao.usuario.usuario;
     document.getElementById('quem-nome').textContent = nome;
@@ -560,6 +587,7 @@
   if (!lateralEl) console.warn('menu lateral ausente');
 
   function marcarAba(id) {
+    if (modoFuture()) { const c = (location.hash.slice(2).split('?')[0]).replace(/^future\/unidade\/.*/, 'future/unidades'); abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === c)); return; }
     id = { processos: 'clientes', processo: 'clientes', cliente: 'clientes' }[id] || id;
     abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === id));
   }
@@ -2114,7 +2142,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '7.8.0';
+  const VERSAO_PAINEL = '8.0.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3667,6 +3695,7 @@
       if (tela === 'primeiro-acesso') telaPrimeiroAcesso(); else telaLogin();
       return;
     }
+    if (!!montarTopo.modo !== (!!sessao.usuario.pode.future && modoFuture())) montarTopo();
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
     if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['inicio', 'clientes', 'prazos', 'tarefas'].forEach(preBuscar), 1200); }
@@ -3693,6 +3722,10 @@
         case 'tarefas': await telaTarefas(params); break;
         case 'relatorios': await telaRelatorios(params); break;
         case 'honorario': await telaHonorario(id, params); break;
+        case 'future':
+          if (!sessao.usuario.pode.future) { mostrar(h('div', { class: 'nota alerta' }, 'Você não tem acesso ao painel do Edifício Future.')); break; }
+          if (!window.FUTURE) { mostrar(h('div', { class: 'nota alerta' }, 'Atualize a página (F5) para abrir o painel do Edifício Future.')); break; }
+          await window.FUTURE.tela(caminho.split('/').slice(1).map(decodeURIComponent), params); break;
         default: await telaInicio();
       }
     } catch (e) {
@@ -3700,6 +3733,10 @@
       if (sessao) mostrar(h('div', { class: 'nota alerta' }, e.message));
     }
   }
+
+  /* Ferramentas do painel para o módulo do Edifício Future (future.js) */
+  window.PAINEL_KIT = { h, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao,
+    nomeProprioJS, primeiroNome, icone, get sessao() { return sessao; }, rota: () => rota() };
 
   window.addEventListener('hashchange', rota);
 

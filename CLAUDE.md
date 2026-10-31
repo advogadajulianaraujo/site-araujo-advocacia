@@ -93,6 +93,25 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Tarefa com `[wa:tipo]` ganha o botão de WhatsApp com a mensagem pronta (`whatsTarefa` em painel.js). As marcas novas também
   ficam protegidas ao editar a tarefa.
 
+## Edifício Future (8.0.0, pedido do Luiz)
+
+- Painel à parte para o prédio (pasta do Drive "05. ED. FUTURE"). Botão "Painel Edifício Future" no fim do menu lateral
+  (`trocar-painel`, `ABAS_FUTURE`, `modoFuture()` em painel.js); dentro dele, "Voltar ao escritório". Telas em painel/future.js
+  (`window.FUTURE.tela`, usa `window.PAINEL_KIT`; future.js carrega ANTES do painel.js). Rotas `future.*` com `future: true`
+  (`podeFuture_`: Config FUTURE_USUARIOS; vazio = TODOS os administradores, escolha do Luiz).
+- Dados nas abas FutUnidades, FutPessoas, FutLanc, FutCobrancas, FutEnergia da planilha do painel (entram nos backups). A planilha
+  antiga "EDIFICIO FUTURE CONTROLE" é só a fonte de `futureImportar_` (Configurações › Importar; não duplica: chave `imp:aba:linha`).
+  Nenhum dado do prédio vai para o repositório.
+- Cobrança mensal (`futureGerarCobrancas_`, robô de hora em hora + ao abrir): unidade alugada/renovar = aluguel + taxas + energia do
+  MÊS ANTERIOR (FutEnergia), vencimento dia FUTURE_DIA_VENC (10). Começa em FUTURE_COBRAR_DESDE (mês seguinte à importação, se já
+  passou do dia 10). Recebimento lançado no caixa (Aluguel da unidade no mês) dá baixa sozinho. Apartamentos "- HC" = pagos pela
+  empresa Hercílio Luz (`pagador`): cobrança única com "Recebi da …" (`future.cobranca.pagarGrupo`).
+- Telas: Visão geral (planta do prédio por andar com cores por situação, ✓/!/• do aluguel do mês, HC; contratos vencendo em 45 dias
+  com "Renovar?" no WhatsApp; atrasados com "Cobrar"; gráfico de 12 meses), Apartamentos e salas (ficha, histórico de quem morou,
+  cobranças, energia), Cobranças, Caixa do prédio, Energia, Relatório do mês (para imprimir/PDF, com comparação ao mês anterior),
+  Locatários (todos que já passaram), Configurações.
+- Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), cobranças no Drive, relatório de energia.
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em
