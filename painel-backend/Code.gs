@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '6.9.4';
+var VERSAO = '6.9.5';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -53,7 +53,7 @@ var ESQUEMA = {
     'acesso_hash', 'acesso_criado_em'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
@@ -315,6 +315,7 @@ var ROTAS = {
   'agenda.criar': { fn: criarCompromisso_ },
   'agenda.marcarAto': { fn: marcarAtoPainel_ },
   'intimacoes.terminar': { fn: terminarIntimacao_ },
+  'clientes.abrirAcao': { fn: abrirAcaoCliente_ },
   'registro.whatsapp': { fn: registrarWhatsapp_ },
   'relatorio.semana': { permissao: 'usuarios', fn: relatorioSemana_ },
   'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
@@ -1327,7 +1328,7 @@ function whatsappCliente_(d, u) {
 /* ------------------------------------------------------------------ */
 
 var CAMPOS_PROCESSO = ['cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
-  'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes'];
+  'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'responsavel'];
 
 function listarProcessos_(d) {
   var busca = normalizar_(d.busca || '');
@@ -1376,8 +1377,12 @@ function salvarProcesso_(d, u) {
       var linha = tab.linhas.filter(function (r) { return r.id === p.id; })[0];
       if (!linha) throw falha_('Processo não encontrado.');
       if (dados.fase !== undefined && dados.fase === linha.fase) delete dados.fase_auto; // não mexeu na fase: segue automática
-      if (!linha.numero && numero && (dados.fase || linha.fase) === 'contratado' && linha.fase_auto !== 'nao') { dados.fase = 'ajuizado'; dados.fase_auto = ''; }
+      var protocolou = !linha.numero && numero;
+      if (protocolou && (dados.fase || linha.fase) === 'contratado' && linha.fase_auto !== 'nao') { dados.fase = 'andamento'; dados.fase_auto = ''; if ((dados.proximo_ato === undefined || dados.proximo_ato === 'Ajuizar a ação') && linha.proximo_ato === 'Ajuizar a ação') dados.proximo_ato = ''; }
+      if (dados.responsavel !== undefined && dados.responsavel) validarResponsavel_(dados.responsavel);
       atualizarLinha_(tab, linha, dados);
+      if (protocolou) concluirPeticaoInicial_(linha, u);
+      else if (dados.responsavel !== undefined) passarPeticaoInicial_(linha, dados.responsavel, u);
       registrar_(u.usuario, 'processo alterado', linha.id + ' ' + (numero || linha.numero));
       return { id: linha.id };
     }
@@ -1386,9 +1391,76 @@ function salvarProcesso_(d, u) {
     if (!dados.fase) { dados.fase = numero ? 'ajuizado' : 'contratado'; dados.fase_auto = ''; }
     dados.origem = 'painel';
     dados.criado_em = agora;
+    if (!numero && dados.fase === 'contratado' && !dados.responsavel) dados.responsavel = config_('RESP_INICIAL') || '';
+    if (!numero && !dados.proximo_ato) dados.proximo_ato = 'Ajuizar a ação';
     inserirLinha_(tab, dados);
     registrar_(u.usuario, 'processo criado', dados.id + ' ' + numero);
+    if (!numero && dados.fase === 'contratado') tarefaPeticaoInicial_(dados, u);
     return { id: dados.id };
+  });
+}
+
+/* ---------- Cliente com ação: Petição inicial → Em andamento ---------- */
+
+/** Tarefa "Petição inicial" para quem faz as iniciais (Config RESP_INICIAL). Uma só por processo. */
+function tarefaPeticaoInicial_(proc, u, tipoNome) {
+  var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']';
+  if (tab.linhas.some(function (x) { return (x.descricao || '').indexOf(marca) >= 0; })) return null;
+  var cli = proc.cliente_id ? tabela_('Clientes').linhas.filter(function (c) { return c.id === proc.cliente_id; })[0] : null;
+  var nome = cli ? cli.nome : (proc.cliente_nome || 'cliente');
+  var agora = new Date().toISOString(), hoje = hojeSP_();
+  var prazo = parseInt(config_('PRAZO_INICIAL_DIAS'), 10) || 7;
+  var t = { id: novoId_('T'), titulo: 'Petição inicial — ' + nome + (tipoNome || proc.area ? ' (' + (tipoNome || proc.area) + ')' : ''),
+    descricao: 'Cliente contratou. Fazer e protocolar a petição inicial' + (proc.parte_contraria ? ' contra ' + proc.parte_contraria : '') +
+      '. Quando protocolar, coloque o número no processo (Processos › abrir) e ele passa sozinho para "Em andamento".\n' + marca,
+    responsavel: proc.responsavel || config_('RESP_INICIAL') || '', processo_id: proc.id, numero: '', cliente_id: proc.cliente_id || '',
+    vence_em: somarDias_(hoje, prazo), etapa: 'afazer', peso: '3', situacao: 'ativa', concluida_por: '', concluida_em: '',
+    historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' ' + ((u && (u.nome || u.usuario)) || 'painel') + ': cliente com ação, petição inicial a fazer',
+    criado_em: agora, criado_por: (u && u.usuario) || 'painel', atualizado_em: agora, atualizado_por: (u && u.usuario) || 'painel' };
+  inserirLinha_(tab, t);
+  return t.id;
+}
+
+/** Protocolou (o número entrou no processo): a tarefa da petição inicial vai para "Protocolado". */
+function concluirPeticaoInicial_(proc, u) {
+  var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']', agora = new Date().toISOString();
+  tab.linhas.forEach(function (x) {
+    if ((x.descricao || '').indexOf(marca) < 0 || x.concluida_em) return;
+    atualizarLinha_(tab, x, { etapa: 'protocolado', concluida_em: agora, concluida_por: x.responsavel || u.usuario, numero: proc.numero || x.numero,
+      historico: historicoMais_(x.historico, u, 'protocolou: ' + (proc.numero || '')), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'tarefa: Protocolado', x.titulo);
+  });
+}
+
+/** Trocou o responsável do processo "a ajuizar": a tarefa da inicial vai junto. */
+function passarPeticaoInicial_(proc, resp, u) {
+  var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']';
+  tab.linhas.forEach(function (x) {
+    if ((x.descricao || '').indexOf(marca) < 0 || x.concluida_em || x.responsavel === resp) return;
+    atualizarLinha_(tab, x, { responsavel: resp, historico: historicoMais_(x.historico, u, resp ? 'passou para ' + resp : 'tirou o responsável'), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+  });
+}
+
+/** "Cliente contratou": o cliente em atendimento ganha a ação (Processos › Petição inicial) e a tarefa vai para o responsável. */
+function abrirAcaoCliente_(d, u) {
+  return comTrava_(function () {
+    var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!c) throw falha_('Cliente não encontrado.');
+    var tabP = tabela_('Processos');
+    var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && !x.numero && x.status !== 'arquivado'; })[0];
+    if (ja) return { id: ja.id, ja: true };
+    var tipo = d.tipo_acao ? TIPOS_ACAO[d.tipo_acao] : null;
+    if (d.responsavel) validarResponsavel_(d.responsavel);
+    var agora = new Date().toISOString();
+    var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || d.area || c.area || '',
+      polo: 'ativo', parte_contraria: String(d.parte_contraria || '').trim().slice(0, 200), proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
+      observacoes: (tipo ? tipo.nome + '. ' : '') + 'Cliente contratou em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
+      origem: 'painel', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '',
+      responsavel: d.responsavel || config_('RESP_INICIAL') || '' };
+    inserirLinha_(tabP, novo);
+    tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
+    registrar_(u.usuario, 'processo criado', novo.id + ' (petição inicial) ' + c.nome);
+    return { id: novo.id, responsavel: novo.responsavel };
   });
 }
 
@@ -1789,7 +1861,7 @@ function statusPeloMovimento_(mov) {
 
 /** Guarda a última movimentação do processo e ajusta ativo/arquivado. */
 /* Fase do processo (aba Processos). A fase muda sozinha pela última movimentação, até alguém escolher à mão. */
-var FASES = { contratado: 'Contrato assinado (a ajuizar)', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
+var FASES = { contratado: 'Petição inicial (a ajuizar)', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
   homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
 /** Fase guardada ou, nos processos antigos sem fase, a calculada pela situação e pela última movimentação. */
 function faseDe_(p) {
@@ -4863,7 +4935,7 @@ function gerarDocumentos_(d, u) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
-  // Procuração ou contrato para quem ainda não tem processo: entra em Processos como "Contrato assinado (a ajuizar)"
+  // Procuração ou contrato para quem ainda não tem processo: entra em Processos como "Petição inicial (a ajuizar)", com tarefa para o responsável
   var aAjuizar = null;
   if (!numProc && quais.some(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); })) {
     try {
@@ -4875,8 +4947,10 @@ function gerarDocumentos_(d, u) {
         var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
           polo: 'ativo', parte_contraria: contra, proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
           observacoes: (tipo ? tipo.nome + '. ' : '') + 'Criado ao gerar ' + quais.filter(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); }).join(', ') + ' em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
-          origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '' };
+          origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '',
+          responsavel: config_('RESP_INICIAL') || '' };
         inserirLinha_(tabP, novo);
+        tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
         return novo.id;
       });
     } catch (eA) { /* os documentos já foram gerados; o processo pode ser criado à mão */ }
@@ -5254,7 +5328,7 @@ function listarTarefas_(d, u) {
     hoje: hoje, dias: dias, eu: u.usuario, etapas: ETAPAS_TAREFA.map(function (e) { return { id: e, nome: NOMES_ETAPA[e] }; }),
     usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome }; }),
     itens: itens, pontos: pontosPorPessoa_(itens, desde, nomesU),
-    responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '' }
+    responsaveis: { pje: config_('RESP_PJE') || '', eproc: config_('RESP_EPROC') || '', padrao: config_('RESP_PADRAO') || '', inicial: config_('RESP_INICIAL') || '' }
   };
 }
 
@@ -5357,10 +5431,11 @@ function configTarefas_(d, u) {
       setConfig_('RESP_PADRAO', validarResponsavel_(d.padrao), 'Responsável pelos prazos quando o sistema não é conhecido');
       var tz = tabela_('Prazos'); tz.adiar = true;
       var n = atribuirResponsaveis_(tz, tabela_('Processos')); regravarMudadas_(tz);
-      registrar_(u.usuario, 'responsáveis automáticos', 'PJe ' + (d.pje || '—') + ', eproc ' + (d.eproc || '—') + '; ' + n + ' prazos distribuídos');
+      if (d.inicial !== undefined) setConfig_('RESP_INICIAL', validarResponsavel_(d.inicial), 'Quem faz a petição inicial dos clientes novos com ação');
+      registrar_(u.usuario, 'responsáveis automáticos', 'PJe ' + (d.pje || '—') + ', eproc ' + (d.eproc || '—') + ', inicial ' + (d.inicial || '—') + '; ' + n + ' prazos distribuídos');
       return { distribuidos: n };
     }
-    return { pje: config_('RESP_PJE'), eproc: config_('RESP_EPROC'), padrao: config_('RESP_PADRAO') };
+    return { pje: config_('RESP_PJE'), eproc: config_('RESP_EPROC'), padrao: config_('RESP_PADRAO'), inicial: config_('RESP_INICIAL') };
   });
 }
 

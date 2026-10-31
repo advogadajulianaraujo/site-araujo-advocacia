@@ -895,3 +895,15 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .pessoa-itens time{color:var(--mudo)}
 .pessoa-sem summary{cursor:pointer;font-size:13px;color:var(--mudo)}
 @media print{.pessoa-sem details{display:block}.pessoa-itens{max-height:none}}
+/* clientes: com ação × em atendimento */
+.grupos-cli{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.grupo-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--papel);border:1px solid var(--linha);border-left:5px solid var(--cor-g,#16171a);border-radius:10px;padding:12px 14px;cursor:pointer;box-shadow:var(--sombra);font:inherit;color:var(--tinta)}
+.grupo-card b{font-size:24px;line-height:1.1}
+.grupo-card .grupo-nome{font-weight:600}
+.grupo-card.ativo{background:var(--tinta);color:#fff;border-color:var(--tinta);border-left-color:var(--cor-g,#fff)}
+.grupo-card.ativo .peq{color:#d6d3cc}
+.g-acao{--cor-g:#7a4fc0}.g-atendimento{--cor-g:#c98a12}
+.tag.grupo-acao{background:#efe8fa;color:#5b3699}
+.tag.grupo-atend{background:#fbf0d9;color:#8a5d06}
+.faixa-atend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+@media (max-width:700px){.grupos-cli{grid-template-columns:1fr}}

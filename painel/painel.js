@@ -82,7 +82,7 @@
   }
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
-    clientes: ['clientes', 'processos', 'resumo', 'modelos'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
+    clientes: ['clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
     processos: ['processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['relatorio'], agenda: ['agenda', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
@@ -677,17 +677,19 @@
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
+    const grupo = ['acao', 'atendimento'].includes(params.get('grupo')) ? params.get('grupo') : '';
     const limite = Math.max(150, parseInt(params.get('mais'), 10) || 150);
     const todos = await api('clientes.listar', { busca });
     let base = todos;
     if (soConferir) base = base.filter(c => c.situacao !== 'completo');
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
-    const lista = base;
+    const nAcao = base.filter(c => c.processos > 0).length;
+    const lista = grupo === 'acao' ? base.filter(c => c.processos > 0) : grupo === 'atendimento' ? base.filter(c => !(c.processos > 0)) : base;
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const comProc = todos.filter(c => c.processos > 0).length;
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const ir = (mud) => {
-      const q = new URLSearchParams({ busca, area, conferir: soConferir ? '1' : '', mais: '', ...mud });
+      const q = new URLSearchParams({ busca, area, grupo, conferir: soConferir ? '1' : '', mais: '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/clientes' + (q.toString() ? '?' + q : '');
     };
@@ -700,10 +702,11 @@
       h('label', { class: 'filtro-sel' }, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
         h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, a)))),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: soConferir, onchange: e => ir({ conferir: e.target.checked ? '1' : '' }) }), `Só cadastros a completar (${aConferir})`),
-      (busca || area || soConferir) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
+      (busca || area || soConferir || grupo) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
     const linha = c => [
       h('td', { 'data-r': 'Cliente' }, h('div', { class: 'cli-linha' }, h('span', { class: 'cli-ini' }, String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
         h('div', {}, h('strong', {}, c.nome), h('div', { class: 'peq' }, [c.cpf_cnpj, c.cidade].filter(Boolean).join(' · '))))),
+      h('td', { 'data-r': 'Grupo' }, c.processos > 0 ? h('span', { class: 'tag grupo-acao' }, 'Com ação') : h('span', { class: 'tag grupo-atend' }, 'Em atendimento')),
       h('td', { 'data-r': 'Área' }, c.area || h('span', { class: 'peq' }, '—'), c.tipo_acao ? h('div', { class: 'peq' }, c.tipo_acao) : null),
       h('td', { class: 'num', 'data-r': 'Telefone' }, c.telefone || '—'),
       h('td', { class: 'num', 'data-r': 'Processos' }, String(c.processos)),
@@ -712,7 +715,7 @@
     const corpo = (() => {
       return h('div', {},
         h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'} na lista`),
-        tabela(['Cliente', 'Área', 'Telefone', 'Processos', 'Cadastro'], lista.slice(0, limite), linha, c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
+        tabela(['Cliente', 'Grupo', 'Área', 'Telefone', 'Processos', 'Cadastro'], lista.slice(0, limite), linha, c => { location.hash = '#/cliente/' + c.id; }, 'Nenhum cliente encontrado.'),
         lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(150, lista.length - limite)}`, () => ir({ mais: String(limite + 150) }), 'sec')) : null);
     })();
     mostrar(
@@ -721,6 +724,11 @@
           h('p', {}, `${comProc} com processo · ${todos.length - comProc} sem processo`)),
         h('div', { class: 'barra' }, botao('+ Novo cliente', () => { location.hash = '#/cliente/novo'; }))),
       h('section', { class: 'painel-busca' }, form, filtros),
+      h('div', { class: 'grupos-cli', role: 'group', 'aria-label': 'Grupo' },
+        [['', 'Todos', base.length, 'Todos os clientes'], ['acao', 'Com ação', nAcao, 'Contrato/procuração assinados ou processo: aparecem em Processos'],
+          ['atendimento', 'Em atendimento', base.length - nAcao, 'Consulta ou atendimento, ainda sem contrato, procuração ou processo']].map(([v, nome, n, dica]) =>
+          h('button', { type: 'button', class: 'grupo-card g-' + (v || 'todos') + (grupo === v ? ' ativo' : ''), 'aria-pressed': String(grupo === v), onclick: () => ir({ grupo: v }) },
+            h('b', {}, String(n)), h('span', { class: 'grupo-nome' }, nome), h('span', { class: 'peq' }, dica)))),
       corpo);
   }
 
@@ -955,7 +963,7 @@
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
           r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
           r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
-        r.a_ajuizar ? h('div', { class: 'nota' }, 'O cliente entrou em Processos na fase ', h('strong', {}, 'Contrato assinado (a ajuizar)'), '. ',
+        r.a_ajuizar ? h('div', { class: 'nota' }, 'O cliente entrou em Processos na fase ', h('strong', {}, 'Petição inicial (a ajuizar)'), ', com tarefa para quem faz as iniciais. ',
           h('a', { href: '#/processo/' + r.a_ajuizar + '?avisar=1' }, 'Abrir e avisar o cliente no WhatsApp'), '. Quando protocolar, coloque o número lá.') : null,
         r.gerados.some(g => g.assinar) ? h('div', { class: 'imprimir-caixa' },
           h('div', {}, h('strong', {}, '🖨 Documentos para o cliente assinar'),
@@ -1007,6 +1015,31 @@
         d.pasta_url ? h('p', { class: 'peq mt-p' }, d.outros ? `Mais ${d.outros} documento${d.outros === 1 ? '' : 's'} na pasta (${d.total} arquivo${d.total === 1 ? '' : 's'} ao todo).` : 'Nenhum outro documento na pasta.') : null].filter(Boolean));
     })();
     return caixa;
+  }
+
+  /** Cliente em atendimento contratou: cria o processo "Petição inicial (a ajuizar)" e a tarefa para o responsável. */
+  async function caixaAbrirAcao(c) {
+    const [info, t] = await Promise.all([carregarModelos().catch(() => ({ tipos: [] })), api('tarefas.listar', {}).catch(() => ({ usuarios: [], responsaveis: {} }))]);
+    const tipoAtual = (info.tipos.find(x => x.nome === c.tipo_acao) || {}).chave || '';
+    const caixa = h('dialog', { class: 'dialogo' });
+    const form = h('form', { class: 'campos', novalidate: true },
+      h('h2', { class: 'largo' }, 'Cliente contratou'),
+      h('p', { class: 'largo peq' }, h('strong', {}, c.nome), ' vai para Processos › Petição inicial. Quando protocolar, coloque o número no processo e ele passa sozinho para "Em andamento".'),
+      campo('tipo_acao', 'Tipo de ação', tipoAtual, { opcoes: [['', '— escolha —']].concat((info.tipos || []).map(x => [x.chave, x.nome])) }),
+      campo('parte_contraria', 'Contra quem (parte contrária)', '', { max: 200 }),
+      campo('responsavel', 'Quem faz a petição inicial', (t.responsaveis || {}).inicial || '', { opcoes: [['', '— ninguém —']].concat((t.usuarios || []).map(u => [u.usuario, u.nome])) }),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Abrir ação'), botao('Cancelar', () => caixa.close(), 'sec')),
+      h('p', { class: 'erro largo' }));
+    aoEnviar(form, async fd => {
+      const r = await api('clientes.abrirAcao', { id: c.id, tipo_acao: fd.get('tipo_acao'), parte_contraria: fd.get('parte_contraria'), responsavel: fd.get('responsavel') });
+      caixa.close();
+      avisar(r.ja ? 'Este cliente já tinha uma ação a ajuizar.' : 'Ação aberta: o cliente está em Processos › Petição inicial.');
+      location.hash = '#/processo/' + r.id;
+    });
+    caixa.append(form);
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa);
+    caixa.showModal();
   }
 
   /** Cadastro: o essencial para a procuração e o contrato. */
@@ -1250,6 +1283,10 @@
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
         h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos')),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.') : null,
+      r.processos.length ? null : h('div', { class: 'nota faixa-atend' },
+        h('div', {}, h('span', { class: 'tag grupo-atend' }, 'Em atendimento'), ' Este cliente ainda não tem ação (sem contrato, procuração ou processo). ',
+          'Quando contratar, ele vai para Processos › ', h('strong', {}, 'Petição inicial'), ' e a tarefa vai para quem faz as iniciais.'),
+        botao('Cliente contratou: abrir ação', () => caixaAbrirAcao(c), '')),
       descricao,
       secao('Observações', notas, true),
       secao('Pasta do cliente', pasta, false),
@@ -1261,7 +1298,7 @@
 
   /* ---------- processos ---------- */
 
-  const FASES = { contratado: 'Contrato assinado', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
+  const FASES = { contratado: 'Petição inicial', ajuizado: 'Ajuizado', andamento: 'Em andamento', sentenca: 'Sentença', acordo: 'Acordo',
     homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução', extinto: 'Extinto / arquivado' };
   function etiquetaFase(f) { return f ? h('span', { class: 'tag fase fase-' + f }, FASES[f] || f) : '—'; }
 
@@ -1353,6 +1390,7 @@
           h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar')),
           h('span', { class: 'peq num' }, p.numero || '(a ajuizar)'),
           h('span', { class: 'peq' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
+          p.responsavel ? h('span', { class: 'peq' }, '👤 ' + p.responsavel) : null,
           p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'peq' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data)) : null)),
         daFase.length > 60 ? h('p', { class: 'peq' }, `+ ${daFase.length - 60} (use a busca ou os filtros)`) : null,
         !daFase.length ? h('p', { class: 'peq vazio-t' }, 'Nenhum processo nesta etapa.') : null));
@@ -1373,7 +1411,7 @@
       form,
       visao === 'quadro' ? quadroProc : compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
         h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
-        h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase)),
+        h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase), p.responsavel ? h('div', { class: 'peq' }, '👤 ' + p.responsavel) : null),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
         h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('span', { class: 'peq' }, ' · ' + p.sistema) : null),
         h('td', { 'data-r': 'Órgão' }, p.orgao),
@@ -1391,7 +1429,7 @@
   async function telaProcesso(id, params) {
     carregando();
     const novo = id === 'novo';
-    const [clientes, lista] = await Promise.all([api('clientes.listar', {}), novo ? Promise.resolve([]) : api('processos.listar', {})]);
+    const [clientes, lista, equipe] = await Promise.all([api('clientes.listar', {}), novo ? Promise.resolve([]) : api('processos.listar', {}), api('tarefas.listar', {}).then(t => t.usuarios || []).catch(() => [])]);
     const p = novo ? { cliente_id: params.get('cliente') || '', status: 'ativo' } : lista.find(x => x.id === id);
     if (!p) throw new Error('Processo não encontrado.');
     const opcoesCliente = [['', '— cliente a identificar —']].concat(clientes.map(c => [c.id, c.nome + (c.cpf_cnpj ? ' · ' + c.cpf_cnpj : '')]));
@@ -1408,6 +1446,7 @@
         campo('proximo_ato', 'Próximo ato', p.proximo_ato, { max: 200, dica: 'Ex.: Audiência de instrução 10h' }),
         campo('proximo_ato_data', 'Data do próximo ato', p.proximo_ato_data, { tipo: 'date' }),
         campo('status', 'Situação', p.status || 'ativo', { opcoes: [['ativo', 'Ativo'], ['suspenso', 'Suspenso'], ['arquivado', 'Arquivado']] }),
+        campo('responsavel', p.fase === 'contratado' || (novo && !p.numero) ? 'Responsável (quem faz a petição inicial)' : 'Responsável', p.responsavel || '', { opcoes: [['', '— ninguém —']].concat(equipe.map(u => [u.usuario, u.nome])).concat(p.responsavel && !equipe.some(u => u.usuario === p.responsavel) ? [[p.responsavel, p.responsavel]] : []) }),
         campo('fase', 'Fase' + (p.fase_auto === 'nao' ? ' (escolhida à mão)' : ' (muda sozinha com as movimentações)'), p.fase || (novo ? '' : 'andamento'), { opcoes: [['', novo ? 'Automática (ajuizado se tiver número)' : '—']].concat(Object.entries(FASES)) }),
         campo('observacoes', 'Observações', p.observacoes, { area: true, largo: true })),
       h('div', { class: 'acoes' },
@@ -2621,9 +2660,10 @@
       const f = h('form', { class: 'campos', novalidate: true },
         campo('pje', 'Prazos novos do PJe (trabalhista) vão para', r.responsaveis.pje, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
         campo('eproc', 'Prazos novos do eproc (cível e federal) vão para', r.responsaveis.eproc, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
+        campo('inicial', 'Petições iniciais (cliente novo com ação) vão para', r.responsaveis.inicial || '', { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn sec' }, 'Salvar e distribuir os prazos sem responsável')), h('p', { class: 'erro largo' }));
-      aoEnviar(f, async fd => { const x = await api('tarefas.config', { salvar: true, pje: fd.get('pje'), eproc: fd.get('eproc'), padrao: '' }); avisar(`Salvo. ${x.distribuidos} prazo(s) ganharam responsável.`); rota(); });
-      cfg = secao('Responsáveis automáticos dos prazos', () => h('div', {}, h('p', { class: 'peq' }, 'Quando o robô lê uma intimação nova, o prazo já entra no quadro de quem cuida daquele sistema.'), f), !r.responsaveis.pje && !r.responsaveis.eproc);
+      aoEnviar(f, async fd => { const x = await api('tarefas.config', { salvar: true, pje: fd.get('pje'), eproc: fd.get('eproc'), inicial: fd.get('inicial'), padrao: '' }); avisar(`Salvo. ${x.distribuidos} prazo(s) ganharam responsável.`); rota(); });
+      cfg = secao('Responsáveis automáticos', () => h('div', {}, h('p', { class: 'peq' }, 'Quando o robô lê uma intimação nova, o prazo já entra no quadro de quem cuida daquele sistema. Cliente que contrata vai para Processos › Petição inicial e a tarefa vai para quem faz as iniciais.'), f), !r.responsaveis.pje && !r.responsaveis.eproc);
     }
     const opQuem = [['eu', 'Minhas'], ['todos', 'Toda a equipe'], ['ninguem', 'Sem responsável']].concat(r.usuarios.filter(u => u.usuario !== eu).map(u => [u.usuario, u.nome]));
     mostrar(

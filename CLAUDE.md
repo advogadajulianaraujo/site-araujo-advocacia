@@ -135,6 +135,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   No celular (≤ 900 px) o menu vira gaveta pelo botão ☰ da barra preta. Visual: fundo claro, cartões brancos com cantos de 12 px,
   botões sem caixa-alta, títulos em Jost (Bodoni só na saudação do Início e no login).
 - Clientes: título com o total e cartão de busca (área, "só a completar"); SEM etapas (pedido da usuária: etapas só em Processos).
+- Dois grupos de clientes (6.9.5): "Com ação" (tem processo, inclusive o "a ajuizar" criado ao gerar procuração/contrato) e
+  "Em atendimento" (sem contrato, procuração nem processo). Cartões no topo de Clientes (`grupo=acao|atendimento`) e etiqueta
+  na lista. Cadastro novo cria a pasta no Drive sozinho e fica "Em atendimento"; na ficha, "Cliente contratou: abrir ação"
+  (rota `clientes.abrirAcao`) cria o processo na fase "Petição inicial (a ajuizar)" (chave `contratado`).
+- Petição inicial: todo processo "a ajuizar" (gerar documentos, abrir ação, processo novo sem número) ganha `responsavel`
+  (Config RESP_INICIAL, escolhido em Tarefas › Responsáveis automáticos) e uma tarefa "Petição inicial — cliente" (marca
+  `[inicial:ID]`, prazo PRAZO_INICIAL_DIAS, padrão 7). Trocar o responsável do processo passa a tarefa junto. Colocar o número
+  muda a fase para "Em andamento" e a tarefa para "Protocolado" (`concluirPeticaoInicial_`).
 - Processos: cartões de ETAPAS (as fases de `FASES`, com as cores de `CORES_FASE`; clicar filtra) e "Lista / Quadro por etapa"
   (quadro = processos em colunas por fase). Sem gráficos (foram para Relatórios a pedido da usuária).
 - Relatórios: no topo a "Semana da equipe" (`relatorio.semana`, segunda a domingo, navegar semanas): por usuário, o que fez,
