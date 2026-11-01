@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.1.0';
+var VERSAO = '8.2.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -53,7 +53,7 @@ var ESQUEMA = {
     'acesso_hash', 'acesso_criado_em'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
@@ -77,10 +77,10 @@ var ESQUEMA = {
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
     'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url'],
-  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos'],
+  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url'],
   FutLanc: ['id', 'data', 'competencia', 'tipo', 'categoria', 'unidade', 'pessoa', 'valor', 'forma', 'responsavel', 'descricao', 'origem', 'chave', 'criado_em', 'criado_por'],
   FutCobrancas: ['id', 'unidade', 'pessoa', 'competencia', 'vencimento', 'aluguel', 'taxas', 'energia', 'outros', 'total', 'pago_em', 'valor_pago', 'forma', 'lanc_id',
-    'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador'],
+    'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador', 'enviado_em', 'enviado_por'],
   FutEnergia: ['id', 'competencia', 'unidade', 'valor', 'kwh', 'origem', 'criado_em'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
@@ -397,6 +397,9 @@ var ROTAS = {
   'future.relatorio': { future: true, fn: futureRelatorio_ },
   'future.config': { future: true, fn: futureConfig_ },
   'future.importar': { future: true, fn: futureImportar_ },
+  'future.cobranca.enviada': { future: true, fn: futureCobrancaEnviada_ },
+  'future.energia.colar': { future: true, fn: futureEnergiaColar_ },
+  'future.pessoa.pasta': { future: true, fn: futurePastaPessoa_ },
   'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
@@ -4199,7 +4202,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_], ['google', postagemGoogle_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_], ['google', postagemGoogle_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -4432,6 +4435,40 @@ function postagemGoogle_(ctx) {
     checklist: ['Abrir o perfil do Google', 'Adicionar atualização com foto', 'Colar o texto e o link (botão "Saiba mais")'] });
   setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google');
   return 1;
+}
+
+/* 7) Processo andou → e-mail curto ao cliente (só quem tem acesso ao "Acompanhe seu processo" e e-mail no cadastro). */
+function avisarMovimentoClientes_(ctx) {
+  if (config_('MOV_AVISO') === 'nao') return 0;
+  var agora = new Date(), hoje = hojeSP_();
+  var desde = config_('MOV_AVISO_DESDE');
+  if (!desde) { setConfig_('MOV_AVISO_DESDE', agora.toISOString(), 'E-mail ao cliente quando o processo anda: vale para movimentações depois desta data'); return 0; }
+  var cont = JSON.parse(config_('MOV_AVISO_CONTA') || '{}'); if (cont.dia !== hoje) cont = { dia: hoje, n: 0 };
+  if (cont.n >= 80) return 0; // cota do Gmail
+  var cli = {}; ctx.clientes.linhas.forEach(function (c) { cli[c.id] = c; });
+  var limite = new Date(agora.getTime() - 7 * 86400000).toISOString(), feitos = 0, porCliente = {};
+  ctx.procs.linhas.forEach(function (p) {
+    var c = cli[p.cliente_id]; if (!c || !c.acesso_hash || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(c.email || '').trim())) return;
+    var mov = p.ultimo_movimento_em || ''; if (!mov || mov < desde || mov < limite || (p.avisado_mov_em && p.avisado_mov_em >= mov)) return;
+    (porCliente[c.id] = porCliente[c.id] || []).push(p);
+  });
+  Object.keys(porCliente).forEach(function (cid) {
+    if (cont.n >= 80 || feitos >= 40) return;
+    var c = cli[cid], ps = porCliente[cid], nome = String(c.nome || '').split(' ')[0];
+    nome = nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase();
+    var lista = ps.map(function (p) { return '• Processo nº ' + (p.numero || '(a ajuizar)') + ' — movimentação em ' + dataBR_(diaSP_(p.ultimo_movimento_em)); }).join('\n');
+    var corpo = 'Olá, ' + nome + '.\n\nHouve uma nova movimentação no seu processo:\n' + lista + '\n\n' +
+      'Para ver a explicação em linguagem simples, acesse https://araujoadvocaciasc.com.br/acompanhe/ com o seu CPF e o código de acesso.\n' +
+      'Se precisar, fale com a gente pelo WhatsApp (48) 99612-6491.\n\nAraújo Advocacia\n\n(Aviso automático. Não é preciso responder.)';
+    try {
+      GmailApp.sendEmail(String(c.email).trim(), 'Seu processo teve uma nova movimentação — Araújo Advocacia', corpo, { name: 'Araújo Advocacia', replyTo: config_('CONTATO_EMAIL') || Session.getEffectiveUser().getEmail() });
+      ps.forEach(function (p) { atualizarLinha_(ctx.procs, p, { avisado_mov_em: p.ultimo_movimento_em > agora.toISOString() ? p.ultimo_movimento_em : agora.toISOString() }); });
+      registrar_('robô', 'e-mail de movimentação ao cliente', c.id + ' ' + ps.length + ' processo(s)');
+      feitos++; cont.n++;
+    } catch (e) { cont.n = 80; } // cota acabou: tenta amanhã
+  });
+  setConfig_('MOV_AVISO_CONTA', JSON.stringify(cont), 'E-mails de movimentação mandados hoje');
+  return feitos;
 }
 
 /* 5) Processo encerrado → pedir avaliação no Google (uma vez por cliente) */
@@ -7954,10 +7991,12 @@ function futureResumo_(d, u) {
   var T = futTabs_(), hoje = hojeSP_(), comp = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futComp_(hoje);
   try { if (comp <= futCompMais_(futComp_(hoje), 1)) futureGerarCobrancas_(comp, T); } catch (e) { /* segue mostrando */ }
   var cobMes = {}; T.co.linhas.forEach(function (c) { if (c.competencia === comp) cobMes[c.unidade] = c; });
+  var atual = {}; T.pe.linhas.forEach(function (p) { if (p.situacao === 'atual') atual[p.unidade] = p; });
   var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).map(function (x) {
-    var c = cobMes[x.id];
+    var c = cobMes[x.id], pa = atual[x.id] || {};
     return { id: x.id, tipo: x.tipo, andar: x.andar, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida,
-      aluguel: futN_(x.aluguel), taxas: futN_(x.taxas), garantia: x.garantia, pagador: x.pagador || '', pasta_url: x.pasta_url || '', cobranca: c ? futSituacaoCobranca_(c, hoje) : '' };
+      aluguel: futN_(x.aluguel), taxas: futN_(x.taxas), garantia: x.garantia, caucao: futN_(x.caucao), pagador: x.pagador || '', pasta_url: x.pasta_url || '',
+      contrato_url: pa.contrato_url || '', pasta_pessoa: pa.pasta_url || '', obs: x.obs || '', cobranca: c ? futSituacaoCobranca_(c, hoje) : '' };
   });
   var n = function (s) { return unidades.filter(function (x) { return x.situacao === s; }).length; };
   var noMes = function (tipo) { return T.la.linhas.filter(function (l) { return l.tipo === tipo && l.competencia === comp; }).reduce(function (a, l) { return a + futN_(l.valor); }, 0); };
@@ -7988,7 +8027,7 @@ function futureUnidade_(d) {
   if (!x) throw falha_('Unidade não encontrada.');
   var hoje = hojeSP_(), o = {}; T.un.cab.forEach(function (k) { o[k] = x[k]; });
   o.pessoas = T.pe.linhas.filter(function (p) { return p.unidade === x.id; }).sort(function (a, b) { return (b.entrada || '') < (a.entrada || '') ? -1 : 1; })
-    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0 }; });
+    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, contrato_url: p.contrato_url || '' }; });
   o.cobrancas = T.co.linhas.filter(function (c) { return c.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
     .slice(0, 24).map(function (c) { return { id: c.id, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas), energia: futN_(c.energia), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), situacao: futSituacaoCobranca_(c, hoje), pessoa: c.pessoa }; });
   o.energia = T.en.linhas.filter(function (e) { return e.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
@@ -8019,7 +8058,11 @@ function futureSalvarUnidade_(d, u) {
       var dadosP = { nome: novo, telefone: m.telefone !== undefined ? m.telefone : x.telefone, entrada: m.entrada !== undefined ? m.entrada : x.entrada,
         saida: m.saida !== undefined ? m.saida : x.saida, garantia: m.garantia !== undefined ? m.garantia : x.garantia, caucao: m.caucao !== undefined ? m.caucao : x.caucao, situacao: 'atual' };
       if (p) atualizarLinha_(T.pe, p, dadosP);
-      else inserirLinha_(T.pe, Object.assign({ id: novoId_('FP'), unidade: x.id, cpf: '', obs: '', origem: 'painel', criado_em: agora }, dadosP));
+      else {
+        var pastaNova = '';
+        try { pastaNova = futCriarPasta_(x.id, novo); } catch (eP) { /* sem Drive agora: cria depois pelo botão */ }
+        inserirLinha_(T.pe, Object.assign({ id: novoId_('FP'), unidade: x.id, cpf: '', obs: '', origem: 'painel', criado_em: agora, pasta_url: pastaNova, arquivos: '0' }, dadosP));
+      }
     }
     m.atualizado_em = agora; m.atualizado_por = u.usuario;
     atualizarLinha_(T.un, x, m);
@@ -8031,7 +8074,7 @@ function futureSalvarUnidade_(d, u) {
 function futurePessoas_(d) {
   var T = futTabs_();
   return T.pe.linhas.slice().sort(function (a, b) { return (a.situacao === 'atual') === (b.situacao === 'atual') ? ((b.entrada || '') < (a.entrada || '') ? -1 : 1) : (a.situacao === 'atual' ? -1 : 1); })
-    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, cpf: p.cpf, unidade: p.unidade, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: futN_(p.caucao), situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, origem: p.origem }; });
+    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, cpf: p.cpf, unidade: p.unidade, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: futN_(p.caucao), situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, origem: p.origem, contrato_url: p.contrato_url || '' }; });
 }
 function futureSalvarPessoa_(d, u) {
   return comTrava_(function () {
@@ -8053,9 +8096,9 @@ function futureCobrancas_(d) {
   var lista = T.co.linhas.filter(function (c) { return c.competencia === comp || (!c.pago_em && c.competencia < comp && futSituacaoCobranca_(c, hoje) !== 'cancelada'); })
     .map(function (c) { return { id: c.id, unidade: c.unidade, pessoa: c.pessoa, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas),
       energia: futN_(c.energia), outros: futN_(c.outros), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), forma: c.forma, situacao: futSituacaoCobranca_(c, hoje),
-      telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '' }; })
+      telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '', enviado_em: c.enviado_em || '', enviado_por: c.enviado_por || '' }; })
     .sort(function (a, b) { return a.competencia < b.competencia ? -1 : a.competencia > b.competencia ? 1 : (a.unidade < b.unidade ? -1 : 1); });
-  return { mes: comp, lista: lista };
+  return { mes: comp, lista: lista, pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet' };
 }
 function futurePagarCobranca_(d, u) {
   return comTrava_(function () {
@@ -8092,6 +8135,68 @@ function futurePagarGrupo_(d, u) {
   if (!abertas.length) throw falha_('Nenhuma cobrança aberta de ' + pag + ' em ' + comp + '.');
   abertas.forEach(function (c) { futurePagarCobranca_({ id: c.id, data: d.data, forma: d.forma || 'Pix' }, u); });
   return { ok: true, pagas: abertas.length };
+}
+
+/** Cobrança mandada pelo WhatsApp: fica registrado quem mandou e quando. */
+function futureCobrancaEnviada_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), c = T.co.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!c) throw falha_('Cobrança não encontrada.');
+    atualizarLinha_(T.co, c, { enviado_em: new Date().toISOString(), enviado_por: u.nome || u.usuario });
+    registrar_(u.usuario, 'future: cobrança enviada', c.unidade + ' ' + c.competencia);
+    return { ok: true };
+  });
+}
+
+/** Tabela da Celesc colada (cada linha com UC ou apartamento e o valor): lança a energia do mês de cada unidade. */
+function futureEnergiaColar_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), comp = /^\d{4}-\d{2}$/.test(d.competencia || '') ? d.competencia : futCompMais_(futComp_(), -1);
+    var porUc = {}; T.un.linhas.forEach(function (x) { [x.uc, x.uc_antiga, x.medidor].forEach(function (k) { k = String(k || '').replace(/\D/g, ''); if (k.length >= 6) porUc[k] = x.id; }); });
+    var ok = [], nao = [];
+    String(d.texto || '').split(/\r?\n/).forEach(function (linha) {
+      var l = linha.trim(); if (!l) return;
+      var unidade = '', digitos = l.match(/\d{6,}/g) || [];
+      digitos.some(function (k) { if (porUc[k]) { unidade = porUc[k]; return true; } return false; });
+      if (!unidade) { var s2 = /sala\s*0?(\d)\b/i.exec(l); if (s2) unidade = 'SALA ' + s2[1]; }
+      if (!unidade) { var m = /\b(?:ap(?:to|artamento)?\.?\s*)?([12]\d{2})\b(?![,.]\d)/i.exec(l.replace(/\d{6,}/g, ' ')); if (m) unidade = futIdUnidade_(m[1]); }
+      if (unidade && !T.un.linhas.some(function (x) { return x.id === unidade; })) unidade = '';
+      var vals = l.replace(/\d{6,}/g, ' ').match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}\b/g) || [];
+      var valor = vals.length ? futN_(vals[vals.length - 1]) : 0;
+      if (!unidade || !(valor > 0)) { nao.push(l.slice(0, 120)); return; }
+      futSalvarEnergia_(T, comp, unidade, valor, '', 'tabela colada');
+      var c = T.co.linhas.filter(function (x) { return x.unidade === unidade && x.competencia === futCompMais_(comp, 1) && !x.pago_em; })[0];
+      if (c) atualizarLinha_(T.co, c, { energia: txtDinheiro_(valor), total: txtDinheiro_(futN_(c.aluguel) + futN_(c.taxas) + valor + futN_(c.outros)) });
+      ok.push(unidade + ' ' + txtDinheiro_(valor));
+    });
+    registrar_(u.usuario, 'future: energia colada', comp + ' ' + ok.length + ' unidade(s)');
+    return { competencia: comp, lancadas: ok, naoEntendidas: nao };
+  });
+}
+
+/** Pasta do morador no Drive: 05. ED. FUTURE › APARTAMENTOS › AP 101 › NOME (salas: na pasta da sala). Cria o que faltar. */
+function futCriarPasta_(unidade, nome) {
+  var raiz = futPastaRaiz_(); if (!raiz || !unidade || !nome) return '';
+  var achar = function (pai, re, criar) { var it = pai.getFolders(); while (it.hasNext()) { var f = it.next(); if (re.test(String(f.getName()).trim())) return f; } return criar ? pai.createFolder(criar) : null; };
+  var base;
+  if (/^AP /.test(unidade)) {
+    var aps = achar(raiz, /^apartamentos$/i, 'APARTAMENTOS');
+    base = achar(aps, new RegExp('^AP\\.?\\s*' + unidade.slice(3) + '$', 'i'), unidade);
+  } else base = achar(raiz, new RegExp('SALA\\D*0?' + unidade.replace(/\D/g, '') + '\\b', 'i'), 'SALA COMERCIAL ' + unidade.replace(/\D/g, ''));
+  var nomePasta = String(nome).trim().toUpperCase().slice(0, 80);
+  var p = achar(base, new RegExp('^' + nomePasta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'), nomePasta);
+  return p.getUrl();
+}
+function futurePastaPessoa_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), p = T.pe.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Pessoa não encontrada.');
+    if (!p.unidade) throw falha_('Informe a unidade da pessoa antes de criar a pasta.');
+    var url = futCriarPasta_(p.unidade, p.nome);
+    if (!url) throw falha_('Não achei a pasta 05. ED. FUTURE no Drive.');
+    atualizarLinha_(T.pe, p, { pasta_url: url });
+    return { pasta_url: url };
+  });
 }
 
 function futureLancamentos_(d) {
@@ -8173,10 +8278,13 @@ function futureConfig_(d, u) {
     if (us.indexOf(u.usuario) < 0) us.push(u.usuario); // ninguém tira o próprio acesso sem querer
     setConfig_('FUTURE_USUARIOS', us.join(','), 'Quem vê o painel do Edifício Future');
     var dia = parseInt(d.dia_venc, 10); if (dia >= 1 && dia <= 28) setConfig_('FUTURE_DIA_VENC', String(dia), 'Dia de vencimento do aluguel no Edifício Future');
+    if (d.pix !== undefined) setConfig_('FUTURE_PIX', String(d.pix).trim().slice(0, 120), 'Chave PIX para os aluguéis do Edifício Future');
+    if (d.taxas_desc !== undefined) setConfig_('FUTURE_TAXAS_DESC', String(d.taxas_desc).trim().slice(0, 120) || 'IPTU, taxa de lixo e internet', 'O que entra nas taxas do Edifício Future');
     registrar_(u.usuario, 'future: configuração', us.join(','));
   }
   return { usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome, acesso: podeFuture_(x) }; }),
-    dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, importado: config_('FUTURE_IMPORTADO') || '' };
+    dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, importado: config_('FUTURE_IMPORTADO') || '',
+    pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet' };
 }
 
 /* ---------- Importação da planilha "EDIFICIO FUTURE CONTROLE" ---------- */
@@ -8332,7 +8440,8 @@ function futureSincronizarDrive_(forcar) {
     while (subs.hasNext()) {
       var f = subs.next(), bruto = String(f.getName() || '').trim();
       if (!bruto || /^(contratos?|documentos?|fotos?|vistoria)$/i.test(bruto)) continue;
-      var n = 0, fi = f.getFiles(); while (fi.hasNext() && n < 99) { fi.next(); n++; }
+      var n = 0, contrato = '', fi = f.getFiles();
+      while (fi.hasNext() && n < 99) { var arq = fi.next(); n++; if (!contrato && /contrato|locac/i.test(normalizar_(arq.getName ? arq.getName() : ''))) contrato = arq.getUrl ? arq.getUrl() : ''; }
       if (/hercilio\s*luz/i.test(futNorm_(bruto))) { // a empresa que paga os apartamentos HC
         if (!x.pagador) atualizarLinha_(T.un, x, { pagador: 'Hercílio Luz (HC)' });
         continue;
@@ -8342,11 +8451,11 @@ function futureSincronizarDrive_(forcar) {
       var p = T.pe.linhas.filter(function (q) { return q.unidade === id && futMesmaPessoa_(q.nome, nome); })[0]
         || T.pe.linhas.filter(function (q) { return futMesmaPessoa_(q.nome, nome) && futNorm_(nome).split(' ').length >= 2; })[0];
       if (p) {
-        if (p.pasta_url !== f.getUrl() || String(p.arquivos) !== String(n)) atualizarLinha_(T.pe, p, { pasta_url: f.getUrl(), arquivos: String(n) });
+        if (p.pasta_url !== f.getUrl() || String(p.arquivos) !== String(n) || (contrato && p.contrato_url !== contrato)) atualizarLinha_(T.pe, p, { pasta_url: f.getUrl(), arquivos: String(n), contrato_url: contrato || p.contrato_url || '' });
       } else {
         inserirLinha_(T.pe, { id: novoId_('FP'), nome: nome, telefone: '', cpf: '', unidade: id, entrada: '', saida: '', garantia: '', caucao: '',
           situacao: futMesmaPessoa_(x.locatario, nome) ? 'atual' : 'saiu', obs: obs ? 'Estadia de ' + obs.toLowerCase() : '', origem: 'pasta do Drive',
-          criado_em: Utilities.formatDate(f.getDateCreated(), TZ, "yyyy-MM-dd'T'HH:mm:ss"), pasta_url: f.getUrl(), arquivos: String(n) });
+          criado_em: Utilities.formatDate(f.getDateCreated(), TZ, "yyyy-MM-dd'T'HH:mm:ss"), pasta_url: f.getUrl(), arquivos: String(n), contrato_url: contrato });
         r.novas++;
       }
       r.pessoas++;

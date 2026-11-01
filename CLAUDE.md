@@ -89,6 +89,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   da secretaria "Pedir avaliação no Google" com WhatsApp pronto (`[avaliacao:cliId]` `[wa:avaliacao]`, uma vez por cliente).
   NUNCA pedir avaliação no site (pedido da usuária: só depois do processo pronto). Link em Config LINK_AVALIACAO (Tarefas ›
   Responsáveis automáticos); sem ele, vai o link do mapa.
+- E-mail ao cliente quando o processo anda (8.2, `avisarMovimentoClientes_`): só cliente com acesso ao Acompanhe (`acesso_hash`) e
+  e-mail no cadastro; movimentação depois de MOV_AVISO_DESDE e dos últimos 7 dias; um e-mail por cliente por rodada (até 40/rodada,
+  80/dia), texto curto sem detalhes do ato com o link do /acompanhe/; marca `avisado_mov_em` no processo. Config MOV_AVISO = "nao" desliga.
 - Secretaria = Config RESP_SECRETARIA (Tarefas › Responsáveis automáticos) ou a primeira pessoa com perfil secretaria (`respSecretaria_`).
 - Tarefa com `[wa:tipo]` ganha o botão de WhatsApp com a mensagem pronta (`whatsTarefa` em painel.js). As marcas novas também
   ficam protegidas ao editar a tarefa.
@@ -116,7 +119,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   agora", rota `future.drive`): 05. ED. FUTURE › APARTAMENTOS › "AP 101"… e "SALA COMERCIAL 2"/"… SALA 04" → `pasta_url` da unidade;
   cada subpasta = uma pessoa que morou (`futMesmaPessoa_` liga à já cadastrada; senão entra como "saiu", origem "pasta do Drive";
   "10 DIAS" vira observação; "HERCILIO LUZ" marca o pagador HC) com `pasta_url` e nº de `arquivos` ("📁 documentos").
-- Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), cobranças no Drive, relatório de energia.
+- 8.2: Cobranças em CARTÕES (aluguel, taxas, energia, total) com "Cobrar no WhatsApp" (mensagem detalhada `textoCobranca`, com chave
+  PIX Config FUTURE_PIX e as taxas Config FUTURE_TAXAS_DESC; clicar grava `enviado_em/enviado_por`, rota `future.cobranca.enviada`),
+  "✓ Pagou", "Ajustar valores", telefone que falta salvo no próprio cartão; abas Falta pagar / Pagas / Todas. Apartamentos: contrato
+  (vence em X dias / renovar / link "📄 ver contrato" achado na pasta do Drive: arquivo com "contrato"/"locação" no nome →
+  `contrato_url`), garantia (caução R$/avalista/sem garantia). Energia: "Colar a tabela da Celesc" (rota `future.energia.colar`:
+  acha a unidade pela UC/medidor, "Sala n" ou nº do apartamento, e o valor; atualiza a cobrança do mês seguinte). Morador novo
+  ganha pasta no Drive sozinho (`futCriarPasta_`); "+ criar pasta no Drive" em Locatários (rota `future.pessoa.pasta`).
+- Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos
 
@@ -354,6 +364,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (nada institucional), a notícia é conferida pelo título, o texto é escrito SÓ com o que está na notícia oficial (sem nome de pessoa nem de empresa, sem promessa/preço — Provimento 205),
   passa por conferência (tamanho, palavras proibidas) e cita a fonte. Chave no segredo GEMINI_API_KEY do repositório. O robô faz
   commit direto no main: antes de dar push no main, SEMPRE `git fetch origin main` e rebase (senão o push é recusado).
+- Blog mais exposto (8.2): faixa "Novo no blog" logo abaixo da abertura do Início (marcas `<!--BLOGFAIXA:INICIO-->`), texto mais
+  recente em destaque na /blog/ (`post-destaque`), botões de compartilhar (WhatsApp, Facebook, LinkedIn, copiar link) em cada texto.
 - Perfil do Google: textos prontos em docs/GOOGLE-PERFIL.md (sem acesso direto ao Google Meu Negócio daqui).
 - SEO: páginas de área com 6 a 8 perguntas frequentes (texto e schema FAQPage iguais) e BreadcrumbList. Conteúdo
   informativo, citando a lei, sem promessas nem preços (Provimento 205/2021 da OAB).

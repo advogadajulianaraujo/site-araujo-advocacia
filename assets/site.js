@@ -85,8 +85,12 @@
   if (filtro) filtro.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     filtro.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    document.querySelectorAll('.post-grid.lista .post-card').forEach(c => { c.hidden = !!b.dataset.area && c.dataset.area !== b.dataset.area; });
+    document.querySelectorAll('.post-grid.lista .post-card, .post-destaque').forEach(c => { c.hidden = !!b.dataset.area && c.dataset.area !== b.dataset.area; });
   });
+  // Blog: copiar o link do texto
+  document.querySelectorAll('[data-copiar]').forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copiar); b.textContent = 'Link copiado ✓'; } catch (e) { prompt('Copie o link:', b.dataset.copiar); }
+  }));
 
   // Entrada suave dos blocos ao rolar a página.
   const items = document.querySelectorAll('.reveal');

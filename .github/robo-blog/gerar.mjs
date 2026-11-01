@@ -126,6 +126,11 @@ ${fonte}
 <p class="post-aviso">${aviso}</p>
 <div class="post-cta"><div><b>Ficou com dúvida sobre a sua situação?</b><p>Conte o caso em poucas palavras. A equipe agenda o atendimento presencial, em Tubarão, ou por videoconferência.</p></div>
 <a class="btn" href="${WA}${encodeURIComponent('Olá, Dra. Júlian. Li o texto "' + p.titulo + '" no site e gostaria de uma orientação.')}" target="_blank" rel="noopener noreferrer" data-contact="blog">Falar no WhatsApp</a></div>
+<div class="post-partilha"><span>Compartilhe com quem precisa saber disso:</span>
+<a class="btn line sm" href="https://wa.me/?text=${encodeURIComponent(p.titulo + ' — ' + url)}" target="_blank" rel="noopener noreferrer" data-contact="blog-compartilhar">WhatsApp</a>
+<a class="btn line sm" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}" target="_blank" rel="noopener noreferrer">Facebook</a>
+<a class="btn line sm" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+<button type="button" class="btn line sm" data-copiar="${url}">Copiar link</button></div>
 <p class="post-voltar"><a class="more" href="${a.pagina}">Conheça a atuação em ${esc(a.nome)} ${SETA}</a></p>
 </article>
 </div></section>
@@ -147,7 +152,8 @@ function paginaLista(posts) {
 </div></section>
 <section class="sec"><div class="wrap">
 ${areas.length > 1 ? `<nav class="post-filtro" aria-label="Filtrar por área"><button type="button" data-area="" aria-pressed="true">Todos</button>${areas.map(k => `<button type="button" data-area="${k}" aria-pressed="false">${esc(AREAS[k].nome)}</button>`).join('')}</nav>` : ''}
-<div class="post-grid lista">${posts.map(p => cartao(p, 'h2').replace('<a class="post-card"', `<a class="post-card" data-area="${p.area}"`)).join('\n')}</div>
+${posts[0] ? `<a class="post-destaque" href="/blog/${posts[0].slug}/" data-area="${posts[0].area}"><span class="post-meta">Mais recente · ${esc((AREAS[posts[0].area] || {}).nome || '')} · <time datetime="${posts[0].data}">${dataBR(posts[0].data)}</time></span><h2>${esc(posts[0].titulo)}</h2><p>${esc(posts[0].resumo)}</p><span class="more">Ler o texto ${SETA}</span></a>` : ''}
+<div class="post-grid lista">${posts.slice(1).map(p => cartao(p, 'h2').replace('<a class="post-card"', `<a class="post-card" data-area="${p.area}"`)).join('\n')}</div>
 ${posts.length ? '' : '<p class="muted">Os primeiros textos chegam nesta semana.</p>'}
 </div></section>`;
   const ld = { '@context': 'https://schema.org', '@type': 'Blog', name: 'Blog da Araújo Advocacia', url: SITE + '/blog/', inLanguage: 'pt-BR',
@@ -171,11 +177,11 @@ function blocoDoBlog(lista, titulo) {
 </div></section>`;
 }
 
-function trocarEntreMarcas(arq, novo) {
+function trocarEntreMarcas(arq, novo, marca = 'BLOG') {
   const f = path.join(RAIZ, arq);
   if (!fs.existsSync(f)) return false;
   const s = fs.readFileSync(f, 'utf8');
-  const re = /(<!--BLOG:INICIO-->)[\s\S]*?(<!--BLOG:FIM-->)/;
+  const re = new RegExp(`(<!--${marca}:INICIO-->)[\\s\\S]*?(<!--${marca}:FIM-->)`);
   if (!re.test(s)) return false;
   const t = s.replace(re, `$1\n${novo}\n$2`);
   if (t !== s) fs.writeFileSync(f, t);
@@ -207,6 +213,7 @@ export function gerar() {
   fs.writeFileSync(sm, s);
   // Início e páginas de área
   trocarEntreMarcas('index.html', blocoDoBlog(posts.slice(0, 3), 'Decisões que <em>importam.</em>'));
+  if (posts[0]) trocarEntreMarcas('index.html', `<a class="blog-faixa" href="/blog/${posts[0].slug}/"><div class="wrap"><span class="blog-faixa-tag">Novo no blog</span><span class="blog-faixa-tit">${esc(posts[0].titulo)}</span><span class="blog-faixa-ler">Ler ${SETA}</span></div></a>`, 'BLOGFAIXA');
   for (const [k, a] of Object.entries(AREAS)) {
     const daArea = posts.filter(p => p.area === k).slice(0, 3);
     trocarEntreMarcas(a.pagina.replace(/^\/|\/$/g, '') + '/index.html', blocoDoBlog(daArea, `Do blog: <em>${esc(a.nome.replace(/^Direito (do |de |)/, '').toLowerCase())}.</em>`));
