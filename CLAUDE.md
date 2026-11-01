@@ -126,6 +126,24 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   `contrato_url`), garantia (caução R$/avalista/sem garantia). Energia: "Colar a tabela da Celesc" (rota `future.energia.colar`:
   acha a unidade pela UC/medidor, "Sala n" ou nº do apartamento, e o valor; atualiza a cobrança do mês seguinte). Morador novo
   ganha pasta no Drive sozinho (`futCriarPasta_`); "+ criar pasta no Drive" em Locatários (rota `future.pessoa.pasta`).
+- 8.3 Cobrança no modelo do Luiz (`textoCobranca`/`textoGrupo` em future.js): "Oi, bom dia, Nome! … Segue o demonstrativo do
+  {Config FUTURE_NOME_MSG, padrão "Edifício Cultura"} — apartamento 101, referente a {mês ANTERIOR ao vencimento}" + Aluguel, taxas item
+  a item (Config FUTURE_TAXAS_ITENS "Nome: valor", só quando a soma bate com as taxas da unidade), Energia, Total, Vencimento, "Pagamento:"
+  (Config FUTURE_PAGAMENTO, só na planilha — nunca no repositório) e fecho (FUTURE_FECHO). Entrada no meio do mês de referência = "Aluguel
+  proporcional de 04/10 a 31/10 — 28 dias, pela base de 30 dias" (`futCalcCobranca_`, coluna `detalhe` = prop|entrada|fim|dias). Cobrança
+  do robô ainda não enviada/paga é recalculada sozinha; "Ajustar valores" (aluguel/energia/outros) trava o recálculo. Unidade `moeda` =
+  dolar → "Total em reais / Equivalente em dólares / Cotação" (FUTURE_COTACAO) e "Para pagamento em reais:". Empresa pagadora (HC): um
+  demonstrativo com blocos "Apartamento 102 — Everton" + total geral, telefone/contato em Config FUTURE_PAGADORES ("Nome | tel | contato").
+  Salas: `cobra_energia` = nao (pagam a própria energia) e taxas FUTURE_TAXAS_SALA (107; os recebimentos são 2.000 + 107). Falta energia →
+  "[preencher]" e o painel pergunta antes de mandar. Energia de out/2026 semeada uma vez (`FUT_ENERGIA_INICIAL`, só nº do apto e valor).
+  "Colar" em Energia também lê os demonstrativos ("apartamento 207" … "Energia: R$ 88,10").
+- 8.3 Contratos (#/future/contratos, `future.contratos`/`future.contrato.gerar`): 3, 4, 6, 12 meses (ou outro), com ou sem caução (até 11 meses
+  = 1 aluguel, 12 ou mais = 2; editável), fim = mesmo dia n meses depois. Modelos Google Docs na pasta 05. ED. FUTURE › MODELOS DE CONTRATO
+  ("MODELO — CONTRATO DE LOCAÇÃO (painel)" e "MODELO — LAUDO DE VISTORIA (painel)", ids em Config FUTURE_MODELO_*), com as cláusulas do
+  contrato do Gabriel; marcas {{…}} e [[SO_CAUCAO]] (sem caução esses parágrafos saem e as disposições finais viram a 9ª). Os dados da
+  locadora ficam SÓ no modelo do Drive. Gera em APARTAMENTOS › AP x › NOME (pasta criada SÓ aqui — salvar a unidade não cria mais pasta)
+  contrato + laudo (Doc editável + PDF), atualiza unidade e locatário (opção "contrato para depois"), lança a caução no caixa se pedido, e
+  registra na aba FutContratos ("↻ renovar" e "Contratos terminando (45 dias)"). Só apartamentos (modelo residencial).
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

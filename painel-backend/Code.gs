@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.2.0';
+var VERSAO = '8.3.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -76,11 +76,13 @@ var ESQUEMA = {
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
-    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url'],
-  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url'],
+    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda'],
+  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url', 'rg', 'qualificacao', 'genero', 'laudo_url'],
   FutLanc: ['id', 'data', 'competencia', 'tipo', 'categoria', 'unidade', 'pessoa', 'valor', 'forma', 'responsavel', 'descricao', 'origem', 'chave', 'criado_em', 'criado_por'],
   FutCobrancas: ['id', 'unidade', 'pessoa', 'competencia', 'vencimento', 'aluguel', 'taxas', 'energia', 'outros', 'total', 'pago_em', 'valor_pago', 'forma', 'lanc_id',
-    'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador', 'enviado_em', 'enviado_por'],
+    'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador', 'enviado_em', 'enviado_por', 'detalhe'],
+  FutContratos: ['id', 'criado_em', 'criado_por', 'unidade', 'pessoa_id', 'nome', 'cpf', 'telefone', 'prazo_meses', 'inicio', 'fim', 'aluguel', 'garantia', 'caucao',
+    'doc_url', 'pdf_url', 'laudo_doc', 'laudo_pdf', 'pasta_url', 'situacao'],
   FutEnergia: ['id', 'competencia', 'unidade', 'valor', 'kwh', 'origem', 'criado_em'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
@@ -400,6 +402,8 @@ var ROTAS = {
   'future.cobranca.enviada': { future: true, fn: futureCobrancaEnviada_ },
   'future.energia.colar': { future: true, fn: futureEnergiaColar_ },
   'future.pessoa.pasta': { future: true, fn: futurePastaPessoa_ },
+  'future.contratos': { future: true, fn: futureContratos_ },
+  'future.contrato.gerar': { future: true, fn: futureGerarContrato_ },
   'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
@@ -7951,24 +7955,66 @@ function futTabs_() {
 }
 function futOrdenarUnidades_(a, b) { return (+a.ordem || 999) - (+b.ordem || 999) || (a.id < b.id ? -1 : 1); }
 
-/** Cria as cobranças do mês para as unidades alugadas e dá baixa nas que já têm recebimento lançado. */
+/** Energia de outubro/2026 tirada das mensagens que o Luiz mandou (só unidades; sem nomes). Entra uma vez, se faltar. */
+var FUT_ENERGIA_INICIAL = { comp: '2026-10', valores: { 101: 103.53, 102: 173.13, 104: 137.96, 105: 206.36, 106: 74.68, 109: 150, 202: 110.36, 203: 92.5, 204: 92.5, 206: 92.5, 208: 160.96 } };
+function futSemearEnergia_(T) {
+  if (config_('FUTURE_ENERGIA_SEMEADA') === FUT_ENERGIA_INICIAL.comp) return;
+  Object.keys(FUT_ENERGIA_INICIAL.valores).forEach(function (ap) {
+    var id = 'AP ' + ap;
+    if (!T.un.linhas.some(function (x) { return x.id === id; })) return;
+    if (T.en.linhas.some(function (e) { return e.unidade === id && e.competencia === FUT_ENERGIA_INICIAL.comp; })) return;
+    futSalvarEnergia_(T, FUT_ENERGIA_INICIAL.comp, id, FUT_ENERGIA_INICIAL.valores[ap], '', 'demonstrativos de ' + FUT_ENERGIA_INICIAL.comp);
+  });
+  setConfig_('FUTURE_ENERGIA_SEMEADA', FUT_ENERGIA_INICIAL.comp, 'Energia inicial do Edifício Future já lançada');
+}
+/** Sala comercial paga a própria energia (só aluguel + taxas); apartamento paga a energia do mês anterior. */
+function futCobraEnergia_(u) { return u.cobra_energia ? u.cobra_energia !== 'nao' : !/^SALA/.test(u.id); }
+/** Valores da cobrança do mês "comp" (vence em comp, referente ao mês anterior).
+ *  Entrou no meio do mês de referência → aluguel proporcional pela base de 30 dias (ex.: 04/10 a 31/10 = 28 dias). */
+function futCalcCobranca_(u, comp, energiaAnt) {
+  var ref = futCompMais_(comp, -1), al = futN_(u.aluguel), aluguel = al, detalhe = '';
+  if (u.entrada && u.entrada.slice(0, 7) === ref && +u.entrada.slice(8, 10) > 1) {
+    var ult = new Date(Date.UTC(+ref.slice(0, 4), +ref.slice(5, 7), 0)).getUTCDate(), dias = ult - (+u.entrada.slice(8, 10)) + 1;
+    if (dias < 30) { aluguel = Math.round(al * dias / 30 * 100) / 100; detalhe = 'prop|' + u.entrada + '|' + ref + '-' + ult + '|' + dias; }
+  }
+  return { aluguel: aluguel, taxas: futN_(u.taxas), energia: futCobraEnergia_(u) ? (energiaAnt[u.id] || 0) : 0, detalhe: detalhe };
+}
+
+/** Cria as cobranças do mês para as unidades alugadas e dá baixa nas que já têm recebimento lançado.
+ *  Cobrança do mês = aluguel do mês anterior (pago depois de usar) + taxas + energia do mês anterior; vence no dia FUTURE_DIA_VENC. */
 function futureGerarCobrancas_(comp, T) {
   T = T || futTabs_();
   comp = comp || futComp_();
   var desde = config_('FUTURE_COBRAR_DESDE');
   if (desde && comp < desde) return 0; // antes da importação o controle era a planilha antiga
+  try { futSemearEnergia_(T); } catch (eS) { /* segue */ }
   var dia = Math.min(28, Math.max(1, parseInt(config_('FUTURE_DIA_VENC'), 10) || 10));
-  var agora = new Date().toISOString(), feitas = 0;
+  var agora = new Date().toISOString(), feitas = 0, taxaSala = futN_(config_('FUTURE_TAXAS_SALA')) || 107;
   var tem = {}; T.co.linhas.forEach(function (c) { tem[c.unidade + '|' + c.competencia] = c; });
   var energiaAnt = {}; T.en.linhas.forEach(function (e) { if (e.competencia === futCompMais_(comp, -1)) energiaAnt[e.unidade] = futN_(e.valor); });
+  var porId = {};
   T.un.linhas.forEach(function (u) {
-    if (!/^(alugado|renovar)$/.test(u.situacao) || !(futN_(u.aluguel) > 0) || tem[u.id + '|' + comp]) return;
-    if (u.entrada && u.entrada.slice(0, 7) > comp) return;
-    var al = futN_(u.aluguel), tx = futN_(u.taxas), en = energiaAnt[u.id] || 0;
+    porId[u.id] = u;
+    if (!/^(alugado|renovar)$/.test(u.situacao) || !(futN_(u.aluguel) > 0)) return;
+    // salas: as taxas pagas são R$ 107 (aluguel 2.000 + 107 = 2.107 nos recebimentos); sem energia
+    if (/^SALA/.test(u.id) && !(futN_(u.taxas) > 0)) atualizarLinha_(T.un, u, { taxas: txtDinheiro_(taxaSala) });
+    if (tem[u.id + '|' + comp]) return;
+    if (u.entrada && u.entrada.slice(0, 7) >= comp) return; // ainda não usou um mês: a 1ª cobrança vem no mês seguinte
+    var k = futCalcCobranca_(u, comp, energiaAnt);
     var c = { id: novoId_('FC'), unidade: u.id, pessoa: u.locatario || '', competencia: comp, vencimento: comp + '-' + ('0' + dia).slice(-2),
-      aluguel: txtDinheiro_(al), taxas: txtDinheiro_(tx), energia: en ? txtDinheiro_(en) : '', outros: '', total: txtDinheiro_(al + tx + en),
-      pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta', obs: '', criado_em: agora, atualizado_em: agora, atualizado_por: 'robô', pagador: u.pagador || '' };
+      aluguel: txtDinheiro_(k.aluguel), taxas: txtDinheiro_(k.taxas), energia: k.energia ? txtDinheiro_(k.energia) : '', outros: '', total: txtDinheiro_(k.aluguel + k.taxas + k.energia),
+      pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta', obs: '', criado_em: agora, atualizado_em: agora, atualizado_por: 'robô', pagador: u.pagador || '', detalhe: k.detalhe };
     inserirLinha_(T.co, c); tem[u.id + '|' + comp] = c; feitas++;
+  });
+  // cobrança feita pelo robô, ainda não mandada nem paga: acompanha a unidade (proporcional, taxas, energia que chegou)
+  T.co.linhas.forEach(function (c) {
+    if (c.competencia !== comp || c.pago_em || c.enviado_em || c.atualizado_por !== 'robô' || c.situacao === 'cancelada') return;
+    var u = porId[c.unidade]; if (!u || !/^(alugado|renovar)$/.test(u.situacao) || !(futN_(u.aluguel) > 0)) return;
+    var k = futCalcCobranca_(u, comp, energiaAnt);
+    if (!k.energia && futCobraEnergia_(u)) k.energia = futN_(c.energia);
+    var tot = k.aluguel + k.taxas + k.energia + futN_(c.outros);
+    if (txtDinheiro_(tot) === txtDinheiro_(futN_(c.total)) && (c.detalhe || '') === k.detalhe && txtDinheiro_(k.aluguel) === txtDinheiro_(futN_(c.aluguel))) return;
+    atualizarLinha_(T.co, c, { aluguel: txtDinheiro_(k.aluguel), taxas: txtDinheiro_(k.taxas), energia: k.energia ? txtDinheiro_(k.energia) : '', total: txtDinheiro_(tot), detalhe: k.detalhe });
   });
   // recebimento já lançado (importado ou à mão) → cobrança paga
   T.co.linhas.forEach(function (c) {
@@ -8043,7 +8089,7 @@ function futureSalvarUnidade_(d, u) {
     if (!x) throw falha_('Unidade não encontrada.');
     var m = {};
     ['aluguel', 'taxas', 'caucao'].forEach(function (k) { if (d[k] !== undefined) m[k] = d[k] === '' ? '' : txtDinheiro_(futN_(d[k])); });
-    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
+    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador', 'cobra_energia', 'moeda'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
     ['entrada', 'saida'].forEach(function (k) { if (d[k] !== undefined) m[k] = /^\d{4}-\d{2}-\d{2}$/.test(d[k]) ? d[k] : ''; });
     if (d.situacao !== undefined) { if (FUT_SITUACOES.indexOf(d.situacao) < 0) throw falha_('Situação inválida.'); m.situacao = d.situacao; }
     if (m.situacao === 'disponivel') m.locatario = '';
@@ -8058,11 +8104,8 @@ function futureSalvarUnidade_(d, u) {
       var dadosP = { nome: novo, telefone: m.telefone !== undefined ? m.telefone : x.telefone, entrada: m.entrada !== undefined ? m.entrada : x.entrada,
         saida: m.saida !== undefined ? m.saida : x.saida, garantia: m.garantia !== undefined ? m.garantia : x.garantia, caucao: m.caucao !== undefined ? m.caucao : x.caucao, situacao: 'atual' };
       if (p) atualizarLinha_(T.pe, p, dadosP);
-      else {
-        var pastaNova = '';
-        try { pastaNova = futCriarPasta_(x.id, novo); } catch (eP) { /* sem Drive agora: cria depois pelo botão */ }
-        inserirLinha_(T.pe, Object.assign({ id: novoId_('FP'), unidade: x.id, cpf: '', obs: '', origem: 'painel', criado_em: agora, pasta_url: pastaNova, arquivos: '0' }, dadosP));
-      }
+      // a pasta do morador no Drive só nasce com o contrato de locação (página Contratos), pedido do Luiz
+      else inserirLinha_(T.pe, Object.assign({ id: novoId_('FP'), unidade: x.id, cpf: '', obs: '', origem: 'painel', criado_em: agora, pasta_url: '', arquivos: '0' }, dadosP));
     }
     m.atualizado_em = agora; m.atualizado_por = u.usuario;
     atualizarLinha_(T.un, x, m);
@@ -8096,9 +8139,23 @@ function futureCobrancas_(d) {
   var lista = T.co.linhas.filter(function (c) { return c.competencia === comp || (!c.pago_em && c.competencia < comp && futSituacaoCobranca_(c, hoje) !== 'cancelada'); })
     .map(function (c) { return { id: c.id, unidade: c.unidade, pessoa: c.pessoa, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas),
       energia: futN_(c.energia), outros: futN_(c.outros), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), forma: c.forma, situacao: futSituacaoCobranca_(c, hoje),
-      telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '', enviado_em: c.enviado_em || '', enviado_por: c.enviado_por || '' }; })
+      telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '', enviado_em: c.enviado_em || '', enviado_por: c.enviado_por || '',
+      detalhe: c.detalhe || '', moeda: (un[c.unidade] || {}).moeda || '', cobra_energia: futCobraEnergia_(un[c.unidade] || { id: c.unidade }), aluguel_cheio: futN_((un[c.unidade] || {}).aluguel) }; })
     .sort(function (a, b) { return a.competencia < b.competencia ? -1 : a.competencia > b.competencia ? 1 : (a.unidade < b.unidade ? -1 : 1); });
-  return { mes: comp, lista: lista, pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet' };
+  return Object.assign({ mes: comp, lista: lista }, futMensagemConfig_());
+}
+/** O que vai na mensagem de cobrança (tudo editável em Configurações; os dados da conta ficam só na planilha). */
+function futMensagemConfig_() {
+  var itens = String(config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00').split(/\r?\n|;/).map(function (l) {
+    var m = /^\s*(.+?)\s*[:=]\s*(?:R\$\s*)?([\d.,]+)\s*$/.exec(l); return m ? { nome: m[1], valor: futN_(m[2]) } : null; }).filter(Boolean);
+  var pagadores = {};
+  String(config_('FUTURE_PAGADORES') || '').split(/\r?\n/).forEach(function (l) {
+    var p = l.split('|').map(function (x) { return x.trim(); }); if (p[0]) pagadores[p[0]] = { telefone: p[1] || '', contato: p[2] || '' };
+  });
+  var pix = config_('FUTURE_PIX') || '';
+  return { pix: pix, taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet', taxas_itens: itens,
+    predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || (pix ? 'Pix: ' + pix : ''),
+    cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, pagadores: pagadores, assinatura: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!' };
 }
 function futurePagarCobranca_(d, u) {
   return comTrava_(function () {
@@ -8109,10 +8166,11 @@ function futurePagarCobranca_(d, u) {
       atualizarLinha_(T.co, c, { pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta', atualizado_em: agora, atualizado_por: u.usuario });
       return { ok: true };
     }
-    if (d.ajustar) { // muda valores da cobrança (energia, outros)
-      var en = futN_(d.energia), ou = futN_(d.outros);
-      atualizarLinha_(T.co, c, { energia: en ? txtDinheiro_(en) : '', outros: ou ? txtDinheiro_(ou) : '', obs: String(d.obs || c.obs || '').slice(0, 300),
-        total: txtDinheiro_(futN_(c.aluguel) + futN_(c.taxas) + en + ou), atualizado_em: agora, atualizado_por: u.usuario });
+    if (d.ajustar) { // muda valores da cobrança (aluguel, energia, outros); depois disso o robô não recalcula mais
+      var en = futN_(d.energia), ou = futN_(d.outros), al = d.aluguel !== undefined && d.aluguel !== '' ? futN_(d.aluguel) : futN_(c.aluguel);
+      atualizarLinha_(T.co, c, { aluguel: txtDinheiro_(al), energia: en ? txtDinheiro_(en) : '', outros: ou ? txtDinheiro_(ou) : '', obs: String(d.obs !== undefined ? d.obs : c.obs || '').slice(0, 300),
+        detalhe: Math.abs(al - futN_(c.aluguel)) > 0.009 ? '' : c.detalhe,
+        total: txtDinheiro_(al + futN_(c.taxas) + en + ou), atualizado_em: agora, atualizado_por: u.usuario });
       return { ok: true };
     }
     var valor = futN_(d.valor) || futN_(c.total), data = /^\d{4}-\d{2}-\d{2}$/.test(d.data || '') ? d.data : hojeSP_();
@@ -8154,6 +8212,25 @@ function futureEnergiaColar_(d, u) {
     var T = futTabs_(), comp = /^\d{4}-\d{2}$/.test(d.competencia || '') ? d.competencia : futCompMais_(futComp_(), -1);
     var porUc = {}; T.un.linhas.forEach(function (x) { [x.uc, x.uc_antiga, x.medidor].forEach(function (k) { k = String(k || '').replace(/\D/g, ''); if (k.length >= 6) porUc[k] = x.id; }); });
     var ok = [], nao = [];
+    var lancar = function (unidade, valor) {
+      futSalvarEnergia_(T, comp, unidade, valor, '', 'tabela colada');
+      var c = T.co.linhas.filter(function (x) { return x.unidade === unidade && x.competencia === futCompMais_(comp, 1) && !x.pago_em; })[0];
+      if (c) atualizarLinha_(T.co, c, { energia: txtDinheiro_(valor), total: txtDinheiro_(futN_(c.aluguel) + futN_(c.taxas) + valor + futN_(c.outros)) });
+      ok.push(unidade + ' ' + txtDinheiro_(valor));
+    };
+    var existe = function (id) { return T.un.linhas.some(function (x) { return x.id === id; }); };
+    if (/energia\s*:/i.test(d.texto || '')) { // demonstrativos colados (como os do WhatsApp): "apartamento 101" … "Energia: R$ 103,53"
+      var atual = '';
+      String(d.texto || '').split(/\r?\n/).forEach(function (linha) {
+        var a = /\b(?:apartamento|apto?\.?)\s*(\d{3})\b/i.exec(linha), sl = /\bsala\s*(?:comercial\s*)?0?(\d)\b/i.exec(linha);
+        if (a) atual = futIdUnidade_(a[1]); else if (sl) atual = 'SALA ' + sl[1];
+        var e = /^\s*energia\s*:\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+(?:[.,]\d{1,2})?)/i.exec(linha);
+        if (!e) return;
+        if (atual && existe(atual)) { lancar(atual, futN_(e[1])); atual = ''; } else nao.push(linha.trim().slice(0, 120));
+      });
+      registrar_(u.usuario, 'future: energia colada', comp + ' ' + ok.length + ' unidade(s)');
+      return { competencia: comp, lancadas: ok, naoEntendidas: nao };
+    }
     String(d.texto || '').split(/\r?\n/).forEach(function (linha) {
       var l = linha.trim(); if (!l) return;
       var unidade = '', digitos = l.match(/\d{6,}/g) || [];
@@ -8164,10 +8241,7 @@ function futureEnergiaColar_(d, u) {
       var vals = l.replace(/\d{6,}/g, ' ').match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}\b/g) || [];
       var valor = vals.length ? futN_(vals[vals.length - 1]) : 0;
       if (!unidade || !(valor > 0)) { nao.push(l.slice(0, 120)); return; }
-      futSalvarEnergia_(T, comp, unidade, valor, '', 'tabela colada');
-      var c = T.co.linhas.filter(function (x) { return x.unidade === unidade && x.competencia === futCompMais_(comp, 1) && !x.pago_em; })[0];
-      if (c) atualizarLinha_(T.co, c, { energia: txtDinheiro_(valor), total: txtDinheiro_(futN_(c.aluguel) + futN_(c.taxas) + valor + futN_(c.outros)) });
-      ok.push(unidade + ' ' + txtDinheiro_(valor));
+      lancar(unidade, valor);
     });
     registrar_(u.usuario, 'future: energia colada', comp + ' ' + ok.length + ' unidade(s)');
     return { competencia: comp, lancadas: ok, naoEntendidas: nao };
@@ -8196,6 +8270,148 @@ function futurePastaPessoa_(d, u) {
     if (!url) throw falha_('Não achei a pasta 05. ED. FUTURE no Drive.');
     atualizarLinha_(T.pe, p, { pasta_url: url });
     return { pasta_url: url };
+  });
+}
+
+/* ---------- Contratos de locação (página Contratos do Edifício Future) ----------
+   Modelos (Google Docs) na pasta 05. ED. FUTURE › MODELOS DE CONTRATO, com marcas {{…}}; os dados da locadora ficam só lá.
+   O contrato é um só modelo: sem caução, os parágrafos com [[SO_CAUCAO]] saem e as disposições finais viram a cláusula 9ª. */
+var FUT_MODELOS = { contrato: ['FUTURE_MODELO_CONTRATO', 'MODELO — CONTRATO DE LOCAÇÃO (painel)'], laudo: ['FUTURE_MODELO_LAUDO', 'MODELO — LAUDO DE VISTORIA (painel)'] };
+function futModelo_(tipo) {
+  var m = FUT_MODELOS[tipo], id = config_(m[0]);
+  if (id) { try { var f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (e) { /* procura pelo nome */ } }
+  var it = DriveApp.searchFiles("title = '" + m[1] + "' and trashed = false");
+  if (!it.hasNext()) throw falha_('Não achei o modelo "' + m[1] + '" no Drive (pasta 05. ED. FUTURE › MODELOS DE CONTRATO).');
+  var g = it.next(); setConfig_(m[0], g.getId(), 'Modelo do Edifício Future: ' + m[1]);
+  return g;
+}
+/** Caução pelo prazo (regra do Luiz): até 11 meses = 1 aluguel; 12 meses ou mais = 2 aluguéis. */
+function futCaucaoPadrao_(meses, aluguel) { return (meses >= 12 ? 2 : 1) * futN_(aluguel); }
+function futNumExtenso_(n) { return extenso_(n).replace(/\s+reais?$/, ''); }
+function futMesesTxt_(n) { return n + ' (' + futNumExtenso_(n) + ') ' + (n === 1 ? 'mês' : 'meses'); }
+/** Fim do contrato: mesmo dia, n meses depois (04/10/2026 + 12 = 04/10/2027, como nos contratos atuais). */
+function futFimContrato_(inicio, meses) { return somarMeses_(inicio, meses); }
+function futPapel_(g) {
+  var f = g === 'F';
+  return { LOCATARIO: f ? 'LOCATÁRIA' : 'LOCATÁRIO', LOCATARIO_TIT: f ? 'Locatária' : 'Locatário', O_LOCATARIO: f ? 'A LOCATÁRIA' : 'O LOCATÁRIO',
+    O_LOCATARIO_MIN: f ? 'a LOCATÁRIA' : 'o LOCATÁRIO', DO_LOCATARIO: f ? 'da LOCATÁRIA' : 'do LOCATÁRIO', AO_LOCATARIO: f ? 'à LOCATÁRIA' : 'ao LOCATÁRIO',
+    INSCRITO: f ? 'inscrita' : 'inscrito' };
+}
+/** "brasileiro, solteiro, autônomo, portador do RG nº …, inscrito no CPF sob o nº …, residente e domiciliado na …" */
+function futQualificacao_(d, g) {
+  if (String(d.qualificacao || '').trim()) return String(d.qualificacao).trim().replace(/[;.]\s*$/, '');
+  var x = function (m, f) { return g === 'F' ? f : g === 'M' ? m : m + '(' + f.slice(-1) + ')'; };
+  var nac = String(d.nacionalidade || '').trim() || x('brasileiro', 'brasileira');
+  var end = String(d.endereco || '').trim();
+  if (end && !/^(na|no|em)\s/i.test(end)) end = (/^(rua|avenida|av\.|travessa|rodovia|estrada|servid[aã]o|alameda|pra[cç]a)/i.test(end) ? 'na ' : 'em ') + end;
+  return [nac, estadoCivilGenero_(d.estado_civil, g) || String(d.estado_civil || '').trim(), String(d.profissao || '').trim(),
+    d.rg ? x('portador', 'portadora') + ' do RG nº ' + String(d.rg).trim() : '',
+    d.cpf ? x('inscrito', 'inscrita') + ' no CPF sob o nº ' + String(d.cpf).trim() : '',
+    end ? x('residente e domiciliado', 'residente e domiciliada') + ' ' + end : ''].filter(Boolean).join(', ');
+}
+/** Troca as marcas do modelo, tira os trechos de caução quando não há e acerta o visual (EB Garamond 12, justificado). */
+function futPreencherDoc_(doc, campos, comCaucao) {
+  var body = doc.getBody();
+  body.getParagraphs().slice().reverse().forEach(function (p) {
+    if (p.getText().indexOf('[[SO_CAUCAO]]') < 0) return;
+    if (comCaucao) p.replaceText('\\[\\[SO_CAUCAO\\]\\]', '');
+    else { try { p.removeFromParent(); } catch (e) { p.setText(''); } }
+  });
+  Object.keys(campos).forEach(function (k) { body.replaceText('\\{\\{' + k + '\\}\\}', String(campos[k] == null ? '' : campos[k]).replace(/\$/g, '\\$')); });
+  var t = body.editAsText(); if (t.getText().length) t.setFontFamily('EB Garamond').setFontSize(12);
+  body.getParagraphs().forEach(function (p) {
+    var naTabela = p.getParent() && p.getParent().getType() === DocumentApp.ElementType.TABLE_CELL;
+    if (!naTabela && p.getAlignment() !== DocumentApp.HorizontalAlignment.CENTER) p.setAlignment(DocumentApp.HorizontalAlignment.JUSTIFY);
+    if (!naTabela) p.setLineSpacing(1.15).setSpacingAfter(6);
+  });
+  body.setMarginTop(56).setMarginBottom(56).setMarginLeft(68).setMarginRight(56);
+}
+
+function futureContratos_(d) {
+  var T = futTabs_(), tc = tabela_('FutContratos'), hoje = hojeSP_();
+  var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return /^AP /.test(x.id) && x.situacao !== 'proprio'; })
+    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, pasta_url: x.pasta_url || '' }; });
+  var lista = tc.linhas.filter(function (c) { return c.situacao !== 'excluido'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 60)
+    .map(function (c) { return { id: c.id, criado_em: c.criado_em, criado_por: c.criado_por, unidade: c.unidade, nome: c.nome, telefone: c.telefone, prazo_meses: +c.prazo_meses || 0,
+      inicio: c.inicio, fim: c.fim, aluguel: futN_(c.aluguel), garantia: c.garantia, caucao: futN_(c.caucao), doc_url: c.doc_url, pdf_url: c.pdf_url, laudo_doc: c.laudo_doc, laudo_pdf: c.laudo_pdf, pasta_url: c.pasta_url }; });
+  var vencendo = unidades.filter(function (x) { return /^(alugado|renovar)$/.test(x.situacao) && x.saida && x.saida >= somarDias_(hoje, -15) && x.saida <= somarDias_(hoje, 45); })
+    .sort(function (a, b) { return a.saida < b.saida ? -1 : 1; });
+  var pessoas = T.pe.linhas.filter(function (p) { return p.situacao === 'atual'; }).map(function (p) { return { id: p.id, nome: p.nome, unidade: p.unidade, cpf: p.cpf, rg: p.rg || '', telefone: p.telefone, qualificacao: p.qualificacao || '', genero: p.genero || '' }; });
+  return { unidades: unidades, contratos: lista, vencendo: vencendo, pessoas: pessoas, dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, hoje: hoje };
+}
+
+function futureGerarContrato_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), tc = tabela_('FutContratos'), agora = new Date().toISOString(), hoje = hojeSP_();
+    var un = T.un.linhas.filter(function (x) { return x.id === futIdUnidade_(d.unidade); })[0];
+    if (!un) throw falha_('Escolha o apartamento.');
+    if (!/^AP /.test(un.id)) throw falha_('O modelo é de locação residencial (apartamentos).');
+    var nome = String(d.nome || '').replace(/\s+/g, ' ').trim().toUpperCase();
+    if (nome.length < 5) throw falha_('Informe o nome completo do(a) locatário(a).');
+    var cpf = String(d.cpf || '').trim();
+    if (cpf.replace(/\D/g, '').length !== 11) throw falha_('Informe o CPF (11 números).');
+    var meses = parseInt(d.prazo_meses, 10);
+    if (!(meses >= 1 && meses <= 60)) throw falha_('Escolha o prazo do contrato.');
+    var inicio = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : '';
+    if (!inicio) throw falha_('Informe a data de início.');
+    var fim = futFimContrato_(inicio, meses);
+    var aluguel = futN_(d.aluguel) || futN_(un.aluguel); if (!(aluguel > 0)) throw falha_('Informe o valor do aluguel.');
+    var comCaucao = d.garantia !== 'sem';
+    var caucao = comCaucao ? (futN_(d.caucao) || futCaucaoPadrao_(meses, aluguel)) : 0;
+    var g = d.genero === 'F' || d.genero === 'M' ? d.genero : generoPeloNome_(nome) || 'M';
+    var diaVenc = parseInt(d.dia_venc, 10) || parseInt(config_('FUTURE_DIA_VENC'), 10) || 10;
+    var telefone = String(d.telefone || un.telefone || '').trim();
+    var vistoria = /^\d{4}-\d{2}-\d{2}$/.test(d.data_vistoria || '') ? d.data_vistoria : inicio;
+    var nAlug = Math.round(caucao / aluguel * 100) / 100;
+    var campos = Object.assign(futPapel_(g), {
+      LOC_NOME: nome, LOC_CPF: cpf, LOC_QUALIFICACAO: futQualificacao_(Object.assign({}, d, { cpf: cpf }), g), LOC_TELEFONE: telefone || 'informado pelo(a) locatário(a)',
+      APTO: un.id.replace('AP ', ''), KIT: String(d.kit || un.kit || '—').replace(/\.0$/, ''), UC: String(d.uc || un.uc || '—').replace(/\.0$/, ''),
+      PRAZO: futMesesTxt_(meses), INICIO: dataBR_(inicio), FIM: dataBR_(fim), ALUGUEL: valorComExtenso_(aluguel), DIA_VENC: String(diaVenc),
+      CAUCAO: comCaucao ? valorComExtenso_(caucao) + (nAlug === 1 ? ', equivalente a 1 (um) aluguel' : nAlug === 2 ? ', equivalente a 2 (dois) aluguéis' : '') : '',
+      GARANTIA_ROTULO: comCaucao ? 'CAUÇÃO' : 'GARANTIA', GARANTIA_TEXTO: comCaucao ? valorComExtenso_(caucao) : 'sem caução',
+      TITULO_GARANTIA: comCaucao ? 'COM CAUÇÃO' : 'SEM CAUÇÃO', TITULO_GARANTIA_TEXTO: comCaucao ? ' COM CAUÇÃO' : '',
+      CAUCAO_ATO: comCaucao ? 'No ato da assinatura deste contrato, ' + (g === 'F' ? 'A LOCATÁRIA' : 'O LOCATÁRIO') + ' efetuará o pagamento de ' + valorComExtenso_(caucao) + ', a título de caução, nos termos da Cláusula 9ª. ' : '',
+      N_FINAL: comCaucao ? '10ª' : '9ª', DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje),
+      DATA_VISTORIA: dataBR_(vistoria), VIDEO_DURACAO: String(d.video_duracao || '').trim() || '___ minutos'
+    });
+    // pasta do morador: APARTAMENTOS › AP x › NOME (só agora, com o contrato)
+    var pastaUrl = futCriarPasta_(un.id, nome);
+    if (!pastaUrl) throw falha_('Não achei a pasta 05. ED. FUTURE no Drive.');
+    var pasta = DriveApp.getFolderById(/folders\/([\w-]+)/.exec(pastaUrl)[1]);
+    var gerar = function (tipo, titulo) {
+      var arq = titulo + ' — ' + un.id + ' — ' + nome;
+      var copia = futModelo_(tipo).makeCopy(arq, pasta), doc = DocumentApp.openById(copia.getId());
+      futPreencherDoc_(doc, campos, comCaucao); doc.saveAndClose();
+      var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(arq + '.pdf');
+      return { doc: copia.getUrl(), pdf: pdf.getUrl() };
+    };
+    var ct = gerar('contrato', 'CONTRATO DE LOCAÇÃO'), la = gerar('laudo', 'LAUDO DE VISTORIA');
+    // unidade e locatário atualizados
+    var mudaUnidade = d.atualizar_unidade !== 'nao' && d.atualizar_unidade !== false;
+    var pessoa = T.pe.linhas.filter(function (p) { return p.unidade === un.id && (futMesmaPessoa_(p.nome, nome) || (p.cpf && p.cpf.replace(/\D/g, '') === cpf.replace(/\D/g, ''))); })[0];
+    var dadosP = { nome: nome, telefone: telefone, cpf: cpf, rg: String(d.rg || '').trim(), qualificacao: String(d.qualificacao || '').trim() || campos.LOC_QUALIFICACAO, genero: g,
+      entrada: pessoa && pessoa.entrada && pessoa.entrada < inicio ? pessoa.entrada : inicio, saida: fim, garantia: comCaucao ? 'Caução' : 'Sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
+      pasta_url: pastaUrl, contrato_url: ct.pdf, laudo_url: la.pdf };
+    if (mudaUnidade) {
+      T.pe.linhas.filter(function (p) { return p.unidade === un.id && p.situacao === 'atual' && p !== pessoa; }).forEach(function (p) {
+        atualizarLinha_(T.pe, p, { situacao: 'saiu', saida: p.saida && p.saida <= inicio ? p.saida : inicio });
+      });
+      dadosP.situacao = 'atual';
+    }
+    if (pessoa) atualizarLinha_(T.pe, pessoa, dadosP);
+    else { pessoa = Object.assign({ id: novoId_('FP'), unidade: un.id, obs: '', origem: 'contrato', criado_em: agora, arquivos: '4', situacao: mudaUnidade ? 'atual' : 'futuro' }, dadosP); inserirLinha_(T.pe, pessoa); }
+    if (mudaUnidade) atualizarLinha_(T.un, un, { situacao: 'alugado', locatario: nome, telefone: telefone, entrada: dadosP.entrada, saida: fim, aluguel: txtDinheiro_(aluguel),
+      garantia: dadosP.garantia, caucao: dadosP.caucao, pagador: d.pagador !== undefined ? String(d.pagador).trim() : un.pagador, atualizado_em: agora, atualizado_por: u.usuario });
+    if (comCaucao && d.lancar_caucao === 'sim') {
+      inserirLinha_(T.la, { id: novoId_('FL'), data: hoje, competencia: futComp_(hoje), tipo: 'receita', categoria: 'Caução', unidade: un.id, pessoa: nome, valor: txtDinheiro_(caucao),
+        forma: String(d.forma_caucao || 'Pix').slice(0, 40), responsavel: u.nome || u.usuario, descricao: 'Caução do contrato ' + dataBR_(inicio) + ' a ' + dataBR_(fim), origem: 'contrato', chave: '', criado_em: agora, criado_por: u.usuario });
+    }
+    var reg = { id: novoId_('FK'), criado_em: agora, criado_por: u.nome || u.usuario, unidade: un.id, pessoa_id: pessoa.id, nome: nome, cpf: cpf, telefone: telefone,
+      prazo_meses: String(meses), inicio: inicio, fim: fim, aluguel: txtDinheiro_(aluguel), garantia: comCaucao ? 'caução' : 'sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
+      doc_url: ct.doc, pdf_url: ct.pdf, laudo_doc: la.doc, laudo_pdf: la.pdf, pasta_url: pastaUrl, situacao: 'gerado' };
+    inserirLinha_(tc, reg);
+    registrar_(u.usuario, 'future: contrato gerado', un.id + ' ' + nome + ' ' + meses + ' meses ' + (comCaucao ? 'com caução' : 'sem caução'));
+    return { ok: true, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, unidade: un.id, nome: nome, telefone: telefone };
   });
 }
 
@@ -8280,11 +8496,23 @@ function futureConfig_(d, u) {
     var dia = parseInt(d.dia_venc, 10); if (dia >= 1 && dia <= 28) setConfig_('FUTURE_DIA_VENC', String(dia), 'Dia de vencimento do aluguel no Edifício Future');
     if (d.pix !== undefined) setConfig_('FUTURE_PIX', String(d.pix).trim().slice(0, 120), 'Chave PIX para os aluguéis do Edifício Future');
     if (d.taxas_desc !== undefined) setConfig_('FUTURE_TAXAS_DESC', String(d.taxas_desc).trim().slice(0, 120) || 'IPTU, taxa de lixo e internet', 'O que entra nas taxas do Edifício Future');
+    var txt = function (k, chave, desc, max) { if (d[k] !== undefined) setConfig_(chave, String(d[k]).replace(/\r/g, '').trim().slice(0, max || 600), desc); };
+    txt('predio', 'FUTURE_NOME_MSG', 'Nome do prédio na mensagem de cobrança', 80);
+    txt('pagamento', 'FUTURE_PAGAMENTO', 'Dados de pagamento na mensagem de cobrança do Edifício Future');
+    txt('taxas_itens', 'FUTURE_TAXAS_ITENS', 'Taxas do apartamento, uma por linha (Nome: valor)');
+    txt('pagadores', 'FUTURE_PAGADORES', 'Empresas que pagam apartamentos: Nome | telefone | contato');
+    txt('fecho', 'FUTURE_FECHO', 'Última frase da mensagem de cobrança', 200);
+    if (d.cotacao !== undefined && futN_(d.cotacao) > 0) setConfig_('FUTURE_COTACAO', String(futN_(d.cotacao)), 'Cotação do dólar usada na cobrança');
+    if (d.taxas_sala !== undefined && futN_(d.taxas_sala) > 0) setConfig_('FUTURE_TAXAS_SALA', txtDinheiro_(futN_(d.taxas_sala)), 'Taxas das salas comerciais (sem energia)');
     registrar_(u.usuario, 'future: configuração', us.join(','));
   }
   return { usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome, acesso: podeFuture_(x) }; }),
     dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, importado: config_('FUTURE_IMPORTADO') || '',
-    pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet' };
+    pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet',
+    predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || '',
+    taxas_itens: config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00', pagadores: config_('FUTURE_PAGADORES') || '',
+    cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, taxas_sala: futN_(config_('FUTURE_TAXAS_SALA')) || 107,
+    fecho: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!' };
 }
 
 /* ---------- Importação da planilha "EDIFICIO FUTURE CONTROLE" ---------- */

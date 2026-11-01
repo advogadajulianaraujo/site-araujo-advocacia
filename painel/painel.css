@@ -1335,3 +1335,18 @@ body.modo-future .barra-cel{background:#2f855a}
 .btn.fut-zap:hover{background:#1ebe5b!important}
 .fut-cob-tel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#fff8ec;border-radius:8px;padding:6px 8px}
 @media (max-width:700px){.fut-cob-lista{grid-template-columns:1fr}}
+/* Edifício Future 8.3 — contratos */
+.fut-passo{margin:10px 0 0;font-size:.95rem;color:#2f6b45;border-bottom:1px solid #dcebe1;padding-bottom:4px}
+.fut-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fut-chip{position:relative;cursor:pointer}
+.fut-chip input{position:absolute;opacity:0;pointer-events:none}
+.fut-chip span{display:inline-block;padding:7px 14px;border:1px solid #c9d8ce;border-radius:999px;background:#fff;font-weight:500}
+.fut-chip input:checked+span{background:#2f855a;border-color:#2f855a;color:#fff}
+.fut-chip input:focus-visible+span{outline:2px solid #2f855a;outline-offset:2px}
+.fut-outro{width:90px}
+.fut-fim{display:block;padding:9px 0;font-weight:600}
+.fut-resumo{background:#f3faf5;border:1px solid #dcebe1;border-radius:10px;padding:10px 14px}
+.fut-resumo p{margin:0}
+.fut-pronto{border-left:5px solid #2f855a}
+.fut-renovar li{justify-content:flex-start;gap:6px}
+.fut-renovar li button{margin-left:auto}
