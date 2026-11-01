@@ -110,6 +110,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   com "Renovar?" no WhatsApp; atrasados com "Cobrar"; gráfico de 12 meses), Apartamentos e salas (ficha, histórico de quem morou,
   cobranças, energia), Cobranças, Caixa do prédio, Energia, Relatório do mês (para imprimir/PDF, com comparação ao mês anterior),
   Locatários (todos que já passaram), Configurações.
+- Visual 8.1 (pedido do Luiz: "não gostei"): tema CLARO e VERDE no modo Future (`body.modo-future`: menu branco, marca "EF" verde,
+  cabeçalhos verde-claros, botões verdes). Não voltar ao escuro.
+- Pastas do Drive (8.1, `futureSincronizarDrive_`, 1 vez por dia no robô, na importação e em Configurações › "Ler as pastas do Drive
+  agora", rota `future.drive`): 05. ED. FUTURE › APARTAMENTOS › "AP 101"… e "SALA COMERCIAL 2"/"… SALA 04" → `pasta_url` da unidade;
+  cada subpasta = uma pessoa que morou (`futMesmaPessoa_` liga à já cadastrada; senão entra como "saiu", origem "pasta do Drive";
+  "10 DIAS" vira observação; "HERCILIO LUZ" marca o pagador HC) com `pasta_url` e nº de `arquivos` ("📁 documentos").
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), cobranças no Drive, relatório de energia.
 
 ## Processos

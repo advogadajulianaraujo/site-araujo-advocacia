@@ -176,7 +176,8 @@
     mostrar(
       h('p', { class: 'nao-imprimir' }, h('a', { class: 'link', href: '#/future/unidades' }, '← Apartamentos e salas')),
       topo('Edifício Future · ' + s[0], u.id, u.locatario ? u.locatario + (u.saida ? ' · contrato até ' + dataBR(u.saida) : '') : 'Sem locatário',
-        zap ? [h('a', { class: 'btn dourado wa', href: zap, target: '_blank', rel: 'noopener noreferrer' }, 'WhatsApp')] : null),
+        [zap ? h('a', { class: 'btn dourado wa', href: zap, target: '_blank', rel: 'noopener noreferrer' }, 'WhatsApp') : null,
+          u.pasta_url ? h('a', { class: 'btn sec', href: u.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, '📁 Pasta no Drive') : null]),
       h('section', { class: 'fin-nums' },
         numero('dourado', u.aluguel ? reais(u.aluguel) : '—', 'Aluguel'),
         numero('azul', u.taxas ? reais(u.taxas) : '—', 'Taxas'),
@@ -185,7 +186,8 @@
       secao('Dados da unidade e do contrato', form, false),
       h('section', { class: 'caixa' }, h('h2', {}, 'Quem já morou / ocupou'),
         tabela(['Nome', 'Entrada', 'Saída', 'Garantia', 'Situação'], u.pessoas, p => [
-          h('td', { 'data-r': 'Nome' }, h('strong', {}, p.nome), p.telefone ? h('div', { class: 'peq' }, p.telefone) : null),
+          h('td', { 'data-r': 'Nome' }, h('strong', {}, p.nome), p.telefone ? h('div', { class: 'peq' }, p.telefone) : null, p.obs ? h('div', { class: 'peq' }, p.obs) : null,
+            p.pasta_url ? h('a', { class: 'fut-doc', href: p.pasta_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, `📁 documentos (${p.arquivos})`) : null),
           h('td', { 'data-r': 'Entrada' }, dataBR(p.entrada) || '—'), h('td', { 'data-r': 'Saída' }, dataBR(p.saida) || '—'),
           h('td', { 'data-r': 'Garantia' }, [p.garantia, p.caucao ? reais(num(p.caucao)) : ''].filter(Boolean).join(' · ') || '—'),
           h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (p.situacao === 'atual' ? 'ok' : '') }, p.situacao === 'atual' ? 'mora agora' : 'saiu'))
@@ -394,7 +396,8 @@
     const atuais = lista.filter(p => p.situacao === 'atual').length;
     mostrar(topo('Edifício Future', 'Locatários', `${atuais} morando agora · ${lista.length - atuais} que já passaram pelo prédio`), busca,
       K().tabela(['Nome', 'Unidade', 'Entrada', 'Saída', 'Garantia', 'Situação'], vis, p => [
-        h('td', { 'data-r': 'Nome' }, h('strong', {}, p.nome), p.telefone ? h('div', { class: 'peq' }, p.telefone) : null),
+        h('td', { 'data-r': 'Nome' }, h('strong', {}, p.nome), p.telefone ? h('div', { class: 'peq' }, p.telefone) : null,
+          p.pasta_url ? h('a', { class: 'fut-doc', href: p.pasta_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, `📁 documentos (${p.arquivos})`) : null),
         h('td', { 'data-r': 'Unidade' }, p.unidade || '—'), h('td', { 'data-r': 'Entrada' }, dataBR(p.entrada) || '—'), h('td', { 'data-r': 'Saída' }, dataBR(p.saida) || '—'),
         h('td', { 'data-r': 'Garantia' }, [p.garantia, p.caucao ? reais(p.caucao) : ''].filter(Boolean).join(' · ') || '—'),
         h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (p.situacao === 'atual' ? 'ok' : '') }, p.situacao === 'atual' ? 'mora agora' : 'saiu'))
@@ -428,10 +431,17 @@
       h('p', { class: 'peq' }, 'Lê a planilha "EDIFICIO FUTURE CONTROLE": unidades, locatários de agora e os anteriores (abas AP 101…), receitas, despesas, lavanderia e as contas da Celesc. Pode rodar de novo: não duplica.'),
       K().botao(c.importado ? 'Importar de novo (só o que falta)' : 'Importar a planilha agora', async ev => {
         ev.target.disabled = true; ev.target.textContent = 'Importando… (até 1 minuto)';
-        try { const r = await api('future.importar', {}); avisar(`Importado: ${r.unidades} unidades, ${r.pessoas} locatários, ${r.receitas} receitas, ${r.despesas} despesas, ${r.energia} contas de energia, ${r.lavanderia} da lavanderia.`); K().rota(); }
+        try { const r = await api('future.importar', {}); avisar(`Importado: ${r.unidades} unidades, ${r.pessoas} pessoas (planilha + pastas do Drive), ${r.receitas} receitas, ${r.despesas} despesas, ${r.energia} contas de energia, ${r.lavanderia} da lavanderia.`); K().rota(); }
+        catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+      }));
+    const drive = h('div', {}, h('p', { class: 'peq' }, 'Lê a pasta 05. ED. FUTURE › APARTAMENTOS (e as salas): liga cada unidade à sua pasta e cada pessoa à pasta dos documentos dela; quem tiver pasta e não estiver na planilha entra em "quem já morou". Roda sozinho uma vez por dia.'),
+      K().botao('Ler as pastas do Drive agora', async ev => {
+        ev.target.disabled = true; ev.target.textContent = 'Lendo o Drive…';
+        try { const r = await api('future.drive', {}); avisar(`Drive lido: ${r.unidades} pasta(s) de unidade ligada(s), ${r.pessoas} pasta(s) de pessoas, ${r.novas} pessoa(s) nova(s).`); K().rota(); }
         catch (e) { avisar(e.message, true); ev.target.disabled = false; }
       }));
     mostrar(topo('Edifício Future', 'Configurações', 'Acesso, vencimento e importação'),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Pastas do Drive'), drive),
       h('section', { class: 'caixa' }, h('h2', {}, 'Importar da planilha antiga'), imp),
       h('section', { class: 'caixa' }, h('h2', {}, 'Acesso e vencimento'), f),
       h('section', { class: 'caixa' }, h('h2', {}, 'Próximos passos (automação)'),

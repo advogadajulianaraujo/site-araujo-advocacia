@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.0.0';
+var VERSAO = '8.1.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -76,8 +76,8 @@ var ESQUEMA = {
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
-    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador'],
-  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em'],
+    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url'],
+  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos'],
   FutLanc: ['id', 'data', 'competencia', 'tipo', 'categoria', 'unidade', 'pessoa', 'valor', 'forma', 'responsavel', 'descricao', 'origem', 'chave', 'criado_em', 'criado_por'],
   FutCobrancas: ['id', 'unidade', 'pessoa', 'competencia', 'vencimento', 'aluguel', 'taxas', 'energia', 'outros', 'total', 'pago_em', 'valor_pago', 'forma', 'lanc_id',
     'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador'],
@@ -397,6 +397,7 @@ var ROTAS = {
   'future.relatorio': { future: true, fn: futureRelatorio_ },
   'future.config': { future: true, fn: futureConfig_ },
   'future.importar': { future: true, fn: futureImportar_ },
+  'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
   'fin.pix': { permissao: 'financeiro', fn: listarPix_ },
@@ -7956,7 +7957,7 @@ function futureResumo_(d, u) {
   var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).map(function (x) {
     var c = cobMes[x.id];
     return { id: x.id, tipo: x.tipo, andar: x.andar, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida,
-      aluguel: futN_(x.aluguel), taxas: futN_(x.taxas), garantia: x.garantia, pagador: x.pagador || '', cobranca: c ? futSituacaoCobranca_(c, hoje) : '' };
+      aluguel: futN_(x.aluguel), taxas: futN_(x.taxas), garantia: x.garantia, pagador: x.pagador || '', pasta_url: x.pasta_url || '', cobranca: c ? futSituacaoCobranca_(c, hoje) : '' };
   });
   var n = function (s) { return unidades.filter(function (x) { return x.situacao === s; }).length; };
   var noMes = function (tipo) { return T.la.linhas.filter(function (l) { return l.tipo === tipo && l.competencia === comp; }).reduce(function (a, l) { return a + futN_(l.valor); }, 0); };
@@ -7987,7 +7988,7 @@ function futureUnidade_(d) {
   if (!x) throw falha_('Unidade não encontrada.');
   var hoje = hojeSP_(), o = {}; T.un.cab.forEach(function (k) { o[k] = x[k]; });
   o.pessoas = T.pe.linhas.filter(function (p) { return p.unidade === x.id; }).sort(function (a, b) { return (b.entrada || '') < (a.entrada || '') ? -1 : 1; })
-    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao }; });
+    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0 }; });
   o.cobrancas = T.co.linhas.filter(function (c) { return c.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
     .slice(0, 24).map(function (c) { return { id: c.id, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas), energia: futN_(c.energia), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), situacao: futSituacaoCobranca_(c, hoje), pessoa: c.pessoa }; });
   o.energia = T.en.linhas.filter(function (e) { return e.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
@@ -8030,7 +8031,7 @@ function futureSalvarUnidade_(d, u) {
 function futurePessoas_(d) {
   var T = futTabs_();
   return T.pe.linhas.slice().sort(function (a, b) { return (a.situacao === 'atual') === (b.situacao === 'atual') ? ((b.entrada || '') < (a.entrada || '') ? -1 : 1) : (a.situacao === 'atual' ? -1 : 1); })
-    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, cpf: p.cpf, unidade: p.unidade, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: futN_(p.caucao), situacao: p.situacao, obs: p.obs }; });
+    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, cpf: p.cpf, unidade: p.unidade, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: futN_(p.caucao), situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, origem: p.origem }; });
 }
 function futureSalvarPessoa_(d, u) {
   return comTrava_(function () {
@@ -8292,15 +8293,85 @@ function futureImportar_(d, u) {
       var hj = hojeSP_(), diaV = parseInt(config_('FUTURE_DIA_VENC'), 10) || 10;
       setConfig_('FUTURE_COBRAR_DESDE', +hj.slice(8, 10) > diaV ? futCompMais_(futComp_(hj), 1) : futComp_(hj), 'Primeiro mês das cobranças do Edifício Future no painel');
     }
+    try { var dr = futureSincronizarDrive_(true); if (dr) { r.pastas = dr.unidades; r.pessoas += dr.novas; } } catch (eD) { r.drive = String(eD.message || eD).slice(0, 120); }
     setConfig_('FUTURE_IMPORTADO', agora + ' ' + JSON.stringify(r), 'Importação da planilha antiga do Edifício Future');
     registrar_(u.usuario, 'future: importação', JSON.stringify(r));
     return r;
   });
 }
 
+/* ---------- Pastas do Drive (05. ED. FUTURE › APARTAMENTOS › AP 101 › <pessoa>; SALA COMERCIAL 2…) ---------- */
+function futPastaRaiz_() {
+  var id = config_('FUTURE_PASTA_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* procura de novo */ } }
+  var it = DriveApp.searchFolders("title contains 'ED. FUTURE'");
+  if (!it.hasNext()) it = DriveApp.searchFolders("title contains 'FUTURE'");
+  if (!it.hasNext()) return null;
+  var f = it.next(); setConfig_('FUTURE_PASTA_ID', f.getId(), 'Pasta do Edifício Future no Drive');
+  return f;
+}
+var futNorm_ = function (t) { return normalizar_(String(t || '')).replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); };
+/** Mesma pessoa? Igual, ou um nome começa com o outro (com pelo menos 2 palavras em comum). */
+function futMesmaPessoa_(a, b) {
+  a = futNorm_(a); b = futNorm_(b); if (!a || !b) return false; if (a === b) return true;
+  var pa = a.split(' '), pb = b.split(' '), n = Math.min(pa.length, pb.length);
+  if (n < 2) return pa[0] === pb[0] && (pa.length === 1 || pb.length === 1) && pa[0].length > 3;
+  for (var i = 0; i < n; i++) if (pa[i] !== pb[i]) return false;
+  return true;
+}
+function futureSincronizarDrive_(forcar) {
+  var hoje = hojeSP_();
+  if (!forcar && config_('FUTURE_DRIVE_DIA') === hoje) return null;
+  var raiz = futPastaRaiz_(); if (!raiz) return null;
+  var T = futTabs_(), agora = new Date().toISOString(), r = { unidades: 0, pessoas: 0, novas: 0 };
+  var un = {}; T.un.linhas.forEach(function (x) { un[x.id] = x; });
+  var tratarUnidade = function (pasta, id) {
+    var x = un[id]; if (!x) return;
+    if (x.pasta_url !== pasta.getUrl()) { atualizarLinha_(T.un, x, { pasta_url: pasta.getUrl() }); r.unidades++; }
+    var subs = pasta.getFolders();
+    while (subs.hasNext()) {
+      var f = subs.next(), bruto = String(f.getName() || '').trim();
+      if (!bruto || /^(contratos?|documentos?|fotos?|vistoria)$/i.test(bruto)) continue;
+      var n = 0, fi = f.getFiles(); while (fi.hasNext() && n < 99) { fi.next(); n++; }
+      if (/hercilio\s*luz/i.test(futNorm_(bruto))) { // a empresa que paga os apartamentos HC
+        if (!x.pagador) atualizarLinha_(T.un, x, { pagador: 'Hercílio Luz (HC)' });
+        continue;
+      }
+      var obs = (/(\d+)\s*dias?/i.exec(bruto) || [])[0] || '';
+      var nome = futNome_(bruto.replace(/\s*\d+\s*dias?\s*$/i, '')).split(' ').map(function (w) { return /^(de|da|do|dos|das|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' ');
+      var p = T.pe.linhas.filter(function (q) { return q.unidade === id && futMesmaPessoa_(q.nome, nome); })[0]
+        || T.pe.linhas.filter(function (q) { return futMesmaPessoa_(q.nome, nome) && futNorm_(nome).split(' ').length >= 2; })[0];
+      if (p) {
+        if (p.pasta_url !== f.getUrl() || String(p.arquivos) !== String(n)) atualizarLinha_(T.pe, p, { pasta_url: f.getUrl(), arquivos: String(n) });
+      } else {
+        inserirLinha_(T.pe, { id: novoId_('FP'), nome: nome, telefone: '', cpf: '', unidade: id, entrada: '', saida: '', garantia: '', caucao: '',
+          situacao: futMesmaPessoa_(x.locatario, nome) ? 'atual' : 'saiu', obs: obs ? 'Estadia de ' + obs.toLowerCase() : '', origem: 'pasta do Drive',
+          criado_em: Utilities.formatDate(f.getDateCreated(), TZ, "yyyy-MM-dd'T'HH:mm:ss"), pasta_url: f.getUrl(), arquivos: String(n) });
+        r.novas++;
+      }
+      r.pessoas++;
+    }
+  };
+  var visitar = function (pasta, nivel) {
+    var it = pasta.getFolders();
+    while (it.hasNext()) {
+      var f = it.next(), nome = String(f.getName() || '').toUpperCase();
+      var m = /^AP\.?\s*(\d{3})$/.exec(nome.trim()), s2 = /SALA\D*0?(\d)\b/.exec(nome);
+      if (m) tratarUnidade(f, 'AP ' + m[1]);
+      else if (s2) tratarUnidade(f, 'SALA ' + s2[1]);
+      else if (nivel < 1) visitar(f, nivel + 1); // ex.: a pasta APARTAMENTOS
+    }
+  };
+  visitar(raiz, 0);
+  setConfig_('FUTURE_DRIVE_DIA', hoje, 'Último dia em que o painel leu as pastas do Edifício Future no Drive');
+  if (r.novas) registrar_('robô', 'future: pastas do Drive', JSON.stringify(r));
+  return r;
+}
+
 /** Robô (de hora em hora): cobranças do mês e, perto do fim do mês, as do mês seguinte. */
 function futureRobo_() {
   if (!config_('FUTURE_IMPORTADO')) return 0;
+  try { futureSincronizarDrive_(false); } catch (e) { /* tenta amanhã */ }
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));
   if (+hoje.slice(8, 10) >= 25) n += futureGerarCobrancas_(futCompMais_(futComp_(hoje), 1));
   return n;
