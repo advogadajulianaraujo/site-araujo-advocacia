@@ -1,5 +1,62 @@
 [
   {
+    "slug": "tribunal-mantem-indenizacao-a-irma-de-trabalhador-vitima-de-acidente",
+    "titulo": "Tribunal mantém indenização a irmã de trabalhador vítima de acidente",
+    "resumo": "Entenda a decisão do TST sobre a presunção de dano moral a familiares de trabalhador vítima de acidente fatal, incluindo irmãos.",
+    "area": "trabalhista",
+    "data": "2026-11-02",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Tribunal Superior do Trabalho (TST)",
+      "url": "https://www.tst.jus.br/-/tst-mantem-indenizacao-a-irma-de-trabalhador-eletrocutado-em-acidente",
+      "titulo": "TST mantém indenização a irmã de trabalhador eletrocutado em acidente",
+      "data": "2026-10-28",
+      "conferida": "página (lida pelo Google)"
+    },
+    "corpo": [
+      "Uma decisão recente do Tribunal Superior do Trabalho (TST) abordou os direitos de familiares em casos de acidentes de trabalho fatais. O colegiado manteve a condenação imposta a uma empresa de telefonia ao pagamento de indenização por dano moral à irmã de um eletricista que faleceu durante a prestação de serviços.",
+      "## O caso analisado",
+      "O trabalhador exercia funções de manutenção na rede elétrica quando sofreu uma descarga elétrica de alta voltagem, resultando em seu falecimento no local. A ação judicial foi ajuizada conjuntamente por esposa, filhos, pais e a irmã do profissional.",
+      "A discussão jurídica envolveu a apuração da responsabilidade pelo acidente e a definição de quais familiares teriam direito à reparação por dano moral. Enquanto os familiares apontaram falhas nas medidas de segurança e na disponibilização de equipamentos, a empresa argumentou que forneceu capacitação e que os procedimentos adequados não teriam sido integralmente seguidos.",
+      "## Entendimento sobre o núcleo familiar",
+      "Ao longo das instâncias judiciais, houve divergências sobre a inclusão da irmã entre os beneficiários da indenização. O Tribunal Regional havia entendido que seria necessária a comprovação de dependência financeira ou emocional para justificar o pagamento a irmãos.",
+      "No entanto, o TST reformou esse entendimento. A Corte aplicou tese vinculante que estabelece regras claras sobre o tema:",
+      "- O dano moral decorrente do falecimento de um trabalhador em acidente é considerado presumido para os integrantes do núcleo familiar básico.",
+      "- A relação de parentesco abrangida por essa presunção inclui cônjuges ou companheiros, filhos, pais e irmãos.",
+      "- A presunção do sofrimento é relativa, o que significa que poderia ser afastada caso houvesse prova em contrário no processo, o que não ocorreu no caso.",
+      "Com base nesse entendimento, foi mantida a reparação fixada à irmã no valor de R$ 15 mil, além dos valores devidos aos demais familiares.",
+      "## Pontos de atenção",
+      "Decisões judiciais envolvendo acidentes de trabalho baseiam-se em análises detalhadas de cada situação, considerando as provas apresentadas, as normas de segurança observadas e o vínculo com os familiares envolvidos. Cada caso depende de análise individual para a verificação de seus aspectos específicos.",
+      "Cabe destacar que as decisões proferidas por tribunais superiores ainda podem ser objeto de recurso, conforme as regras processuais aplicáveis a cada fase do processo."
+    ]
+  },
+  {
+    "slug": "stf-restabelece-adicional-de-periculosidade-a-guardas-municipais",
+    "titulo": "STF restabelece adicional de periculosidade a guardas municipais",
+    "resumo": "Decisão do STF suspende corte no adicional de periculosidade de guardas municipais. Entenda a análise sobre a segurança pública e os impactos.",
+    "area": "trabalhista",
+    "data": "2026-11-02",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Supremo Tribunal Federal (STF)",
+      "url": "https://noticias.stf.jus.br/stf-restabelece-adicional-de-periculosidade-a-guardas-municipais-de-santo-andre-sp/",
+      "titulo": "STF restabelece adicional de periculosidade a guardas municipais de Santo André (SP)",
+      "data": "2026-03-02",
+      "conferida": "página"
+    },
+    "corpo": [
+      "Uma recente decisão proferida no âmbito do Supremo Tribunal Federal (STF) tratou da manutenção do pagamento do adicional de periculosidade a integrantes da Guarda Civil Municipal de uma cidade do estado de São Paulo. A medida foi adotada em virtude de um pedido formulado pela Mesa Diretora da Câmara Municipal.",
+      "## O que foi decidido",
+      "O presidente do STF suspendeu uma decisão anterior do Tribunal de Justiça do Estado de São Paulo (TJ-SP). O tribunal estadual havia declarado a inconstitucionalidade de dispositivos de uma lei municipal de 2017 que instituía o adicional de periculosidade no percentual de 30% sobre o salário-base dos profissionais da guarda municipal.",
+      "Com a suspensão da decisão do TJ-SP, o pagamento do adicional foi restabelecido temporariamente. Entre os fundamentos apresentados ao STF, destacou-se que a retirada abrupta de uma parcela remuneratória essencial poderia causar prejuízos tanto aos servidores quanto ao serviço de segurança pública.",
+      "## Impactos na gestão da segurança pública",
+      "Ao analisar o caso, a presidência do STF considerou relevantes os argumentos sobre o risco iminente de comprometimento da gestão da segurança pública local caso a supressão da parcela ocorresse de forma imediata.",
+      "- O adicional integra o regime remuneratório há mais de oito anos.\n- A estrutura organizacional dos serviços de segurança e fiscalização municipal depende dessa organização.\n- A decisão apontou a necessidade de um prazo razoável para adequações legislativas.",
+      "## Considerações sobre processos judiciais",
+      "Cabe destacar que cada caso possui particularidades e depende de uma análise individualizada das normas locais e do histórico processual. Além disso, decisões cautelares e liminares proferidas pelos tribunais podem ser objeto de novos recursos e atualizações conforme o andamento das ações judiciais."
+    ]
+  },
+  {
     "slug": "tst-reconhece-prova-indireta-e-condena-empresa-por-assedio-sexual",
     "titulo": "TST reconhece prova indireta e condena empresa por assédio sexual",
     "resumo": "A Oitava Turma do TST entendeu que a ausência de testemunha presencial não impede a condenação por assédio sexual se houver conjunto probatório.",
