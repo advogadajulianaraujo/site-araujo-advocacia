@@ -186,6 +186,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 ## Modelos de documentos
 
 - A geração de documentos fica só na aba Modelos (a ficha do cliente tem apenas o botão "Gerar documentos").
+- TODOS os perfis (inclusive RH, secretaria e estagiário) geram TODOS os documentos, também contratos de honorários, recibos,
+  promissórias e cobrança (8.3.2, pedido da usuária); o honorário do contrato é lançado no financeiro por quem gerar.
+  O RH continua sem ver valores nas telas do Financeiro e sem editar honorários/parcelas lá.
 - Escolha dos documentos (pedido da usuária: menos informação na tela): botão "📂 Escolher documentos (n)" + chips do que foi
   escolhido; a janela (`seletorDocumentos`) tem busca e categorias (sem pacotes prontos: retirados a pedido da usuária) (`CATEGORIAS_DOC`: Procurações, Contratos de honorários, Declarações e termos, Recibos e
   cobrança, Petições, Notificações e outros).

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.3.1';
+var VERSAO = '8.3.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -5280,7 +5280,7 @@ function listarModelos_(d, u) {
   });
   return {
     pastaEscritorio: 'https://drive.google.com/drive/folders/' + (config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO),
-    modelos: [].concat(Object.keys(MODELOS).filter(function (k) { return !MODELOS[k].financeiro || pode.financeiro; }).map(function (k) {
+    modelos: [].concat(Object.keys(MODELOS).map(function (k) { // todos os perfis geram todos os documentos (pedido da usuária, 8.3.2)
       var m = MODELOS[k];
       return { chave: k, nome: m.nome, grupo: m.grupo, honorarios: !!m.honorarios, mensal: !!m.mensal, recibo: !!m.recibo, processo: !!m.processo, cobranca: !!m.cobranca,
         menores: !!m.menores, url: m.gerado ? '' : 'https://docs.google.com/document/d/' + modeloId_(k) + '/edit' };
@@ -5651,7 +5651,6 @@ function gerarDocumentos_(d, u) {
   var quais = (d.modelos || []).map(function (k) { return k === 'procuracao_antiga' ? 'procuracao' : k; }).filter(function (k) { return MODELOS[k] || doDrive[k]; });
   var M = function (k) { return MODELOS[k] || (doDrive[k] ? { processo: modeloDrivePrecisaProcesso_(doDrive[k].nome) } : {}); };
   if (!quais.length) throw falha_('Escolha pelo menos um documento.');
-  if (quais.some(function (k) { return M(k).financeiro; }) && (!pode.financeiro || pode.ocultarValores)) throw falha_('Contratos e recibos só podem ser gerados pela administração.');
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
   if (!c) throw falha_('Escolha o cliente.');
   var adv = advogados_().filter(function (a) { return a.id === d.advogado_id; })[0] ||
@@ -5869,7 +5868,7 @@ function gerarDocumentos_(d, u) {
   }
   gerados.forEach(function (g) { delete g._docId; delete g._ordem; });
   var lancados = [];
-  if (f.lancar && pode.financeiro && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
+  if (f.lancar && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
