@@ -1376,3 +1376,8 @@ body.modo-future .barra-cel{background:#2f855a}
 .assin-card.atrasada{border-left-color:#c2372c;background:#fff8f7}
 .assin-acoes{display:flex;gap:6px;flex-wrap:wrap}
 .assin-nota{display:grid;gap:10px}
+.fut-contas{display:grid;gap:10px;margin:10px 0}
+.fut-conta{border:1px solid #d6e2da;border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;align-items:end}
+.fut-conta legend{font-weight:600;padding:0 6px}
+.fut-conta-campo{display:grid;gap:2px}
+.fut-conta-campo input{padding:6px 8px;border:1px solid #d6e2da;border-radius:6px;font:inherit}

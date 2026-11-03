@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.2';
+var VERSAO = '8.4.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -78,7 +78,7 @@ var ESQUEMA = {
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
-    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda', 'modalidade'],
+    'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda', 'modalidade', 'conta_receb'],
   FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url', 'rg', 'qualificacao', 'genero', 'laudo_url'],
   FutLanc: ['id', 'data', 'competencia', 'tipo', 'categoria', 'unidade', 'pessoa', 'valor', 'forma', 'responsavel', 'descricao', 'origem', 'chave', 'criado_em', 'criado_por'],
   FutCobrancas: ['id', 'unidade', 'pessoa', 'competencia', 'vencimento', 'aluguel', 'taxas', 'energia', 'outros', 'total', 'pago_em', 'valor_pago', 'forma', 'lanc_id',
@@ -8201,7 +8201,7 @@ function futureSalvarUnidade_(d, u) {
     if (!x) throw falha_('Unidade não encontrada.');
     var m = {};
     ['aluguel', 'taxas', 'caucao'].forEach(function (k) { if (d[k] !== undefined) m[k] = d[k] === '' ? '' : txtDinheiro_(futN_(d[k])); });
-    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador', 'cobra_energia', 'moeda'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
+    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador', 'cobra_energia', 'moeda', 'conta_receb'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
     ['entrada', 'saida'].forEach(function (k) { if (d[k] !== undefined) m[k] = /^\d{4}-\d{2}-\d{2}$/.test(d[k]) ? d[k] : ''; });
     if (d.situacao !== undefined) { if (FUT_SITUACOES.indexOf(d.situacao) < 0) throw falha_('Situação inválida.'); m.situacao = d.situacao; }
     if (m.situacao === 'disponivel') m.locatario = '';
@@ -8254,11 +8254,27 @@ function futureCobrancas_(d) {
     .map(function (c) { return { id: c.id, unidade: c.unidade, pessoa: c.pessoa, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas),
       energia: futN_(c.energia), outros: futN_(c.outros), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), forma: c.forma, situacao: futSituacaoCobranca_(c, hoje),
       telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '', enviado_em: c.enviado_em || '', enviado_por: c.enviado_por || '',
-      detalhe: c.detalhe || '', lavanderia: futN_(c.lavanderia), servicos: futN_(c.lavanderia) ? servDe(c) : [], lav_qtd: (lavQ[c.unidade + '|' + futRefDaCobranca_(c)] || 0), moeda: (un[c.unidade] || {}).moeda || '', cobra_energia: futCobraEnergia_(un[c.unidade] || { id: c.unidade }), aluguel_cheio: futN_((un[c.unidade] || {}).aluguel) }; })
+      conta: (un[c.unidade] || {}).conta_receb || '', detalhe: c.detalhe || '', lavanderia: futN_(c.lavanderia), servicos: futN_(c.lavanderia) ? servDe(c) : [], lav_qtd: (lavQ[c.unidade + '|' + futRefDaCobranca_(c)] || 0), moeda: (un[c.unidade] || {}).moeda || '', cobra_energia: futCobraEnergia_(un[c.unidade] || { id: c.unidade }), aluguel_cheio: futN_((un[c.unidade] || {}).aluguel) }; })
     .sort(function (a, b) { return a.competencia < b.competencia ? -1 : a.competencia > b.competencia ? 1 : (a.unidade < b.unidade ? -1 : 1); });
   return Object.assign({ mes: comp, lista: lista }, futMensagemConfig_());
 }
 /** O que vai na mensagem de cobrança (tudo editável em Configurações; os dados da conta ficam só na planilha). */
+/** Contas para receber (podem mudar; cada apartamento pode usar uma). Ficam só na planilha (Config FUTURE_CONTAS, JSON). */
+var FUT_CAMPOS_CONTA = ['id', 'apelido', 'titular', 'banco', 'codigo_banco', 'agencia', 'conta', 'pix_tipo', 'pix'];
+function futContas_() {
+  var l = []; try { l = JSON.parse(config_('FUTURE_CONTAS') || '[]'); } catch (e) { l = []; }
+  return (Array.isArray(l) ? l : []).filter(function (c) { return c && (c.pix || c.conta); });
+}
+function futSalvarContas_(lista, padrao) {
+  var limpa = (lista || []).slice(0, 10).map(function (c, i) {
+    var o = {}; FUT_CAMPOS_CONTA.forEach(function (k) { o[k] = String(c[k] || '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim().slice(0, 80); });
+    o.id = o.id || 'c' + Date.now().toString(36) + i; return o;
+  }).filter(function (c) { return c.pix || c.conta; });
+  setConfig_('FUTURE_CONTAS', JSON.stringify(limpa), 'Contas para receber os aluguéis do Edifício Future');
+  var pd = limpa.some(function (c) { return c.id === padrao; }) ? padrao : (limpa[0] || {}).id || '';
+  setConfig_('FUTURE_CONTA_PADRAO', pd, 'Conta padrão das cobranças do Edifício Future');
+  return limpa;
+}
 function futMensagemConfig_() {
   var itens = String(config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00').split(/\r?\n|;/).map(function (l) {
     var m = /^\s*(.+?)\s*[:=]\s*(?:R\$\s*)?([\d.,]+)\s*$/.exec(l); return m ? { nome: m[1], valor: futN_(m[2]) } : null; }).filter(Boolean);
@@ -8267,13 +8283,14 @@ function futMensagemConfig_() {
     var p = l.split('|').map(function (x) { return x.trim(); }); if (p[0]) pagadores[p[0]] = { telefone: p[1] || '', contato: p[2] || '' };
   });
   var pix = config_('FUTURE_PIX') || '';
-  return { pix: pix, taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet', taxas_itens: itens,
+  var contas = futContas_();
+  return { pix: pix, contas: contas, conta_padrao: config_('FUTURE_CONTA_PADRAO') || (contas[0] || {}).id || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet', taxas_itens: itens,
     predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || (pix ? 'Pix: ' + pix : ''),
     dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? '' : (config_('FUTURE_DINHEIRO_TXT') || 'Se preferir, o pagamento também pode ser feito em dinheiro.'),
     cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, pagadores: pagadores, assinatura: (function () {
       // pedido do Luiz: a mensagem sempre pede o comprovante, mesmo que a frase final seja trocada
-      var f = config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!';
-      return /comprovante/i.test(f + ' ' + (config_('FUTURE_PAGAMENTO') || '')) ? f : f + '\nFavor enviar o comprovante de pagamento.';
+      var f = String(config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
+      return /comprovante/i.test(f) ? f : f + '\nFavor enviar o comprovante de pagamento.';
     })() };
 }
 function futurePagarCobranca_(d, u) {
@@ -8686,7 +8703,26 @@ function futureImportarPasta_(u) {
   var it = pasta.getFiles();
   while (it.hasNext()) {
     var f = it.next(), nome = String(f.getName());
-    if (/^IMPORTADO/i.test(nome) || !/^(DESPESAS|LAVANDERIA)/i.test(nome)) continue;
+    if (/^IMPORTADO/i.test(nome) || !/^(DESPESAS|LAVANDERIA|CONTA|PAGAMENTO)/i.test(nome)) continue;
+    if (/^(CONTA|PAGAMENTO)/i.test(nome)) { // "titular: …", "banco: …", "chave pix: …" — vira uma conta para receber
+      var c0 = {}, pad = false;
+      futTextoArquivo_(f).split(/\r?\n/).forEach(function (l) {
+        var m = /^\s*([^:#]+?)\s*:\s*(.+)$/.exec(l); if (!m) return;
+        var k = normalizar_(m[1]), v = m[2].trim();
+        if (/apelido|nome da conta/.test(k)) c0.apelido = v; else if (/titular|favorecid/.test(k)) c0.titular = v;
+        else if (/codigo|cod\.? do banco|numero do banco/.test(k)) c0.codigo_banco = v; else if (/banco/.test(k)) c0.banco = v;
+        else if (/agencia/.test(k)) c0.agencia = v; else if (/^conta/.test(k)) c0.conta = v;
+        else if (/tipo/.test(k)) c0.pix_tipo = v; else if (/pix|chave/.test(k)) c0.pix = v; else if (/padrao/.test(k)) pad = /sim|s\b/i.test(v);
+      });
+      if (c0.pix || c0.conta) {
+        var cs = futContas_(), ja = cs.filter(function (x) { return (c0.pix && x.pix === c0.pix) || (c0.conta && x.conta === c0.conta); })[0];
+        if (ja) Object.assign(ja, c0); else { c0.id = 'c' + Date.now().toString(36); cs.push(c0); }
+        futSalvarContas_(cs, pad || !config_('FUTURE_CONTA_PADRAO') ? (ja || c0).id : config_('FUTURE_CONTA_PADRAO'));
+        r.contas = (r.contas || 0) + 1;
+      } else r.erros.push(nome + ': não achei a chave Pix nem a conta');
+      try { f.setName('IMPORTADO ' + dataBR_(hojeSP_()) + ' — ' + nome); } catch (eN) { /* segue */ }
+      r.arquivos++; continue;
+    }
     var lavanderia = /^LAVANDERIA/i.test(nome), linhas = futTextoArquivo_(f).split(/\r?\n/), ref = futCompMais_(futComp_(), -1), substituir = false, n = 0;
     linhas.forEach(function (bruta, i) {
       var t = bruta.trim(); if (!t || /^#/.test(t)) return;
@@ -8917,6 +8953,7 @@ function futureConfig_(d, u) {
     txt('taxas_itens', 'FUTURE_TAXAS_ITENS', 'Taxas do apartamento, uma por linha (Nome: valor)');
     txt('pagadores', 'FUTURE_PAGADORES', 'Empresas que pagam apartamentos: Nome | telefone | contato');
     txt('fecho', 'FUTURE_FECHO', 'Última frase da mensagem de cobrança', 200);
+    if (Array.isArray(d.contas)) futSalvarContas_(d.contas, d.conta_padrao);
     if (d.dinheiro !== undefined) setConfig_('FUTURE_DINHEIRO', d.dinheiro === 'nao' ? 'nao' : 'sim', 'Mensagem de cobrança avisa que aceita dinheiro');
     txt('dinheiro_txt', 'FUTURE_DINHEIRO_TXT', 'Frase do pagamento em dinheiro', 160);
     if (d.cotacao !== undefined && futN_(d.cotacao) > 0) setConfig_('FUTURE_COTACAO', String(futN_(d.cotacao)), 'Cotação do dólar usada na cobrança');
@@ -8930,6 +8967,7 @@ function futureConfig_(d, u) {
     taxas_itens: config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00', pagadores: config_('FUTURE_PAGADORES') || '',
     cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, taxas_sala: futN_(config_('FUTURE_TAXAS_SALA')) || 107,
     fecho: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!',
+    contas: futContas_(), conta_padrao: config_('FUTURE_CONTA_PADRAO') || '',
     dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? 'nao' : 'sim', dinheiro_txt: config_('FUTURE_DINHEIRO_TXT') || 'Se preferir, o pagamento também pode ser feito em dinheiro.' };
 }
 

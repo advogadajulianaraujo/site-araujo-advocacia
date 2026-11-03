@@ -169,6 +169,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (data | AP | serviço | quantidade; "SUBSTITUIR" troca o mês), "MES: aaaa-mm" no topo; depois de lido vira "IMPORTADO …" (chave
   `pasta:arquivo:linha` evita duplicar). É assim que listas com nomes entram sem passar pelo repositório. Ao abrir o painel do
   prédio, as outras telas já são buscadas em segundo plano (`prepararTelas` em future.js).
+- 8.4.3: CONTAS PARA RECEBER (Config FUTURE_CONTAS em JSON + FUTURE_CONTA_PADRAO; só na planilha): Configurações › "Contas para receber
+  (Pix)" (apelido, titular, tipo e chave Pix, banco, código, agência, conta); a mensagem sai com "Pagamento (Pix):" + "Chave Pix (celular):
+  …" numa linha só + titular + banco/agência/conta (`blocoPagamento` em future.js). Em cada cartão de cobrança dá para escolher outra
+  conta ("Receber em") e "usar sempre neste apto" (coluna `conta_receb` da unidade); botão "Copiar chave Pix". Emojis são tirados da
+  mensagem (`semEmoji`). Arquivo "CONTA …" ou "PAGAMENTO …" (linhas "chave: valor", "padrao: sim") na pasta PARA IMPORTAR vira conta.
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

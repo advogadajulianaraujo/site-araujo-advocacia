@@ -285,8 +285,22 @@
     if (c.outros) L.push(`${c.obs && !/^Temporada/.test(c.obs) ? c.obs : 'Outros'}: ${brl(c.outros)}`);
     return L;
   }
+  // Dados para receber, em formato de Pix (chave sozinha numa linha para copiar fácil). A conta pode mudar e cada apto pode ter a sua.
+  const semEmoji = t => String(t || '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').replace(/[ \t]+$/gm, '').trim();
+  const contaDe = (c, r, escolhida) => (r.contas || []).find(x => x.id === (escolhida || (c && c.conta) || r.conta_padrao)) || (r.contas || [])[0] || null;
+  function blocoPagamento(conta, r) {
+    if (!conta) return semEmoji(r.pagamento);
+    const L = [];
+    if (conta.pix) L.push(`Chave Pix${conta.pix_tipo ? ' (' + conta.pix_tipo.toLowerCase() + ')' : ''}: ${conta.pix}`);
+    if (conta.titular) L.push(`Titular: ${conta.titular}`);
+    const banco = [conta.banco, conta.codigo_banco ? `(${conta.codigo_banco})` : ''].filter(Boolean).join(' ');
+    const ag = [banco, conta.agencia ? 'Agência ' + conta.agencia : '', conta.conta ? 'Conta ' + conta.conta : ''].filter(Boolean).join(' · ');
+    if (ag) L.push(ag);
+    return L.join('\n');
+  }
   const totalTxt = c => faltaEnergia(c) ? `R$ [${brl(c.total).replace('R$ ', '')} + energia]` : brl(c.total);
-  function textoCobranca(c, r) {
+  function textoCobranca(c, r, escolhida) {
+    const pagamento = blocoPagamento(contaDe(c, r, escolhida), r);
     const { dataBR } = K(), unidade = nomeUnidade(c.unidade);
     const L = [`Oi, ${saudacao()}, ${primeiro(c.pessoa) || 'tudo bem'}! Tudo bem?`, '',
       /^temp\|/.test(c.detalhe || '') ? `Segue o demonstrativo da locação por temporada no ${r.predio} — ${unidade}:` : `Segue o demonstrativo do ${r.predio} — ${unidade}, referente a ${refMes(c)}:`, '', ...linhasValores(c, r), ''];
@@ -294,17 +308,18 @@
       L.push(`Total em reais: ${totalTxt(c)}`);
       if (!faltaEnergia(c)) L.push(`Equivalente em dólares: US$ ${(c.total / r.cotacao).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       L.push(`Cotação utilizada: R$ ${String(r.cotacao).replace('.', ',')} por dólar.`, '', `Vencimento: ${dataBR(c.vencimento)}.`);
-      if (r.pagamento) L.push('', 'Para pagamento em reais:', r.pagamento);
+      if (pagamento) L.push('', 'Para pagamento em reais (Pix):', pagamento);
     } else {
       L.push(`Total: ${totalTxt(c)}`, `Vencimento: ${dataBR(c.vencimento)}.`);
-      if (r.pagamento) L.push('', 'Pagamento:', r.pagamento);
+      if (pagamento) L.push('', 'Pagamento (Pix):', pagamento);
     }
-    if (r.dinheiro) { if (!r.pagamento) L.push(''); L.push(r.dinheiro); }
-    L.push('', /^SALA/.test(c.unidade) ? r.assinatura.replace('o apartamento', 'a sala') : r.assinatura);
+    if (r.dinheiro) L.push('', semEmoji(r.dinheiro));
+    L.push('', semEmoji(/^SALA/.test(c.unidade) ? r.assinatura.replace('o apartamento', 'a sala') : r.assinatura));
     return L.join('\n');
   }
   // Empresa que paga vários apartamentos (ex.: Hercílio Luz): um demonstrativo só, com um bloco por apartamento.
   function textoGrupo(pag, cs, r) {
+    const pagamento = blocoPagamento(contaDe(null, r), r);
     const { dataBR } = K(), c0 = cs[0], contato = (r.pagadores[pag] || {}).contato;
     const L = [];
     if (contato) L.push(`Oi, ${saudacao()}, ${contato}! Tudo bem?`, '');
@@ -314,9 +329,9 @@
     });
     const soma = cs.reduce((a, c) => a + c.total, 0);
     L.push('', `Total geral (${cs.length} apartamento${cs.length > 1 ? 's' : ''}): ${cs.some(faltaEnergia) ? 'R$ [' + brl(soma).replace('R$ ', '') + ' + energia]' : brl(soma)}`);
-    if (r.pagamento) L.push('', 'Pagamento:', r.pagamento);
-    if (r.dinheiro) L.push(r.dinheiro);
-    L.push('', r.assinatura.replace('identificando o apartamento', 'identificando os apartamentos'));
+    if (pagamento) L.push('', 'Pagamento (Pix):', pagamento);
+    if (r.dinheiro) L.push('', semEmoji(r.dinheiro));
+    L.push('', semEmoji(r.assinatura.replace('identificando o apartamento', 'identificando os apartamentos')));
     return L.join('\n');
   }
   async function cobrancas(params) {
@@ -358,6 +373,7 @@
     };
     const cartao = c => {
       const area = h('div', { class: 'fut-cob-acao' });
+      let escolhida = c.conta || r.conta_padrao;
       const link = c.telefone ? whats(c.telefone, textoCobranca(c, r)) : null;
       // etapas: 1) mandar a cobrança  2) cobrado (mandou)  3) pagou
       const etapa = c.pago_em ? 3 : c.enviado_em ? 2 : 1;
@@ -375,13 +391,15 @@
           if (link) botoes.append(h('a', { class: 'btn wa fut-zap', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => {
             if (faltaEnergia(c) && !confirm(`${c.unidade}: a energia de ${refMes(c)} ainda não foi informada. A mensagem vai com "[preencher]". Mandar mesmo assim?`)) { ev.preventDefault(); return; }
             api('future.cobranca.enviada', { id: c.id, como: 'WhatsApp' }).then(() => setTimeout(recarregar, 400)).catch(() => {}); } }, c.enviado_em ? 'Mandar de novo' : 'Cobrar no WhatsApp'));
-          botoes.append(K().botao('Copiar texto', async () => { try { await navigator.clipboard.writeText(textoCobranca(c, r)); avisar('Mensagem copiada. Depois de mandar, aperte "✓ Já mandei".'); } catch (e) { prompt('Copie a mensagem:', textoCobranca(c, r)); } }, 'mini sec'));
+          botoes.append(K().botao('Copiar texto', async () => { try { await navigator.clipboard.writeText(textoCobranca(c, r, escolhida)); avisar('Mensagem copiada. Depois de mandar, aperte "✓ Já mandei".'); } catch (e) { prompt('Copie a mensagem:', textoCobranca(c, r, escolhida)); } }, 'mini sec'));
+          const ct = contaDe(c, r, escolhida);
+          if (ct && ct.pix) botoes.append(K().botao('Copiar chave Pix', async () => { const k = (contaDe(c, r, escolhida) || {}).pix; try { await navigator.clipboard.writeText(k); avisar('Chave Pix copiada: ' + k); } catch (e) { prompt('Chave Pix:', k); } }, 'mini sec'));
           if (!c.enviado_em) botoes.append(K().botao('✓ Já mandei', () => marcar('copiado'), 'mini sec'));
           else botoes.append(K().botao('Desfazer "cobrado"', async () => { await api('future.cobranca.enviada', { id: c.id, desfazer: true }); recarregar(); }, 'mini link'));
         }
         botoes.append(K().botao('✓ Pagou', () => area.replaceChildren(pagar(c)), 'mini'), K().botao('Ajustar valores', () => area.replaceChildren(ajustar(c)), 'mini sec'));
       } else botoes.append(K().botao('Desfazer pagamento', async () => { if (!confirm('Desfazer o pagamento de ' + c.unidade + '?')) return; await api('future.cobranca.pagar', { id: c.id, desfazer: true }); recarregar(); }, 'mini sec'));
-      return h('article', { class: 'fut-cob-card ' + (c.pago_em ? 'pago' : c.situacao === 'atrasada' ? 'atraso' : c.enviado_em ? 'enviado' : 'falta') },
+      const cartaoEl = h('article', { class: 'fut-cob-card ' + (c.pago_em ? 'pago' : c.situacao === 'atrasada' ? 'atraso' : c.enviado_em ? 'enviado' : 'falta') },
         h('div', { class: 'fut-cob-tit' }, h('a', { href: '#/future/unidade/' + encodeURIComponent(c.unidade) }, h('b', {}, c.unidade)),
           h('span', {}, c.pessoa || '—'), c.competencia !== comp ? h('span', { class: 'tag urgente' }, 'ref. ' + curto(compMais(c.competencia, -1))) : null,
           /^temp\|/.test(c.detalhe || '') ? h('span', { class: 'tag' }, 'temporada') : null),
@@ -393,8 +411,15 @@
           c.outros ? h('span', {}, 'Outros ', h('b', {}, reais(c.outros))) : null,
           h('span', { class: 'fut-cob-total' }, 'Total ', h('b', {}, reais(c.total)))),
         h('div', { class: 'fut-cob-pe' }, status, botoes),
+        !c.pago_em && !c.pagador && (r.contas || []).length > 1 ? (() => {
+          const sel = h('select', { 'aria-label': 'Conta para receber' }, r.contas.map(x => h('option', { value: x.id, selected: x.id === escolhida }, (x.apelido || x.titular || 'Conta') + (x.pix ? ' · Pix ' + x.pix : ''))));
+          sel.addEventListener('change', () => { escolhida = sel.value; const z = cartaoEl.querySelector('.fut-zap'); if (z && c.telefone) z.href = whats(c.telefone, textoCobranca(c, r, escolhida)); avisar('A mensagem vai com esta conta.'); });
+          const fixar = K().botao('usar sempre neste apto', async () => { await api('future.unidade.salvar', { id: c.unidade, conta_receb: sel.value }); avisar(c.unidade + ': conta guardada.'); recarregar(); }, 'mini link');
+          return h('div', { class: 'fut-cob-tel' }, h('span', { class: 'peq' }, 'Receber em: '), sel, fixar);
+        })() : null,
         !c.pago_em && !c.pagador && !c.telefone ? h('div', { class: 'fut-cob-tel' }, h('span', { class: 'peq' }, 'Sem telefone: '), telefone(c)) : null,
         area);
+      return cartaoEl;
     };
     // empresa que paga vários apartamentos (ex.: Hercílio Luz): uma cobrança só
     const grupos = {}; doMes.forEach(c => { if (c.pagador) (grupos[c.pagador] = grupos[c.pagador] || []).push(c); });
@@ -839,7 +864,7 @@
     const fm = h('form', { class: 'campos', novalidate: true },
       K().campo('predio', 'Nome do prédio na mensagem', c.predio, { dica: 'aparece em "Segue o demonstrativo do …"' }),
       K().campo('cotacao', 'Cotação do dólar (R$)', String(c.cotacao).replace('.', ','), { modo: 'decimal', dica: 'para quem paga em dólar (marcado na ficha do apartamento)' }),
-      K().campo('pagamento', 'Dados de pagamento (vão depois de "Pagamento:")', c.pagamento, { area: true, largo: true, dica: 'uma informação por linha: banco e titular, Pix, agência, conta' }),
+      K().campo('pagamento', 'Texto livre de pagamento (só usado se não houver conta cadastrada acima)', c.pagamento, { area: true, largo: true }),
       K().campo('taxas_itens', 'Taxas do apartamento, uma por linha', c.taxas_itens, { area: true, dica: 'Nome: valor — quando a soma bate com as taxas da unidade, a mensagem mostra cada uma' }),
       K().campo('taxas_sala', 'Taxas das salas comerciais (R$)', String(c.taxas_sala).replace('.', ','), { modo: 'decimal', dica: 'as salas pagam a própria energia' }),
       K().campo('pagadores', 'Empresas que pagam apartamentos', c.pagadores, { area: true, largo: true, dica: 'uma por linha: Nome da empresa (igual ao campo "Quem paga") | telefone | nome do contato' }),
@@ -848,6 +873,26 @@
       K().campo('dinheiro_txt', 'Frase do dinheiro', c.dinheiro_txt, { largo: true }),
       K().campo('pix', 'Chave PIX (só se não houver dados de pagamento acima)', c.pix),
       h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar a mensagem'), h('p', { class: 'erro' })));
+    // contas para receber (a conta muda às vezes; cada apartamento pode usar uma)
+    let contas = (c.contas || []).map(x => Object.assign({}, x));
+    const boxContas = h('div', { class: 'fut-contas' });
+    const desenharContas = () => boxContas.replaceChildren(...contas.map((ct, i) => {
+      const inp = (k, rot, dica) => { const el = h('input', { value: ct[k] || '', placeholder: dica || '', 'aria-label': rot }); el.addEventListener('input', () => { ct[k] = el.value; }); return h('label', { class: 'fut-conta-campo' }, h('span', { class: 'peq' }, rot), el); };
+      return h('fieldset', { class: 'fut-conta' }, h('legend', {}, ct.apelido || ct.titular || 'Conta ' + (i + 1)),
+        h('label', { class: 'marcar' }, h('input', { type: 'radio', name: 'conta_padrao', value: ct.id || 'n' + i, checked: (ct.id || 'n' + i) === (c.conta_padrao || (contas[0] || {}).id) }), 'Conta padrão'),
+        inp('apelido', 'Apelido', 'ex.: Nubank Janaina'), inp('titular', 'Titular'), inp('pix_tipo', 'Tipo da chave', 'celular, CPF, e-mail…'), inp('pix', 'Chave Pix'),
+        inp('banco', 'Banco'), inp('codigo_banco', 'Código do banco', 'ex.: 0260'), inp('agencia', 'Agência'), inp('conta', 'Conta'),
+        K().botao('Tirar esta conta', () => { contas.splice(i, 1); desenharContas(); }, 'mini link'));
+    }), K().botao('+ outra conta', () => { contas.push({ id: '' }); desenharContas(); }, 'mini sec'));
+    if (!contas.length) contas.push({ id: '' });
+    desenharContas();
+    const salvarContas = K().botao('Salvar as contas', async ev => {
+      ev.target.disabled = true;
+      contas.forEach((x, i) => { if (!x.id) x.id = 'n' + i; });
+      const pad = (boxContas.querySelector('input[name=conta_padrao]:checked') || {}).value;
+      try { await api('future.config', { salvar: true, usuarios: c.usuarios.filter(u => u.acesso).map(u => u.usuario), contas, conta_padrao: pad }); avisar('Contas salvas. As próximas mensagens já saem com o Pix novo.'); K().rota(); }
+      catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+    });
     K().aoEnviar(fm, async fd => { await api('future.config', { salvar: true, usuarios: c.usuarios.filter(u => u.acesso).map(u => u.usuario), ...Object.fromEntries(fd.entries()) }); avisar('Mensagem de cobrança salva.'); K().rota(); });
     const imp = h('div', {},
       h('p', {}, c.importado ? 'Última importação: ' + c.importado.slice(0, 16).replace('T', ' ') + ' · ' + c.importado.slice(25) : 'Ainda não importado.'),
@@ -864,6 +909,7 @@
         catch (e) { avisar(e.message, true); ev.target.disabled = false; }
       }));
     mostrar(topo('Edifício Future', 'Configurações', 'Acesso, vencimento e importação'),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Contas para receber (Pix)'), h('p', { class: 'peq' }, 'Vão na mensagem de cobrança em formato de Pix. A conta padrão vale para todos; em cada cobrança dá para escolher outra, e "usar sempre neste apto" fixa uma conta para o apartamento.'), boxContas, salvarContas),
       h('section', { class: 'caixa' }, h('h2', {}, 'Mensagem de cobrança (WhatsApp)'), fm),
       h('section', { class: 'caixa' }, h('h2', {}, 'Pastas do Drive'), drive),
       h('section', { class: 'caixa' }, h('h2', {}, 'Importar da planilha antiga'), imp),
