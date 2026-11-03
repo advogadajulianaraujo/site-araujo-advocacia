@@ -134,6 +134,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   do robô ainda não enviada/paga é recalculada sozinha; "Ajustar valores" (aluguel/energia/outros) trava o recálculo. Unidade `moeda` =
   dolar → "Total em reais / Equivalente em dólares / Cotação" (FUTURE_COTACAO) e "Para pagamento em reais:". Empresa pagadora (HC): um
   demonstrativo com blocos "Apartamento 102 — Everton" + total geral, telefone/contato em Config FUTURE_PAGADORES ("Nome | tel | contato").
+  A mensagem SEMPRE pede o comprovante (se a frase final não pedir, o painel acrescenta) e avisa que aceita dinheiro (Config
+  FUTURE_DINHEIRO = nao desliga; frase em FUTURE_DINHEIRO_TXT).
   Salas: `cobra_energia` = nao (pagam a própria energia) e taxas FUTURE_TAXAS_SALA (107; os recebimentos são 2.000 + 107). Falta energia →
   "[preencher]" e o painel pergunta antes de mandar. Energia de out/2026 semeada uma vez (`FUT_ENERGIA_INICIAL`, só nº do apto e valor).
   "Colar" em Energia também lê os demonstrativos ("apartamento 207" … "Energia: R$ 88,10").
@@ -200,6 +202,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 ## Modelos de documentos
 
 - A geração de documentos fica só na aba Modelos (a ficha do cliente tem apenas o botão "Gerar documentos").
+- Assinatura (8.4.1, pedido da usuária: "nem toda procuração e contrato significa que vai assinar"): gerar procuração/contrato
+  (sem nº de processo) NÃO abre mais a petição inicial; cria um registro "aguardando" na aba Assinaturas (um por cliente). Botões
+  "✓ Assinado" (rota `documentos.assinatura` acao=assinado → `abrirPeticaoInicial_`: processo "Petição inicial (a ajuizar)" + tarefa da
+  inicial) e "Não vai assinar" (acao=desistiu) no resultado da geração, na ficha do cliente e no topo de Modelos ("Aguardando
+  assinatura", rota `documentos.assinaturas`). Robô `lembrarAssinaturas_` (substituiu `cobrarAssinaturas_`): 7 dias sem assinatura →
+  tarefa "Assinatura pendente — cliente" para quem gerou (ou a secretaria), `[assinatura:id]` `[wa:assinar]`, de novo a cada 7 dias
+  (até 3 vezes); "Assinado"/"Não vai assinar" fecha o lembrete.
+- Contrato previdenciário (MODELO9_CONTRATO_PREV_ID): na concessão o gerador escolhe "2 benefícios ou 30% (o que for maior)" (padrão),
+  "2 primeiras parcelas do benefício + X% dos retroativos" ou "apenas as 2 primeiras parcelas" (`d.prev`, `textoPrevConcessao_`).
 - TODOS os perfis (inclusive RH, secretaria e estagiário) geram TODOS os documentos, também contratos de honorários, recibos,
   promissórias e cobrança (8.3.2, pedido da usuária); o honorário do contrato é lançado no financeiro por quem gerar.
   O RH continua sem ver valores nas telas do Financeiro e sem editar honorários/parcelas lá.

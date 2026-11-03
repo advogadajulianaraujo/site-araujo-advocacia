@@ -1370,3 +1370,9 @@ body.modo-future .barra-cel{background:#2f855a}
 .fut-colar{margin-top:10px}
 .fut-colar textarea{width:100%;margin:8px 0}
 .fut-lav-form{flex-wrap:wrap;align-items:center}
+/* Assinatura de procuração/contrato (8.4.1) */
+.assin-lista{display:grid;gap:8px}
+.assin-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--linha);border-left:4px solid #e0a23a;border-radius:10px;padding:10px 14px}
+.assin-card.atrasada{border-left-color:#c2372c;background:#fff8f7}
+.assin-acoes{display:flex;gap:6px;flex-wrap:wrap}
+.assin-nota{display:grid;gap:10px}

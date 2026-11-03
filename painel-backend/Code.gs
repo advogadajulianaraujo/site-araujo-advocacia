@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.0';
+var VERSAO = '8.4.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -68,6 +68,8 @@ var ESQUEMA = {
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
+  Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
+    'processo_id', 'lembretes', 'lembrete_em', 'pasta_url'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
@@ -358,6 +360,8 @@ var ROTAS = {
   'modelos.listar': { fn: listarModelos_ },
   'advogados.salvar': { permissao: 'usuarios', fn: salvarAdvogado_ },
   'documentos.gerar': { fn: gerarDocumentos_ },
+  'documentos.assinaturas': { fn: listarAssinaturas_ },
+  'documentos.assinatura': { fn: marcarAssinatura_ },
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
   'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
@@ -4212,7 +4216,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', cobrarAssinaturas_], ['google', postagemGoogle_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -4410,6 +4414,78 @@ function cobrarAssinaturas_(ctx) {
       descricao: 'Os documentos gerados em ' + dataBR_(dia) + ' ainda estão na pasta "DOCUMENTOS PARA ASSINAR" do cliente. Combine a assinatura pelo botão de WhatsApp.\n' +
         'Quando o cliente assinar, guarde o documento assinado na pasta do cliente e tire os rascunhos da pasta "DOCUMENTOS PARA ASSINAR": a tarefa fecha sozinha.\n[assinar:' + chave + ']\n[wa:assinar]',
       responsavel: resp, cliente_id: cid, vence_em: hojeSP_(), prioridade: 'alta' });
+    feitas++;
+  });
+  return feitas;
+}
+
+/* ---------- Assinatura de procuração e contrato (8.4.1) ---------- */
+/** Cria o processo "Petição inicial (a ajuizar)" + tarefa para quem faz as iniciais (antes era na hora de gerar). */
+function abrirPeticaoInicial_(c, tipoChave, contra, docs, u) {
+  var tipo = TIPOS_ACAO[tipoChave] || null;
+  return comTrava_(function () {
+    var tabP = tabela_('Processos');
+    var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && (!x.numero || x.fase === 'contratado') && x.status !== 'arquivado'; })[0];
+    if (ja) return ja.id;
+    var agora = new Date().toISOString();
+    var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
+      polo: 'ativo', parte_contraria: contra || '', proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
+      observacoes: (tipo ? tipo.nome + '. ' : '') + 'Documentos assinados (' + docs + ') em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
+      origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '', responsavel: config_('RESP_INICIAL') || '' };
+    inserirLinha_(tabP, novo);
+    tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
+    return novo.id;
+  });
+}
+function listarAssinaturas_(d) {
+  var hoje = hojeSP_();
+  return tabela_('Assinaturas').linhas.filter(function (a) { return d.todas ? true : a.situacao === 'aguardando'; })
+    .filter(function (a) { return !d.cliente_id || a.cliente_id === d.cliente_id; })
+    .sort(function (a, b) { return a.gerado_em < b.gerado_em ? -1 : 1; })
+    .map(function (a) { return { id: a.id, cliente_id: a.cliente_id, cliente: a.cliente_nome, documentos: a.documentos, tipo_acao: (TIPOS_ACAO[a.tipo_acao] || {}).nome || '', gerado_em: a.gerado_em,
+      gerado_por: a.gerado_por, situacao: a.situacao, dias: diffDias_(hoje, diaSP_(a.gerado_em)), assinado_em: a.assinado_em, processo_id: a.processo_id }; });
+}
+/** "✓ Assinado" (abre a petição inicial), "Não vai assinar" (arquiva) ou "Voltar a aguardar". */
+function marcarAssinatura_(d, u) {
+  var tabA = tabela_('Assinaturas'), a = tabA.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!a) throw falha_('Registro de assinatura não encontrado.');
+  var agora = new Date().toISOString(), proc = '';
+  if (d.acao === 'assinado') {
+    var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === a.cliente_id; })[0];
+    if (!c) throw falha_('Cliente não encontrado.');
+    proc = abrirPeticaoInicial_(c, a.tipo_acao, a.parte_contraria, a.documentos, u);
+    atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc });
+    registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos);
+  } else if (d.acao === 'desistiu') {
+    atualizarLinha_(tabA, a, { situacao: 'não assinou', assinado_em: agora, assinado_por: u.nome || u.usuario });
+    registrar_(u.usuario, 'documentos não assinados', a.cliente_id + ' · ' + a.documentos);
+  } else if (d.acao === 'reabrir') atualizarLinha_(tabA, a, { situacao: 'aguardando', assinado_em: '', assinado_por: '' });
+  else throw falha_('Ação inválida.');
+  // fecha os lembretes abertos deste registro
+  if (d.acao !== 'reabrir') {
+    var tabT = tabela_('Tarefas');
+    tabT.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[assinatura:' + a.id + ']') >= 0 && abertaT_(t); }).forEach(function (t) {
+      atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: u.usuario, historico: historicoMais_(t.historico, u, d.acao === 'assinado' ? 'documentos assinados' : 'cliente não vai assinar'), atualizado_em: agora, atualizado_por: u.usuario });
+    });
+  }
+  return { ok: true, processo_id: proc };
+}
+/** Robô: procuração/contrato sem assinatura há 7 dias → tarefa "lembrar o cliente" (de novo a cada 7 dias, até 3 vezes). */
+function lembrarAssinaturas_(ctx) {
+  var tabA = tabela_('Assinaturas'), tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas'), hoje = hojeSP_(), feitas = 0, resp = respSecretaria_();
+  tabA.linhas.forEach(function (a) {
+    if (a.situacao !== 'aguardando' || feitas >= 15) return;
+    var n = +a.lembretes || 0, base = diaSP_(a.lembrete_em || a.gerado_em);
+    if (n >= 3 || diffDias_(hoje, base) < 7) return;
+    var dias = diffDias_(hoje, diaSP_(a.gerado_em));
+    novaTarefaRobo_(tabT, { _motivo: 'documentos sem assinatura há ' + dias + ' dias',
+      titulo: 'Assinatura pendente — ' + a.cliente_nome + ' (' + dias + ' dias)',
+      descricao: 'Gerado(s) em ' + dataBR_(diaSP_(a.gerado_em)) + ': ' + a.documentos + '. O cliente ainda não assinou.\n' +
+        'Fale com o cliente pelo WhatsApp. Quando assinar, aperte "✓ Assinado" na ficha do cliente (ou em Modelos › Aguardando assinatura): o caso vai para Petição inicial. ' +
+        'Se desistiu, aperte "Não vai assinar".\n[assinatura:' + a.id + ']\n[wa:assinar]',
+      responsavel: a.gerado_por && usuarios_().some(function (x) { return x.usuario === a.gerado_por && x.ativo === 'sim'; }) ? a.gerado_por : resp,
+      cliente_id: a.cliente_id, vence_em: hoje, prioridade: n ? 'urgente' : 'alta' });
+    atualizarLinha_(tabA, a, { lembretes: String(n + 1), lembrete_em: new Date().toISOString() });
     feitas++;
   });
   return feitas;
@@ -4682,7 +4758,7 @@ var MODELOS = {
   isencao_irpf: { assinaCliente: true, nome: 'Requerimento de isenção do imposto de renda (doença grave)', grupo: 'Procuração e declarações', config: 'MODELO7_ISENCAO_IRPF_ID' },
   comparecimento: { nome: 'Declaração de comparecimento ao escritório', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_COMPARECIMENTO_ID' },
   notificacao: { nome: 'Notificação extrajudicial (em nome do cliente)', grupo: 'Petições e notificações', config: 'MODELO7_NOTIFICACAO_ID' },
-  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO8_CONTRATO_PREV_ID', antigo: ['MODELO7_CONTRATO_PREV_ID'] }
+  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO9_CONTRATO_PREV_ID', antigo: ['MODELO8_CONTRATO_PREV_ID', 'MODELO7_CONTRATO_PREV_ID'] }
 };
 
 var CABECALHO_PETICAO = [
@@ -4934,7 +5010,7 @@ var TEXTO_MODELOS = {
     ['h', 'CLÁUSULA 1ª – DO OBJETO'],
     ['p', 'A CONTRATADA obriga-se a atuar em favor d{{c:o|a}} CONTRATANTE em processo administrativo e/ou judicial contra o Instituto Nacional do Seguro Social (INSS){{objeto_prev}}.'],
     ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS (SOMENTE EM CASO DE ÊXITO)'],
-    ['p', 'a) Nas CONCESSÕES, {{c:o|a}} CONTRATANTE pagará o equivalente a 2 (dois) benefícios ou 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação do benefício, o que for maior, não podendo esta quantia ser inferior a 3 (três) vezes o valor do benefício, ainda que {{c:o|a}} CONTRATANTE opte por não recebê-lo;'],
+    ['p', 'a) Nas CONCESSÕES, {{c:o|a}} CONTRATANTE pagará {{prev_concessao}};'],
     ['p', 'b) Nas REVISÕES, {{c:o|a}} CONTRATANTE pagará 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação da revisão, não inferiores ao mínimo da tabela da OAB/SC vigente na data do pagamento.'],
     ['p', 'Parágrafo primeiro. Havendo implantação do direito por tutela antecipada, medida cautelar ou de ofício, o percentual de 30% (trinta por cento) incidirá também sobre o período de manutenção da medida.'],
     ['p', 'Parágrafo segundo. Valores recebidos administrativamente ou descontados do benefício durante o processo judicial não serão abatidos dos atrasados para o cálculo do percentual.'],
@@ -5505,6 +5581,14 @@ function reaisTxt_(v) {
   return 'R$ ' + s[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + s[1];
 }
 
+/** Contrato previdenciário — o que se paga nas concessões (escolha no gerador, pedido da usuária). */
+function textoPrevConcessao_(p) {
+  var pc = Math.round(dinheiro_(p.percentual) || 30), pcTxt = pc + '% (' + extenso_(pc).replace(/\s+(?:real|reais)$/, '') + ' por cento)';
+  if (p.forma === 'duas_retro') return 'o equivalente às 2 (duas) primeiras parcelas do benefício concedido, acrescido de ' + pcTxt + ' dos valores retroativos (atrasados) recebidos judicial e/ou administrativamente até a data da efetiva implantação do benefício';
+  if (p.forma === 'duas') return 'o equivalente às 2 (duas) primeiras parcelas do benefício concedido, sem incidência de percentual sobre os valores retroativos (atrasados)';
+  return 'o equivalente a 2 (dois) benefícios ou ' + pcTxt + ' dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação do benefício, o que for maior, não podendo esta quantia ser inferior a 3 (três) vezes o valor do benefício, ainda que opte por não recebê-lo';
+}
+
 /** 1234.5 → "mil, duzentos e trinta e quatro reais e cinquenta centavos". */
 function extenso_(valor) {
   var un = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze',
@@ -5770,6 +5854,7 @@ function gerarDocumentos_(d, u) {
     '{{parcelas_atrasadas}}': atrasadas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'vencida em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(q.valor); }).join('; ') + (atrasadas.length ? '.' : ''),
     '{{total_atraso}}': reaisTxt_(totalAtraso), '{{total_atraso_extenso}}': extenso_(totalAtraso),
     '{{qualificacao}}': qualificacao_(c), '{{qualificacao_sem_endereco}}': qualificacao_(c, true), '{{nome}}': String(c.nome).toUpperCase(),
+    '{{prev_concessao}}': textoPrevConcessao_(d.prev || {}),
     '{{objeto}}': objeto, '{{objeto_prev}}': detalhes ? ', visando ' + detalhes : (numProc ? ', nos autos do processo nº ' + numProc : ''), '{{objeto_assessoria}}': detalhes ? 'Inclui ainda: ' + detalhes + '.' : '',
     '{{tipo_acao}}': tipo ? tipo.nome : '', '{{parte_contraria}}': contra, '{{poderes_especificos}}': poderes,
     '{{poderes_gerais}}': poderesGerais, '{{poderes_gerais_menor}}': poderesGeraisMenor,
@@ -5878,27 +5963,25 @@ function gerarDocumentos_(d, u) {
     lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
-  // Procuração ou contrato para quem ainda não tem processo: entra em Processos como "Petição inicial (a ajuizar)", com tarefa para o responsável
-  var aAjuizar = null;
-  if (!numProc && quais.some(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); })) {
+  // Procuração/contrato: nem todo documento gerado é assinado (pedido da usuária). Fica "aguardando assinatura"; só quando alguém
+  // aperta "✓ Assinado" o cliente entra em Processos como "Petição inicial (a ajuizar)" com a tarefa. Sem assinatura em 7 dias, o robô lembra.
+  var aAjuizar = null, assinatura = null;
+  var assinaveis = quais.filter(function (k) { return /^procuracao|^contrato|^prestacao|^assessoria/.test(k); });
+  if (assinaveis.length) {
     try {
-      aAjuizar = comTrava_(function () {
-        var tabP = tabela_('Processos');
-        var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && (!x.numero || x.fase === 'contratado') && x.status !== 'arquivado'; })[0];
-        if (ja) return null;
-        var agora = new Date().toISOString();
-        var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
-          polo: 'ativo', parte_contraria: contra, proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
-          observacoes: (tipo ? tipo.nome + '. ' : '') + 'Criado ao gerar ' + quais.filter(function (k) { return /^procuracao|^contrato|^prestacao/.test(k); }).join(', ') + ' em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
-          origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '',
-          responsavel: config_('RESP_INICIAL') || '' };
-        inserirLinha_(tabP, novo);
-        tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
-        return novo.id;
+      assinatura = comTrava_(function () {
+        var tabA = tabela_('Assinaturas'), agora = new Date().toISOString();
+        var nomes = assinaveis.map(function (k) { return (MODELOS[k] || {}).nome || k; });
+        var ja = tabA.linhas.filter(function (x) { return x.cliente_id === c.id && x.situacao === 'aguardando'; })[0];
+        if (ja) { atualizarLinha_(tabA, ja, { documentos: nomes.join(' · '), gerado_em: agora, gerado_por: u.usuario, tipo_acao: d.tipo_acao || ja.tipo_acao, parte_contraria: contra || ja.parte_contraria, lembretes: '0', lembrete_em: '' }); return ja.id; }
+        var a = { id: novoId_('AS'), cliente_id: c.id, cliente_nome: c.nome, documentos: nomes.join(' · '), tipo_acao: d.tipo_acao || '', parte_contraria: contra || '', gerado_em: agora,
+          gerado_por: u.usuario, situacao: 'aguardando', assinado_em: '', assinado_por: '', processo_id: '', lembretes: '0', lembrete_em: '', pasta_url: c.pasta_url || '' };
+        inserirLinha_(tabA, a);
+        return a.id;
       });
-    } catch (eA) { /* os documentos já foram gerados; o processo pode ser criado à mão */ }
+    } catch (eA) { /* os documentos já foram gerados */ }
   }
-  return { a_ajuizar: aAjuizar, gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
+  return { a_ajuizar: aAjuizar, assinatura: assinatura, assinatura_docs: assinaveis.length, gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
 }
 
 /* ================================================================== */
@@ -8184,7 +8267,12 @@ function futMensagemConfig_() {
   var pix = config_('FUTURE_PIX') || '';
   return { pix: pix, taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet', taxas_itens: itens,
     predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || (pix ? 'Pix: ' + pix : ''),
-    cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, pagadores: pagadores, assinatura: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!' };
+    dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? '' : (config_('FUTURE_DINHEIRO_TXT') || 'Se preferir, o pagamento também pode ser feito em dinheiro.'),
+    cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, pagadores: pagadores, assinatura: (function () {
+      // pedido do Luiz: a mensagem sempre pede o comprovante, mesmo que a frase final seja trocada
+      var f = config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!';
+      return /comprovante/i.test(f + ' ' + (config_('FUTURE_PAGAMENTO') || '')) ? f : f + '\nFavor enviar o comprovante de pagamento.';
+    })() };
 }
 function futurePagarCobranca_(d, u) {
   return comTrava_(function () {
@@ -8724,6 +8812,8 @@ function futureConfig_(d, u) {
     txt('taxas_itens', 'FUTURE_TAXAS_ITENS', 'Taxas do apartamento, uma por linha (Nome: valor)');
     txt('pagadores', 'FUTURE_PAGADORES', 'Empresas que pagam apartamentos: Nome | telefone | contato');
     txt('fecho', 'FUTURE_FECHO', 'Última frase da mensagem de cobrança', 200);
+    if (d.dinheiro !== undefined) setConfig_('FUTURE_DINHEIRO', d.dinheiro === 'nao' ? 'nao' : 'sim', 'Mensagem de cobrança avisa que aceita dinheiro');
+    txt('dinheiro_txt', 'FUTURE_DINHEIRO_TXT', 'Frase do pagamento em dinheiro', 160);
     if (d.cotacao !== undefined && futN_(d.cotacao) > 0) setConfig_('FUTURE_COTACAO', String(futN_(d.cotacao)), 'Cotação do dólar usada na cobrança');
     if (d.taxas_sala !== undefined && futN_(d.taxas_sala) > 0) setConfig_('FUTURE_TAXAS_SALA', txtDinheiro_(futN_(d.taxas_sala)), 'Taxas das salas comerciais (sem energia)');
     registrar_(u.usuario, 'future: configuração', us.join(','));
@@ -8734,7 +8824,8 @@ function futureConfig_(d, u) {
     predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || '',
     taxas_itens: config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00', pagadores: config_('FUTURE_PAGADORES') || '',
     cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, taxas_sala: futN_(config_('FUTURE_TAXAS_SALA')) || 107,
-    fecho: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!' };
+    fecho: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!',
+    dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? 'nao' : 'sim', dinheiro_txt: config_('FUTURE_DINHEIRO_TXT') || 'Se preferir, o pagamento também pode ser feito em dinheiro.' };
 }
 
 /* ---------- Importação da planilha "EDIFICIO FUTURE CONTROLE" ---------- */

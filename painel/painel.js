@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -82,7 +82,7 @@
   }
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
-    clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo'],
+    clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo', 'processos', 'tarefas', 'eu', 'documentos'],
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
@@ -921,6 +921,34 @@
       pill);
   }
 
+  /* ---------- Assinatura de procuração/contrato (8.4.1): só depois de "✓ Assinado" o caso vai para Petição inicial ---------- */
+  function cartaoAssinatura(a, depois) {
+    const quando = a.gerado_em ? dataBR(a.gerado_em.slice(0, 10)) : '';
+    const el = h('div', { class: 'assin-card' + (a.dias >= 7 ? ' atrasada' : '') },
+      h('div', { class: 'assin-txt' }, h('strong', {}, a.cliente), h('div', { class: 'peq' }, a.documentos + (a.tipo_acao ? ' · ' + a.tipo_acao : '')),
+        h('div', { class: 'peq' }, `gerado em ${quando}` + (a.dias ? ` · há ${a.dias} dia(s)` : ' · hoje') + (a.dias >= 7 ? ' · ⚠ lembrar o cliente' : ''))),
+      h('div', { class: 'assin-acoes' },
+        botao('✓ Assinado', async ev => {
+          ev.target.disabled = true;
+          try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado' }); avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.`);
+            el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/processo/' + x.processo_id + '?avisar=1' }, 'abrir a petição inicial e avisar o cliente'))); if (depois) depois(); }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'mini'),
+        botao('Não vai assinar', async ev => {
+          if (!confirm(`${a.cliente} não vai assinar? O registro sai da lista (os arquivos continuam na pasta).`)) return;
+          ev.target.disabled = true;
+          try { await api('documentos.assinatura', { id: a.id, acao: 'desistiu' }); el.replaceChildren(h('span', { class: 'peq' }, 'Marcado: não vai assinar.')); if (depois) depois(); }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'mini sec')));
+    return el;
+  }
+  function blocoAssinaturas(lista, titulo) {
+    if (!lista || !lista.length) return null;
+    return h('section', { class: 'caixa assin-bloco' }, h('h2', {}, titulo || `✍ Aguardando assinatura (${lista.length})`),
+      h('p', { class: 'peq' }, 'Procurações e contratos gerados que o cliente ainda não assinou. Quando assinar, aperte "✓ Assinado": o caso vai para Processos › Petição inicial. Sem assinatura em 7 dias, o robô cria um lembrete.'),
+      h('div', { class: 'assin-lista' }, lista.map(a => cartaoAssinatura(a))));
+  }
+
   function saudacao() { const hr = new Date().getHours(); return hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite'; }
   function primeiroNome(n) { return String(n || '').split(' ')[0]; }
   function hojeExtenso() {
@@ -1202,6 +1230,11 @@
         campoF('dia_vencimento', 'Dia do vencimento', '10', { modo: 'numeric', max: 2 }, ['mensal'])),
       h('p', { class: 'peq', 'data-formas': 'cadastrado' }, 'A cláusula usa o honorário ativo deste cliente na aba Financeiro.'),
       lancar);
+    const prev = h('fieldset', { class: 'caixa-int' }, h('legend', {}, 'Honorários do contrato previdenciário (concessão)'),
+      h('div', { class: 'formas' }, [['padrao', '2 benefícios ou 30% dos atrasados (o que for maior)'], ['duas_retro', '2 primeiras parcelas do benefício + retroativos'], ['duas', 'Apenas as 2 primeiras parcelas do benefício']]
+        .map(([v, t]) => h('label', { class: 'opcao' }, h('input', { type: 'radio', name: 'prev_forma', value: v, checked: v === 'padrao' }), h('span', {}, t)))),
+      h('div', { class: 'campos' }, campo('prev_percentual', 'Percentual sobre os retroativos/atrasados (%)', '30', { modo: 'decimal', max: 5 })),
+      h('p', { class: 'peq' }, 'Revisões continuam com 30% dos valores recebidos.'));
     const rec = h('fieldset', { class: 'caixa-int' }, h('legend', {}, 'Recibo'),
       h('div', { class: 'campos' }, campo('recibo_valor', 'Valor recebido (R$)', '', { modo: 'decimal', max: 20 }),
         campo('recibo_referente', 'Referente a', '', { max: 200, dica: 'Ex.: 1ª parcela dos honorários da reclamatória trabalhista' })));
@@ -1224,7 +1257,7 @@
         campo('advogado_id', 'Advogado(a) outorgado(a)', padrao, { opcoes: advs.map(a => [a.id, `${a.nome} — OAB/${a.uf} ${a.oab}`]) }),
         campo('tipo_acao', 'Tipo de ação (obrigatório na procuração: define a área e os poderes)', tipoDoCliente, { opcoes: [['', '— escolha —']].concat(info.tipos.map(t => [t.chave, t.nome])) }),
         campoProc, campoVara, campoComarca),
-      h('h4', {}, 'Quais documentos'), docs, notaCobranca, menoresBox, hon, rec,
+      h('h4', {}, 'Quais documentos'), docs, notaCobranca, menoresBox, hon, prev, rec,
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar em PDF')),
       h('p', { class: 'erro' }), h('div', { class: 'gerados' }));
 
@@ -1233,6 +1266,9 @@
       const comHon = escolhidos.some(m => m && (m.honorarios || m.mensal));
       hon.hidden = !comHon;
       rec.hidden = !escolhidos.some(m => m && m.recibo);
+      prev.hidden = !escolhidos.some(m => m && m.chave === 'contrato_previdenciario');
+      const pf = (form.querySelector('input[name=prev_forma]:checked') || {}).value;
+      form.querySelector('[name=prev_percentual]').parentElement.hidden = pf === 'duas';
       menoresBox.hidden = !escolhidos.some(m => m && m.menores);
       if (comHon && !escolhidos.some(m => m.honorarios) && escolhidos.some(m => m.mensal)) {
         const r = form.querySelector('input[name=forma][value=mensal]'); if (r && !r.checked && form.dataset.mexeu !== '1') r.checked = true;
@@ -1265,6 +1301,7 @@
           parcelas: fd.get('parcelas'), primeiro_vencimento: fd.get('primeiro_vencimento'), dia_demais: fd.get('dia_demais'), valor_mensal: fd.get('valor_mensal'),
           dia_vencimento: fd.get('dia_vencimento'), lancar: !!fd.get('lancar') },
         recibo: rec.hidden ? null : { valor: fd.get('recibo_valor'), referente: fd.get('recibo_referente') },
+        prev: prev.hidden ? null : { forma: fd.get('prev_forma'), percentual: fd.get('prev_percentual') },
         representacao: fd.get('representacao'),
         menores: menoresBox.hidden ? [] : fd.getAll('menor_nome').map((nome, i) => ({ nome: nome.trim(), cpf: fd.getAll('menor_cpf')[i], nascimento: fd.getAll('menor_nasc')[i], genero: fd.getAll('menor_sexo')[i] })).filter(m => m.nome)
       };
@@ -1274,6 +1311,9 @@
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
           r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
           r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
+        r.assinatura ? h('div', { class: 'nota assin-nota' }, h('div', {}, h('strong', {}, '✍ Aguardando assinatura. '),
+            'Quando o cliente assinar, aperte "✓ Assinado": aí o caso vai para Processos › Petição inicial, com a tarefa para quem faz as iniciais. Se não assinar em 7 dias, o painel lembra vocês.'),
+          cartaoAssinatura({ id: r.assinatura, cliente: (form.querySelector('[name=cliente_id] option:checked') || {}).textContent || (opc.cliente && opc.cliente.nome) || 'Cliente', documentos: 'procuração/contrato gerados agora', dias: 0, gerado_em: new Date().toISOString() })) : null,
         r.a_ajuizar ? h('div', { class: 'nota' }, 'O cliente entrou em Processos na fase ', h('strong', {}, 'Petição inicial (a ajuizar)'), ', com tarefa para quem faz as iniciais. ',
           h('a', { href: '#/processo/' + r.a_ajuizar + '?avisar=1' }, 'Abrir e avisar o cliente no WhatsApp'), '. Quando protocolar, coloque o número lá.') : null,
         r.gerados.some(g => g.assinar) ? h('div', { class: 'imprimir-caixa' },
@@ -1592,6 +1632,8 @@
     };
 
     const pasta = () => { const d = caixaDocumentos(c); d.className = 'docs-pasta'; return d; };
+    const assinBox = h('div');
+    api('documentos.assinaturas', { cliente_id: c.id }).then(l => { const b = blocoAssinaturas(l, '✍ Documentos aguardando assinatura'); if (b) assinBox.replaceChildren(b); }).catch(() => {});
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
@@ -1602,6 +1644,7 @@
         h('div', {}, h('span', { class: 'tag grupo-atend' }, 'Em atendimento'), ' Este cliente ainda não tem ação (sem contrato, procuração ou processo). ',
           'Quando contratar, ele vai para Processos › ', h('strong', {}, 'Petição inicial'), ' e a tarefa vai para quem faz as iniciais.'),
         botao('Cliente contratou: abrir ação', () => caixaAbrirAcao(c), '')),
+      assinBox,
       descricao,
       secao('Observações', notas, true),
       secao('Pasta do cliente', pasta, false),
@@ -2200,7 +2243,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.4.0';
+  const VERSAO_PAINEL = '8.4.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3132,9 +3175,12 @@
     }
 
     const novoCli = params.get('novo') === '1' && clientes.find(c => c.id === params.get('cliente'));
+    const assinTopo = h('div');
+    api('documentos.assinaturas', {}).then(l => { const b = blocoAssinaturas(l); if (b) assinTopo.replaceChildren(b); }).catch(() => {});
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'),
         h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.'))),
+      assinTopo,
       novoCli ? h('div', { class: 'passo-ok' }, h('strong', {}, `✓ ${novoCli.nome} cadastrado(a) e pasta criada.`), ' Agora escolha o tipo de ação e gere a procuração e o contrato.') : null,
       h('section', { class: 'caixa' + (novoCli ? ' destaque-caixa' : '') }, h('h2', {}, 'Gerar para um cliente'),
         formGerar(info, { clientes, clienteInicial: params.get('cliente') || '' })),

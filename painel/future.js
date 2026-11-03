@@ -291,6 +291,7 @@
       L.push(`Total: ${totalTxt(c)}`, `Vencimento: ${dataBR(c.vencimento)}.`);
       if (r.pagamento) L.push('', 'Pagamento:', r.pagamento);
     }
+    if (r.dinheiro) { if (!r.pagamento) L.push(''); L.push(r.dinheiro); }
     L.push('', /^SALA/.test(c.unidade) ? r.assinatura.replace('o apartamento', 'a sala') : r.assinatura);
     return L.join('\n');
   }
@@ -306,6 +307,7 @@
     const soma = cs.reduce((a, c) => a + c.total, 0);
     L.push('', `Total geral (${cs.length} apartamento${cs.length > 1 ? 's' : ''}): ${cs.some(faltaEnergia) ? 'R$ [' + brl(soma).replace('R$ ', '') + ' + energia]' : brl(soma)}`);
     if (r.pagamento) L.push('', 'Pagamento:', r.pagamento);
+    if (r.dinheiro) L.push(r.dinheiro);
     L.push('', r.assinatura.replace('identificando o apartamento', 'identificando os apartamentos'));
     return L.join('\n');
   }
@@ -825,7 +827,9 @@
       K().campo('taxas_itens', 'Taxas do apartamento, uma por linha', c.taxas_itens, { area: true, dica: 'Nome: valor — quando a soma bate com as taxas da unidade, a mensagem mostra cada uma' }),
       K().campo('taxas_sala', 'Taxas das salas comerciais (R$)', String(c.taxas_sala).replace('.', ','), { modo: 'decimal', dica: 'as salas pagam a própria energia' }),
       K().campo('pagadores', 'Empresas que pagam apartamentos', c.pagadores, { area: true, largo: true, dica: 'uma por linha: Nome da empresa (igual ao campo "Quem paga") | telefone | nome do contato' }),
-      K().campo('fecho', 'Última frase da mensagem', c.fecho, { largo: true }),
+      K().campo('fecho', 'Última frase da mensagem (sempre pede o comprovante)', c.fecho, { largo: true }),
+      K().campo('dinheiro', 'Aceita pagamento em dinheiro?', c.dinheiro, { opcoes: [['sim', 'Sim — a mensagem avisa'], ['nao', 'Não mostrar']] }),
+      K().campo('dinheiro_txt', 'Frase do dinheiro', c.dinheiro_txt, { largo: true }),
       K().campo('pix', 'Chave PIX (só se não houver dados de pagamento acima)', c.pix),
       h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar a mensagem'), h('p', { class: 'erro' })));
     K().aoEnviar(fm, async fd => { await api('future.config', { salvar: true, usuarios: c.usuarios.filter(u => u.acesso).map(u => u.usuario), ...Object.fromEntries(fd.entries()) }); avisar('Mensagem de cobrança salva.'); K().rota(); });
