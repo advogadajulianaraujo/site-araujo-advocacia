@@ -50,7 +50,7 @@
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
   const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
-    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos']);
+    'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
   const memoria = new Map(); // chave → { t, txt (JSON), promessa }; guarda texto para cada tela receber sua própria cópia
   let geracao = 0, sujo = false, redesenhoTimer = null;
@@ -582,16 +582,17 @@
   ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
   ICONES.energia = 'M13 3 6 13.5h5.5L10.5 21 18 10h-5.5z';
   ICONES.pessoas = ICONES.clientes;
-  const ABAS_FUTURE = [
-    ['future', 'Visão geral', 'Edifício Future', 'predio'],
-    ['future/unidades', 'Apartamentos e salas', 'Edifício Future', 'inicio'],
-    ['future/cobrancas', 'Cobranças', 'Edifício Future', 'cobranca'],
-    ['future/caixa', 'Caixa do prédio', 'Edifício Future', 'financeiro'],
-    ['future/energia', 'Energia', 'Edifício Future', 'energia'],
-    ['future/contratos', 'Contratos', 'Edifício Future', 'modelos'],
-    ['future/relatorio', 'Relatório do mês', 'Relatórios', 'relatorios'],
-    ['future/pessoas', 'Locatários', 'Relatórios', 'pessoas'],
-    ['future/config', 'Configurações', 'Relatórios', 'usuarios']
+  const ABAS_FUTURE = [ // 8.4: menos abas e na ordem do mês (pedido do Luiz: "está confuso")
+    ['future', 'Visão geral', 'Dia a dia', 'predio'],
+    ['future/cobrancas', 'Cobranças', 'Dia a dia', 'cobranca'],
+    ['future/energia', 'Energia', 'Dia a dia', 'energia'],
+    ['future/lavanderia', 'Lavanderia', 'Dia a dia', 'tarefas'],
+    ['future/caixa', 'Despesas e receitas', 'Dia a dia', 'financeiro'],
+    ['future/unidades', 'Apartamentos e salas', 'Cadastro', 'inicio'],
+    ['future/pessoas', 'Locatários', 'Cadastro', 'pessoas'],
+    ['future/contratos', 'Contratos', 'Cadastro', 'modelos'],
+    ['future/relatorio', 'Relatório do mês', 'Fechamento', 'relatorios'],
+    ['future/config', 'Configurações', 'Fechamento', 'usuarios']
   ];
   const modoFuture = () => /^#\/future(\/|\?|$)/.test(location.hash || '');
   const icone = id => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'ico');
@@ -2199,7 +2200,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.3.2';
+  const VERSAO_PAINEL = '8.4.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

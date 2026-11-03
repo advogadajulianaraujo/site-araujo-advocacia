@@ -144,6 +144,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   locadora ficam SÓ no modelo do Drive. Gera em APARTAMENTOS › AP x › NOME (pasta criada SÓ aqui — salvar a unidade não cria mais pasta)
   contrato + laudo (Doc editável + PDF), atualiza unidade e locatário (opção "contrato para depois"), lança a caução no caixa se pedido, e
   registra na aba FutContratos ("↻ renovar" e "Contratos terminando (45 dias)"). Só apartamentos (modelo residencial).
+- 8.4 (pedido do Luiz: "está confuso"): MÊS DE REFERÊNCIA em tudo — a cobrança que vence em novembro é "referente a outubro"; as telas
+  abrem no mês anterior (`refHoje`, `navRef` em future.js) e o relatório de outubro mostra as cobranças que vencem em 10/11. Recebimento
+  pago pelo painel vai para o caixa na competência de REFERÊNCIA (`futRefDaCobranca_`; `futMigrarReferencia_` acertou os antigos uma vez).
+  Menu em 3 grupos: Dia a dia (Visão geral, Cobranças, Energia, Lavanderia, Despesas e receitas), Cadastro (Apartamentos e salas,
+  Locatários, Contratos), Fechamento (Relatório do mês, Configurações).
+  Cobranças em ETAPAS: 1 Mandar → 2 Cobrado → 3 Pago (abas por etapa; "Copiar texto" + "✓ Já mandei" marca cobrado sem WhatsApp,
+  `future.cobranca.enviada` com `como`/`desfazer`). Lavanderia (aba FutLavagens, rotas `future.lavanderia*`): lançar (25/30 por
+  lavagem, Config FUTURE_LAV_PRECO/PRECO2) ou colar a tabela; entra sozinha na cobrança do mês seguinte (coluna `lavanderia`, linha
+  "Lavanderia (2 lavagens)" na mensagem; ao quitar vira receita "Lavanderia" no caixa). Total = `futTotal_` (aluguel+taxas+energia+
+  lavanderia+outros). Energia (`future.energia`): só apartamentos (salas pagam a própria), valor sem kWh, "falta lançar", planilha
+  de 12 meses e tabela de titular/kit/medidor/UC editável. Despesas e receitas: planilha de várias linhas (`future.lancamento.lote`)
+  e "colar lista". Contrato por TEMPORADA (modelo "MODELO — CONTRATO DE TEMPORADA (painel)", tirado do contrato AMANDA 10 DIAS):
+  dias ou meses, valor fechado (energia/taxas inclusas, lavanderia à parte, sem caução), metade na reserva + metade na saída ou à
+  vista; unidade `modalidade` = temporada (o robô não gera aluguel mensal) e as parcelas viram cobranças (`detalhe` temp|…).
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

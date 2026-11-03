@@ -31,6 +31,17 @@
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, kicker), h('h1', {}, titulo), sub ? h('p', {}, sub) : null),
       acoes ? h('div', { class: 'carteira-acoes' }, acoes) : null);
   }
+  // Mês de REFERÊNCIA: a cobrança que vence em novembro é de outubro (aluguel pago depois de usar). Tudo abre no mês anterior.
+  const refHoje = () => compMais(compHoje(), -1);
+  function navRef(ref, rota, params, extra) {
+    const { h } = K();
+    return h('div', { class: 'fut-mes' },
+      h('button', { type: 'button', class: 'btn sec', 'aria-label': 'Mês anterior', onclick: () => ir(rota, { mes: compMais(ref, -1) }, params) }, '‹'),
+      h('strong', {}, 'Referente a ' + nomeMes(ref)),
+      h('button', { type: 'button', class: 'btn sec', 'aria-label': 'Próximo mês', onclick: () => ir(rota, { mes: compMais(ref, 1) }, params) }, '›'),
+      extra ? h('span', { class: 'peq' }, extra) : null,
+      ref !== refHoje() ? h('button', { type: 'button', class: 'link', onclick: () => ir(rota, { mes: '' }, params) }, 'mês atual') : null);
+  }
   function navMes(comp, rota, params) {
     const { h } = K();
     return h('div', { class: 'fut-mes' },
@@ -67,7 +78,7 @@
   async function visao(params) {
     const { h, api, mostrar, reais, dataBR, carregando } = K();
     carregando();
-    const comp = params.get('mes') || compHoje();
+    const ref = params.get('mes') || refHoje(), comp = compMais(ref, 1);
     const r = await api('future.resumo', { mes: comp });
     if (!r.total) return semDados();
     const n = r.numeros, alugaveis = r.total - n.proprio, ocup = alugaveis ? Math.round(((n.alugado + n.renovar) / alugaveis) * 100) : 0;
@@ -86,14 +97,14 @@
     const legenda = h('div', { class: 'fut-legenda' }, Object.entries(SIT).map(([k, s]) => h('span', { class: 'fut-leg ' + s[1] }, s[0] + ' · ' + (n[k] || 0))),
       h('span', { class: 'peq' }, '✓ aluguel do mês pago · ! atrasado · • em aberto'));
     mostrar(
-      topo('Edifício Future', 'Visão geral', `${n.alugado + n.renovar} de ${alugaveis} unidades ocupadas (${ocup}%) · ${nomeMes(comp)}`,
-        [h('a', { class: 'btn dourado', href: '#/future/relatorio?mes=' + comp }, 'Relatório do mês'), h('a', { class: 'btn sec', href: '#/future/caixa?mes=' + comp }, '+ Lançar no caixa')]),
-      navMes(comp, '', params),
+      topo('Edifício Future', 'Visão geral', `${n.alugado + n.renovar} de ${alugaveis} unidades ocupadas (${ocup}%)`,
+        [h('a', { class: 'btn dourado', href: '#/future/relatorio?mes=' + ref }, 'Relatório de ' + MESES[+ref.slice(5, 7) - 1]), h('a', { class: 'btn sec', href: '#/future/caixa?mes=' + ref }, '+ Lançar despesa')]),
+      navRef(ref, '', params, 'cobranças vencem dia 10/' + comp.slice(5, 7)),
       h('section', { class: 'fin-nums fut-nums' },
-        numero('verde', reais(r.receitas), 'Entrou no mês', 'receitas lançadas'),
-        numero('vermelho', reais(r.despesas), 'Saiu no mês', 'despesas lançadas', '#/future/caixa?mes=' + comp),
-        numero(r.receitas - r.despesas >= 0 ? 'dourado' : 'vermelho', reais(r.receitas - r.despesas), 'Saldo do mês', 'entrou − saiu'),
-        numero(r.atrasado ? 'vermelho' : 'azul', reais(r.aReceber), 'A receber', r.atrasado ? `${reais(r.atrasado)} em atraso` : 'aluguéis do mês em aberto', '#/future/cobrancas?mes=' + comp)),
+        numero('verde', reais(r.receitas), 'Recebido', 'aluguéis e outras receitas de ' + MESES[+ref.slice(5, 7) - 1]),
+        numero('vermelho', reais(r.despesas), 'Despesas', 'lançadas em ' + MESES[+ref.slice(5, 7) - 1], '#/future/caixa?mes=' + ref),
+        numero(r.receitas - r.despesas >= 0 ? 'dourado' : 'vermelho', reais(r.receitas - r.despesas), 'Resultado', 'recebido − despesas'),
+        numero(r.atrasado ? 'vermelho' : 'azul', reais(r.aReceber), 'Falta receber', r.atrasado ? `${reais(r.atrasado)} em atraso` : 'cobranças em aberto', '#/future/cobrancas?mes=' + ref)),
       h('section', { class: 'caixa fut-predio-caixa' }, h('h2', {}, 'O prédio agora'), legenda,
         h('div', { class: 'fut-predio' }, andares.map(([nome, us]) => h('div', { class: 'fut-andar' }, h('span', { class: 'fut-andar-nome' }, nome), h('div', { class: 'fut-aps' }, us.map(tile)))))),
       h('div', { class: 'fut-duas' },
@@ -107,7 +118,7 @@
         h('section', { class: 'caixa' }, h('h2', {}, `Aluguéis em atraso (${r.atrasadas.length})`),
           r.atrasadas.length ? h('ul', { class: 'fut-lista' }, r.atrasadas.map(c => {
             const l = whats(c.telefone, msgCobranca(c));
-            return h('li', {}, h('a', { href: '#/future/cobrancas?mes=' + c.competencia }, h('b', {}, c.unidade), ' · ', c.pessoa || '—', ' · ', curto(c.competencia)),
+            return h('li', {}, h('a', { href: '#/future/cobrancas?mes=' + compMais(c.competencia, -1) }, h('b', {}, c.unidade), ' · ', c.pessoa || '—', ' · ref. ', curto(compMais(c.competencia, -1))),
               h('strong', {}, reais(c.total)), l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer' }, 'Cobrar') : h('span', { class: 'peq' }, 'sem telefone'));
           })) : h('p', { class: 'peq' }, 'Nenhum aluguel atrasado. 🎉'))),
       h('section', { class: 'caixa' }, h('h2', {}, 'Últimos 12 meses'),
@@ -198,7 +209,6 @@
     const novaEnergia = h('form', { class: 'barra', novalidate: true },
       h('input', { type: 'month', name: 'competencia', value: compMais(compHoje(), -1), 'aria-label': 'Mês da conta' }),
       h('input', { name: 'valor', placeholder: 'Valor Celesc (R$)', inputmode: 'decimal', 'aria-label': 'Valor' }),
-      h('input', { name: 'kwh', placeholder: 'kWh (opcional)', inputmode: 'numeric', 'aria-label': 'kWh' }),
       h('button', { type: 'submit', class: 'btn sec' }, 'Lançar energia'), h('p', { class: 'erro' }));
     aoEnviar(novaEnergia, async fd => { await api('future.energia.salvar', { unidade: u.id, ...Object.fromEntries(fd.entries()) }); avisar('Energia lançada (entra na cobrança do mês seguinte).'); recarregar(); });
     mostrar(
@@ -254,21 +264,24 @@
   function linhasValores(c, r) {
     const { dataBR } = K(), L = [];
     const prop = /^prop\|/.test(c.detalhe || '') ? c.detalhe.split('|') : null;
-    L.push(prop ? `Aluguel proporcional de ${dataBR(prop[1]).slice(0, 5)} a ${dataBR(prop[2]).slice(0, 5)} — ${prop[3]} dias, pela base de 30 dias: ${brl(c.aluguel)}` : `Aluguel: ${brl(c.aluguel)}`);
+    const tmp = /^temp\|/.test(c.detalhe || '') ? c.detalhe.split('|') : null;
+    if (tmp) L.push(`Locação por temporada de ${dataBR(tmp[4]).slice(0, 5)} a ${dataBR(tmp[5]).slice(0, 5)} (${tmp[3]} dias)` + (+tmp[2] > 1 ? ` — parcela ${tmp[1]} de ${tmp[2]} (${tmp[6]})` : '') + `: ${brl(c.aluguel)}`);
+    else L.push(prop ? `Aluguel proporcional de ${dataBR(prop[1]).slice(0, 5)} a ${dataBR(prop[2]).slice(0, 5)} — ${prop[3]} dias, pela base de 30 dias: ${brl(c.aluguel)}` : `Aluguel: ${brl(c.aluguel)}`);
     const itens = r.taxas_itens || [], soma = itens.reduce((a, t) => a + t.valor, 0);
     if (c.taxas) {
       if (itens.length && Math.abs(soma - c.taxas) < 0.01) itens.forEach(t => L.push(`${t.nome}: ${brl(t.valor)}`));
       else L.push(`Taxas: ${brl(c.taxas)}`);
     }
     if (c.cobra_energia) L.push(c.energia ? `Energia: ${brl(c.energia)}` : 'Energia: R$ [preencher]');
-    if (c.outros) L.push(`${c.obs || 'Outros'}: ${brl(c.outros)}`);
+    if (c.lavanderia) L.push(`Lavanderia${c.lav_qtd ? ` (${c.lav_qtd} lavage${c.lav_qtd > 1 ? 'ns' : 'm'})` : ''}: ${brl(c.lavanderia)}`);
+    if (c.outros) L.push(`${c.obs && !/^Temporada/.test(c.obs) ? c.obs : 'Outros'}: ${brl(c.outros)}`);
     return L;
   }
   const totalTxt = c => faltaEnergia(c) ? `R$ [${brl(c.total).replace('R$ ', '')} + energia]` : brl(c.total);
   function textoCobranca(c, r) {
     const { dataBR } = K(), unidade = nomeUnidade(c.unidade);
     const L = [`Oi, ${saudacao()}, ${primeiro(c.pessoa) || 'tudo bem'}! Tudo bem?`, '',
-      `Segue o demonstrativo do ${r.predio} — ${unidade}, referente a ${refMes(c)}:`, '', ...linhasValores(c, r), ''];
+      /^temp\|/.test(c.detalhe || '') ? `Segue o demonstrativo da locação por temporada no ${r.predio} — ${unidade}:` : `Segue o demonstrativo do ${r.predio} — ${unidade}, referente a ${refMes(c)}:`, '', ...linhasValores(c, r), ''];
     if (c.moeda === 'dolar' && r.cotacao) {
       L.push(`Total em reais: ${totalTxt(c)}`);
       if (!faltaEnergia(c)) L.push(`Equivalente em dólares: US$ ${(c.total / r.cotacao).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -299,13 +312,13 @@
   async function cobrancas(params) {
     const { h, api, mostrar, reais, dataBR, avisar, carregando, hojeISO } = K();
     carregando();
-    const comp = params.get('mes') || compHoje();
+    const ref = params.get('mes') || refHoje(), comp = compMais(ref, 1);
     const ver = params.get('ver') || 'falta';
     const r = await api('future.cobrancas', { mes: comp });
     const doMes = r.lista.filter(c => c.competencia === comp), antigas = r.lista.filter(c => c.competencia !== comp);
     const recarregar = () => K().rota();
     const total = doMes.reduce((a, c) => a + c.total, 0), recebido = doMes.reduce((a, c) => a + c.valor_pago, 0);
-    const faltam = doMes.filter(c => !c.pago_em), pagas = doMes.filter(c => c.pago_em);
+    const faltam = doMes.filter(c => !c.pago_em), pagas = doMes.filter(c => c.pago_em), cobradas = faltam.filter(c => c.enviado_em && !c.pagador);
     const semEnergia = faltam.filter(faltaEnergia).length, naoEnviadas = faltam.filter(c => !c.enviado_em && !c.pagador).length;
     const pagar = c => {
       const f = h('form', { class: 'fut-pagar', novalidate: true },
@@ -336,25 +349,37 @@
     const cartao = c => {
       const area = h('div', { class: 'fut-cob-acao' });
       const link = c.telefone ? whats(c.telefone, textoCobranca(c, r)) : null;
+      // etapas: 1) mandar a cobrança  2) cobrado (mandou)  3) pagou
+      const etapa = c.pago_em ? 3 : c.enviado_em ? 2 : 1;
+      const passos = h('ol', { class: 'fut-passos', 'aria-label': 'Etapas da cobrança' },
+        [['Mandar', 1], ['Cobrado', 2], ['Pago', 3]].map(([t, n]) => h('li', { class: etapa > n || (n === 3 && etapa === 3) ? 'feito' : etapa === n ? 'agora' : '' }, h('b', {}, etapa > n || (n === 3 && etapa === 3) ? '✓' : String(n)), t)));
       const status = c.pago_em ? h('span', { class: 'fut-st pago' }, '✓ Pago ' + dataBR(c.pago_em) + (c.valor_pago < c.total - 0.01 ? ' · ' + reais(c.valor_pago) + ' de ' + reais(c.total) : ''))
-        : c.situacao === 'atrasada' ? h('span', { class: 'fut-st atraso' }, '! Atrasado · venceu ' + dataBR(c.vencimento))
-        : c.enviado_em ? h('span', { class: 'fut-st enviado' }, '✉ Cobrança enviada ' + dataBR(c.enviado_em.slice(0, 10)) + (c.enviado_por ? ' por ' + c.enviado_por.split(' ')[0] : ''))
+        : c.situacao === 'atrasada' ? h('span', { class: 'fut-st atraso' }, '! Atrasado · venceu ' + dataBR(c.vencimento) + (c.enviado_em ? ' · cobrado ' + dataBR(c.enviado_em.slice(0, 10)) : ''))
+        : c.enviado_em ? h('span', { class: 'fut-st enviado' }, '✉ Cobrado em ' + dataBR(c.enviado_em.slice(0, 10)) + (c.enviado_por ? ' por ' + c.enviado_por.split(' ')[0] : '') + ' · vence ' + dataBR(c.vencimento))
         : c.pagador ? h('span', { class: 'fut-st' }, 'Cobrança da empresa (' + c.pagador + ')')
-        : h('span', { class: 'fut-st falta' }, '○ Falta mandar a cobrança');
+        : h('span', { class: 'fut-st falta' }, '○ Falta mandar · vence ' + dataBR(c.vencimento));
+      const marcar = como => api('future.cobranca.enviada', { id: c.id, como }).then(() => { avisar(`${c.unidade}: marcado como cobrado.`); setTimeout(recarregar, 300); }).catch(e => avisar(e.message, true));
       const botoes = h('div', { class: 'fut-acoes' });
       if (!c.pago_em) {
-        if (!c.pagador && link) botoes.append(h('a', { class: 'btn wa fut-zap', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => {
-          if (faltaEnergia(c) && !confirm(`${c.unidade}: a energia de ${refMes(c)} ainda não foi informada. A mensagem vai com "[preencher]". Mandar mesmo assim?`)) { ev.preventDefault(); return; }
-          api('future.cobranca.enviada', { id: c.id }).then(() => setTimeout(recarregar, 400)).catch(() => {}); } }, c.enviado_em ? 'Mandar de novo' : 'Cobrar no WhatsApp'));
-        botoes.append(K().botao('Copiar texto', async () => { try { await navigator.clipboard.writeText(textoCobranca(c, r)); avisar('Mensagem copiada.'); } catch (e) { prompt('Copie a mensagem:', textoCobranca(c, r)); } }, 'mini sec'));
+        if (!c.pagador) {
+          if (link) botoes.append(h('a', { class: 'btn wa fut-zap', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => {
+            if (faltaEnergia(c) && !confirm(`${c.unidade}: a energia de ${refMes(c)} ainda não foi informada. A mensagem vai com "[preencher]". Mandar mesmo assim?`)) { ev.preventDefault(); return; }
+            api('future.cobranca.enviada', { id: c.id, como: 'WhatsApp' }).then(() => setTimeout(recarregar, 400)).catch(() => {}); } }, c.enviado_em ? 'Mandar de novo' : 'Cobrar no WhatsApp'));
+          botoes.append(K().botao('Copiar texto', async () => { try { await navigator.clipboard.writeText(textoCobranca(c, r)); avisar('Mensagem copiada. Depois de mandar, aperte "✓ Já mandei".'); } catch (e) { prompt('Copie a mensagem:', textoCobranca(c, r)); } }, 'mini sec'));
+          if (!c.enviado_em) botoes.append(K().botao('✓ Já mandei', () => marcar('copiado'), 'mini sec'));
+          else botoes.append(K().botao('Desfazer "cobrado"', async () => { await api('future.cobranca.enviada', { id: c.id, desfazer: true }); recarregar(); }, 'mini link'));
+        }
         botoes.append(K().botao('✓ Pagou', () => area.replaceChildren(pagar(c)), 'mini'), K().botao('Ajustar valores', () => area.replaceChildren(ajustar(c)), 'mini sec'));
       } else botoes.append(K().botao('Desfazer pagamento', async () => { if (!confirm('Desfazer o pagamento de ' + c.unidade + '?')) return; await api('future.cobranca.pagar', { id: c.id, desfazer: true }); recarregar(); }, 'mini sec'));
       return h('article', { class: 'fut-cob-card ' + (c.pago_em ? 'pago' : c.situacao === 'atrasada' ? 'atraso' : c.enviado_em ? 'enviado' : 'falta') },
         h('div', { class: 'fut-cob-tit' }, h('a', { href: '#/future/unidade/' + encodeURIComponent(c.unidade) }, h('b', {}, c.unidade)),
-          h('span', {}, c.pessoa || '—'), c.competencia !== comp ? h('span', { class: 'tag urgente' }, curto(c.competencia)) : null),
+          h('span', {}, c.pessoa || '—'), c.competencia !== comp ? h('span', { class: 'tag urgente' }, 'ref. ' + curto(compMais(c.competencia, -1))) : null,
+          /^temp\|/.test(c.detalhe || '') ? h('span', { class: 'tag' }, 'temporada') : null),
+        c.pagador ? null : passos,
         h('div', { class: 'fut-cob-val' },
           h('span', {}, /^prop\|/.test(c.detalhe || '') ? 'Aluguel proporcional (' + c.detalhe.split('|')[3] + ' dias) ' : 'Aluguel ', h('b', {}, reais(c.aluguel))), h('span', {}, 'Taxas ', h('b', {}, reais(c.taxas))),
           c.cobra_energia ? h('span', { class: c.energia ? '' : 'falta' }, 'Energia ', h('b', {}, c.energia ? reais(c.energia) : 'não informada')) : h('span', { class: 'peq' }, 'Energia por conta própria'),
+          c.lavanderia ? h('span', {}, 'Lavanderia ', h('b', {}, reais(c.lavanderia))) : null,
           c.outros ? h('span', {}, 'Outros ', h('b', {}, reais(c.outros))) : null,
           h('span', { class: 'fut-cob-total' }, 'Total ', h('b', {}, reais(c.total)))),
         h('div', { class: 'fut-cob-pe' }, status, botoes),
@@ -380,127 +405,221 @@
             const x = await api('future.cobranca.pagarGrupo', { pagador: pag, mes: comp }); avisar(`${x.pagas} cobrança(s) de ${pag} pagas.`); recarregar();
           })) : null);
     });
-    const listaVer = ver === 'pagas' ? pagas : ver === 'todas' ? doMes : faltam.filter(c => !c.pagador);
+    const listaVer = ver === 'pagas' ? pagas : ver === 'todas' ? doMes : ver === 'mandar' ? faltam.filter(c => !c.enviado_em && !c.pagador) : ver === 'cobradas' ? cobradas : faltam.filter(c => !c.pagador);
     const aba = (id, rot, n) => h('button', { type: 'button', class: 'visao-bt' + (ver === id ? ' ativo' : ''), onclick: () => ir('cobrancas', { ver: id }, params) }, h('span', {}, rot), h('span', { class: 'visao-n' }, String(n)));
-    mostrar(topo('Edifício Future', 'Cobranças do mês', `Aluguel + ${r.taxas_desc} + energia do mês anterior · vence dia ${(doMes[0] || {}).vencimento ? doMes[0].vencimento.slice(8) : '10'}`,
-        [h('a', { class: 'btn sec', href: '#/future/energia?mes=' + compMais(comp, -1) }, '⚡ Informar energia'), h('a', { class: 'btn sec', href: '#/future/config' }, 'Dados da mensagem')]),
-      navMes(comp, 'cobrancas', params),
+    mostrar(topo('Edifício Future', 'Cobranças', `Aluguel, taxas, energia e lavanderia de ${MESES[+ref.slice(5, 7) - 1]} · vencem em ${dataBR((doMes[0] || {}).vencimento || comp + '-10')}`,
+        [h('a', { class: 'btn sec', href: '#/future/energia?mes=' + ref }, '⚡ Energia'), h('a', { class: 'btn sec', href: '#/future/lavanderia?mes=' + ref }, '🧺 Lavanderia'), h('a', { class: 'btn sec', href: '#/future/config' }, 'Dados da mensagem')]),
+      navRef(ref, 'cobrancas', params),
       h('section', { class: 'fin-nums' },
         numero('dourado', reais(total), 'Cobrado no mês', `${doMes.length} cobrança(s)`),
         numero('verde', reais(recebido), 'Já pagaram', `${pagas.length} de ${doMes.length}`),
         numero(total - recebido > 0 ? 'vermelho' : 'verde', reais(total - recebido), 'Falta pagar', `${faltam.length} unidade(s)`),
-        numero(naoEnviadas ? 'azul alerta' : 'azul', String(naoEnviadas), 'Falta mandar', 'cobranças ainda não enviadas')),
-      semEnergia ? h('p', { class: 'nota' }, `⚡ ${semEnergia} cobrança(s) ainda sem a energia de ${nomeMes(compMais(comp, -1))}. Informe em Energia (ou cole a tabela da Celesc) antes de mandar — o total se atualiza sozinho.`) : null,
+        numero(naoEnviadas ? 'azul alerta' : 'azul', String(naoEnviadas), 'Falta mandar', `${cobradas.length} já cobrada(s), esperando pagamento`)),
+      semEnergia ? h('p', { class: 'nota' }, `⚡ ${semEnergia} cobrança(s) ainda sem a energia de ${nomeMes(ref)}. Informe em Energia (ou cole a tabela da Celesc) antes de mandar — o total se atualiza sozinho.`) : null,
       !r.pagamento ? h('p', { class: 'nota' }, 'Cadastre os dados de pagamento (banco, Pix, agência e conta) em Configurações para irem junto na mensagem.') : null,
       ...blocosGrupo,
-      h('div', { class: 'visoes fut-filtro' }, aba('falta', 'Falta pagar', faltam.filter(c => !c.pagador).length), aba('pagas', 'Pagas', pagas.length), aba('todas', 'Todas', doMes.length)),
+      h('div', { class: 'visoes fut-filtro' }, aba('falta', 'Falta pagar', faltam.filter(c => !c.pagador).length), aba('mandar', '1 · Falta mandar', naoEnviadas), aba('cobradas', '2 · Cobradas', cobradas.length), aba('pagas', '3 · Pagas', pagas.length), aba('todas', 'Todas', doMes.length)),
       h('section', { class: 'fut-cob-lista' }, listaVer.length ? listaVer.map(cartao) : h('p', { class: 'caixa peq' }, ver === 'falta' ? 'Todo mundo pagou este mês. 🎉' : 'Nada aqui.')),
       antigas.length ? h('section', {}, h('h2', { class: 'fut-sub' }, 'Ainda em aberto de meses anteriores'), h('div', { class: 'fut-cob-lista' }, antigas.map(cartao))) : null);
   }
 
   /* ---------- Caixa ---------- */
   async function caixa(params) {
-    const { h, api, mostrar, reais, dataBR, campo, aoEnviar, avisar, carregando, hojeISO } = K();
+    const { h, api, mostrar, reais, dataBR, avisar, carregando, hojeISO } = K();
     carregando();
-    const comp = params.get('mes') || compHoje();
-    const r = await api('future.lancamentos', { mes: comp });
+    const ref = params.get('mes') || refHoje();
+    const r = await api('future.lancamentos', { mes: ref });
     const rec = r.lista.filter(l => l.tipo === 'receita'), des = r.lista.filter(l => l.tipo === 'despesa');
     const soma = ls => ls.reduce((a, l) => a + l.valor, 0);
-    const tipoSel = campo('tipo', 'Tipo', 'despesa', { opcoes: [['despesa', 'Saiu (despesa)'], ['receita', 'Entrou (receita)']] });
-    const catSel = h('select', { id: 'f-categoria', name: 'categoria' });
-    const encher = t => catSel.replaceChildren(...r.categorias[t].map(c => h('option', {}, c)));
-    encher('despesa');
-    tipoSel.querySelector('select').addEventListener('change', ev => encher(ev.target.value));
-    const form = h('form', { class: 'campos', novalidate: true }, tipoSel,
-      h('div', {}, h('label', { for: 'f-categoria' }, 'Categoria'), catSel),
-      campo('valor', 'Valor (R$)', '', { modo: 'decimal', obrigatorio: true }),
-      campo('data', 'Data', comp === compHoje() ? hojeISO() : comp + '-10', { tipo: 'date' }),
-      campo('unidade', 'Unidade (opcional)', '', { dica: 'ex.: 204 ou Sala 2' }),
-      campo('pessoa', 'Pessoa / fornecedor', ''),
-      campo('forma', 'Forma', 'Pix', { opcoes: [['Pix', 'Pix'], ['Dinheiro', 'Dinheiro'], ['Transferência', 'Transferência'], ['Boleto', 'Boleto'], ['Cartão', 'Cartão']] }),
-      campo('descricao', 'Descrição', '', { largo: true }),
-      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Lançar'), h('p', { class: 'erro' })));
-    aoEnviar(form, async fd => { await api('future.lancamento.salvar', { competencia: comp, ...Object.fromEntries(fd.entries()) }); avisar('Lançado.'); K().rota(); });
+    const dataPadrao = ref === compHoje() ? hojeISO() : ref + '-' + new Date(Date.UTC(+ref.slice(0, 4), +ref.slice(5, 7), 0)).getUTCDate();
+    // planilha: várias despesas de uma vez
+    const linhaNova = () => h('tr', {},
+      h('td', {}, h('input', { type: 'date', name: 'data', value: dataPadrao, 'aria-label': 'Data' })),
+      h('td', {}, h('select', { name: 'tipo', 'aria-label': 'Tipo' }, h('option', { value: 'despesa' }, 'Despesa'), h('option', { value: 'receita' }, 'Receita'))),
+      h('td', {}, h('select', { name: 'categoria', 'aria-label': 'Categoria' }, h('option', { value: '' }, 'automática'), r.categorias.despesa.concat(r.categorias.receita.filter(c => !r.categorias.despesa.includes(c))).map(c => h('option', {}, c)))),
+      h('td', {}, h('input', { name: 'descricao', placeholder: 'ex.: conserto do chuveiro AP 204', 'aria-label': 'Descrição' })),
+      h('td', {}, h('input', { name: 'unidade', placeholder: 'AP/sala', class: 'curto', 'aria-label': 'Unidade' })),
+      h('td', {}, h('input', { name: 'valor', placeholder: 'R$', inputmode: 'decimal', class: 'curto', 'aria-label': 'Valor' })),
+      h('td', {}, h('select', { name: 'forma', 'aria-label': 'Forma' }, ['Pix', 'Dinheiro', 'Transferência', 'Boleto', 'Cartão'].map(x => h('option', {}, x)))));
+    const corpo = h('tbody', {}, [1, 2, 3, 4, 5].map(linhaNova));
+    const enviar = h('div', { class: 'acoes' },
+      K().botao('+ linha', () => corpo.append(linhaNova()), 'sec'),
+      K().botao('Salvar as linhas preenchidas', async ev => {
+        const itens = [...corpo.querySelectorAll('tr')].map(tr => Object.fromEntries([...tr.querySelectorAll('input,select')].map(x => [x.name, x.value]))).filter(x => num(x.valor) > 0);
+        if (!itens.length) return avisar('Preencha o valor de pelo menos uma linha.', true);
+        ev.target.disabled = true;
+        try { const x = await api('future.lancamento.lote', { competencia: ref, itens }); avisar(`${x.lancados} lançamento(s) salvos em ${nomeMes(ref)}.`); K().rota(); }
+        catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+      }));
+    const colar = h('textarea', { rows: 4, placeholder: 'Ou cole uma lista, uma despesa por linha:\nConserto chuveiro AP 204 120,00\nProduto de limpeza 85,90\n12/10 Encanador 250,00' });
+    const btColar = K().botao('Passar a lista para a planilha', () => {
+      const linhas = colar.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean); if (!linhas.length) return;
+      corpo.replaceChildren(); linhas.forEach(t => {
+        const tr = linhaNova(); corpo.append(tr);
+        const md = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(t); let resto = t;
+        if (md) { tr.querySelector('[name=data]').value = (md[3] ? (md[3].length === 2 ? '20' + md[3] : md[3]) : ref.slice(0, 4)) + '-' + md[2].padStart(2, '0') + '-' + md[1].padStart(2, '0'); resto = resto.replace(md[0], ' '); }
+        const vs = resto.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}\b/g); if (vs) { tr.querySelector('[name=valor]').value = vs[vs.length - 1]; resto = resto.replace(vs[vs.length - 1], ' '); }
+        const ap = /\b(?:ap\.?\s*)?([12]\d{2})\b|\bsala\s*\d\b/i.exec(resto); if (ap) tr.querySelector('[name=unidade]').value = ap[1] || ap[0];
+        tr.querySelector('[name=descricao]').value = resto.replace(/\s+/g, ' ').replace(/[-–·]\s*$/, '').trim();
+      });
+      avisar(`${linhas.length} linha(s) na planilha. Confira e aperte "Salvar as linhas preenchidas".`);
+    }, 'sec');
     const lista = (titulo, ls, cls) => h('section', { class: 'caixa' }, h('h2', {}, `${titulo} · ${reais(soma(ls))}`),
       K().tabela(['Data', 'Categoria', 'Unidade', 'Descrição', 'Valor', ''], ls, l => [
         h('td', { 'data-r': 'Data' }, dataBR(l.data)), h('td', { 'data-r': 'Categoria' }, l.categoria),
-        h('td', { 'data-r': 'Unidade' }, l.unidade || '—'), h('td', { 'data-r': 'Descrição' }, [l.descricao, l.pessoa].filter(Boolean).join(' · ') || '—', l.origem === 'planilha antiga' ? h('span', { class: 'peq' }, ' (planilha antiga)') : null),
+        h('td', { 'data-r': 'Unidade' }, l.unidade || '—'), h('td', { 'data-r': 'Descrição' }, [l.descricao, l.pessoa].filter(Boolean).join(' · ') || '—', l.origem === 'planilha antiga' ? h('span', { class: 'peq' }, ' (planilha antiga)') : l.origem === 'cobrança' ? h('span', { class: 'peq' }, ' (cobrança paga)') : null),
         h('td', { class: 'num ' + cls, 'data-r': 'Valor' }, reais(l.valor)),
-        h('td', {}, K().botao('Excluir', async ev => { ev.stopPropagation(); if (!confirm('Excluir este lançamento?')) return; await api('future.lancamento.salvar', { id: l.id, excluir: true }); K().rota(); }, 'mini sec'))
+        h('td', {}, l.origem === 'cobrança' ? null : K().botao('Excluir', async ev => { ev.stopPropagation(); if (!confirm('Excluir este lançamento?')) return; await api('future.lancamento.salvar', { id: l.id, excluir: true }); K().rota(); }, 'mini sec'))
       ], () => {}, 'Nada lançado.'));
-    mostrar(topo('Edifício Future', 'Caixa do prédio', 'Tudo o que entrou e saiu no mês'), navMes(comp, 'caixa', params),
-      h('section', { class: 'fin-nums' }, numero('verde', reais(soma(rec)), 'Entrou'), numero('vermelho', reais(soma(des)), 'Saiu'),
-        numero(soma(rec) - soma(des) >= 0 ? 'dourado' : 'vermelho', reais(soma(rec) - soma(des)), 'Saldo'), numero('azul', String(r.lista.length), 'Lançamentos')),
-      K().secao('+ Novo lançamento', form, !r.lista.length), lista('Entrou', rec, 'pos'), lista('Saiu', des, 'neg'));
+    const porCat = {}; des.forEach(l => { porCat[l.categoria] = (porCat[l.categoria] || 0) + l.valor; });
+    mostrar(topo('Edifício Future', 'Despesas e receitas', 'Lance as despesas do mês: elas entram no relatório final do mês de referência'), navRef(ref, 'caixa', params),
+      h('section', { class: 'fin-nums' }, numero('vermelho', reais(soma(des)), 'Despesas', `${des.length} lançamento(s)`), numero('verde', reais(soma(rec)), 'Receitas', 'aluguéis pagos, lavanderia, caução…'),
+        numero(soma(rec) - soma(des) >= 0 ? 'dourado' : 'vermelho', reais(soma(rec) - soma(des)), 'Resultado'), numero('azul', Object.keys(porCat).length ? Object.entries(porCat).sort((a, b) => b[1] - a[1])[0][0] : '—', 'Maior despesa', Object.keys(porCat).length ? reais(Math.max(...Object.values(porCat))) : '')),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Lançar despesas de ' + nomeMes(ref)),
+        h('div', { class: 'fut-planilha' }, h('table', { class: 'tabela fut-grade' }, h('thead', {}, h('tr', {}, ['Data', 'Tipo', 'Categoria', 'Descrição', 'Unidade', 'Valor', 'Forma'].map(t => h('th', {}, t)))), corpo)),
+        enviar, h('details', { class: 'fut-colar' }, h('summary', {}, '📋 Colar uma lista de despesas'), colar, btColar)),
+      lista('Despesas', des, 'neg'), lista('Receitas', rec, 'pos'));
   }
 
-  /* ---------- Energia ---------- */
+  /* ---------- Energia: a conta de cada apartamento (sem as salas, que pagam a própria) ---------- */
   async function energia(params) {
     const { h, api, mostrar, reais, avisar, carregando } = K();
     carregando();
-    const comp = params.get('mes') || compMais(compHoje(), -1);
-    const [res, rel] = await Promise.all([api('future.resumo', {}), api('future.relatorio', { mes: comp })]);
-    const valores = {}; rel.energia.forEach(e => { valores[e.unidade] = e; });
-    const aps = res.unidades.filter(u => u.situacao !== 'proprio' || /^AP/.test(u.id));
-    const linhas = aps.map(u => {
-      const e = valores[u.id];
-      const f = h('form', { class: 'fut-pagar', novalidate: true },
-        h('input', { name: 'valor', value: e ? String(e.valor).replace('.', ',') : '', placeholder: 'R$', inputmode: 'decimal', 'aria-label': 'Valor ' + u.id }),
-        h('input', { name: 'kwh', value: e && e.kwh ? e.kwh : '', placeholder: 'kWh', inputmode: 'numeric', 'aria-label': 'kWh ' + u.id }),
-        h('button', { type: 'submit', class: 'btn mini sec' }, e ? 'Atualizar' : 'Lançar'), h('span', { class: 'erro' }));
-      K().aoEnviar(f, async fd => { await api('future.energia.salvar', { competencia: comp, unidade: u.id, ...Object.fromEntries(fd.entries()) }); avisar(u.id + ': energia salva.'); K().rota(); });
-      return h('tr', {}, h('td', { 'data-r': 'Unidade' }, h('strong', {}, u.id), h('div', { class: 'peq' }, u.locatario || (SIT[u.situacao] || [''])[0])), h('td', { 'data-r': 'Valor' }, f));
+    const ref = params.get('mes') || refHoje();
+    const r = await api('future.energia', { mes: ref });
+    const total = m => r.unidades.reduce((a, u) => a + ((r.valores[u.id] || {})[m] || 0), 0);
+    const linhas = r.unidades.map(u => {
+      const v = (r.valores[u.id] || {})[ref];
+      const inp = h('input', { name: 'valor', value: v ? String(v.toFixed(2)).replace('.', ',') : '', placeholder: 'R$', inputmode: 'decimal', class: 'curto', 'aria-label': 'Energia ' + u.id });
+      const salvar = async () => { if (inp.value === (v ? String(v.toFixed(2)).replace('.', ',') : '')) return;
+        try { await api('future.energia.salvar', { competencia: ref, unidade: u.id, valor: inp.value || '0' }); inp.classList.add('salvo'); avisar(`${u.id}: energia de ${MESES[+ref.slice(5, 7) - 1]} salva.`); } catch (e) { avisar(e.message, true); } };
+      inp.addEventListener('change', salvar);
+      const ant = (r.valores[u.id] || {})[compMais(ref, -1)];
+      return h('tr', {}, h('td', { 'data-r': 'Apto' }, h('strong', {}, u.id.replace('AP ', ''))), h('td', { 'data-r': 'Morador' }, u.locatario || h('span', { class: 'peq' }, (SIT[u.situacao] || [''])[0])),
+        h('td', { 'data-r': 'Conta no nome de' }, u.titular || '—'), h('td', { 'data-r': 'Valor' }, inp),
+        h('td', { class: 'num peq', 'data-r': 'Mês anterior' }, ant ? reais(ant) : '—'));
     });
     const colar = h('form', { class: 'campos', novalidate: true },
-      h('div', { class: 'largo' }, h('label', { for: 'f-tabela' }, 'Cole aqui a tabela da Celesc (uma linha por unidade: UC ou apartamento e o valor)'),
-        h('textarea', { id: 'f-tabela', name: 'texto', rows: 6, placeholder: '424093201190  DIEGO  R$ 145,30\nAP 102  98,70\n…' })),
-      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Lançar as contas de ' + nomeMes(comp)), h('p', { class: 'erro' })));
+      h('div', { class: 'largo' }, h('label', { for: 'f-tabela' }, 'Cole a planilha ou os demonstrativos (um apartamento por linha com o valor, ou o texto "apartamento 101 … Energia: R$ 103,53")'),
+        h('textarea', { id: 'f-tabela', name: 'texto', rows: 6, placeholder: '101  103,53\n102  173,13\nAP 104 137,96\n…' })),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Lançar as contas de ' + nomeMes(ref)), h('p', { class: 'erro' })));
     K().aoEnviar(colar, async fd => {
-      const x = await api('future.energia.colar', { competencia: comp, texto: fd.get('texto') });
+      const x = await api('future.energia.colar', { competencia: ref, texto: fd.get('texto') });
       avisar(`${x.lancadas.length} conta(s) lançada(s).` + (x.naoEntendidas.length ? ` ${x.naoEntendidas.length} linha(s) não entendida(s): ${x.naoEntendidas.slice(0, 3).join(' | ')}` : ''), !!x.naoEntendidas.length);
       K().rota();
     });
-    mostrar(topo('Edifício Future', 'Energia', 'Conta da Celesc por unidade · o valor entra na cobrança do mês seguinte'), navMes(comp, 'energia', params),
-      K().secao('📋 Colar a tabela da Celesc (lança tudo de uma vez)', colar, !rel.energia.length),
+    // titular de cada conta (as contas estão no nome da família/empresa e a cobrança vai para o morador)
+    const titulares = h('table', { class: 'tabela fut-grade' }, h('thead', {}, h('tr', {}, ['Apto', 'Conta no nome de', 'Kit', 'Medidor', 'Unidade consumidora'].map(t => h('th', {}, t)))),
+      h('tbody', {}, r.unidades.map(u => {
+        const campoT = (k, v, cls) => { const i = h('input', { value: v || '', class: cls || '', 'aria-label': k + ' ' + u.id });
+          i.addEventListener('change', async () => { try { await api('future.unidade.salvar', { id: u.id, [k]: i.value }); i.classList.add('salvo'); } catch (e) { avisar(e.message, true); } }); return i; };
+        return h('tr', {}, h('td', {}, h('strong', {}, u.id.replace('AP ', ''))), h('td', {}, campoT('energia_resp', u.titular)), h('td', {}, campoT('kit', u.kit, 'curto')),
+          h('td', {}, campoT('medidor', u.medidor)), h('td', {}, campoT('uc', u.uc)));
+      })));
+    const grade = h('div', { class: 'fut-planilha' }, h('table', { class: 'tabela fut-grade fut-ene-grade' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Apto'), r.meses.map(m => h('th', { class: m === ref ? 'atual' : '' }, curto(m))))),
+      h('tbody', {}, r.unidades.map(u => h('tr', {}, h('td', {}, h('strong', {}, u.id.replace('AP ', ''))), r.meses.map(m => { const v = (r.valores[u.id] || {})[m]; return h('td', { class: 'num' + (m === ref ? ' atual' : '') }, v ? reais(v).replace('R$', '').trim() : '—'); }))),
+        h('tr', { class: 'fut-total' }, h('td', {}, 'Total'), r.meses.map(m => h('td', { class: 'num' }, total(m) ? reais(total(m)).replace('R$', '').trim() : '—'))))));
+    const falta = r.unidades.filter(u => /alugado|renovar/.test(u.situacao) && !(r.valores[u.id] || {})[ref]).map(u => u.id.replace('AP ', ''));
+    mostrar(topo('Edifício Future', 'Energia', 'As contas vêm no nome da família/empresa e são cobradas de cada morador no mês seguinte · salas pagam a própria energia'),
+      navRef(ref, 'energia', params),
       h('section', { class: 'fin-nums' },
-        numero('dourado', reais(rel.energiaTotal), 'Energia das unidades', `${rel.energia.length} conta(s) lançada(s)`),
-        numero(rel.energiaTotal > rel.energiaAnt && rel.energiaAnt ? 'vermelho' : 'verde', reais(rel.energiaAnt), 'Mês anterior', rel.energiaAnt ? (rel.energiaTotal >= rel.energiaAnt ? '▲ ' : '▼ ') + Math.abs(Math.round(((rel.energiaTotal - rel.energiaAnt) / rel.energiaAnt) * 100)) + '%' : ''),
-        numero('vermelho', reais(rel.energiaDespesa), 'Pago à Celesc no mês', 'despesas "Energia" do caixa'),
-        numero('azul', reais(res.serie.reduce((a, s) => a + s.energia, 0)), '12 meses', 'despesas de energia')),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Contas de ' + nomeMes(comp)),
-        h('table', { class: 'tabela' }, h('thead', {}, h('tr', {}, h('th', {}, 'Unidade'), h('th', {}, 'Valor da conta'))), h('tbody', {}, linhas))));
+        numero('dourado', reais(total(ref)), 'Energia de ' + MESES[+ref.slice(5, 7) - 1], `${r.unidades.filter(u => (r.valores[u.id] || {})[ref]).length} conta(s) lançada(s)`),
+        numero('azul', reais(total(compMais(ref, -1))), 'Mês anterior', total(compMais(ref, -1)) ? (total(ref) >= total(compMais(ref, -1)) ? '▲ ' : '▼ ') + Math.abs(Math.round(((total(ref) - total(compMais(ref, -1))) / total(compMais(ref, -1))) * 100)) + '%' : ''),
+        numero(falta.length ? 'vermelho' : 'verde', String(falta.length), 'Falta lançar', falta.length ? 'aptos ' + falta.join(', ') : 'tudo lançado ✓')),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Contas de ' + nomeMes(ref)), h('p', { class: 'peq' }, 'Digite o valor e saia do campo: salva sozinho e atualiza a cobrança do mês seguinte.'),
+        h('table', { class: 'tabela' }, h('thead', {}, h('tr', {}, ['Apto', 'Morador', 'Conta no nome de', 'Valor', 'Mês anterior'].map(t => h('th', {}, t)))), h('tbody', {}, linhas))),
+      K().secao('📋 Colar a planilha de energia do mês', colar, false),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Planilha dos últimos 12 meses'), grade),
+      K().secao('🔌 De quem é cada conta (titular, kit, medidor, UC)', h('div', {}, h('p', { class: 'peq' }, 'Editar e sair do campo salva. Use para saber em nome de quem está cada conta da Celesc.'), h('div', { class: 'fut-planilha' }, titulares)), false));
+  }
+
+  /* ---------- Lavanderia: cada lavagem entra na cobrança da pessoa ---------- */
+  async function lavanderia(params) {
+    const { h, api, mostrar, reais, dataBR, avisar, carregando, hojeISO } = K();
+    carregando();
+    const ref = params.get('mes') || refHoje();
+    const r = await api('future.lavanderia', { mes: ref });
+    const total = r.lista.reduce((a, l) => a + l.valor, 0), qtd = r.lista.reduce((a, l) => a + l.quantidade, 0);
+    const porUn = {}; r.lista.forEach(l => { const x = porUn[l.unidade] = porUn[l.unidade] || { qtd: 0, valor: 0, pessoa: l.pessoa }; x.qtd += l.quantidade; x.valor += l.valor; });
+    const dataPadrao = ref === compHoje() ? hojeISO() : ref + '-' + new Date(Date.UTC(+ref.slice(0, 4), +ref.slice(5, 7), 0)).getUTCDate();
+    const f = h('form', { class: 'barra fut-lav-form', novalidate: true },
+      h('select', { name: 'unidade', 'aria-label': 'Apartamento' }, h('option', { value: '' }, 'Apartamento…'), r.unidades.map(u => h('option', { value: u.id }, u.id + (u.locatario ? ' · ' + u.locatario.split(' ')[0] : '')))),
+      h('input', { type: 'date', name: 'data', value: dataPadrao, 'aria-label': 'Data' }),
+      h('input', { name: 'quantidade', type: 'number', min: 1, value: 1, class: 'curto', 'aria-label': 'Lavagens' }),
+      h('div', { class: 'fut-chips' }, [r.preco, r.preco2].map((p, i) => h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'preco', value: String(p), checked: !i }), h('span', {}, reais(p) + ' cada')))),
+      h('button', { type: 'submit', class: 'btn' }, '+ Lançar lavagem'), h('p', { class: 'erro' }));
+    K().aoEnviar(f, async fd => {
+      if (!fd.get('unidade')) throw new Error('Escolha o apartamento.');
+      const q = Math.max(1, +fd.get('quantidade') || 1);
+      await api('future.lavanderia.salvar', { mes: ref, unidade: fd.get('unidade'), data: fd.get('data'), quantidade: q, valor: q * num(fd.get('preco')) });
+      avisar('Lavagem lançada: entra na cobrança de ' + nomeMes(compMais(ref, 1)) + '.'); K().rota();
+    });
+    const colar = h('form', { class: 'campos', novalidate: true },
+      h('div', { class: 'largo' }, h('label', { for: 'f-lav' }, 'Cole a tabela da lavanderia (uma linha por uso: apartamento, quantidade e/ou valor, data opcional)'),
+        h('textarea', { id: 'f-lav', name: 'texto', rows: 5, placeholder: '101 2 lavagens\n204 - 1 - 30,00\n12/10 AP 106 25,00' })),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Lançar a tabela em ' + nomeMes(ref)), h('p', { class: 'erro' })));
+    K().aoEnviar(colar, async fd => { const x = await api('future.lavanderia.colar', { mes: ref, texto: fd.get('texto') });
+      avisar(`${x.lancadas.length} lançamento(s).` + (x.naoEntendidas.length ? ` Não entendi: ${x.naoEntendidas.slice(0, 3).join(' | ')}` : ''), !!x.naoEntendidas.length); K().rota(); });
+    const preco = h('form', { class: 'barra', novalidate: true }, h('span', { class: 'peq' }, 'Preços:'),
+      h('input', { name: 'preco', value: String(r.preco).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço 1' }),
+      h('input', { name: 'preco2', value: String(r.preco2).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço 2' }),
+      h('button', { type: 'submit', class: 'btn mini sec' }, 'Salvar preços'), h('span', { class: 'erro' }));
+    K().aoEnviar(preco, async fd => { await api('future.lavanderia.salvar', { so_preco: true, preco: fd.get('preco'), preco2: fd.get('preco2') }); avisar('Preços salvos.'); K().rota(); });
+    mostrar(topo('Edifício Future', 'Lavanderia', 'Cada lavagem vai sozinha para a cobrança do morador no mês seguinte'), navRef(ref, 'lavanderia', params),
+      h('section', { class: 'fin-nums' }, numero('dourado', reais(total), 'Lavanderia de ' + MESES[+ref.slice(5, 7) - 1], `${qtd} lavage${qtd === 1 ? 'm' : 'ns'}`),
+        numero('azul', String(Object.keys(porUn).length), 'Apartamentos', 'que usaram'), numero('verde', reais(r.preco), 'Preço padrão', 'outro: ' + reais(r.preco2))),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Lançar'), f, preco),
+      K().secao('📋 Colar a tabela da lavanderia', colar, false),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Por apartamento'), Object.keys(porUn).length ? h('ul', { class: 'fut-lista' }, Object.entries(porUn).sort().map(([un, x]) =>
+        h('li', {}, h('b', {}, un), ' · ', x.pessoa || '—', ' · ', `${x.qtd}×`, h('strong', {}, reais(x.valor)), r.cobrancas[un] ? h('span', { class: 'tag ' + (COB[r.cobrancas[un]] || ['', ''])[1] }, 'cobrança ' + (COB[r.cobrancas[un]] || [r.cobrancas[un]])[0].toLowerCase()) : h('span', { class: 'peq' }, 'entra na cobrança quando ela for gerada')))) : h('p', { class: 'peq' }, 'Nenhuma lavagem neste mês.')),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Lavagens de ' + nomeMes(ref)), K().tabela(['Data', 'Apto', 'Pessoa', 'Qtd.', 'Valor', ''], r.lista, l => [
+        h('td', {}, dataBR(l.data)), h('td', {}, l.unidade), h('td', {}, l.pessoa || '—'), h('td', { class: 'num' }, String(l.quantidade)), h('td', { class: 'num' }, reais(l.valor)),
+        h('td', {}, K().botao('Excluir', async ev => { ev.stopPropagation(); if (!confirm('Excluir esta lavagem?')) return; await api('future.lavanderia.salvar', { id: l.id, excluir: true }); K().rota(); }, 'mini sec'))
+      ], () => {}, 'Nada lançado.')),
+      r.antigas ? h('p', { class: 'peq' }, `${r.antigas} recebimento(s) de lavanderia deste mês vieram da planilha antiga (estão em Despesas e receitas).`) : null);
   }
 
   /* ---------- Relatório do mês (para imprimir / mandar) ---------- */
   async function relatorio(params) {
     const { h, api, mostrar, reais, dataBR, carregando, tabela } = K();
     carregando();
-    const comp = params.get('mes') || compMais(compHoje(), -1);
+    const comp = params.get('mes') || refHoje();
     const r = await api('future.relatorio', { mes: comp });
+    const desp = r.lancamentos.filter(l => l.tipo === 'despesa'), aReceber = r.cobrancas.reduce((a, c) => a + Math.max(0, c.total - c.pago), 0);
+    const somaC = k => r.cobrancas.reduce((a, c) => a + (c[k] || 0), 0);
     const varia = (a, b) => b ? h('span', { class: 'fut-var ' + (a >= b ? 'sobe' : 'desce') }, (a >= b ? '▲ ' : '▼ ') + Math.abs(Math.round(((a - b) / b) * 100)) + '% vs. ' + curto(r.anterior)) : null;
     const barras = (itens, total, cls) => h('ul', { class: 'fut-barras' }, itens.map(i => h('li', {}, h('span', {}, i.categoria || i.unidade), h('i', { class: cls, 'data-w': total ? Math.max(2, Math.round((i.valor / total) * 100)) : 0 }), h('b', {}, reais(i.valor)))));
     const pagas = r.cobrancas.filter(c => c.situacao === 'paga').length;
     mostrar(
-      h('div', { class: 'barra nao-imprimir' }, navMes(comp, 'relatorio', params), K().botao('Imprimir / salvar PDF', () => window.print())),
+      h('div', { class: 'barra nao-imprimir' }, navRef(comp, 'relatorio', params), K().botao('Imprimir / salvar PDF', () => window.print())),
       h('article', { class: 'fut-rel' },
         h('header', { class: 'fut-rel-cab' }, h('div', {}, h('span', { class: 'carteira-kicker' }, 'Edifício Future · relatório mensal'), h('h1', {}, nomeMes(comp).replace(/^./, x => x.toUpperCase()))),
-          h('p', { class: 'peq' }, 'Gerado em ' + dataBR(K().hojeISO()))),
+          h('p', { class: 'peq' }, 'Cobranças com vencimento em ' + dataBR(r.vencimentoCobranca) + ' · gerado em ' + dataBR(K().hojeISO()))),
         h('section', { class: 'fin-nums' },
           numero('verde', reais(r.receitas), 'Receitas', '', null), numero('vermelho', reais(r.despesas), 'Despesas'),
           numero(r.receitas - r.despesas >= 0 ? 'dourado' : 'vermelho', reais(r.receitas - r.despesas), 'Resultado'),
           numero('azul', `${r.ocupacao.ocupadas}/${r.ocupacao.alugaveis}`, 'Ocupação', r.ocupacao.disponiveis.length ? 'livres: ' + r.ocupacao.disponiveis.join(', ') : 'todas ocupadas')),
+        h('section', { class: 'fin-nums' },
+          numero('dourado', reais(somaC('total')), 'Cobrado do mês', `aluguel ${reais(somaC('aluguel'))} · taxas ${reais(somaC('taxas'))} · energia ${reais(somaC('energia'))} · lavanderia ${reais(somaC('lavanderia'))}`),
+          numero('verde', reais(somaC('pago')), 'Já recebido', `${pagas} de ${r.cobrancas.length} cobranças`),
+          numero(aReceber ? 'vermelho' : 'verde', reais(aReceber), 'Falta receber', aReceber ? 'cobranças em aberto' : 'tudo recebido ✓'),
+          numero('azul', reais(r.lavagens.reduce((a, l) => a + l.valor, 0)), 'Lavanderia', `${r.lavagens.reduce((a, l) => a + l.quantidade, 0)} lavagem(ns)`)),
         h('p', { class: 'fut-comp' }, 'Receitas ', varia(r.receitas, r.receitasAnt), ' · Despesas ', varia(r.despesas, r.despesasAnt), ' · Energia ', varia(r.energiaTotal, r.energiaAnt)),
         h('div', { class: 'fut-duas' },
           h('section', { class: 'caixa' }, h('h2', {}, 'De onde veio o dinheiro'), r.receitasCat.length ? barras(r.receitasCat, r.receitas, 'b-rec') : h('p', { class: 'peq' }, 'Sem receitas lançadas.')),
           h('section', { class: 'caixa' }, h('h2', {}, 'Para onde foi'), r.despesasCat.length ? barras(r.despesasCat, r.despesas, 'b-des') : h('p', { class: 'peq' }, 'Sem despesas lançadas.'))),
         h('div', { class: 'fut-duas' },
-          h('section', { class: 'caixa' }, h('h2', {}, `Aluguéis do mês · ${pagas} de ${r.cobrancas.length} pagos`),
+          h('section', { class: 'caixa' }, h('h2', {}, `Cobranças referentes a ${MESES[+comp.slice(5, 7) - 1]} · ${pagas} de ${r.cobrancas.length} pagas`),
             tabela(['Unidade', 'Locatário', 'Cobrado', 'Recebido', 'Situação'], r.cobrancas, c => [
-              h('td', {}, c.unidade), h('td', {}, c.pessoa || '—'), h('td', { class: 'num' }, reais(c.total)), h('td', { class: 'num' }, reais(c.pago)),
+              h('td', {}, c.unidade, c.temporada ? h('span', { class: 'peq' }, ' (temporada)') : null), h('td', {}, c.pessoa || '—'), h('td', { class: 'num' }, reais(c.total)), h('td', { class: 'num' }, reais(c.pago)),
               h('td', {}, h('span', { class: 'tag ' + COB[c.situacao][1] }, COB[c.situacao][0]))], () => {}, 'Sem cobranças neste mês.')),
           h('section', { class: 'caixa' }, h('h2', {}, `Energia por unidade · ${reais(r.energiaTotal)}`),
             r.energia.length ? barras(r.energia, Math.max(1, ...r.energia.map(e => e.valor)), 'b-ene') : h('p', { class: 'peq' }, 'Contas de energia não lançadas para este mês.'),
             h('p', { class: 'peq' }, `Pago à Celesc (despesa do caixa): ${reais(r.energiaDespesa)}`))),
+        h('section', { class: 'caixa' }, h('h2', {}, `Despesas do mês (${desp.length}) · ${reais(r.despesas)}`),
+          tabela(['Data', 'Categoria', 'Unidade', 'Descrição', 'Valor'], desp, l => [h('td', {}, dataBR(l.data)), h('td', {}, l.categoria), h('td', {}, l.unidade || '—'),
+            h('td', {}, [l.descricao, l.pessoa].filter(Boolean).join(' · ') || '—'), h('td', { class: 'num neg' }, reais(l.valor))], () => {}, 'Nenhuma despesa lançada. Lance em "Despesas e receitas".')),
         (r.entraram.length || r.sairam.length) ? h('section', { class: 'caixa' }, h('h2', {}, 'Movimento de locatários'),
           h('ul', { class: 'fut-lista fut-mov' }, r.entraram.map(p => h('li', {}, '➜ Entrou: ', h('b', {}, p.nome), ` · ${p.unidade} · ${dataBR(p.data)}`)),
             r.sairam.map(p => h('li', {}, '← Saiu: ', h('b', {}, p.nome), ` · ${p.unidade} · ${dataBR(p.data)}`)))) : null,
@@ -559,19 +678,33 @@
     const unSel = params.get('ap') || (base && base.unidade) || '';
     const pes = base ? r.pessoas.find(p => p.unidade === base.unidade) || {} : {};
     const opAp = r.unidades.map(u => [u.id, u.id + ' · ' + ((SIT[u.situacao] || [''])[0]) + (u.locatario ? ' · ' + u.locatario : '')]);
+    const tipoIni = params.get('tipo') === 'temporada' || (base && base.tipo === 'temporada') ? 'temporada' : 'mensal';
+    const blocoTemp = h('div', { class: 'largo fut-temp campos' },
+      h('div', {}, h('label', {}, 'Período'), h('div', { class: 'fut-chips' },
+        h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'unidade_prazo', value: 'dia', checked: true }), h('span', {}, 'em dias')),
+        h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'unidade_prazo', value: 'mes' }), h('span', {}, 'em meses')))),
+      campo('dias', 'Quantos dias', base && base.dias ? String(base.dias) : '10', { tipo: 'number' }),
+      campo('meses', 'Quantos meses', '1', { tipo: 'number' }),
+      campo('valor_total', 'Valor total da temporada (R$)', base && base.valor_total ? String(base.valor_total).replace('.', ',') : '', { modo: 'decimal', dica: 'energia, taxas e internet inclusas' }),
+      campo('pagamento', 'Pagamento', 'duas', { opcoes: [['duas', 'Metade na reserva (assinatura) + metade na saída'], ['uma', 'Tudo na assinatura']] }),
+      campo('data_reserva', 'Data da reserva / 1º pagamento', hojeISO(), { tipo: 'date' }));
     const f = h('form', { class: 'campos fut-contrato', novalidate: true },
+      h('div', { class: 'largo' }, h('div', { class: 'fut-chips', role: 'radiogroup', 'aria-label': 'Tipo de contrato' },
+        h('label', { class: 'fut-chip grande' }, h('input', { type: 'radio', name: 'tipo', value: 'mensal', checked: tipoIni === 'mensal' }), h('span', {}, '🏠 Mensal — 3, 4, 6 ou 12 meses')),
+        h('label', { class: 'fut-chip grande' }, h('input', { type: 'radio', name: 'tipo', value: 'temporada', checked: tipoIni === 'temporada' }), h('span', {}, '🧳 Temporada — alguns dias ou 1 mês, valor fechado')))),
       h('h3', { class: 'largo fut-passo' }, '1. Apartamento e prazo'),
       campo('unidade', 'Apartamento', unSel, { opcoes: [['', 'Escolha…']].concat(opAp) }),
+      blocoTemp,
       h('div', {}, h('label', {}, 'Prazo do contrato'),
         h('div', { class: 'fut-chips', role: 'radiogroup' }, PRAZOS.map(n => h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'prazo_meses', value: String(n), checked: n === ((base && base.prazo_meses) || 12) }), h('span', {}, n + ' meses'))),
           h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'prazo_meses', value: 'outro' }), h('span', {}, 'outro')),
           h('input', { name: 'prazo_outro', inputmode: 'numeric', placeholder: 'meses', class: 'fut-outro', 'aria-label': 'Outro prazo em meses' }))),
-      campo('inicio', 'Início (entrega das chaves)', base ? base.fim : hojeISO(), { tipo: 'date' }),
+      campo('inicio', 'Entrada (entrega das chaves)', base ? base.fim : hojeISO(), { tipo: 'date' }),
       h('div', {}, h('label', {}, 'Fim do contrato'), h('output', { class: 'fut-fim', name: 'fim' }, '—')),
       campo('aluguel', 'Aluguel (R$)', base ? String(base.aluguel).replace('.', ',') : '', { modo: 'decimal' }),
       campo('dia_venc', 'Vencimento (dia do mês)', String(r.dia_venc), { tipo: 'number' }),
-      h('h3', { class: 'largo fut-passo' }, '2. Garantia'),
-      h('div', { class: 'largo' }, h('div', { class: 'fut-chips', role: 'radiogroup' },
+      h('h3', { class: 'largo fut-passo fut-garantia' }, '2. Garantia'),
+      h('div', { class: 'largo fut-garantia' }, h('div', { class: 'fut-chips', role: 'radiogroup' },
         h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'com', checked: !base || base.garantia !== 'sem caução' }), h('span', {}, 'Com caução')),
         h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'sem', checked: !!base && base.garantia === 'sem caução' }), h('span', {}, 'Sem caução')))),
       campo('caucao', 'Valor da caução (R$)', '', { modo: 'decimal', dica: 'até 11 meses: 1 aluguel · 12 meses ou mais: 2 aluguéis (pode mudar)' }),
@@ -606,6 +739,23 @@
         q('kit').value = String(u.kit || '').replace(/\.0$/, ''); q('uc').value = String(u.uc || '').replace(/\.0$/, '');
         if (!q('telefone').value && u.telefone && base) q('telefone').value = u.telefone;
       }
+      const temp = (f.querySelector('[name="tipo"]:checked') || {}).value === 'temporada';
+      f.classList.toggle('modo-temporada', temp);
+      ['prazo_meses', 'aluguel', 'dia_venc', 'caucao', 'lancar_caucao'].forEach(k => { const el = f.querySelector(`[name="${k}"]`); const box = el && (el.closest('.fut-chips') ? el.closest('.fut-chips').parentElement : el.parentElement); if (box) box.hidden = temp; });
+      f.querySelectorAll('.fut-garantia').forEach(x => { x.hidden = temp; });
+      blocoTemp.hidden = !temp;
+      if (temp) {
+        const porMes = (f.querySelector('[name="unidade_prazo"]:checked') || {}).value === 'mes';
+        q('dias').parentElement.hidden = porMes; q('meses').parentElement.hidden = !porMes;
+        const qt = +(porMes ? q('meses').value : q('dias').value) || 0, ini = q('inicio').value;
+        const fimT = ini && qt ? (porMes ? somarMesesJS(ini, qt) : new Date(Date.parse(ini + 'T12:00:00Z') + qt * 86400000).toISOString().slice(0, 10)) : '';
+        q('fim').value = fimT ? dataBR(fimT) : '—';
+        const u = r.unidades.find(x => x.id === q('unidade').value), tot = num(q('valor_total').value), duas = q('pagamento').value === 'duas';
+        f.querySelector('.fut-resumo').replaceChildren(u && qt && ini && tot ? h('p', {}, h('b', {}, `${u.id}: temporada de ${qt} ${porMes ? (qt > 1 ? 'meses' : 'mês') : (qt > 1 ? 'dias' : 'dia')}, de ${dataBR(ini)} a ${dataBR(fimT)}`),
+          ` · ${reais(tot)} ` + (duas ? `(${reais(Math.round(tot * 50) / 100)} na reserva + ${reais(tot - Math.round(tot * 50) / 100)} na saída)` : 'à vista'), ' · sem caução · energia e taxas inclusas',
+          h('br'), h('span', { class: 'peq' }, `O painel cria as cobranças das parcelas e não cobra aluguel mensal deste apartamento enquanto durar a temporada.`)) : h('p', { class: 'peq' }, 'Escolha o apartamento, a entrada, o período e o valor total.'));
+        return;
+      }
       const n = meses(), al = num(q('aluguel').value), ini = q('inicio').value, com = (f.querySelector('[name="garantia"]:checked') || {}).value !== 'sem';
       const fim = ini && n ? somarMesesJS(ini, n) : '';
       q('fim').value = fim ? dataBR(fim) : '—';
@@ -622,12 +772,12 @@
     K().aoEnviar(f, async fd => {
       const dados = Object.fromEntries(fd.entries()); dados.prazo_meses = String(meses()); delete dados.prazo_outro;
       if (!dados.unidade) throw new Error('Escolha o apartamento.');
-      if (!(+dados.prazo_meses > 0)) throw new Error('Escolha o prazo.');
+      if (dados.tipo !== 'temporada' && !(+dados.prazo_meses > 0)) throw new Error('Escolha o prazo.');
       const x = await api('future.contrato.gerar', dados);
       avisar(`${x.unidade}: contrato e laudo gerados na pasta de ${x.nome}.`);
       const link = (u, t) => h('a', { class: 'btn sec', href: u, target: '_blank', rel: 'noopener noreferrer' }, t);
       saida.replaceChildren(h('section', { class: 'caixa fut-pronto' }, h('h2', {}, '✓ Contrato pronto — ' + x.unidade + ' · ' + x.nome),
-        h('p', { class: 'peq' }, `Termina em ${dataBR(x.fim)}.` + (x.caucao ? ` Caução: ${reais(x.caucao)}.` : ' Sem caução.') + ' Confira o texto antes de imprimir; os Google Docs podem ser ajustados.'),
+        h('p', { class: 'peq' }, `Termina em ${dataBR(x.fim)}.` + (x.temporada ? ` Temporada de ${reais(x.total)} · ${x.parcelas} cobrança(s) criada(s) em Cobranças.` : x.caucao ? ` Caução: ${reais(x.caucao)}.` : ' Sem caução.') + ' Confira o texto antes de imprimir; os Google Docs podem ser ajustados.'),
         h('div', { class: 'fut-acoes' }, link(x.contrato.pdf, '📄 Contrato (PDF)'), link(x.contrato.doc, '✎ Contrato (editar)'), link(x.laudo.pdf, '📋 Laudo (PDF)'), link(x.laudo.doc, '✎ Laudo (editar)'), link(x.pasta_url, '📁 Pasta'),
           x.telefone ? h('a', { class: 'btn wa', href: whats(x.telefone, `Olá, ${primeiro(x.nome)}! Seu contrato de locação do ${x.unidade.replace('AP ', 'apartamento ')} está pronto. Vou te mandar o contrato e o laudo de vistoria para conferir e assinar.`), target: '_blank', rel: 'noopener noreferrer' }, 'Avisar no WhatsApp') : null)));
       saida.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -635,8 +785,8 @@
     const lista = K().tabela(['Apartamento', 'Locatário', 'Prazo', 'Garantia', 'Documentos'], r.contratos, c => [
       h('td', { 'data-r': 'Apartamento' }, h('strong', {}, c.unidade), h('div', { class: 'peq' }, 'gerado ' + dataBR(c.criado_em.slice(0, 10)) + (c.criado_por ? ' · ' + c.criado_por.split(' ')[0] : ''))),
       h('td', { 'data-r': 'Locatário' }, c.nome),
-      h('td', { 'data-r': 'Prazo' }, `${c.prazo_meses} meses`, h('div', { class: 'peq' }, dataBR(c.inicio) + ' a ' + dataBR(c.fim))),
-      h('td', { 'data-r': 'Garantia' }, c.caucao ? 'Caução ' + reais(c.caucao) : 'Sem caução'),
+      h('td', { 'data-r': 'Prazo' }, c.tipo === 'temporada' ? `Temporada · ${c.dias} dias` : `${c.prazo_meses} meses`, h('div', { class: 'peq' }, dataBR(c.inicio) + ' a ' + dataBR(c.fim))),
+      h('td', { 'data-r': 'Garantia' }, c.tipo === 'temporada' ? reais(c.valor_total) + ' fechado' : c.caucao ? 'Caução ' + reais(c.caucao) : 'Sem caução'),
       h('td', { 'data-r': 'Documentos' }, h('div', { class: 'fut-docs' },
         c.pdf_url ? h('a', { class: 'fut-doc', href: c.pdf_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📄 contrato') : null,
         c.laudo_pdf ? h('a', { class: 'fut-doc', href: c.laudo_pdf, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📋 laudo') : null,
@@ -646,7 +796,7 @@
     const vence = r.vencendo.length ? h('section', { class: 'caixa' }, h('h2', {}, 'Contratos terminando (45 dias)'),
       h('ul', { class: 'fut-lista fut-renovar' }, r.vencendo.map(u => h('li', {}, h('b', {}, u.id), ' · ', u.locatario || '—', ' · termina ', dataBR(u.saida), ' ',
         h('button', { type: 'button', class: 'btn mini sec', onclick: () => { const c = r.contratos.find(x => x.unidade === u.id); ir('contratos', c ? { renovar: c.id, ap: '' } : { ap: u.id, renovar: '' }); } }, 'Fazer o novo contrato'))))) : null;
-    mostrar(topo('Edifício Future', 'Contratos de locação', 'Contrato e laudo de vistoria com as cláusulas de sempre · 3, 4, 6 ou 12 meses · com ou sem caução',
+    mostrar(topo('Edifício Future', 'Contratos de locação', 'Mensal (3, 4, 6, 12 meses, com ou sem caução) ou por temporada (dias ou 1 mês, valor fechado) · contrato + laudo na pasta do morador',
         [h('a', { class: 'btn sec', href: '#/future/pessoas' }, 'Locatários')]),
       base ? h('p', { class: 'nota' }, `Renovação de ${base.nome} (${base.unidade}): o novo contrato começa no fim do anterior (${dataBR(base.fim)}). Confira os dados.`) : null,
       h('section', { class: 'caixa' }, h('h2', {}, base ? 'Renovar contrato' : 'Novo contrato'), f),
@@ -717,6 +867,7 @@
         case 'pessoas': return pessoas(params);
         case 'config': return config();
         case 'contratos': return contratos(params);
+        case 'lavanderia': return lavanderia(params);
         default: return visao(params);
       }
     }
