@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.6';
+var VERSAO = '8.5.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -78,7 +78,7 @@ var ESQUEMA = {
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
-    'processo_id', 'lembretes', 'lembrete_em', 'pasta_url'],
+    'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
@@ -802,7 +802,6 @@ function salvarCliente_(d, u) {
     if (!c.id) {
       var falta = [];
       if (!doc) falta.push(c.tipo === 'PJ' ? 'CNPJ' : 'CPF');
-      if (c.tipo !== 'PJ' && !String(c.rg || '').trim()) falta.push('RG');
       if (c.tipo !== 'PJ' && !String(c.profissao || '').trim()) falta.push('profissão');
       if (!String(c.endereco || '').trim()) falta.push('endereço');
       if (falta.length) throw falha_('Para cadastrar, preencha: ' + falta.join(', ') + '.');
@@ -846,9 +845,11 @@ function salvarCliente_(d, u) {
     registrar_(u.usuario, 'cliente criado', dados.id + ' ' + nome);
     return { id: dados.id, novo: true };
   });
+  // 8.5.0 (pedido da usuária): a pasta nova só nasce quando algum documento é gerado.
+  // No cadastro, só liga à pasta que já existe no Drive com o mesmo nome.
   if (resultado.novo) {
-    try { resultado.pasta = criarPastaCliente_({ id: resultado.id }, u); }
-    catch (e) { resultado.avisoPasta = e.publico ? e.message : 'Cliente salvo, mas a pasta no Drive não foi criada. Use "Criar pasta" na ficha.'; }
+    try { resultado.pasta = criarPastaCliente_({ id: resultado.id, soVincular: true }, u); }
+    catch (e) { /* sem pasta por enquanto: será criada ao gerar documento */ }
   }
   return resultado;
 }
@@ -884,6 +885,7 @@ function criarPastaCliente_(d, u) {
   var nomePasta = nomePasta_(c.nome);
   var pasta = acharPasta_(raiz, c.nome);
   var existente = !!pasta;
+  if (!pasta && d.soVincular) return { pasta_url: '', existente: false, adiada: true };
   if (!pasta) pasta = raiz.createFolder(nomePasta);
   if (!existente) criarFicha_(pasta, c);
   comTrava_(function () {
@@ -1454,6 +1456,7 @@ function salvarProcesso_(d, u) {
     if (numero && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numero)) {
       throw falha_('Número do processo fora do padrão CNJ (0000000-00.0000.0.00.0000).');
     }
+    if (numero && !cnjValido_(numero)) throw falha_('O número ' + numero + ' tem o dígito verificador errado (os 2 números depois do traço): o PJe/eproc não vai achar. Confira no processo e digite de novo.');
     if (p.proximo_ato_data && !/^\d{4}-\d{2}-\d{2}$/.test(p.proximo_ato_data)) throw falha_('Data do próximo ato inválida.');
     if (p.cliente_id && !tabela_('Clientes').linhas.some(function (c) { return c.id === p.cliente_id; })) {
       throw falha_('Cliente não encontrado.');
@@ -1989,16 +1992,19 @@ function faseDoMovimento_(mov) {
   var t = normalizar_(mov || '');
   if (!t) return '';
   if (/desarquiv/.test(t)) return 'andamento';
-  if (/arquivad|arquivamento|baixa definitiva|extint|remetidos? os autos .*arquivo/.test(t)) return 'extinto';
+  // 8.5.0: "conclusão para julgamento", pauta, audiência "de instrução e julgamento", "a depender do julgamento" NÃO são sentença
+  var semJulg = /conclus|para julgamento|pauta|diligencia|a depender|instrucao e julgamento|de julgamento \(/.test(t);
+  if (/extincao da execucao|extinta a execucao|extinto o cumprimento|arquivad|arquivamento|baixa definitiva|remetidos? os autos .*arquivo/.test(t) || (/\bextint[oa]\b/.test(t) && !/execucao|cumprimento/.test(t))) return 'extinto';
+  if (/juiz leigo/.test(t)) return 'sentenca';
   if (/homologa/.test(t)) return 'homologacao';
-  if (/acordo/.test(t) && !/acordao/.test(t)) return 'acordo';
+  if (/\bacordo\b/.test(t) && !/acordao/.test(t)) return 'acordo';
   if (/cumprimento de sentenca|execucao|penhora|sisbajud|bacenjud|renajud|alvara|requisicao de pequeno valor|\brpv\b|precatorio/.test(t)) return 'execucao';
-  if (/recurso|apelac|agravo|acordao|embargos de declaracao|contrarraz|remetidos? os autos .*(tribunal|instancia|turma|tst|stj)|2o grau|\(2º grau\)/.test(t)) return 'recurso';
+  if (/\brecursos?\b|apelac|agravo|acordao|embargos de declaracao|contrarraz|remetidos? os autos .*(tribunal|instancia|turma|tst|stj)|remessa \(em grau|2o grau|\(2º grau\)/.test(t) && !/^conclus|sobrestamento|suspens|anulac/.test(t)) return 'recurso';
   if (/audiencia/.test(t) && /instrucao/.test(t) && !/realizada|cancelad/.test(t)) return 'instrucao';
   if (/(pericia|perito|pericial)/.test(t) && /(designad|nomead|agendad|marcad|data)/.test(t)) return 'pericia';
   if ((/audiencia/.test(t) && /(conciliacao|mediacao|inicial|\buna\b)/.test(t) || /cejusc/.test(t)) && /(designad|redesignad|marcad|agendad|pauta)/.test(t)) return 'conciliacao';
-  if (/sentenca|julgad[oa] (im)?procedente|procedencia|improcedencia|julgamento/.test(t)) return 'sentenca';
-  if (/distribuid|peticionamento|protocolad|citacao|citad[oa]|mandado de citacao/.test(t)) return 'ajuizado';
+  if (!semJulg && /sentenca|julgad[oa] (im)?procedente|procedencia|improcedencia|julgamento/.test(t)) return 'sentenca';
+  if (/distribuid|peticionamento|protocolad|\bcitacao|citad[oa]\b|mandado de citacao/.test(t)) return 'ajuizado';
   return 'andamento';
 }
 
@@ -2368,6 +2374,7 @@ function rodarRobo_(quem) {
     try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
+    try { ctx.intim.adiar = true; arquivarMovimentos_(ctx.intim, ctx.prazos, true); regravarMudadas_(ctx.intim); } catch (eM) { ctx.intim.adiar = false; }
     try { ctx.prazos.adiar = true; atribuirResponsaveis_(ctx.prazos, ctx.procs); regravarMudadas_(ctx.prazos); } catch (e3) { ctx.prazos.adiar = false; }
     [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
     if (ctx.gmailParcial) erros.push('Gmail: leitura parcial por causa do limite de tempo do Google; o resto vem na próxima rodada (ou clique em Atualizar agora).');
@@ -2545,6 +2552,15 @@ function diffDias_(a, b) {
 /* ---------- Leitura do Gmail (eproc TJSC/JFSC e PJe TRT) ---------- */
 
 var RE_CNJ = /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/;
+
+/** Confere o dígito verificador do número CNJ (módulo 97). Número com dígito errado não é achado no PJe/eproc nem no DataJud. */
+function cnjValido_(n) {
+  var m = /^(\d{7})-(\d{2})\.(\d{4})\.(\d)\.(\d{2})\.(\d{4})$/.exec(String(n || '').trim());
+  if (!m) return false;
+  var resto = 0, dig = m[1] + m[3] + m[4] + m[5] + m[6] + '00';
+  for (var i = 0; i < dig.length; i++) resto = (resto * 10 + +dig[i]) % 97;
+  return +m[2] === 98 - resto;
+}
 
 function lerGmail_(ctx) {
   var desde = parseInt(config_('ROBO_GMAIL_DESDE'), 10) || (Date.now() - 30 * 86400000);
@@ -4469,7 +4485,8 @@ function listarAssinaturas_(d) {
     .filter(function (a) { return !d.cliente_id || a.cliente_id === d.cliente_id; })
     .sort(function (a, b) { return a.gerado_em < b.gerado_em ? -1 : 1; })
     .map(function (a) { return { id: a.id, cliente_id: a.cliente_id, cliente: a.cliente_nome, documentos: a.documentos, tipo_acao: (TIPOS_ACAO[a.tipo_acao] || {}).nome || '', gerado_em: a.gerado_em,
-      gerado_por: a.gerado_por, situacao: a.situacao, dias: diffDias_(hoje, diaSP_(a.gerado_em)), assinado_em: a.assinado_em, processo_id: a.processo_id }; });
+      gerado_por: a.gerado_por, situacao: a.situacao, dias: diffDias_(hoje, diaSP_(a.gerado_em)), assinado_em: a.assinado_em, processo_id: a.processo_id,
+      honorario: a.honorarios && !a.honorarios_lancados ? (function () { try { return JSON.parse(a.honorarios).resumo || 'honorário combinado'; } catch (e) { return 'honorário combinado'; } })() : '' }; });
 }
 /** "✓ Assinado" (abre a petição inicial), "Não vai assinar" (arquiva) ou "Voltar a aguardar". */
 function marcarAssinatura_(d, u) {
@@ -4485,13 +4502,20 @@ function marcarAssinatura_(d, u) {
   }
   var tabA = tabela_('Assinaturas'), a = tabA.linhas.filter(function (x) { return x.id === d.id; })[0];
   if (!a) throw falha_('Registro de assinatura não encontrado.');
-  var agora = new Date().toISOString(), proc = '';
+  var agora = new Date().toISOString(), proc = '', resLanc = null;
   if (d.acao === 'assinado') {
     var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === a.cliente_id; })[0];
     if (!c) throw falha_('Cliente não encontrado.');
     proc = a.processo_id && tabela_('Processos').linhas.some(function (p) { return p.id === a.processo_id && p.status !== 'arquivado'; }) ? a.processo_id : abrirPeticaoInicial_(c, a.tipo_acao, a.parte_contraria, a.documentos, u);
-    atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc });
-    registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos);
+    // honorário combinado ao gerar o contrato: só agora vai para o Financeiro (8.5.0)
+    var lanc = [];
+    if (a.honorarios && !a.honorarios_lancados) {
+      try { var hp = JSON.parse(a.honorarios); lanc = lancarHonorariosForm_(hp.f || {}, c, hp.descricao || 'Honorários', u); }
+      catch (eH) { throw falha_('Não consegui lançar o honorário no Financeiro: ' + (eH.publico ? eH.message : 'confira os valores do contrato') + '. Tente de novo.'); }
+    }
+    atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc, honorarios_lancados: a.honorarios ? agora : '' });
+    registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos + (lanc.length ? ' + financeiro' : ''));
+    resLanc = { lancados: lanc.length, ja_lancados: lanc.repetidos || 0 };
   } else if (d.acao === 'desistiu') {
     atualizarLinha_(tabA, a, { situacao: 'não assinou', assinado_em: agora, assinado_por: u.nome || u.usuario });
     // petição inicial aberta antes (casos antigos): arquiva o processo sem número e cancela a tarefa da inicial
@@ -4514,7 +4538,7 @@ function marcarAssinatura_(d, u) {
       atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: u.usuario, historico: historicoMais_(t.historico, u, d.acao === 'assinado' ? 'documentos assinados' : 'cliente não vai assinar'), atualizado_em: agora, atualizado_por: u.usuario });
     });
   }
-  return { ok: true, processo_id: proc };
+  return Object.assign({ ok: true, processo_id: proc }, resLanc || {});
 }
 /** Robô: procuração/contrato sem assinatura há 7 dias → tarefa "lembrar o cliente" (de novo a cada 7 dias, até 3 vezes). */
 function lembrarAssinaturas_(ctx) {
@@ -5744,6 +5768,17 @@ function clausulaHonorarios_(h, parcelas) {
   return txt + '.';
 }
 
+/** Texto curto do honorário combinado no formulário ("Parcelado: R$ 3.000,00 em 3x"). */
+function resumoHonForm_(f) {
+  var v = function (x) { return 'R$ ' + (dinheiro_(x) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+  if (f.forma === 'avista') return 'À vista: ' + v(f.valor_total);
+  if (f.forma === 'parcelado') return 'Parcelado: ' + v(f.valor_total) + ' em ' + (parseInt(f.parcelas, 10) || 1) + 'x';
+  if (f.forma === 'percentual') return 'Êxito: ' + f.percentual + '%';
+  if (f.forma === 'misto') return v(f.valor_total) + ' em ' + (parseInt(f.parcelas, 10) || 1) + 'x + ' + f.percentual + '% no êxito';
+  if (f.forma === 'mensal') return 'Mensal: ' + v(f.valor_mensal);
+  return '';
+}
+
 /** Lança no Financeiro o que foi contratado no formulário. */
 function lancarHonorariosForm_(f, c, descricao, u) {
   var ids = [];
@@ -6005,30 +6040,35 @@ function gerarDocumentos_(d, u) {
     catch (e) { impressao = ''; }
   }
   gerados.forEach(function (g) { delete g._docId; delete g._ordem; });
-  var lancados = [];
+  // 8.5.0 (pedido da usuária): o honorário só entra no Financeiro DEPOIS que o cliente assina a procuração e o contrato.
+  // Ao gerar, o que foi combinado fica guardado no registro "aguardando assinatura" e é lançado no "✓ Assinado".
+  var lancados = [], honPendente = '';
+  var assinaveis = quais.filter(function (k) { return /^procuracao|^contrato|^prestacao|^assessoria/.test(k); });
   if (f.lancar && f.forma && f.forma !== 'cadastrado' && quais.some(function (k) { return M(k).honorarios || M(k).mensal; })) {
-    lancados = lancarHonorariosForm_(f, c, (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : ''), u);
+    var descHon = (tipo ? tipo.nome : 'Honorários') + (contra ? ' — ' + contra : '');
+    honPendente = JSON.stringify({ f: { forma: f.forma, valor_total: f.valor_total, parcelas: f.parcelas, primeiro_vencimento: f.primeiro_vencimento, dia_demais: f.dia_demais,
+      percentual: f.percentual, valor_mensal: f.valor_mensal, dia_vencimento: f.dia_vencimento }, descricao: descHon, resumo: resumoHonForm_(f) });
+    if (!assinaveis.length) { lancados = lancarHonorariosForm_(f, c, descHon, u); honPendente = ''; }
   }
   registrar_(u.usuario, 'documentos gerados', c.id + ' ' + quais.join(',') + (lancados.length ? ' + financeiro' : ''));
   // Procuração/contrato: nem todo documento gerado é assinado (pedido da usuária). Fica "aguardando assinatura"; só quando alguém
   // aperta "✓ Assinado" o cliente entra em Processos como "Petição inicial (a ajuizar)" com a tarefa. Sem assinatura em 7 dias, o robô lembra.
   var aAjuizar = null, assinatura = null;
-  var assinaveis = quais.filter(function (k) { return /^procuracao|^contrato|^prestacao|^assessoria/.test(k); });
   if (assinaveis.length) {
     try {
       assinatura = comTrava_(function () {
         var tabA = tabela_('Assinaturas'), agora = new Date().toISOString();
         var nomes = assinaveis.map(function (k) { return (MODELOS[k] || {}).nome || k; });
         var ja = tabA.linhas.filter(function (x) { return x.cliente_id === c.id && x.situacao === 'aguardando'; })[0];
-        if (ja) { atualizarLinha_(tabA, ja, { documentos: nomes.join(' · '), gerado_em: agora, gerado_por: u.usuario, tipo_acao: d.tipo_acao || ja.tipo_acao, parte_contraria: contra || ja.parte_contraria, lembretes: '0', lembrete_em: '' }); return ja.id; }
+        if (ja) { atualizarLinha_(tabA, ja, { documentos: nomes.join(' · '), gerado_em: agora, gerado_por: u.usuario, tipo_acao: d.tipo_acao || ja.tipo_acao, parte_contraria: contra || ja.parte_contraria, lembretes: '0', lembrete_em: '', honorarios: honPendente || ja.honorarios || '' }); return ja.id; }
         var a = { id: novoId_('AS'), cliente_id: c.id, cliente_nome: c.nome, documentos: nomes.join(' · '), tipo_acao: d.tipo_acao || '', parte_contraria: contra || '', gerado_em: agora,
-          gerado_por: u.usuario, situacao: 'aguardando', assinado_em: '', assinado_por: '', processo_id: '', lembretes: '0', lembrete_em: '', pasta_url: c.pasta_url || '' };
+          gerado_por: u.usuario, situacao: 'aguardando', assinado_em: '', assinado_por: '', processo_id: '', lembretes: '0', lembrete_em: '', pasta_url: c.pasta_url || '', honorarios: honPendente, honorarios_lancados: '' };
         inserirLinha_(tabA, a);
         return a.id;
       });
     } catch (eA) { /* os documentos já foram gerados */ }
   }
-  return { a_ajuizar: aAjuizar, assinatura: assinatura, assinatura_docs: assinaveis.length, gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
+  return { honorario_pendente: !!(honPendente && assinatura), a_ajuizar: aAjuizar, assinatura: assinatura, assinatura_docs: assinaveis.length, gerados: gerados, pasta_url: c.pasta_url || ('https://drive.google.com/drive/folders/' + c.pasta_id), pasta_assinar: pastaAssinar ? pastaAssinar.getUrl() : '', imprimir_tudo: impressao, faltando: faltando, lancados: lancados.length, ja_lancados: lancados.repetidos || 0 };
 }
 
 /* ================================================================== */
@@ -6917,10 +6957,64 @@ function mudarFaseProcesso_(d, u) {
  *  - prazos "a definir" ganham data (regra do prazo mais curto); Gmail dos últimos 10 dias relido (sem duplicar).
  * d.aplicar = false só conta (prévia).
  */
+/**
+ * 8.5.0: intimação que não pede nada (só movimentação, sem prazo) ou cujo prazo já foi cumprido/baixado sai da lista "abertas".
+ * Nada é apagado: continua em "Todas" e na ficha do processo. Fica marcada como vista pelo robô (não vai para "Aguardando o seu OK").
+ */
+function arquivarMovimentos_(tabI, tabZ, aplicar) {
+  var prazos = {}, comTarefa = {}, n = { movimento: 0, prazoBaixado: 0 };
+  tabZ.linhas.forEach(function (z) { prazos[z.id] = z; });
+  tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) comTarefa[m[1]] = 1; });
+  var limite = new Date(Date.now() - 7 * 86400000).toISOString(), agora = new Date().toISOString();
+  tabI.linhas.forEach(function (i) {
+    if (i.terminada_por || comTarefa[i.id]) return;
+    var z = prazos[i.prazo_id], motivo = '';
+    if (z && (z.situacao === 'cumprido' || z.situacao === 'cancelado')) motivo = 'prazoBaixado';
+    else if (!i.prazo_id && (i.recebido_em || '') < limite) motivo = 'movimento';
+    if (!motivo) return;
+    n[motivo]++;
+    if (aplicar) atualizarLinha_(tabI, i, { terminada_por: motivo === 'movimento' ? 'robô (só movimentação)' : 'robô (prazo baixado)', terminada_em: agora, ok_por: 'robô', ok_em: agora });
+  });
+  return n;
+}
+
+/** Movimentações do processo em ordem (DataJud + avisos do tribunal), para refazer a etapa. */
+function movimentosDoProcesso_(p, intimPorNumero) {
+  var movs = [];
+  try { var a = JSON.parse(p.andamentos || '[]'); if (Array.isArray(a)) a.forEach(function (x) { if (x && x.n) movs.push({ d: String(x.d || ''), n: String(x.n) }); }); } catch (e) { /* "-" */ }
+  (intimPorNumero[p.numero] || []).forEach(function (i) {
+    var dia = /^PJe/.test(i.fonte || '') ? (String(i.chave || '').split('|')[2] || i.recebido_em) : i.recebido_em;
+    movs.push({ d: String(dia || ''), n: String(i.movimento || '').replace(/ — .*$/, '') });
+  });
+  return movs.sort(function (x, y) { return x.d < y.d ? -1 : x.d > y.d ? 1 : 0; });
+}
+
+/** Etapa que a história do processo indica (só para a frente, como o robô) e se está mesmo encerrado. */
+function faseDaHistoria_(p, movs) {
+  var f = p.numero ? 'ajuizado' : 'contratado', iExt = -1;
+  movs.forEach(function (m, k) {
+    var nf = faseDoMovimento_(m.n);
+    if (nf && (avancaFase_(f, nf) || (f === 'extinto' && /desarquiv/i.test(normalizar_(m.n))))) f = nf;
+    if (nf === 'extinto') iExt = k;
+  });
+  var encerrado = false;
+  if (f === 'extinto') {
+    // depois da baixa/extinção só publicação, decurso, "Definitivo", certidão…? Então está encerrado de verdade.
+    encerrado = !movs.slice(iExt + 1).some(function (m) {
+      return /conclus|despacho|decisao|redistribu|audiencia|peticao|recurso|desarquiv|iniciada|penhora|sisbajud|alvara|calculo|liquidacao|citacao/.test(normalizar_(m.n));
+    });
+    if (!encerrado) f = '';
+  }
+  return { fase: f, encerrado: encerrado };
+}
+
 function revisaoGeral_(d, u) {
-  var aplicar = !!d.aplicar, r = { fase: 0, encerrados: 0, tribunal: 0, area: 0, clienteLigado: 0, clientesCriados: 0, cadastros: 0, semNumero: [], semCliente: 0, prazosDefinidos: 0, faltando: {} };
+  var aplicar = !!d.aplicar, r = { fase: 0, encerrados: 0, tribunal: 0, area: 0, clienteLigado: 0, clientesCriados: 0, cadastros: 0, semNumero: [], semCliente: 0, prazosDefinidos: 0, faltando: {},
+    etapas: 0, etapasPor: {}, arquivados: 0, numerosErrados: [], intimMovimento: 0, intimPrazoBaixado: 0, prazosVencidos: 0 };
   comTrava_(function () {
     var tabP = tabela_('Processos'), tabC = tabela_('Clientes');
+    var intimPorNumero = {};
+    tabela_('Intimacoes').linhas.forEach(function (i) { if (i.numero) (intimPorNumero[i.numero] = intimPorNumero[i.numero] || []).push(i); });
     var porNome = {};
     tabC.linhas.forEach(function (c) { var k = normalizar_(c.nome); (porNome[k] = porNome[k] || []).push(c); });
     tabP.adiar = true; tabC.adiar = true; tabC.buffer = [];
@@ -6928,6 +7022,19 @@ function revisaoGeral_(d, u) {
       var m = {};
       if (!p.fase || !FASES[p.fase]) { m.fase = faseDe_(p); r.fase++; }
       if (p.status === 'arquivado' && (m.fase || p.fase) !== 'extinto' && p.fase_auto !== 'nao') { m.fase = 'extinto'; r.encerrados++; }
+      // 8.5.0: etapa conferida com TODA a história do processo (DataJud + avisos), com as regras corrigidas
+      if (p.fase_auto !== 'nao' && p.numero && p.status !== 'arquivado') {
+        var atual = m.fase || faseDe_(p), hist = faseDaHistoria_(p, movimentosDoProcesso_(p, intimPorNumero)), nova = '';
+        var ult = normalizar_(p.ultimo_movimento || '');
+        // etapa gravada pela regra antiga errada: "conclusão para julgamento" ≠ sentença; "decurso" ≠ recurso; "solicitação de habilitação" ≠ citação
+        var errada = (atual === 'sentenca' && /conclus|para julgamento/.test(ult)) || (atual === 'recurso' && /decurso/.test(ult) && !/grau/.test(ult)) ||
+          (atual === 'ajuizado' && /habilitacao/.test(ult));
+        if (hist.fase && (avancaFase_(atual, hist.fase) || (errada && hist.fase !== atual))) nova = hist.fase;
+        else if (errada) nova = 'andamento';
+        if (nova && nova !== atual) { m.fase = nova; r.etapas++; r.etapasPor[nova] = (r.etapasPor[nova] || 0) + 1; }
+        if (hist.encerrado) { m.status = 'arquivado'; m.fase = 'extinto'; r.arquivados++; }
+      }
+      if (p.numero && !cnjValido_(p.numero)) r.numerosErrados.push({ id: p.id, numero: p.numero, cliente: p.cliente_nome || '', cliente_id: p.cliente_id || '' });
       if (p.numero && !p.tribunal) { m.tribunal = tribunalDoNumero_(p.numero); r.tribunal++; }
       if (!p.area) {
         var trib = m.tribunal || p.tribunal || tribunalDoNumero_(p.numero);
@@ -6956,13 +7063,24 @@ function revisaoGeral_(d, u) {
       if (c.situacao && c.situacao !== 'completo') { r.cadastros++; if (aplicar) atualizarLinha_(tabC, c, { situacao: 'completo' }); }
     });
     if (aplicar) { regravarMudadas_(tabP); regravarMudadas_(tabC); gravarLote_(tabC); }
+    // intimações: só movimentação (sem prazo) há mais de 7 dias e as de prazo já baixado saem das "abertas"
+    var tabI = tabela_('Intimacoes'), tabZ = tabela_('Prazos');
+    tabI.adiar = true;
+    var ni = arquivarMovimentos_(tabI, tabZ, aplicar);
+    if (aplicar) regravarMudadas_(tabI);
+    r.intimMovimento = ni.movimento; r.intimPrazoBaixado = ni.prazoBaixado;
+    var hojeR = hojeSP_();
+    r.prazosVencidos = tabZ.linhas.filter(function (z) { return (z.situacao === 'calculado' || z.situacao === 'a definir') && z.fatal && z.fatal < hojeR; }).length;
   });
+  var nomesCli = {};
+  if (r.numerosErrados.length) tabela_('Clientes').linhas.forEach(function (c) { nomesCli[c.id] = c.nome; });
+  r.numerosErrados.forEach(function (x) { x.cliente = nomesCli[x.cliente_id] || x.cliente; });
   if (aplicar) {
     try { var ctx = contextoRobo_(); var antes = ctx.prazos.linhas.filter(function (z) { return z.situacao === 'a definir'; }).length;
       definirPendentes_(ctx); [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
       r.prazosDefinidos = antes - ctx.prazos.linhas.filter(function (z) { return z.situacao === 'a definir'; }).length; } catch (e) { r.erroPrazos = String(e.message || e); }
     setConfig_('ROBO_GMAIL_DESDE', String(Date.now() - 10 * 86400000), 'Desde quando o robô lê o Gmail (a revisão geral manda reler 10 dias)');
-    registrar_(u.usuario, 'revisão geral', JSON.stringify({ fase: r.fase, encerrados: r.encerrados, area: r.area, clientes: r.clienteLigado, cadastros: r.cadastros }));
+    registrar_(u.usuario, 'revisão geral', JSON.stringify({ fase: r.fase, etapas: r.etapas, arquivados: r.arquivados, encerrados: r.encerrados, area: r.area, clientes: r.clienteLigado, cadastros: r.cadastros, intimacoes: r.intimMovimento + r.intimPrazoBaixado }));
   }
   r.semNumero = r.semNumero.slice(0, 30);
   r.aplicado = aplicar;

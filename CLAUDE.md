@@ -205,6 +205,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Ao criar processo (ou colocar o número no "a ajuizar") a tela mostra "Informar o cliente no WhatsApp" com o link do
   Acompanhe (opcional: gera código de acesso novo e põe na mensagem).
 
+- Revisão 8.5.0 (Usuários › Revisão geral, `revisaoGeral_`): etapa conferida com TODA a história (`movimentosDoProcesso_` = DataJud +
+  avisos; `faseDaHistoria_`; só para a frente, menos as etapas gravadas pela regra antiga errada); baixa definitiva / execução extinta
+  sem nada depois → Encerrado + status arquivado; lista os processos com dígito verificador errado (`cnjValido_`, módulo 97; o
+  painel também avisa na tela do processo e `salvarProcesso_` recusa número com dígito errado). `faseDoMovimento_` corrigida:
+  "conclusão para julgamento", pauta e "instrução e julgamento" não são sentença; "decurso" não é recurso; "solicitação de
+  habilitação" não é citação; "extinção da execução" = encerrado; sobrestamento por RE não é recurso.
+- Intimações abertas (8.5.0, `arquivarMovimentos_`, na revisão e em toda rodada do robô): só movimentação (sem prazo, sem tarefa
+  `[intim:]`) há mais de 7 dias e as de prazo cumprido/baixado ganham terminada_por "robô (…)" e ok_por "robô" (não vão para o OK).
+  Nada é apagado: continuam em "Todas".
 - Processos em andamento e arquivados/baixados ficam todos no painel. A situação vem da última movimentação
   (`atualizarMovimento_`); o histórico antigo do Gmail é lido por `importarHistoricoGmail_` até o fim da caixa.
 
@@ -232,6 +241,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "Marcar aguardando assinatura" (acao=criar). Casos antigos (`assinaturasAntigas_`, uma vez, Config ASSIN_ANTIGAS): petição inicial
   sem número criada pelo gerador entra como aguardando, ligada ao processo (1º lembrete em 7 dias); "Assinado" mantém o processo;
   "Não vai assinar" arquiva o processo sem número e cancela a tarefa da inicial.
+  8.5.0 (pedido da usuária): o HONORÁRIO só entra no Financeiro depois de assinado. Ao gerar o contrato, o combinado (forma, valores,
+  parcelas) fica guardado no registro da aba Assinaturas (colunas `honorarios` JSON e `honorarios_lancados`); o "✓ Assinado" lança
+  (`lancarHonorariosForm_`) e devolve `lancados`. O cartão "aguardando" mostra "💰 … entra no Financeiro ao assinar". Só se não houver
+  procuração/contrato entre os documentos o honorário é lançado na hora.
 - Contrato previdenciário (MODELO9_CONTRATO_PREV_ID): na concessão o gerador escolhe "2 benefícios ou 30% (o que for maior)" (padrão),
   "2 primeiras parcelas do benefício + X% dos retroativos" ou "apenas as 2 primeiras parcelas" (`d.prev`, `textoPrevConcessao_`).
 - TODOS os perfis (inclusive RH, secretaria e estagiário) geram TODOS os documentos, também contratos de honorários, recibos,
@@ -297,10 +310,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (`cabCarteira`): "Por cliente" (#/clientes: cartões de cliente com os processos em chips coloridos pela fase e o próximo ato;
   a busca acha também pelo nº do processo, parte contrária ou vara) e "Por processo" (#/processos: filtros dentro do cartão de
   busca, etapas, lista/quadro). A última visão usada fica no computador (`carteira_visao`). Clientes SEM etapas.
-- Dois grupos de clientes (6.9.5): "Com ação" (tem processo, inclusive o "a ajuizar" criado ao gerar procuração/contrato) e
-  "Em atendimento" (sem contrato, procuração nem processo). Cartões no topo de Clientes (`grupo=acao|atendimento`) e etiqueta
-  na lista. Cadastro novo cria a pasta no Drive sozinho e fica "Em atendimento"; na ficha, "Cliente contratou: abrir ação"
-  (rota `clientes.abrirAcao`) cria o processo na fase "Petição inicial (a ajuizar)" (chave `contratado`).
+- Grupos de clientes (8.5.0, pedido da usuária: "com ação/em atendimento está confuso"): só "Todos" e "✍ Aguardando assinatura"
+  (`grupo=assinatura`). Cadastro novo NÃO cria pasta: só liga à pasta que já existe no Drive com o mesmo nome
+  (`criarPastaCliente_` com `soVincular`); a pasta nova nasce ao gerar o primeiro documento (`gerarDocumentos_`). RG não é
+  obrigatório no cadastro. Na ficha sem processo, "Cliente contratou: abrir ação" (rota `clientes.abrirAcao`) cria o processo na
+  fase "Petição inicial (a ajuizar)" (chave `contratado`).
 - Petição inicial: todo processo "a ajuizar" (gerar documentos, abrir ação, processo novo sem número) ganha `responsavel`
   (Config RESP_INICIAL, escolhido em Tarefas › Responsáveis automáticos) e uma tarefa "Petição inicial — cliente" (marca
   `[inicial:ID]`, prazo PRAZO_INICIAL_DIAS, padrão 7). Trocar o responsável do processo passa a tarefa junto. Colocar o número

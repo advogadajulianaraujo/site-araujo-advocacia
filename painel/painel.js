@@ -926,11 +926,12 @@
     const quando = a.gerado_em ? dataBR(a.gerado_em.slice(0, 10)) : '';
     const el = h('div', { class: 'assin-card' + (a.dias >= 7 ? ' atrasada' : '') },
       h('div', { class: 'assin-txt' }, h('strong', {}, a.cliente), h('div', { class: 'peq' }, a.documentos + (a.tipo_acao ? ' · ' + a.tipo_acao : '')),
+        a.honorario ? h('div', { class: 'peq' }, '💰 ' + a.honorario + ' — entra no Financeiro ao assinar') : null,
         h('div', { class: 'peq' }, `gerado em ${quando}` + (a.dias ? ` · há ${a.dias} dia(s)` : ' · hoje') + (a.dias >= 7 ? ' · ⚠ lembrar o cliente' : ''))),
       h('div', { class: 'assin-acoes' },
         botao('✓ Assinado', async ev => {
           ev.target.disabled = true;
-          try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado' }); avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.`);
+          try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado' }); avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.` + (x.lancados ? ` ${x.lancados} honorário(s) lançado(s) no Financeiro.` : ''));
             el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/processo/' + x.processo_id + '?avisar=1' }, 'abrir a petição inicial e avisar o cliente'))); if (depois) depois(); }
           catch (e) { avisar(e.message, true); ev.target.disabled = false; }
         }, 'mini'),
@@ -1023,7 +1024,7 @@
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
-    const grupo = ['acao', 'atendimento', 'assinatura'].includes(params.get('grupo')) ? params.get('grupo') : '';
+    const grupo = ['assinatura'].includes(params.get('grupo')) ? params.get('grupo') : '';
     const limite = Math.max(100, parseInt(params.get('mais'), 10) || 100);
     lembrarVisao('clientes');
     const [todos, procs, assins] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('documentos.assinaturas', {}).catch(() => [])]);
@@ -1040,8 +1041,7 @@
     if (soConferir) base = base.filter(c => c.situacao !== 'completo');
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
     const temAcao = c => (porCli[c.id] || []).length > 0 || c.processos > 0;
-    const nAcao = base.filter(temAcao).length;
-    const lista = grupo === 'acao' ? base.filter(temAcao) : grupo === 'atendimento' ? base.filter(c => !temAcao(c)) : grupo === 'assinatura' ? base.filter(c => aguarda[c.id]) : base;
+    const lista = grupo === 'assinatura' ? base.filter(c => aguarda[c.id]) : base;
     const nAssin = base.filter(c => aguarda[c.id]).length;
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
@@ -1075,7 +1075,6 @@
         h('span', { class: 'cli-ini' }, String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
         h('div', { class: 'cli-card-info' },
           h('div', { class: 'cli-card-nome' }, h('strong', {}, c.nome),
-            acao ? h('span', { class: 'tag grupo-acao' }, 'Com ação') : h('span', { class: 'tag grupo-atend' }, 'Em atendimento'),
             aguarda[c.id] ? h('span', { class: 'tag ' + (aguarda[c.id].dias >= 7 ? 'urgente' : 'atencao') }, '✍ aguardando assinatura' + (aguarda[c.id].dias ? ` · ${aguarda[c.id].dias}d` : '')) : null,
             c.situacao && c.situacao !== 'completo' ? h('span', { class: 'tag atencao mini-tag' }, 'cadastro a completar') : null),
           h('div', { class: 'peq' }, [c.cpf_cnpj, c.telefone, c.cidade, c.area].filter(Boolean).join(' · ') || '—'),
@@ -1088,8 +1087,7 @@
     mostrar(
       ...cabCarteira('clientes', { busca, ir, filtros, nCli: todos.length, nProc: procs.length, nAjuizar }),
       h('div', { class: 'grupos-cli', role: 'group', 'aria-label': 'Grupo' },
-        [['', 'Todos', base.length, 'Todos os clientes'], ['acao', 'Com ação', nAcao, 'Contrato, procuração ou processo'],
-          ['atendimento', 'Em atendimento', base.length - nAcao, 'Consulta, ainda sem contrato nem processo'],
+        [['', 'Todos', base.length, 'Todos os clientes'],
           ['assinatura', '✍ Aguardando assinatura', nAssin, 'Procuração/contrato gerados, ainda não assinados']].map(([v, nome, n, dica]) =>
           h('button', { type: 'button', class: 'grupo-card g-' + (v || 'todos') + (grupo === v ? ' ativo' : ''), 'aria-pressed': String(grupo === v), onclick: () => ir({ grupo: v }) },
             h('b', {}, String(n)), h('span', { class: 'grupo-nome' }, nome), h('span', { class: 'peq' }, dica)))),
@@ -1235,7 +1233,7 @@
     const docs = seletor.el;
 
     const campoF = (nome, rotulo, valor, extra, formas) => { const el = campo(nome, rotulo, valor, extra); el.dataset.formas = formas.join(' '); return el; };
-    const lancar = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'lancar', checked: true }), 'Lançar também no Financeiro (cria o honorário e as parcelas)');
+    const lancar = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', name: 'lancar', checked: true }), 'Lançar no Financeiro quando o cliente assinar (cria o honorário e as parcelas no "✓ Assinado")');
     const hon = h('fieldset', { class: 'caixa-int' }, h('legend', {}, 'Honorários do contrato'),
       h('div', { class: 'formas' }, FORMAS_HON.map(([v, t]) => h('label', { class: 'opcao' }, h('input', { type: 'radio', name: 'forma', value: v, checked: v === 'percentual' }), h('span', {}, t)))),
       h('div', { class: 'campos' },
@@ -1328,7 +1326,7 @@
         r.faltando.length ? h('div', { class: 'nota alerta' }, 'Atenção, faltou no cadastro: ' + r.faltando.join(', ') + '. Esses campos saíram em branco; complete o cadastro e gere de novo.') : null,
         h('div', { class: 'nota ok' }, h('strong', {}, `${r.gerados.length} documento${r.gerados.length === 1 ? '' : 's'} gerado${r.gerados.length === 1 ? '' : 's'} na pasta do cliente.`),
           r.pasta_assinar ? h('span', {}, ' Os que o cliente assina estão em ', h('a', { href: r.pasta_assinar, target: '_blank', rel: 'noopener noreferrer' }, 'DOCUMENTOS PARA ASSINAR'), '.') : '',
-          r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
+          r.lancados ? ` ${r.lancados} honorário(s) lançado(s) no Financeiro.` : '', r.honorario_pendente ? ' O honorário vai para o Financeiro só quando apertar "✓ Assinado".' : '', r.ja_lancados ? ` ${r.ja_lancados} honorário(s) igual(is) já estava(m) no Financeiro e não foi(ram) lançado(s) de novo.` : ''),
         r.assinatura ? h('div', { class: 'nota assin-nota' }, h('div', {}, h('strong', {}, '✍ Aguardando assinatura. '),
             'Quando o cliente assinar, aperte "✓ Assinado": aí o caso vai para Processos › Petição inicial, com a tarefa para quem faz as iniciais. Se não assinar em 7 dias, o painel lembra vocês.'),
           cartaoAssinatura({ id: r.assinatura, cliente: (form.querySelector('[name=cliente_id] option:checked') || {}).textContent || (opc.cliente && opc.cliente.nome) || 'Cliente', documentos: 'procuração/contrato gerados agora', dias: 0, gerado_em: new Date().toISOString() })) : null,
@@ -1422,7 +1420,7 @@
           campo('tipo', 'Pessoa', c.tipo || 'PF', { opcoes: [['PF', 'Pessoa física'], ['PJ', 'Pessoa jurídica']] }),
           campo('nome', pf ? 'Nome completo' : 'Razão social', c.nome, { obrigatorio: true, max: 200 }),
           campo('cpf_cnpj', pf ? 'CPF' : 'CNPJ', c.cpf_cnpj, { modo: 'numeric', max: 18, obrigatorio: novo }),
-          soPF(campo('rg', 'RG', c.rg, { max: 30, obrigatorio: novo })),
+          soPF(campo('rg', 'RG', c.rg, { max: 30 })),
           soPF(campo('genero', 'Sexo (para os documentos)', c.genero || '', { opcoes: [['', '— pelo nome —'], ['feminino', 'Feminino'], ['masculino', 'Masculino']], dica: 'Sai "brasileira, casada" ou "brasileiro, casado" nos documentos' })),
           soPF(campo('nascimento', 'Data de nascimento', c.nascimento, { tipo: 'date' })),
           soPF(campo('estado_civil', 'Estado civil', c.estado_civil, { opcoes: ESTADO_CIVIL })),
@@ -1479,14 +1477,13 @@
         const falta = [];
         if (!dados.nome.trim()) falta.push(dados.tipo === 'PJ' ? 'razão social' : 'nome completo');
         if (!dados.cpf_cnpj.trim()) falta.push(dados.tipo === 'PJ' ? 'CNPJ' : 'CPF');
-        if (dados.tipo !== 'PJ' && !dados.rg.trim()) falta.push('RG');
         if (dados.tipo !== 'PJ' && !dados.profissao.trim()) falta.push('profissão');
         if (!dados.endereco.trim()) falta.push('endereço');
         if (falta.length) throw new Error('Para cadastrar, preencha: ' + falta.join(', ') + '.');
       } else dados.id = c.id;
       const res = await api('clientes.salvar', { cliente: dados });
       if (res.avisoPasta) avisar(res.avisoPasta, true);
-      else avisar(novo ? 'Cliente cadastrado e pasta criada.' : 'Alterações salvas.');
+      else avisar(novo ? (res.pasta && res.pasta.pasta_url ? 'Cliente cadastrado e ligado à pasta que já existia no Drive.' : 'Cliente cadastrado. A pasta no Drive será criada quando gerar o primeiro documento.') : 'Alterações salvas.');
       if (novo) location.hash = '#/modelos?cliente=' + encodeURIComponent(res.id) + '&novo=1'; else telaCliente(c.id);
     });
     return form;
@@ -1583,7 +1580,7 @@
     const c = r.cliente;
     const incompleto = c.situacao && c.situacao !== 'completo';
     const pfFalta = c.tipo !== 'PJ';
-    const faltam = [['cpf_cnpj', pfFalta ? 'CPF' : 'CNPJ'], ['rg', 'RG'], ['profissao', 'profissão'], ['endereco', 'endereço'], ['telefone', 'telefone']]
+    const faltam = [['cpf_cnpj', pfFalta ? 'CPF' : 'CNPJ'], ['profissao', 'profissão'], ['endereco', 'endereço'], ['telefone', 'telefone']]
       .filter(([k]) => !c[k] && !(!pfFalta && /rg|profissao/.test(k))).map(x => x[1]);
     const pf = c.tipo !== 'PJ';
 
@@ -1664,7 +1661,7 @@
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
         : faltam.length ? h('div', { class: 'nota' }, 'Falta no cadastro: ', h('strong', {}, faltam.join(', ')), '. Complete em "Editar cadastro" antes de gerar procuração ou contrato.') : null,
       r.processos.length ? null : h('div', { class: 'nota faixa-atend' },
-        h('div', {}, h('span', { class: 'tag grupo-atend' }, 'Em atendimento'), ' Este cliente ainda não tem ação (sem contrato, procuração ou processo). ',
+        h('div', {}, 'Este cliente ainda não tem processo. ',
           'Quando contratar, ele vai para Processos › ', h('strong', {}, 'Petição inicial'), ' e a tarefa vai para quem faz as iniciais.'),
         botao('Cliente contratou: abrir ação', () => caixaAbrirAcao(c), '')),
       assinBox,
@@ -1912,6 +1909,8 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, novo ? 'Novo processo' : (p.numero || 'Processo sem número')),
         novo ? null : h('p', {}, p.cliente_id ? p.cliente_nome : 'Cliente a identificar', p.origem ? ` · origem: ${p.origem}` : '', ' · ', acessoTribunal(p.numero)))),
+      !novo && p.numero && !cnjValido(p.numero) ? h('div', { class: 'nota alerta' }, h('strong', {}, '⚠ Número com o dígito verificador errado. '),
+        'Os 2 números depois do traço não batem com o resto: o PJe/eproc e o DataJud não acham este processo. Confira o número certo no tribunal e corrija em "Editar".') : null,
       !novo && (p.proximo_ato || p.ultimo_movimento) ? h('section', { class: 'caixa resumo-proc' },
         p.proximo_ato ? h('p', {}, h('strong', {}, 'Próximo ato: '), atoComData(p.proximo_ato, p.proximo_ato_data), ' ', p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : '') : null,
         p.ultimo_movimento ? h('p', {}, h('strong', {}, 'Última movimentação'), p.ultimo_movimento_em ? ` (${new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR')})` : '', ': ', p.ultimo_movimento) : null) : null,
@@ -1979,6 +1978,14 @@
       await relatorioCumpridos());
   }
 
+  /** Confere o dígito verificador do número CNJ (módulo 97), como o servidor (cnjValido_). */
+  function cnjValido(n) {
+    const m = /^(\d{7})-(\d{2})\.(\d{4})\.(\d)\.(\d{2})\.(\d{4})$/.exec(String(n || '').trim());
+    if (!m) return false;
+    let resto = 0; for (const c of m[1] + m[3] + m[4] + m[5] + m[6] + '00') resto = (resto * 10 + +c) % 97;
+    return +m[2] === 98 - resto;
+  }
+
   /** Revisão geral dos dados: prévia e "Corrigir agora" (etapas, encerrados, área, cliente ligado, cadastros, prazos sem data, releitura do Gmail). */
   function caixaRevisao() {
     const corpo = h('div', {});
@@ -1987,6 +1994,14 @@
       corpo.replaceChildren(h('ul', { class: 'revisao-lista' },
         h('li', {}, h('b', {}, String(r.fase)), ' processo(s) sem etapa gravada → recebem a etapa certa'),
         h('li', {}, h('b', {}, String(r.encerrados)), ' arquivado(s) → vão para "Encerrado / arquivado"'),
+        h('li', {}, h('b', {}, String(r.etapas || 0)), ' processo(s) em etapa errada → etapa conferida com toda a história do processo (DataJud e avisos)',
+          Object.keys(r.etapasPor || {}).length ? h('span', { class: 'peq' }, ' (' + Object.entries(r.etapasPor).map(([f, n]) => `${FASES[f] || f}: ${n}`).join(' · ') + ')') : ''),
+        h('li', {}, h('b', {}, String(r.arquivados || 0)), ' processo(s) com baixa definitiva / execução extinta e nada depois → "Encerrado / arquivado"'),
+        h('li', {}, h('b', {}, String((r.intimMovimento || 0) + (r.intimPrazoBaixado || 0))), ' intimação(ões) saem da lista de abertas ',
+          h('span', { class: 'peq' }, `(${r.intimMovimento || 0} só movimentação, sem prazo, há mais de 7 dias · ${r.intimPrazoBaixado || 0} com o prazo já cumprido ou baixado). Continuam em "Todas".`)),
+        h('li', {}, r.prazosVencidos ? [h('b', {}, String(r.prazosVencidos)), ' prazo(s) aberto(s) com a data fatal já passada: confira em Intimações e prazos.'] : '✓ Nenhum prazo aberto com a data fatal vencida.'),
+        (r.numerosErrados || []).length ? h('li', { class: 'alerta-txt' }, h('b', {}, String(r.numerosErrados.length)), ' processo(s) com o NÚMERO ERRADO (dígito verificador não bate: o PJe/eproc não acha). Abra e corrija o número: ',
+          r.numerosErrados.map((x, i) => [i ? ', ' : '', h('a', { href: '#/processo/' + x.id }, x.numero + (x.cliente ? ' (' + x.cliente + ')' : ''))])) : h('li', {}, '✓ Todos os números de processo conferem (dígito verificador).'),
         h('li', {}, h('b', {}, String(r.area)), ' sem área → área pelo tribunal ou pela vara', r.tribunal ? ` · ${r.tribunal} sem tribunal` : ''),
         h('li', {}, h('b', {}, String(r.clienteLigado)), ' processo(s) ligados ao cliente', r.clientesCriados ? ` (${r.clientesCriados} cadastro(s) novo(s) criado(s) com o nome que veio do tribunal, sem pasta nova)` : '', ' · ', h('span', { class: 'peq' }, `${r.semCliente} continuam "a identificar" (o aviso não trouxe o nome ou é sigiloso)`)),
         h('li', {}, h('b', {}, String(r.cadastros)), ' cadastro(s) "importado — conferir" → concluídos ', h('span', { class: 'peq' }, `(na ficha aparece o que falta: sem CPF ${f.cpf_cnpj || 0}, sem endereço ${f.endereco || 0}, sem telefone ${f.telefone || 0}, sem RG ${f.rg || 0}, sem profissão ${f.profissao || 0})`)),
@@ -2266,7 +2281,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.4.6';
+  const VERSAO_PAINEL = '8.5.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3204,7 +3219,7 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'),
         h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.'))),
       assinTopo,
-      novoCli ? h('div', { class: 'passo-ok' }, h('strong', {}, `✓ ${novoCli.nome} cadastrado(a) e pasta criada.`), ' Agora escolha o tipo de ação e gere a procuração e o contrato.') : null,
+      novoCli ? h('div', { class: 'passo-ok' }, h('strong', {}, `✓ ${novoCli.nome} cadastrado(a).`), ' Agora escolha o tipo de ação e gere a procuração e o contrato.') : null,
       h('section', { class: 'caixa' + (novoCli ? ' destaque-caixa' : '') }, h('h2', {}, 'Gerar para um cliente'),
         formGerar(info, { clientes, clienteInicial: params.get('cliente') || '' })),
       secao('Modelos do escritório', () => h('div', {},

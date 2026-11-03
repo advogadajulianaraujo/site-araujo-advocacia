@@ -1385,3 +1385,4 @@ body.modo-future .barra-cel{background:#2f855a}
 .faixa-assin.atrasada{background:#fff1ef;border-color:#f1b3aa;color:#8f1d14}
 .faixa-assin:hover{filter:brightness(.98)}
 .grupo-card.g-assinatura b{color:#b7791f}
+.alerta-txt{color:var(--vermelho-f)}
