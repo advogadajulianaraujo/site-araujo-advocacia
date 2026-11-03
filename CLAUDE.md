@@ -356,8 +356,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 - "Fotos e conversas do WhatsApp" foi retirado da ficha e do robô a pedido da usuária (o código `processarWhatsapp_` ficou
   sem uso; não religar sem ela pedir).
-- Perfil RH (`PERFIS.rh`, `ocultarValores`): vê tudo menos Usuários; entra no Financeiro, mas `semValores_` apaga os valores
-  no servidor (rotas fin.*, relatorio.*, documentos.gerar, clientes.documentos) e as rotas que mudam valores são recusadas.
+- Perfil RH (`PERFIS.rh`, `ocultarValores`; 8.4.6, pedido da usuária): USA TUDO, inclusive o Financeiro (lança honorário, dá baixa,
+  confere PIX, despesas, contratos); não vê Relatórios nem Usuários (permissão `usuarios`) e não vê os TOTAIS a receber: `valoresDoPerfil_`
+  apaga só `fin.areceber` inteiro e `totais`/`faixas` do `fin.resumo` (cada parcela continua com valor). Não há mais rota recusada ao RH.
 - Financeiro › "A receber": lista por cliente/honorário com parcelas pagas/total, valor total, recebido, falta receber,
   atrasado e próxima parcela (`aReceber_`, rota `fin.areceber`), atrasados primeiro, com botão de imprimir e de WhatsApp.
 - Ao marcar uma parcela como paga, o recibo sai sozinho em PDF na pasta do cliente (`reciboDaParcela_`) e o painel abre

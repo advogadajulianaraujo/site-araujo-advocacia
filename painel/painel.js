@@ -1641,7 +1641,7 @@
     const hons = () => {
       const caixa = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
       api('fin.honorarios', { cliente_id: c.id }).catch(() => []).then(hs => caixa.replaceChildren(
-        sessao.usuario.pode.ocultarValores ? null : h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
+        h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
         tabela(['Tipo', 'Descrição', 'Recebido', 'Em atraso', 'Situação'], hs, x => [
           h('td', {}, TIPOS_HON[x.tipo] || x.tipo), h('td', {}, x.descricao), h('td', { class: 'num' }, reais(x.resumo.pago)),
           h('td', { class: 'num' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'), h('td', {}, x.situacao)
@@ -1922,7 +1922,7 @@
 
   /* ---------- usuários ---------- */
 
-  const PERFIS = [['rh', 'RH (tudo, menos usuários; financeiro sem ver valores)'], ['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
+  const PERFIS = [['rh', 'RH (usa tudo, inclusive o financeiro; não vê Relatórios, Usuários nem os totais a receber)'], ['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
 
   async function telaUsuarios() {
     carregando();
@@ -2266,7 +2266,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.4.5';
+  const VERSAO_PAINEL = '8.4.6';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2925,7 +2925,7 @@
   /** Robô do PIX (Inter): o que deu baixa sozinho e o que ficou para conferir. */
   function blocoPix() {
     const caixa = h('section', { class: 'caixa pix-caixa' }, h('p', { class: 'peq' }, 'Carregando os PIX recebidos…'));
-    const rh = sessao.usuario.pode.ocultarValores;
+    const rh = false; // 8.4.6: o RH também confere e dá baixa nos PIX
     const desenhar = r => {
       const conferir = r.lista.filter(x => x.situacao === 'a conferir'), baixados = r.lista.filter(x => x.situacao === 'baixado');
       const dt = iso => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -3015,7 +3015,7 @@
           h('td', { class: 'num', 'data-r': 'Valor citado' }, x.valor ? reais(x.valor) : h('span', { class: 'peq' }, 'conferir no processo')),
           h('td', { class: 'num', 'data-r': 'Honorário previsto' }, x.valor_previsto ? h('strong', {}, reais(x.valor_previsto)) : x.honorario_id ? h('span', { class: 'peq' }, x.percentual ? x.percentual + '% do valor' : '—') : h('span', { class: 'peq' }, 'sem honorário de êxito')),
           h('td', { 'data-r': 'Com quem' }, x.responsavel || '—'),
-          h('td', {}, x.honorario_id ? h('a', { class: 'btn mini', href: '#/honorario/' + x.honorario_id, onclick: ev => ev.stopPropagation() }, 'Lançar') : rh ? null : h('a', { class: 'btn mini sec', href: '#/honorario/novo', onclick: ev => ev.stopPropagation() }, 'Criar honorário'))
+          h('td', {}, x.honorario_id ? h('a', { class: 'btn mini', href: '#/honorario/' + x.honorario_id, onclick: ev => ev.stopPropagation() }, 'Lançar') : h('a', { class: 'btn mini sec', href: '#/honorario/novo', onclick: ev => ev.stopPropagation() }, 'Criar honorário'))
         ], x => { location.hash = '#/tarefas?q=' + encodeURIComponent(x.cliente || x.numero || ''); }, 'Nenhum alvará ou RPV esperando levantamento.'))
       : h('div', {}, form,
         tabela(['Cliente', 'Tipo', 'Contratado', 'Recebido', 'Em atraso', 'Situação'], hons, x => [
@@ -3029,18 +3029,18 @@
     mostrar(
       h('header', { class: 'carteira-topo' },
         h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Honorários e caixa'), h('h1', {}, 'Financeiro'),
-          h('p', {}, rh ? 'Você vê as parcelas e os clientes; os valores ficam escondidos.' : 'Tudo o que entra: parcelas, cobranças e PIX do Inter.')),
+          h('p', {}, rh ? 'Você lança, dá baixa e cobra; só os totais a receber ficam com a administração.' : 'Tudo o que entra: parcelas, cobranças e PIX do Inter.')),
         h('div', { class: 'carteira-acoes' },
-          rh ? null : h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
-          h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
+          h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
+          rh ? null : h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
           h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'))),
       h('section', { class: 'fin-nums' },
-        num('verde', reais(t.recebidoMes), 'Recebido no mês', 'parcelas pagas neste mês'),
-        num('dourado', reais(t.aReceber30), 'A receber', 'nos próximos 30 dias'),
-        num('vermelho', reais(t.atrasado), 'Em atraso', `${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`, '#/financeiro?ver=atraso'),
+        num('verde', rh ? '—' : reais(t.recebidoMes), 'Recebido no mês', rh ? 'total só para a administração' : 'parcelas pagas neste mês'),
+        num('dourado', rh ? '—' : reais(t.aReceber30), 'A receber', rh ? 'total só para a administração' : 'nos próximos 30 dias'),
+        num('vermelho', rh ? String(t.parcelasAtrasadas) : reais(t.atrasado), rh ? 'Parcelas em atraso' : 'Em atraso', `${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`, '#/financeiro?ver=atraso'),
         num(nPix ? 'azul alerta' : 'azul', String(nPix), 'PIX para conferir', nPix ? 'o robô não teve certeza' : 'o robô deu baixa em tudo', '#/financeiro?ver=pix')),
       r.faixas.some(f => f.qtd) ? h('div', { class: 'fin-faixas' }, h('span', { class: 'peq' }, 'Atrasos:'),
-        r.faixas.map((f, i) => h('span', { class: 'fin-faixa f' + i }, h('strong', {}, f.nome), ' ', reais(f.valor), h('span', { class: 'peq' }, ` · ${f.qtd}`)))) : null,
+        r.faixas.map((f, i) => h('span', { class: 'fin-faixa f' + i }, h('strong', {}, f.nome), ' ', rh ? '' : reais(f.valor), h('span', { class: 'peq' }, ` · ${f.qtd}`)))) : null,
       r.aConferir ? h('p', { class: 'nota' }, `${r.aConferir} honorário(s) importado(s) do GEA para conferir — veja na aba Honorários.`) : null,
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
@@ -3579,7 +3579,7 @@
     const saldo12 = r.fluxo.reduce((a, f) => a + f.saldo, 0);
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Caixa e contas a pagar'), h('p', {}, 'Entradas (parcelas recebidas) e saídas (despesas pagas) do escritório.')),
-        h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro' }, '← Financeiro'), sessao.usuario.pode.ocultarValores ? null : botao('+ Nova despesa', () => editarDespesa({}, r, clientes)))),
+        h('div', { class: 'barra' }, h('a', { class: 'btn sec', href: '#/financeiro' }, '← Financeiro'), botao('+ Nova despesa', () => editarDespesa({}, r, clientes)))),
       h('div', { class: 'numeros' },
         h('div', { class: 'numero' }, h('b', {}, reais(ult.entradas)), h('span', {}, 'entrou neste mês')),
         h('div', { class: 'numero' }, h('b', {}, reais(ult.saidas)), h('span', {}, 'saiu neste mês')),

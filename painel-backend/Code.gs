@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.5';
+var VERSAO = '8.4.6';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -23,6 +23,8 @@ var PERFIS = {
   secretario: { nome: 'Secretário', financeiro: false, usuarios: false, conferePrazos: false },
   estagiario: { nome: 'Estagiário', financeiro: false, usuarios: false, conferePrazos: false },
   // RH: vê tudo, menos Usuários; entra no Financeiro, mas os valores chegam apagados (o servidor nem envia)
+  // RH (8.4.6, pedido da usuária): usa tudo, inclusive o Financeiro (lança, dá baixa, PIX, despesas, contratos); não vê Relatórios,
+  // Usuários nem os TOTAIS "a receber" (os números do topo do Financeiro e a tela "A receber por cliente").
   rh: { nome: 'RH', financeiro: true, usuarios: false, conferePrazos: false, ocultarValores: true }
 };
 
@@ -40,6 +42,13 @@ function semValores_(x) {
     return o;
   }
   return x;
+}
+/** O que o RH não vê: só os totais a receber. Cada parcela, honorário, PIX e despesa continua visível para ele trabalhar. */
+function valoresDoPerfil_(acao, res, perfil) {
+  if (!PERFIS[perfil] || !PERFIS[perfil].ocultarValores || !res || typeof res !== 'object') return res;
+  if (acao === 'fin.areceber') return semValores_(res);
+  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); return o; }
+  return res;
 }
 var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
 
@@ -447,12 +456,11 @@ function rotear_(acao, token, dados) {
     throw falha_('Seu perfil não tem acesso a esta área.');
   }
   var oculta = !!PERFIS[u.perfil].ocultarValores;
-  if (oculta && ROTAS_VALOR_BLOQUEADAS[acao]) throw falha_('O perfil RH não altera valores do financeiro.');
   // Rotas só de leitura: cada aba da planilha é lida uma vez só por pedido (mais rápido)
   MEMO_LEITURA = LEITURAS_RAPIDAS[acao] ? {} : null;
   try {
     var res = ROTAS_GUARDADAS[acao] ? comMemoria_(acao, u, dados, function () { return rota.fn(dados, u, token); }) : rota.fn(dados, u, token);
-    return oculta && /^(fin\.|relatorio\.|documentos\.gerar|clientes\.documentos)/.test(acao) ? semValores_(res) : res;
+    return oculta ? valoresDoPerfil_(acao, res, u.perfil) : res;
   } finally { MEMO_LEITURA = null; }
 }
 
@@ -6976,7 +6984,7 @@ function aquecerMemoria_() {
       var rota = ROTAS[pd[0]];
       if (!rota || (rota.permissao && !PERFIS[pf][rota.permissao])) return;
       try {
-        comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return PERFIS[pf].ocultarValores ? semValores_(x) : x; });
+        comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return valoresDoPerfil_(pd[0], x, pf); });
         n++;
       } catch (e) { /* segue */ }
     });
@@ -7019,7 +7027,7 @@ function inicioExtras_(d, u) {
   if (pf.financeiro || u.perfil === 'secretario') {
     var hons = {};
     tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
-    var verValor = pf.financeiro && !pf.ocultarValores;
+    var verValor = !!pf.financeiro;
     cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje; })
       .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
       .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
