@@ -343,7 +343,7 @@
     if (fila.length === 1) { const x = fila[0]; chamarUm(x.acao, x.dados).then(x.ok, x.falhou); return; }
     let j;
     try {
-      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'lote', token: sessao && sessao.token, dados: { pedidos: fila.map(x => ({ acao: x.acao, dados: x.dados })) } }), redirect: 'follow' });
+      const resp = await comLimite(API, { method: 'POST', body: JSON.stringify({ acao: 'lote', token: sessao && sessao.token, dados: { pedidos: fila.map(x => ({ acao: x.acao, dados: x.dados })) } }), redirect: 'follow' }, 60000);
       j = await resp.json();
     } catch (e) { fila.forEach(x => chamarUm(x.acao, x.dados).then(x.ok, x.falhou)); return; }
     if (!j || !j.ok || !Array.isArray(j.dados)) { // programa do Google antigo (sem "lote"): volta a pedir um por um
@@ -358,12 +358,19 @@
     });
     if (caiu) sair(true);
   }
+  /** fetch com tempo limite: o painel nunca fica "carregando" para sempre se o Google travar. */
+  async function comLimite(url, op, ms) {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null;
+    try { return await fetch(url, Object.assign({}, op, ctl ? { signal: ctl.signal } : {})); } finally { if (timer) clearTimeout(timer); }
+  }
   async function chamarUm(acao, dados) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
     let resp;
     try {
-      resp = await fetch(API, { method: 'POST', body: JSON.stringify({ acao, token: sessao && sessao.token, dados: dados || {} }), redirect: 'follow' });
+      resp = await comLimite(API, { method: 'POST', body: JSON.stringify({ acao, token: sessao && sessao.token, dados: dados || {} }), redirect: 'follow' }, LEITURAS.has(acao) ? 90000 : 340000);
     } catch (e) {
+      if (e && e.name === 'AbortError') throw new Error('O Google demorou demais para responder. Tente de novo em instantes.');
       console.error('[painel] falha ao chamar o servidor', e);
       throw new Error('Sem conexão com o servidor. Verifique a internet e tente de novo. (' + (e && e.message || e) + ')');
     }
@@ -499,6 +506,52 @@
   quemMenu.addEventListener('click', () => menuQuem(false));
   document.getElementById('btn-sair').addEventListener('click', () => sair(false));
   document.getElementById('btn-senha').addEventListener('click', () => { location.hash = '#/senha'; });
+
+  /* ---------- WhatsApp: sempre na MESMA aba (ou no aplicativo do computador) ----------
+     Todo link wa.me do painel é ajustado na hora do clique: no computador abre o WhatsApp Web numa aba com nome fixo
+     ("whatsapp_painel"), então o 2º clique em diante cai na aba que já está aberta, em vez de abrir outra. Quem usa o
+     aplicativo do WhatsApp no computador escolhe "WhatsApp: no aplicativo" no menu do nome (fica guardado neste computador).
+     No celular continua o wa.me, que abre o aplicativo. O telefone é conferido (2 números juntos, 0 na frente, sem DDI). */
+  const celular = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const modoWhats = () => { try { return localStorage.getItem('whats_modo') || 'web'; } catch (e) { return 'web'; } };
+  const btnWhats = document.getElementById('btn-whats');
+  const rotuloWhats = () => { if (btnWhats) btnWhats.textContent = modoWhats() === 'app' ? 'WhatsApp: no aplicativo' : 'WhatsApp: no navegador'; };
+  if (btnWhats) {
+    if (celular) btnWhats.hidden = true;
+    rotuloWhats();
+    btnWhats.addEventListener('click', () => {
+      try { localStorage.setItem('whats_modo', modoWhats() === 'app' ? 'web' : 'app'); } catch (e) { /* sem memória no navegador */ }
+      rotuloWhats();
+      avisar(modoWhats() === 'app' ? 'Os botões de WhatsApp vão abrir o aplicativo do WhatsApp deste computador.' : 'Os botões de WhatsApp vão abrir o WhatsApp Web, sempre na mesma aba.');
+    });
+  }
+  function telefoneWhats(bruto) {
+    let t = String(bruto || '').replace(/\D/g, '');
+    if (t.startsWith('55') && t.length > 13) t = t.slice(2);
+    if (!t.startsWith('55') || t.length < 12) {
+      t = t.replace(/^0+/, '');
+      if (t.length > 11) t = t.slice(0, t[2] === '9' ? 11 : 10); // dois telefones juntos no cadastro: fica o primeiro
+      if (t.length < 10) return '';
+      t = '55' + t;
+    }
+    return t.length >= 12 && t.length <= 13 ? t : '';
+  }
+  document.addEventListener('click', ev => {
+    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+    if (!a) return;
+    const m = /^https:\/\/(?:wa\.me\/(\d*)|api\.whatsapp\.com\/send\/?|web\.whatsapp\.com\/send\/?)(?:\?(.*))?$/.exec(a.href);
+    if (!m) return;
+    const q = new URLSearchParams(m[2] || '');
+    const tel = telefoneWhats(m[1] || q.get('phone') || '');
+    const texto = q.get('text') || '';
+    if (!tel) { ev.preventDefault(); avisar('Telefone incompleto ou inválido no cadastro: confira o número (com DDD) e tente de novo.', true); return; }
+    const enc = encodeURIComponent(texto);
+    if (celular) { a.href = 'https://wa.me/' + tel + (texto ? '?text=' + enc : ''); return; }
+    if (modoWhats() === 'app') { a.href = 'whatsapp://send?phone=' + tel + (texto ? '&text=' + enc : ''); a.removeAttribute('target'); return; }
+    a.href = 'https://web.whatsapp.com/send?phone=' + tel + (texto ? '&text=' + enc : '');
+    a.target = 'whatsapp_painel'; // aba com nome: o próximo clique reaproveita a mesma
+    a.rel = ''; a.referrerPolicy = 'no-referrer'; // "noopener" impediria reaproveitar a aba
+  }, true);
 
   /* Menu lateral: [id, nome, grupo, permissão, ícone (traços SVG 24×24)] */
   const ICONES = {
@@ -667,10 +720,13 @@
   async function telaInicio() {
     carregando();
     const hoje = hojeISO();
-    const [r, ag, procsIni, meu, aguarda] = await Promise.all([api('resumo'), api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }).catch(() => null), api('processos.listar', {}).catch(() => []),
-      api('eu.painel').catch(() => null), sessao.usuario.pode.usuarios ? api('trabalho.aguardando').catch(() => []) : Promise.resolve([])]);
     const secretaria = ['secretario', 'rh'].includes(sessao.usuario.perfil);
-    const extras = secretaria || sessao.usuario.pode.usuarios ? await api('inicio.extras').catch(() => null) : null;
+    // o que não é essencial tem 25 s: se o Google demorar, o Início abre sem aquele bloco em vez de ficar carregando
+    const ate = (p, vazio) => Promise.race([p.catch(() => vazio), new Promise(ok => setTimeout(() => ok(vazio), 25000))]);
+    const [r, ag, meu, aguarda, extras] = await Promise.all([api('resumo'), ate(api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }), null),
+      ate(api('eu.painel'), null), sessao.usuario.pode.usuarios ? ate(api('trabalho.aguardando'), []) : Promise.resolve([]),
+      secretaria || sessao.usuario.pode.usuarios ? ate(api('inicio.extras'), null) : Promise.resolve(null)]);
+    const procsIni = [];
     const t = r.totais, pode = sessao.usuario.pode;
     const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
     const eventos = ag ? ag.eventos.slice().sort((a, b) => a.inicio < b.inicio ? -1 : 1) : [];
@@ -2143,7 +2199,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.3.0';
+  const VERSAO_PAINEL = '8.3.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3731,7 +3787,7 @@
       }
     } catch (e) {
       if (e && e.obsoleto) return;
-      if (sessao) mostrar(h('div', { class: 'nota alerta' }, e.message));
+      if (sessao) mostrar(h('div', { class: 'nota alerta' }, h('p', {}, e.message), botao('Tentar de novo', () => rota())));
     }
   }
 

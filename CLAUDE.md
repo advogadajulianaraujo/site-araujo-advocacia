@@ -293,6 +293,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## WhatsApp e Financeiro
 
+- WhatsApp sempre na MESMA aba (8.3.1, pedido da usuária): um ouvinte de clique (fase de captura) em painel.js ajusta todo link wa.me
+  do painel na hora: no computador vira web.whatsapp.com/send numa aba com nome fixo `whatsapp_painel` (sem noopener, senão o
+  navegador não reaproveita a aba); "WhatsApp: no aplicativo" no menu do nome (localStorage `whats_modo` = app) usa whatsapp://send;
+  no celular fica wa.me. `telefoneWhats` conserta o número (0 na frente, sem 55, dois telefones juntos → o primeiro) e avisa se
+  estiver incompleto. Links novos de WhatsApp: basta usar https://wa.me/… normal. Aba aberta à mão fora do painel não pode ser
+  reaproveitada (regra do navegador).
+- Nada fica "Carregando…" para sempre (8.3.1): `comLimite` põe tempo limite nas chamadas ao Google (leituras 90 s, gravações 340 s,
+  lote 60 s); erro na tela tem "Tentar de novo". O Início pede tudo junto e os blocos extras (agenda, eu.painel, inicio.extras,
+  aguardando) têm 25 s: se demorar, abre sem eles. O Início não busca mais `processos.listar` (não aparecia na tela).
+
 - "Fotos e conversas do WhatsApp" foi retirado da ficha e do robô a pedido da usuária (o código `processarWhatsapp_` ficou
   sem uso; não religar sem ela pedir).
 - Perfil RH (`PERFIS.rh`, `ocultarValores`): vê tudo menos Usuários; entra no Financeiro, mas `semValores_` apaga os valores
