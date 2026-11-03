@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.3';
+var VERSAO = '8.4.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -8128,7 +8128,7 @@ function futureGerarCobrancas_(comp, T) {
   });
   // recebimento já lançado (importado ou à mão) → cobrança paga
   T.co.linhas.forEach(function (c) {
-    if (c.competencia !== comp || c.pago_em) return;
+    if (c.competencia !== comp || c.pago_em || c.situacao === 'paga fora') return;
     var refC = futRefDaCobranca_(c);
     var pagos = T.la.linhas.filter(function (l) { return l.tipo === 'receita' && l.unidade === c.unidade && l.competencia === refC && /aluguel/i.test(l.categoria) && l.origem !== 'cobrança'; });
     if (!pagos.length) return;
@@ -8136,6 +8136,7 @@ function futureGerarCobrancas_(comp, T) {
     atualizarLinha_(T.co, c, { pago_em: pagos.map(function (l) { return l.data; }).sort().pop() || hojeSP_(), valor_pago: txtDinheiro_(soma),
       lanc_id: pagos[0].id, situacao: soma + 0.01 >= futN_(c.total) ? 'paga' : 'paga em parte', atualizado_em: agora, atualizado_por: 'robô' });
   });
+  if (comp === '2026-11') { try { futCorrigirOutubro_(T); } catch (eF) { /* segue */ } }
   return feitas;
 }
 function futSituacaoCobranca_(c, hoje) {
@@ -8293,16 +8294,32 @@ function futMensagemConfig_() {
       return /comprovante/i.test(f) ? f : f + '\nFavor enviar o comprovante de pagamento.';
     })() };
 }
+/** Desfaz a baixa: o pagamento feito pelo painel é apagado; o que veio do caixa/planilha (pagamento atrasado do mês anterior que o robô
+ *  juntou por engano) vai para o mês de referência anterior, onde ele é de fato — e não volta a baixar esta cobrança. */
+function futDesfazerPagamento_(T, c, u) {
+  var ref = futRefDaCobranca_(c), agora = new Date().toISOString(), movidos = 0;
+  T.la.linhas.filter(function (l) { return l.unidade === c.unidade && l.competencia === ref && l.tipo === 'receita' && /aluguel/i.test(l.categoria) || (l.origem === 'cobrança' && l.unidade === c.unidade && l.competencia === ref && l.tipo === 'receita'); })
+    .forEach(function (l) {
+      if (l.origem === 'cobrança') atualizarLinha_(T.la, l, { tipo: 'excluido', valor: '0' });
+      else { atualizarLinha_(T.la, l, { competencia: futCompMais_(ref, -1), descricao: String(l.descricao || '') + ' (pagamento atrasado do mês anterior)' }); movidos++; }
+    });
+  atualizarLinha_(T.co, c, { pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta', atualizado_em: agora, atualizado_por: u.usuario || 'robô' });
+  registrar_(u.usuario || 'robô', 'future: pagamento desfeito', c.unidade + ' ' + c.competencia + (movidos ? ' · ' + movidos + ' recebimento(s) para o mês anterior' : ''));
+  return movidos;
+}
+/** Uma vez (pedido do Luiz): em outubro/2026, AP 202 e Sala 2 tinham pagamentos atrasados de setembro que o robô juntou à cobrança de outubro. */
+function futCorrigirOutubro_(T) {
+  if (config_('FUTURE_FIX_OUT26')) return;
+  if (!T.co.linhas.some(function (c) { return c.competencia === '2026-11'; })) return;
+  T.co.linhas.filter(function (c) { return c.competencia === '2026-11' && c.pago_em && (c.unidade === 'AP 202' || c.unidade === 'SALA 2'); })
+    .forEach(function (c) { futDesfazerPagamento_(T, c, { usuario: 'robô' }); });
+  setConfig_('FUTURE_FIX_OUT26', new Date().toISOString(), 'AP 202 e Sala 2: pagamentos de setembro tirados de outubro');
+}
 function futurePagarCobranca_(d, u) {
   return comTrava_(function () {
     var T = futTabs_(), c = T.co.linhas.filter(function (x) { return x.id === d.id; })[0], agora = new Date().toISOString();
     if (!c) throw falha_('Cobrança não encontrada.');
-    if (d.desfazer) {
-      T.la.linhas.filter(function (l) { return l.origem === 'cobrança' && l.unidade === c.unidade && l.competencia === futRefDaCobranca_(c) && l.tipo === 'receita'; })
-        .forEach(function (l) { atualizarLinha_(T.la, l, { tipo: 'excluido', valor: '0' }); });
-      atualizarLinha_(T.co, c, { pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta', atualizado_em: agora, atualizado_por: u.usuario });
-      return { ok: true };
-    }
+    if (d.desfazer) { futDesfazerPagamento_(T, c, u); return { ok: true }; }
     if (d.ajustar) { // muda valores da cobrança (aluguel, energia, outros); depois disso o robô não recalcula mais
       var en = futN_(d.energia), ou = futN_(d.outros), al = d.aluguel !== undefined && d.aluguel !== '' ? futN_(d.aluguel) : futN_(c.aluguel);
       atualizarLinha_(T.co, c, { aluguel: txtDinheiro_(al), energia: en ? txtDinheiro_(en) : '', outros: ou ? txtDinheiro_(ou) : '', obs: String(d.obs !== undefined ? d.obs : c.obs || '').slice(0, 300),

@@ -174,6 +174,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   …" numa linha só + titular + banco/agência/conta (`blocoPagamento` em future.js). Em cada cartão de cobrança dá para escolher outra
   conta ("Receber em") e "usar sempre neste apto" (coluna `conta_receb` da unidade); botão "Copiar chave Pix". Emojis são tirados da
   mensagem (`semEmoji`). Arquivo "CONTA …" ou "PAGAMENTO …" (linhas "chave: valor", "padrao: sim") na pasta PARA IMPORTAR vira conta.
+- 8.4.4: os aluguéis de um mês de referência são pagos a partir do dia 5–10 do mês seguinte (exceção: quem paga adiantado, ex. temporada
+  de 1 mês). "Desfazer pagamento" (`futDesfazerPagamento_`): pagamento feito pelo painel é apagado; recebimento que veio do caixa/planilha
+  (atrasado do mês anterior que a baixa automática juntou) vai para o mês de referência anterior e não volta a baixar. Uma vez
+  (`futCorrigirOutubro_`, Config FUTURE_FIX_OUT26): AP 202 e Sala 2 tinham pagamentos de setembro juntados a outubro → foram para setembro.
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

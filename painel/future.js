@@ -398,7 +398,7 @@
           else botoes.append(K().botao('Desfazer "cobrado"', async () => { await api('future.cobranca.enviada', { id: c.id, desfazer: true }); recarregar(); }, 'mini link'));
         }
         botoes.append(K().botao('✓ Pagou', () => area.replaceChildren(pagar(c)), 'mini'), K().botao('Ajustar valores', () => area.replaceChildren(ajustar(c)), 'mini sec'));
-      } else botoes.append(K().botao('Desfazer pagamento', async () => { if (!confirm('Desfazer o pagamento de ' + c.unidade + '?')) return; await api('future.cobranca.pagar', { id: c.id, desfazer: true }); recarregar(); }, 'mini sec'));
+      } else botoes.append(K().botao('Desfazer pagamento', async () => { if (!confirm('Desfazer o pagamento de ' + c.unidade + '?\n\nSe o valor veio do caixa (pagamento atrasado de outro mês que o painel juntou aqui), ele passa para o mês anterior.')) return; await api('future.cobranca.pagar', { id: c.id, desfazer: true }); recarregar(); }, 'mini sec'));
       const cartaoEl = h('article', { class: 'fut-cob-card ' + (c.pago_em ? 'pago' : c.situacao === 'atrasada' ? 'atraso' : c.enviado_em ? 'enviado' : 'falta') },
         h('div', { class: 'fut-cob-tit' }, h('a', { href: '#/future/unidade/' + encodeURIComponent(c.unidade) }, h('b', {}, c.unidade)),
           h('span', {}, c.pessoa || '—'), c.competencia !== comp ? h('span', { class: 'tag urgente' }, 'ref. ' + curto(compMais(c.competencia, -1))) : null,
