@@ -160,6 +160,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   e "colar lista". Contrato por TEMPORADA (modelo "MODELO — CONTRATO DE TEMPORADA (painel)", tirado do contrato AMANDA 10 DIAS):
   dias ou meses, valor fechado (energia/taxas inclusas, lavanderia à parte, sem caução), metade na reserva + metade na saída ou à
   vista; unidade `modalidade` = temporada (o robô não gera aluguel mensal) e as parcelas viram cobranças (`detalhe` temp|…).
+- 8.4.2: "Despesas" só com despesas (receitas entram pelas cobranças e aparecem juntas no Relatório do mês). Lavanderia e faxina:
+  serviços com tipo (coluna `tipo` em FutLavagens: lavar R$ 25, secar R$ 25, lavar e secar = os dois, faxina R$ 120; Config
+  FUTURE_LAV_PRECO / FUTURE_SECAR_PRECO / FUTURE_FAXINA_PRECO; `FUT_SERVICOS`, `futTipoServico_`); dá para trocar o serviço de um
+  lançamento (recalcula); a mensagem traz "Lavanderia (2 lavagens, 1 secagem)" e "Faxina do apartamento" em linhas separadas; ao quitar,
+  vira receita Lavanderia e Faxina. Pasta do Drive 05. ED. FUTURE › PARA IMPORTAR (`futureImportarPasta_`, robô de hora em hora e
+  botão em Despesas, rota `future.importarPasta`): arquivo "DESPESAS …" (data | categoria | descrição | valor) e "LAVANDERIA …"
+  (data | AP | serviço | quantidade; "SUBSTITUIR" troca o mês), "MES: aaaa-mm" no topo; depois de lido vira "IMPORTADO …" (chave
+  `pasta:arquivo:linha` evita duplicar). É assim que listas com nomes entram sem passar pelo repositório. Ao abrir o painel do
+  prédio, as outras telas já são buscadas em segundo plano (`prepararTelas` em future.js).
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

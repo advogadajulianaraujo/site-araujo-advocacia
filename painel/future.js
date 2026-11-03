@@ -273,7 +273,15 @@
       else L.push(`Taxas: ${brl(c.taxas)}`);
     }
     if (c.cobra_energia) L.push(c.energia ? `Energia: ${brl(c.energia)}` : 'Energia: R$ [preencher]');
-    if (c.lavanderia) L.push(`Lavanderia${c.lav_qtd ? ` (${c.lav_qtd} lavage${c.lav_qtd > 1 ? 'ns' : 'm'})` : ''}: ${brl(c.lavanderia)}`);
+    if (c.lavanderia) {
+      const sv = c.servicos || [], fax = sv.find(x => x.tipo === 'faxina'), lav = sv.filter(x => x.tipo !== 'faxina');
+      const plural = (n, um, varios) => `${n} ${n > 1 ? varios : um}`;
+      const desc = lav.map(x => x.tipo === 'secar' ? plural(x.qtd, 'secagem', 'secagens') : x.tipo === 'lavar_secar' ? plural(x.qtd, 'lavagem e secagem', 'lavagens e secagens') : plural(x.qtd, 'lavagem', 'lavagens')).join(', ');
+      const vLav = lav.reduce((a, x) => a + x.valor, 0);
+      if (!sv.length) L.push(`Lavanderia: ${brl(c.lavanderia)}`);
+      if (lav.length) L.push(`Lavanderia (${desc}): ${brl(vLav)}`);
+      if (fax) L.push(`Faxina do apartamento${fax.qtd > 1 ? ` (${fax.qtd}×)` : ''}: ${brl(fax.valor)}`);
+    }
     if (c.outros) L.push(`${c.obs && !/^Temporada/.test(c.obs) ? c.obs : 'Outros'}: ${brl(c.outros)}`);
     return L;
   }
@@ -381,7 +389,7 @@
         h('div', { class: 'fut-cob-val' },
           h('span', {}, /^prop\|/.test(c.detalhe || '') ? 'Aluguel proporcional (' + c.detalhe.split('|')[3] + ' dias) ' : 'Aluguel ', h('b', {}, reais(c.aluguel))), h('span', {}, 'Taxas ', h('b', {}, reais(c.taxas))),
           c.cobra_energia ? h('span', { class: c.energia ? '' : 'falta' }, 'Energia ', h('b', {}, c.energia ? reais(c.energia) : 'não informada')) : h('span', { class: 'peq' }, 'Energia por conta própria'),
-          c.lavanderia ? h('span', {}, 'Lavanderia ', h('b', {}, reais(c.lavanderia))) : null,
+          c.lavanderia ? h('span', {}, (c.servicos || []).some(x => x.tipo === 'faxina') ? 'Lavanderia/faxina ' : 'Lavanderia ', h('b', {}, reais(c.lavanderia))) : null,
           c.outros ? h('span', {}, 'Outros ', h('b', {}, reais(c.outros))) : null,
           h('span', { class: 'fut-cob-total' }, 'Total ', h('b', {}, reais(c.total)))),
         h('div', { class: 'fut-cob-pe' }, status, botoes),
@@ -437,8 +445,7 @@
     // planilha: várias despesas de uma vez
     const linhaNova = () => h('tr', {},
       h('td', {}, h('input', { type: 'date', name: 'data', value: dataPadrao, 'aria-label': 'Data' })),
-      h('td', {}, h('select', { name: 'tipo', 'aria-label': 'Tipo' }, h('option', { value: 'despesa' }, 'Despesa'), h('option', { value: 'receita' }, 'Receita'))),
-      h('td', {}, h('select', { name: 'categoria', 'aria-label': 'Categoria' }, h('option', { value: '' }, 'automática'), r.categorias.despesa.concat(r.categorias.receita.filter(c => !r.categorias.despesa.includes(c))).map(c => h('option', {}, c)))),
+      h('td', {}, h('select', { name: 'categoria', 'aria-label': 'Categoria' }, h('option', { value: '' }, 'automática'), r.categorias.despesa.map(c => h('option', {}, c)))),
       h('td', {}, h('input', { name: 'descricao', placeholder: 'ex.: conserto do chuveiro AP 204', 'aria-label': 'Descrição' })),
       h('td', {}, h('input', { name: 'unidade', placeholder: 'AP/sala', class: 'curto', 'aria-label': 'Unidade' })),
       h('td', {}, h('input', { name: 'valor', placeholder: 'R$', inputmode: 'decimal', class: 'curto', 'aria-label': 'Valor' })),
@@ -447,7 +454,7 @@
     const enviar = h('div', { class: 'acoes' },
       K().botao('+ linha', () => corpo.append(linhaNova()), 'sec'),
       K().botao('Salvar as linhas preenchidas', async ev => {
-        const itens = [...corpo.querySelectorAll('tr')].map(tr => Object.fromEntries([...tr.querySelectorAll('input,select')].map(x => [x.name, x.value]))).filter(x => num(x.valor) > 0);
+        const itens = [...corpo.querySelectorAll('tr')].map(tr => Object.assign({ tipo: 'despesa' }, Object.fromEntries([...tr.querySelectorAll('input,select')].map(x => [x.name, x.value])))).filter(x => num(x.valor) > 0);
         if (!itens.length) return avisar('Preencha o valor de pelo menos uma linha.', true);
         ev.target.disabled = true;
         try { const x = await api('future.lancamento.lote', { competencia: ref, itens }); avisar(`${x.lancados} lançamento(s) salvos em ${nomeMes(ref)}.`); K().rota(); }
@@ -474,13 +481,18 @@
         h('td', {}, l.origem === 'cobrança' ? null : K().botao('Excluir', async ev => { ev.stopPropagation(); if (!confirm('Excluir este lançamento?')) return; await api('future.lancamento.salvar', { id: l.id, excluir: true }); K().rota(); }, 'mini sec'))
       ], () => {}, 'Nada lançado.'));
     const porCat = {}; des.forEach(l => { porCat[l.categoria] = (porCat[l.categoria] || 0) + l.valor; });
-    mostrar(topo('Edifício Future', 'Despesas e receitas', 'Lance as despesas do mês: elas entram no relatório final do mês de referência'), navRef(ref, 'caixa', params),
-      h('section', { class: 'fin-nums' }, numero('vermelho', reais(soma(des)), 'Despesas', `${des.length} lançamento(s)`), numero('verde', reais(soma(rec)), 'Receitas', 'aluguéis pagos, lavanderia, caução…'),
-        numero(soma(rec) - soma(des) >= 0 ? 'dourado' : 'vermelho', reais(soma(rec) - soma(des)), 'Resultado'), numero('azul', Object.keys(porCat).length ? Object.entries(porCat).sort((a, b) => b[1] - a[1])[0][0] : '—', 'Maior despesa', Object.keys(porCat).length ? reais(Math.max(...Object.values(porCat))) : '')),
+    const btPasta = K().botao('📁 Ler a pasta "PARA IMPORTAR" do Drive', async ev => { ev.target.disabled = true; try { const x = await api('future.importarPasta', {});
+      avisar(x.arquivos ? `${x.arquivos} arquivo(s) lido(s): ${x.despesas} despesa(s), ${x.lavanderia} serviço(s) de lavanderia.` + (x.erros.length ? ' Problemas: ' + x.erros.slice(0, 3).join(' | ') : '') : 'Nenhum arquivo novo na pasta PARA IMPORTAR.', !!x.erros.length); K().rota(); }
+      catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec');
+    const porCatOrd = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+    mostrar(topo('Edifício Future', 'Despesas', 'O que o prédio gastou no mês de referência · as receitas entram pelas cobranças e aparecem no Relatório do mês', [btPasta]), navRef(ref, 'caixa', params),
+      h('section', { class: 'fin-nums' }, numero('vermelho', reais(soma(des)), 'Despesas de ' + MESES[+ref.slice(5, 7) - 1], `${des.length} lançamento(s)`),
+        porCatOrd.slice(0, 3).map(([c, v]) => numero('azul', reais(v), c, Math.round(v / (soma(des) || 1) * 100) + '% das despesas'))),
       h('section', { class: 'caixa' }, h('h2', {}, 'Lançar despesas de ' + nomeMes(ref)),
-        h('div', { class: 'fut-planilha' }, h('table', { class: 'tabela fut-grade' }, h('thead', {}, h('tr', {}, ['Data', 'Tipo', 'Categoria', 'Descrição', 'Unidade', 'Valor', 'Forma'].map(t => h('th', {}, t)))), corpo)),
+        h('div', { class: 'fut-planilha' }, h('table', { class: 'tabela fut-grade' }, h('thead', {}, h('tr', {}, ['Data', 'Categoria', 'Descrição', 'Unidade', 'Valor', 'Forma'].map(t => h('th', {}, t)))), corpo)),
         enviar, h('details', { class: 'fut-colar' }, h('summary', {}, '📋 Colar uma lista de despesas'), colar, btColar)),
-      lista('Despesas', des, 'neg'), lista('Receitas', rec, 'pos'));
+      lista('Despesas', des, 'neg'),
+      h('p', { class: 'peq' }, `Receitas de ${MESES[+ref.slice(5, 7) - 1]} (aluguéis pagos, lavanderia, caução): ${reais(soma(rec))} — veja tudo no `, h('a', { href: '#/future/relatorio?mes=' + ref }, 'Relatório do mês'), '.'));
   }
 
   /* ---------- Energia: a conta de cada apartamento (sem as salas, que pagam a própria) ---------- */
@@ -548,14 +560,14 @@
     const f = h('form', { class: 'barra fut-lav-form', novalidate: true },
       h('select', { name: 'unidade', 'aria-label': 'Apartamento' }, h('option', { value: '' }, 'Apartamento…'), r.unidades.map(u => h('option', { value: u.id }, u.id + (u.locatario ? ' · ' + u.locatario.split(' ')[0] : '')))),
       h('input', { type: 'date', name: 'data', value: dataPadrao, 'aria-label': 'Data' }),
-      h('input', { name: 'quantidade', type: 'number', min: 1, value: 1, class: 'curto', 'aria-label': 'Lavagens' }),
-      h('div', { class: 'fut-chips' }, [r.preco, r.preco2].map((p, i) => h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'preco', value: String(p), checked: !i }), h('span', {}, reais(p) + ' cada')))),
-      h('button', { type: 'submit', class: 'btn' }, '+ Lançar lavagem'), h('p', { class: 'erro' }));
+      h('input', { name: 'quantidade', type: 'number', min: 1, value: 1, class: 'curto', 'aria-label': 'Quantidade' }),
+      h('div', { class: 'fut-chips' }, Object.entries(r.servicos).map(([k, nome], i) => h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'tipo', value: k, checked: !i }), h('span', {}, nome + ' · ' + reais(r.precos[k]))))),
+      h('button', { type: 'submit', class: 'btn' }, '+ Lançar'), h('p', { class: 'erro' }));
     K().aoEnviar(f, async fd => {
       if (!fd.get('unidade')) throw new Error('Escolha o apartamento.');
       const q = Math.max(1, +fd.get('quantidade') || 1);
-      await api('future.lavanderia.salvar', { mes: ref, unidade: fd.get('unidade'), data: fd.get('data'), quantidade: q, valor: q * num(fd.get('preco')) });
-      avisar('Lavagem lançada: entra na cobrança de ' + nomeMes(compMais(ref, 1)) + '.'); K().rota();
+      await api('future.lavanderia.salvar', { mes: ref, unidade: fd.get('unidade'), data: fd.get('data'), quantidade: q, tipo: fd.get('tipo') });
+      avisar(`${r.servicos[fd.get('tipo')]} lançado: entra na cobrança de ${nomeMes(compMais(ref, 1))}.`); K().rota();
     });
     const colar = h('form', { class: 'campos', novalidate: true },
       h('div', { class: 'largo' }, h('label', { for: 'f-lav' }, 'Cole a tabela da lavanderia (uma linha por uso: apartamento, quantidade e/ou valor, data opcional)'),
@@ -563,20 +575,24 @@
       h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Lançar a tabela em ' + nomeMes(ref)), h('p', { class: 'erro' })));
     K().aoEnviar(colar, async fd => { const x = await api('future.lavanderia.colar', { mes: ref, texto: fd.get('texto') });
       avisar(`${x.lancadas.length} lançamento(s).` + (x.naoEntendidas.length ? ` Não entendi: ${x.naoEntendidas.slice(0, 3).join(' | ')}` : ''), !!x.naoEntendidas.length); K().rota(); });
-    const preco = h('form', { class: 'barra', novalidate: true }, h('span', { class: 'peq' }, 'Preços:'),
-      h('input', { name: 'preco', value: String(r.preco).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço 1' }),
-      h('input', { name: 'preco2', value: String(r.preco2).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço 2' }),
+    const preco = h('form', { class: 'barra', novalidate: true }, h('span', { class: 'peq' }, 'Preços — lavar:'),
+      h('input', { name: 'preco', value: String(r.precos.lavar).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço lavar' }),
+      h('span', { class: 'peq' }, 'secar:'), h('input', { name: 'preco_secar', value: String(r.precos.secar).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço secar' }),
+      h('span', { class: 'peq' }, 'faxina:'), h('input', { name: 'preco_faxina', value: String(r.precos.faxina).replace('.', ','), class: 'curto', inputmode: 'decimal', 'aria-label': 'Preço faxina' }),
       h('button', { type: 'submit', class: 'btn mini sec' }, 'Salvar preços'), h('span', { class: 'erro' }));
-    K().aoEnviar(preco, async fd => { await api('future.lavanderia.salvar', { so_preco: true, preco: fd.get('preco'), preco2: fd.get('preco2') }); avisar('Preços salvos.'); K().rota(); });
-    mostrar(topo('Edifício Future', 'Lavanderia', 'Cada lavagem vai sozinha para a cobrança do morador no mês seguinte'), navRef(ref, 'lavanderia', params),
-      h('section', { class: 'fin-nums' }, numero('dourado', reais(total), 'Lavanderia de ' + MESES[+ref.slice(5, 7) - 1], `${qtd} lavage${qtd === 1 ? 'm' : 'ns'}`),
-        numero('azul', String(Object.keys(porUn).length), 'Apartamentos', 'que usaram'), numero('verde', reais(r.preco), 'Preço padrão', 'outro: ' + reais(r.preco2))),
+    K().aoEnviar(preco, async fd => { await api('future.lavanderia.salvar', { so_preco: true, preco: fd.get('preco'), preco_secar: fd.get('preco_secar'), preco_faxina: fd.get('preco_faxina') }); avisar('Preços salvos.'); K().rota(); });
+    mostrar(topo('Edifício Future', 'Lavanderia e faxina', 'Lavar, secar e faxina do apartamento: cada serviço vai sozinho para a cobrança do morador no mês seguinte'), navRef(ref, 'lavanderia', params),
+      h('section', { class: 'fin-nums' }, numero('dourado', reais(total), 'Serviços de ' + MESES[+ref.slice(5, 7) - 1], `${r.lista.length} lançamento(s)`),
+        numero('azul', String(Object.keys(porUn).length), 'Apartamentos', 'que usaram'), numero('verde', reais(r.precos.lavar), 'Lavar / secar', `${reais(r.precos.secar)} secar · faxina ${reais(r.precos.faxina)}`)),
       h('section', { class: 'caixa' }, h('h2', {}, 'Lançar'), f, preco),
       K().secao('📋 Colar a tabela da lavanderia', colar, false),
       h('section', { class: 'caixa' }, h('h2', {}, 'Por apartamento'), Object.keys(porUn).length ? h('ul', { class: 'fut-lista' }, Object.entries(porUn).sort().map(([un, x]) =>
         h('li', {}, h('b', {}, un), ' · ', x.pessoa || '—', ' · ', `${x.qtd}×`, h('strong', {}, reais(x.valor)), r.cobrancas[un] ? h('span', { class: 'tag ' + (COB[r.cobrancas[un]] || ['', ''])[1] }, 'cobrança ' + (COB[r.cobrancas[un]] || [r.cobrancas[un]])[0].toLowerCase()) : h('span', { class: 'peq' }, 'entra na cobrança quando ela for gerada')))) : h('p', { class: 'peq' }, 'Nenhuma lavagem neste mês.')),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Lavagens de ' + nomeMes(ref)), K().tabela(['Data', 'Apto', 'Pessoa', 'Qtd.', 'Valor', ''], r.lista, l => [
-        h('td', {}, dataBR(l.data)), h('td', {}, l.unidade), h('td', {}, l.pessoa || '—'), h('td', { class: 'num' }, String(l.quantidade)), h('td', { class: 'num' }, reais(l.valor)),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Lançamentos de ' + nomeMes(ref)), K().tabela(['Data', 'Apto', 'Pessoa', 'Serviço', 'Qtd.', 'Valor', ''], r.lista, l => [
+        h('td', {}, dataBR(l.data)), h('td', {}, l.unidade), h('td', {}, l.pessoa || '—'),
+        h('td', {}, (() => { const sel = h('select', { 'aria-label': 'Serviço', onclick: ev => ev.stopPropagation() }, Object.entries(r.servicos).map(([k, n]) => h('option', { value: k, selected: k === l.tipo }, n)));
+          sel.addEventListener('change', async () => { try { await api('future.lavanderia.salvar', { id: l.id, mudar: true, tipo: sel.value, quantidade: l.quantidade }); avisar('Serviço trocado e valor recalculado.'); K().rota(); } catch (e) { avisar(e.message, true); } }); return sel; })()),
+        h('td', { class: 'num' }, String(l.quantidade)), h('td', { class: 'num' }, reais(l.valor)),
         h('td', {}, K().botao('Excluir', async ev => { ev.stopPropagation(); if (!confirm('Excluir esta lavagem?')) return; await api('future.lavanderia.salvar', { id: l.id, excluir: true }); K().rota(); }, 'mini sec'))
       ], () => {}, 'Nada lançado.')),
       r.antigas ? h('p', { class: 'peq' }, `${r.antigas} recebimento(s) de lavanderia deste mês vieram da planilha antiga (estão em Despesas e receitas).`) : null);
@@ -858,9 +874,18 @@
           h('li', {}, 'Relatório de energia que você vai mandar → importação para o histórico.'))));
   }
 
+  // Velocidade: ao abrir o painel do prédio, as outras telas já são buscadas em segundo plano (abrem na hora)
+  let preparado = false;
+  function prepararTelas() {
+    if (preparado) return; preparado = true;
+    const ref = refHoje(), cob = compMais(ref, 1), a = (x, d) => K().api(x, d).catch(() => {});
+    setTimeout(() => { a('future.cobrancas', { mes: cob }); a('future.energia', { mes: ref }); a('future.lavanderia', { mes: ref }); a('future.lancamentos', { mes: ref });
+      a('future.resumo', {}); a('future.relatorio', { mes: ref }); a('future.pessoas', {}); a('future.contratos', {}); }, 1200);
+  }
   window.FUTURE = {
     async tela(partes, params) {
       const [sub, id] = partes;
+      prepararTelas();
       switch (sub) {
         case 'unidades': return unidades(params);
         case 'unidade': return unidade(id);

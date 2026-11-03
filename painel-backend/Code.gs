@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.1';
+var VERSAO = '8.4.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -86,7 +86,7 @@ var ESQUEMA = {
   FutContratos: ['id', 'criado_em', 'criado_por', 'unidade', 'pessoa_id', 'nome', 'cpf', 'telefone', 'prazo_meses', 'inicio', 'fim', 'aluguel', 'garantia', 'caucao',
     'doc_url', 'pdf_url', 'laudo_doc', 'laudo_pdf', 'pasta_url', 'situacao', 'tipo', 'dias', 'valor_total'],
   FutEnergia: ['id', 'competencia', 'unidade', 'valor', 'kwh', 'origem', 'criado_em'],
-  FutLavagens: ['id', 'data', 'competencia', 'unidade', 'pessoa', 'quantidade', 'valor', 'obs', 'criado_em', 'criado_por', 'situacao'],
+  FutLavagens: ['id', 'data', 'competencia', 'unidade', 'pessoa', 'quantidade', 'valor', 'obs', 'criado_em', 'criado_por', 'situacao', 'tipo', 'chave'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
     'reembolsavel', 'reembolsado_em', 'recorrente', 'serie_id', 'situacao', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por']
 };
@@ -413,6 +413,7 @@ var ROTAS = {
   'future.lavanderia.colar': { future: true, fn: futureColarLavanderia_ },
   'future.energia': { future: true, fn: futureEnergiaGrade_ },
   'future.lancamento.lote': { future: true, fn: futureLancamentosLote_ },
+  'future.importarPasta': { future: true, fn: function (d, u) { return comTrava_(function () { return futureImportarPasta_(u); }); } },
   'future.contrato.gerar': { future: true, fn: futureGerarContrato_ },
   'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
@@ -7989,7 +7990,7 @@ function baixarVencidos_(d, u) {
  */
 var FUT_MESES = { JANEIRO: 1, FEVEREIRO: 2, MARCO: 3, ABRIL: 4, MAIO: 5, JUNHO: 6, JULHO: 7, AGOSTO: 8, SETEMBRO: 9, OUTUBRO: 10, NOVEMBRO: 11, DEZEMBRO: 12 };
 var FUT_SITUACOES = ['alugado', 'disponivel', 'renovar', 'reforma', 'proprio'];
-var FUT_CATEGORIAS = { receita: ['Aluguel', 'Taxas', 'Energia', 'Lavanderia', 'Caução', 'Outros'],
+var FUT_CATEGORIAS = { receita: ['Aluguel', 'Taxas', 'Energia', 'Lavanderia', 'Faxina', 'Caução', 'Outros'],
   despesa: ['Energia', 'Água', 'Internet', 'Elevador', 'Salário', 'Imposto', 'Limpeza', 'Manutenção', 'Compras', 'Outros'] };
 
 function podeFuture_(u) {
@@ -8247,12 +8248,13 @@ function futureCobrancas_(d) {
   var T = futTabs_(), hoje = hojeSP_(), comp = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futComp_(hoje);
   if (comp <= futCompMais_(futComp_(hoje), 1)) futureGerarCobrancas_(comp, T);
   var un = {}; T.un.linhas.forEach(function (x) { un[x.id] = x; });
-  var lavQ = {}; T.lv.linhas.forEach(function (l) { if (l.situacao !== 'excluida') lavQ[l.unidade + '|' + l.competencia] = (lavQ[l.unidade + '|' + l.competencia] || 0) + (+l.quantidade || 1); });
+  var lavQ = {}; T.lv.linhas.forEach(function (l) { if (l.situacao !== 'excluida' && l.tipo !== 'faxina') lavQ[l.unidade + '|' + l.competencia] = (lavQ[l.unidade + '|' + l.competencia] || 0) + (+l.quantidade || 1); });
+  var servRef = {}, servDe = function (c) { var rf = futRefDaCobranca_(c); if (!servRef[rf]) servRef[rf] = futServicosPorUnidade_(T, rf); var x = servRef[rf][c.unidade] || {}; return Object.keys(x).map(function (k) { return x[k]; }); };
   var lista = T.co.linhas.filter(function (c) { return c.competencia === comp || (!c.pago_em && c.competencia < comp && futSituacaoCobranca_(c, hoje) !== 'cancelada'); })
     .map(function (c) { return { id: c.id, unidade: c.unidade, pessoa: c.pessoa, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas),
       energia: futN_(c.energia), outros: futN_(c.outros), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), forma: c.forma, situacao: futSituacaoCobranca_(c, hoje),
       telefone: (un[c.unidade] || {}).telefone || '', obs: c.obs, pagador: c.pagador || (un[c.unidade] || {}).pagador || '', enviado_em: c.enviado_em || '', enviado_por: c.enviado_por || '',
-      detalhe: c.detalhe || '', lavanderia: futN_(c.lavanderia), lav_qtd: (lavQ[c.unidade + '|' + futRefDaCobranca_(c)] || 0), moeda: (un[c.unidade] || {}).moeda || '', cobra_energia: futCobraEnergia_(un[c.unidade] || { id: c.unidade }), aluguel_cheio: futN_((un[c.unidade] || {}).aluguel) }; })
+      detalhe: c.detalhe || '', lavanderia: futN_(c.lavanderia), servicos: futN_(c.lavanderia) ? servDe(c) : [], lav_qtd: (lavQ[c.unidade + '|' + futRefDaCobranca_(c)] || 0), moeda: (un[c.unidade] || {}).moeda || '', cobra_energia: futCobraEnergia_(un[c.unidade] || { id: c.unidade }), aluguel_cheio: futN_((un[c.unidade] || {}).aluguel) }; })
     .sort(function (a, b) { return a.competencia < b.competencia ? -1 : a.competencia > b.competencia ? 1 : (a.unidade < b.unidade ? -1 : 1); });
   return Object.assign({ mes: comp, lista: lista }, futMensagemConfig_());
 }
@@ -8300,7 +8302,11 @@ function futurePagarCobranca_(d, u) {
     var l = Object.assign({ id: novoId_('FL'), categoria: 'Aluguel', valor: txtDinheiro_(valor - lavAqui),
       descricao: (/^temp\|/.test(c.detalhe || '') ? 'Temporada ' : 'Aluguel + taxas ') + ref }, base);
     inserirLinha_(T.la, l);
-    if (lavAqui) inserirLinha_(T.la, Object.assign({ id: novoId_('FL'), categoria: 'Lavanderia', valor: txtDinheiro_(lavAqui), descricao: 'Lavanderia ' + ref }, base));
+    if (lavAqui) {
+      var fx = ((futServicosPorUnidade_(T, ref)[c.unidade] || {}).faxina || {}).valor || 0; fx = Math.min(fx, lavAqui);
+      if (lavAqui - fx > 0.009) inserirLinha_(T.la, Object.assign({ id: novoId_('FL'), categoria: 'Lavanderia', valor: txtDinheiro_(lavAqui - fx), descricao: 'Lavanderia ' + ref }, base));
+      if (fx > 0.009) inserirLinha_(T.la, Object.assign({ id: novoId_('FL'), categoria: 'Faxina', valor: txtDinheiro_(fx), descricao: 'Faxina ' + ref }, base));
+    }
     var pago = futN_(c.valor_pago) + valor;
     atualizarLinha_(T.co, c, { pago_em: data, valor_pago: txtDinheiro_(pago), forma: l.forma, lanc_id: c.lanc_id || l.id, situacao: pago + 0.01 >= futN_(c.total) ? 'paga' : 'paga em parte', atualizado_em: agora, atualizado_por: u.usuario });
     registrar_(u.usuario, 'future: pagamento', c.unidade + ' ' + c.competencia + ' R$ ' + txtDinheiro_(valor));
@@ -8545,6 +8551,30 @@ function futureGerarContrato_(d, u) {
 
 /* ---------- Lavanderia (8.4): cada lavagem entra na cobrança da pessoa no mês seguinte ---------- */
 function futPrecoLav_() { return futN_(config_('FUTURE_LAV_PRECO')) || 25; }
+/** Serviços cobrados à parte (pedido do Luiz): lavar R$ 25, secar R$ 25, lavar e secar = os dois, faxina do apartamento R$ 120. */
+var FUT_SERVICOS = { lavar: 'Lavar', secar: 'Secar', lavar_secar: 'Lavar e secar', faxina: 'Faxina' };
+function futPrecoServico_(tipo) {
+  var lav = futPrecoLav_(), sec = futN_(config_('FUTURE_SECAR_PRECO')) || 25;
+  return tipo === 'secar' ? sec : tipo === 'lavar_secar' ? lav + sec : tipo === 'faxina' ? (futN_(config_('FUTURE_FAXINA_PRECO')) || 120) : lav;
+}
+function futTipoServico_(t) {
+  var n = normalizar_(t || '');
+  if (/faxin|limpez/.test(n)) return 'faxina';
+  if (/lav/.test(n) && /sec/.test(n)) return 'lavar_secar';
+  if (/sec/.test(n)) return 'secar';
+  return 'lavar';
+}
+/** Serviços do mês por unidade, agrupados por tipo (para a mensagem e o caixa). */
+function futServicosPorUnidade_(T, ref) {
+  var r = {};
+  T.lv.linhas.forEach(function (l) {
+    if (l.competencia !== ref || l.situacao === 'excluida') return;
+    var tp = l.tipo || 'lavar', x = (r[l.unidade] = r[l.unidade] || {});
+    x[tp] = x[tp] || { tipo: tp, nome: FUT_SERVICOS[tp] || tp, qtd: 0, valor: 0 };
+    x[tp].qtd += (+l.quantidade || 1); x[tp].valor += futN_(l.valor);
+  });
+  return r;
+}
 function futAtualizarCobrancaRef_(T, ref) {
   var comp = futCompMais_(ref, 1);
   if (comp <= futCompMais_(futComp_(), 1)) futureGerarCobrancas_(comp, T);
@@ -8552,21 +8582,23 @@ function futAtualizarCobrancaRef_(T, ref) {
 function futureLavanderia_(d) {
   var T = futTabs_(), ref = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futCompMais_(futComp_(), -1);
   var lista = T.lv.linhas.filter(function (l) { return l.competencia === ref && l.situacao !== 'excluida'; }).sort(function (a, b) { return (a.data + a.unidade) < (b.data + b.unidade) ? -1 : 1; })
-    .map(function (l) { return { id: l.id, data: l.data, unidade: l.unidade, pessoa: l.pessoa, quantidade: +l.quantidade || 1, valor: futN_(l.valor), obs: l.obs }; });
+    .map(function (l) { return { id: l.id, data: l.data, unidade: l.unidade, pessoa: l.pessoa, quantidade: +l.quantidade || 1, valor: futN_(l.valor), obs: l.obs, tipo: l.tipo || 'lavar' }; });
   var cob = {}; T.co.linhas.forEach(function (c) { if (c.competencia === futCompMais_(ref, 1)) cob[c.unidade] = futSituacaoCobranca_(c, hojeSP_()); });
   var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return x.situacao !== 'proprio' || /^AP/.test(x.id); })
     .map(function (x) { return { id: x.id, locatario: futNome_(x.locatario), situacao: x.situacao }; });
   var antigas = T.la.linhas.filter(function (l) { return l.competencia === ref && l.categoria === 'Lavanderia' && l.tipo === 'receita' && l.origem !== 'cobrança'; }).length;
-  return { mes: ref, lista: lista, preco: futPrecoLav_(), preco2: futN_(config_('FUTURE_LAV_PRECO2')) || 30, unidades: unidades, cobrancas: cob, antigas: antigas };
+  return { mes: ref, lista: lista, preco: futPrecoLav_(), precos: { lavar: futPrecoServico_('lavar'), secar: futPrecoServico_('secar'), lavar_secar: futPrecoServico_('lavar_secar'), faxina: futPrecoServico_('faxina') },
+    servicos: FUT_SERVICOS, unidades: unidades, cobrancas: cob, antigas: antigas };
 }
-function futNovaLavagem_(T, ref, unidade, qtd, valor, data, pessoa, obs, u) {
+function futNovaLavagem_(T, ref, unidade, qtd, valor, data, pessoa, obs, u, tipo, chave) {
   var un = T.un.linhas.filter(function (x) { return x.id === unidade; })[0];
   if (!un) throw falha_('Unidade não encontrada: ' + unidade);
   qtd = Math.max(1, Math.min(60, parseInt(qtd, 10) || 1));
-  var total = futN_(valor) || qtd * futPrecoLav_();
+  tipo = FUT_SERVICOS[tipo] ? tipo : 'lavar';
+  var total = futN_(valor) || qtd * futPrecoServico_(tipo);
   var dt = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : ref + '-' + (ref === futComp_() ? hojeSP_().slice(8) : '28');
   var l = { id: novoId_('FW'), data: dt, competencia: ref, unidade: unidade, pessoa: String(pessoa || futNome_(un.locatario) || '').slice(0, 120), quantidade: String(qtd),
-    valor: txtDinheiro_(total), obs: String(obs || '').slice(0, 200), criado_em: new Date().toISOString(), criado_por: u.usuario, situacao: 'lançada' };
+    valor: txtDinheiro_(total), obs: String(obs || '').slice(0, 200), criado_em: new Date().toISOString(), criado_por: u.usuario, situacao: 'lançada', tipo: tipo, chave: chave || '' };
   inserirLinha_(T.lv, l);
   return l;
 }
@@ -8574,7 +8606,16 @@ function futureSalvarLavagem_(d, u) {
   return comTrava_(function () {
     var T = futTabs_();
     if (d.preco !== undefined && futN_(d.preco) > 0) setConfig_('FUTURE_LAV_PRECO', txtDinheiro_(futN_(d.preco)), 'Preço de uma lavagem (Edifício Future)');
-    if (d.preco2 !== undefined && futN_(d.preco2) > 0) setConfig_('FUTURE_LAV_PRECO2', txtDinheiro_(futN_(d.preco2)), 'Segundo preço de lavagem (Edifício Future)');
+    if (d.preco_secar !== undefined && futN_(d.preco_secar) > 0) setConfig_('FUTURE_SECAR_PRECO', txtDinheiro_(futN_(d.preco_secar)), 'Preço de uma secagem (Edifício Future)');
+    if (d.preco_faxina !== undefined && futN_(d.preco_faxina) > 0) setConfig_('FUTURE_FAXINA_PRECO', txtDinheiro_(futN_(d.preco_faxina)), 'Preço da faxina do apartamento (Edifício Future)');
+    if (d.mudar && d.id) { // trocar o serviço de um lançamento (ex.: era faxina, não lavagem)
+      var y = T.lv.linhas.filter(function (l) { return l.id === d.id; })[0];
+      if (!y) throw falha_('Lançamento não encontrado.');
+      var tp = FUT_SERVICOS[d.tipo] ? d.tipo : 'lavar', q = Math.max(1, parseInt(d.quantidade || y.quantidade, 10) || 1);
+      atualizarLinha_(T.lv, y, { tipo: tp, quantidade: String(q), valor: txtDinheiro_(futN_(d.valor) || q * futPrecoServico_(tp)) });
+      futAtualizarCobrancaRef_(T, y.competencia);
+      return { ok: true };
+    }
     if (d.so_preco) return { ok: true };
     if (d.excluir) {
       var x = T.lv.linhas.filter(function (l) { return l.id === d.id; })[0];
@@ -8584,7 +8625,7 @@ function futureSalvarLavagem_(d, u) {
       return { ok: true };
     }
     var ref = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futComp_(d.data);
-    var l = futNovaLavagem_(T, ref, futIdUnidade_(d.unidade), d.quantidade, d.valor, d.data, d.pessoa, d.obs, u);
+    var l = futNovaLavagem_(T, ref, futIdUnidade_(d.unidade), d.quantidade, d.valor, d.data, d.pessoa, d.obs, u, d.tipo);
     futAtualizarCobrancaRef_(T, ref);
     registrar_(u.usuario, 'future: lavanderia', l.unidade + ' ' + l.quantidade + 'x ' + l.valor);
     return { ok: true, id: l.id };
@@ -8604,16 +8645,80 @@ function futureColarLavanderia_(d, u) {
       if (!unidade || !T.un.linhas.some(function (x) { return x.id === unidade; })) { nao.push(linha.trim().slice(0, 100)); return; }
       var vals = l.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}\b/g) || [], valor = vals.length ? futN_(vals[vals.length - 1]) : 0;
       l = l.replace(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}\b/g, ' ');
-      var mq = /\b(\d{1,2})\s*(?:x|lav|vez|máq|maq)/i.exec(l) || /\b(\d{1,2})\b/.exec(l);
+      var mq = /\b(\d{1,2})\s*(?:x|lav|vez|máq|maq|sec|fax)/i.exec(l) || /\b(\d{1,2})\b/.exec(l);
+      preco = futPrecoServico_(futTipoServico_(linha));
       var qtd = mq ? +mq[1] : (valor ? Math.max(1, Math.round(valor / preco)) : 1);
       if (!valor && qtd >= 15) { valor = qtd; qtd = Math.max(1, Math.round(valor / preco)); } // "101 25" = R$ 25, não 25 lavagens
-      var x = futNovaLavagem_(T, ref, unidade, qtd, valor, data, '', 'tabela colada', u);
+      var x = futNovaLavagem_(T, ref, unidade, qtd, valor, data, '', 'tabela colada', u, futTipoServico_(linha));
       ok.push(unidade + ' ' + x.quantidade + 'x R$ ' + x.valor.replace('.', ','));
     });
     if (ok.length) futAtualizarCobrancaRef_(T, ref);
     registrar_(u.usuario, 'future: lavanderia colada', ref + ' ' + ok.length);
     return { mes: ref, lancadas: ok, naoEntendidas: nao };
   });
+}
+
+/* ---------- Pasta "PARA IMPORTAR" (05. ED. FUTURE): listas deixadas no Drive entram sozinhas no painel ----------
+   Arquivo "DESPESAS …" — linhas "dd/mm/aaaa | categoria | descrição | valor" (a 1ª linha pode ser "MES: 2026-10").
+   Arquivo "LAVANDERIA …" — linhas "dd/mm/aaaa | AP 106 | lavar/secar/lavar e secar/faxina | quantidade"; "SUBSTITUIR" troca o mês inteiro.
+   Depois de lido, o arquivo ganha o nome "IMPORTADO … — nome" (não lê de novo). Os dados ficam só no Drive e na planilha. */
+function futPastaImportar_() {
+  var raiz = futPastaRaiz_(); if (!raiz) return null;
+  var it = raiz.getFoldersByName ? raiz.getFoldersByName('PARA IMPORTAR') : null;
+  if (it && it.hasNext()) return it.next();
+  var f = raiz.getFolders(); while (f.hasNext()) { var x = f.next(); if (/^para importar$/i.test(String(x.getName()).trim())) return x; }
+  return null;
+}
+function futTextoArquivo_(f) {
+  try { if (String(f.getMimeType()) === 'application/vnd.google-apps.document') return DocumentApp.openById(f.getId()).getBody().getText(); } catch (e) { /* tenta como texto */ }
+  try { return f.getBlob().getDataAsString('UTF-8'); } catch (e2) { return ''; }
+}
+function futDataLinha_(t, ref) {
+  var m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/.exec(String(t || '').trim()); if (!m) return '';
+  var ano = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : ref.slice(0, 4);
+  return ano + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+}
+function futureImportarPasta_(u) {
+  u = u || { usuario: 'robô', nome: 'robô' };
+  var pasta = futPastaImportar_(); if (!pasta) return { arquivos: 0, despesas: 0, lavanderia: 0, erros: [] };
+  var T = futTabs_(), agora = new Date().toISOString(), r = { arquivos: 0, despesas: 0, lavanderia: 0, erros: [] }, refsLav = {};
+  var jaChave = {}; T.la.linhas.forEach(function (l) { if (l.chave) jaChave[l.chave] = 1; }); T.lv.linhas.forEach(function (l) { if (l.chave) jaChave[l.chave] = 1; });
+  var it = pasta.getFiles();
+  while (it.hasNext()) {
+    var f = it.next(), nome = String(f.getName());
+    if (/^IMPORTADO/i.test(nome) || !/^(DESPESAS|LAVANDERIA)/i.test(nome)) continue;
+    var lavanderia = /^LAVANDERIA/i.test(nome), linhas = futTextoArquivo_(f).split(/\r?\n/), ref = futCompMais_(futComp_(), -1), substituir = false, n = 0;
+    linhas.forEach(function (bruta, i) {
+      var t = bruta.trim(); if (!t || /^#/.test(t)) return;
+      var mm = /^m[eê]s\s*[:=]\s*(\d{4}-\d{2})/i.exec(t); if (mm) { ref = mm[1]; return; }
+      if (/^substituir/i.test(t)) { substituir = true; return; }
+      var p = t.split('|').map(function (x) { return x.trim(); });
+      var chave = 'pasta:' + f.getId() + ':' + i; if (jaChave[chave]) return;
+      try {
+        if (lavanderia) {
+          if (p.length < 3) throw new Error('faltam colunas');
+          var un = futIdUnidade_(String(p[1]).replace(/^ap(to|artamento)?\.?\s*/i, '')) || (/sala/i.test(p[1]) ? futIdUnidade_(p[1]) : '');
+          if (!un) throw new Error('unidade?');
+          if (substituir && !refsLav[ref]) { refsLav[ref] = 1; T.lv.linhas.forEach(function (l) { if (l.competencia === ref && l.situacao !== 'excluida' && !/^pasta:/.test(l.chave || '')) atualizarLinha_(T.lv, l, { situacao: 'excluida' }); }); }
+          futNovaLavagem_(T, ref, un, p[3] || 1, p[4] || '', futDataLinha_(p[0], ref), '', 'pasta PARA IMPORTAR', u, futTipoServico_(p[2]), chave);
+          refsLav[ref] = 1; r.lavanderia++; n++;
+        } else {
+          var valor = futN_(p[3] || p[p.length - 1]); if (!(valor > 0)) throw new Error('sem valor');
+          var desc = p.length >= 4 ? p[2] : p[1], cat = p.length >= 4 ? p[1] : futCategoriaDespesa_(desc, '');
+          inserirLinha_(T.la, { id: novoId_('FL'), data: futDataLinha_(p[0], ref) || ref + '-28', competencia: ref, tipo: 'despesa', categoria: String(cat || 'Outros').slice(0, 40),
+            unidade: '', pessoa: '', valor: txtDinheiro_(valor), forma: 'Pix', responsavel: u.nome || u.usuario, descricao: String(desc || '').slice(0, 300), origem: 'pasta do Drive',
+            chave: chave, criado_em: agora, criado_por: u.usuario });
+          r.despesas++; n++;
+        }
+        jaChave[chave] = 1;
+      } catch (e) { r.erros.push(nome + ' linha ' + (i + 1) + ': ' + e.message); }
+    });
+    try { f.setName('IMPORTADO ' + dataBR_(hojeSP_()) + ' — ' + nome); } catch (e3) { /* sem permissão para renomear: as chaves evitam duplicar */ }
+    r.arquivos++;
+    registrar_(u.usuario, 'future: pasta PARA IMPORTAR', nome + ' · ' + n + ' linha(s)');
+  }
+  Object.keys(refsLav).forEach(function (rf) { futAtualizarCobrancaRef_(T, rf); });
+  return r;
 }
 
 /* ---------- Energia: titular de cada conta e a planilha dos 12 meses ---------- */
@@ -9021,6 +9126,7 @@ function futureSincronizarDrive_(forcar) {
 /** Robô (de hora em hora): cobranças do mês e, perto do fim do mês, as do mês seguinte. */
 function futureRobo_() {
   if (!config_('FUTURE_IMPORTADO')) return 0;
+  try { futureImportarPasta_(); } catch (eI) { /* tenta na próxima hora */ }
   try { futureSincronizarDrive_(false); } catch (e) { /* tenta amanhã */ }
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));
   if (+hoje.slice(8, 10) >= 25) n += futureGerarCobrancas_(futCompMais_(futComp_(hoje), 1));

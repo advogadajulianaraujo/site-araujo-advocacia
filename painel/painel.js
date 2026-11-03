@@ -586,8 +586,8 @@
     ['future', 'Visão geral', 'Dia a dia', 'predio'],
     ['future/cobrancas', 'Cobranças', 'Dia a dia', 'cobranca'],
     ['future/energia', 'Energia', 'Dia a dia', 'energia'],
-    ['future/lavanderia', 'Lavanderia', 'Dia a dia', 'tarefas'],
-    ['future/caixa', 'Despesas e receitas', 'Dia a dia', 'financeiro'],
+    ['future/lavanderia', 'Lavanderia e faxina', 'Dia a dia', 'tarefas'],
+    ['future/caixa', 'Despesas', 'Dia a dia', 'financeiro'],
     ['future/unidades', 'Apartamentos e salas', 'Cadastro', 'inicio'],
     ['future/pessoas', 'Locatários', 'Cadastro', 'pessoas'],
     ['future/contratos', 'Contratos', 'Cadastro', 'modelos'],
@@ -2243,7 +2243,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.4.1';
+  const VERSAO_PAINEL = '8.4.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
