@@ -227,6 +227,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   assinatura", rota `documentos.assinaturas`). Robô `lembrarAssinaturas_` (substituiu `cobrarAssinaturas_`): 7 dias sem assinatura →
   tarefa "Assinatura pendente — cliente" para quem gerou (ou a secretaria), `[assinatura:id]` `[wa:assinar]`, de novo a cada 7 dias
   (até 3 vezes); "Assinado"/"Não vai assinar" fecha o lembrete.
+  8.4.5: grupo "✍ Aguardando assinatura" em Clientes (4º cartão, `grupo=assinatura`, etiqueta no cartão do cliente) e faixa amarela
+  (vermelha com mais de 7 dias) no topo de Clientes e Processos (`faixaAssinaturas` em `cabCarteira`). Na ficha sem registro:
+  "Marcar aguardando assinatura" (acao=criar). Casos antigos (`assinaturasAntigas_`, uma vez, Config ASSIN_ANTIGAS): petição inicial
+  sem número criada pelo gerador entra como aguardando, ligada ao processo (1º lembrete em 7 dias); "Assinado" mantém o processo;
+  "Não vai assinar" arquiva o processo sem número e cancela a tarefa da inicial.
 - Contrato previdenciário (MODELO9_CONTRATO_PREV_ID): na concessão o gerador escolhe "2 benefícios ou 30% (o que for maior)" (padrão),
   "2 primeiras parcelas do benefício + X% dos retroativos" ou "apenas as 2 primeiras parcelas" (`d.prev`, `textoPrevConcessao_`).
 - TODOS os perfis (inclusive RH, secretaria e estagiário) geram TODOS os documentos, também contratos de honorários, recibos,

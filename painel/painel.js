@@ -1001,8 +1001,21 @@
           h('button', { type: 'button', class: 'btn sec', onclick: () => { location.hash = '#/processo/novo'; } }, '+ Novo processo'))),
       h('section', { class: 'painel-busca carteira-busca' },
         h('div', { class: 'visoes', role: 'tablist', 'aria-label': 'Ver por' }, vis('clientes', 'clientes', 'Por cliente', o.nCli), vis('processos', 'processos', 'Por processo', o.nProc)),
-        form, o.filtros || null)
+        form, o.filtros || null),
+      faixaAssinaturas()
     ];
+  }
+  /** Faixa em Clientes e Processos: procurações/contratos gerados que o cliente ainda não assinou. */
+  function faixaAssinaturas() {
+    const el = h('div');
+    api('documentos.assinaturas', {}).then(l => {
+      if (!l || !l.length) return;
+      const velhas = l.filter(a => a.dias >= 7).length;
+      el.replaceChildren(h('a', { class: 'faixa-assin' + (velhas ? ' atrasada' : ''), href: '#/clientes?grupo=assinatura' },
+        h('strong', {}, `✍ ${l.length} cliente(s) com procuração/contrato aguardando assinatura`),
+        h('span', {}, velhas ? ` · ${velhas} há mais de 7 dias — lembrar o cliente` : ' · ver e marcar "✓ Assinado"')));
+    }).catch(() => {});
+    return el;
   }
 
   async function telaClientes(params) {
@@ -1010,10 +1023,11 @@
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
-    const grupo = ['acao', 'atendimento'].includes(params.get('grupo')) ? params.get('grupo') : '';
+    const grupo = ['acao', 'atendimento', 'assinatura'].includes(params.get('grupo')) ? params.get('grupo') : '';
     const limite = Math.max(100, parseInt(params.get('mais'), 10) || 100);
     lembrarVisao('clientes');
-    const [todos, procs] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => [])]);
+    const [todos, procs, assins] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('documentos.assinaturas', {}).catch(() => [])]);
+    const aguarda = {}; (assins || []).forEach(a => { aguarda[a.cliente_id] = a; });
     const porCli = {};
     procs.forEach(p => { if (p.cliente_id) (porCli[p.cliente_id] = porCli[p.cliente_id] || []).push(p); });
     // busca única: dados do cliente ou de qualquer processo dele
@@ -1027,7 +1041,8 @@
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
     const temAcao = c => (porCli[c.id] || []).length > 0 || c.processos > 0;
     const nAcao = base.filter(temAcao).length;
-    const lista = grupo === 'acao' ? base.filter(temAcao) : grupo === 'atendimento' ? base.filter(c => !temAcao(c)) : base;
+    const lista = grupo === 'acao' ? base.filter(temAcao) : grupo === 'atendimento' ? base.filter(c => !temAcao(c)) : grupo === 'assinatura' ? base.filter(c => aguarda[c.id]) : base;
+    const nAssin = base.filter(c => aguarda[c.id]).length;
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const ir = (mud) => {
@@ -1061,6 +1076,7 @@
         h('div', { class: 'cli-card-info' },
           h('div', { class: 'cli-card-nome' }, h('strong', {}, c.nome),
             acao ? h('span', { class: 'tag grupo-acao' }, 'Com ação') : h('span', { class: 'tag grupo-atend' }, 'Em atendimento'),
+            aguarda[c.id] ? h('span', { class: 'tag ' + (aguarda[c.id].dias >= 7 ? 'urgente' : 'atencao') }, '✍ aguardando assinatura' + (aguarda[c.id].dias ? ` · ${aguarda[c.id].dias}d` : '')) : null,
             c.situacao && c.situacao !== 'completo' ? h('span', { class: 'tag atencao mini-tag' }, 'cadastro a completar') : null),
           h('div', { class: 'peq' }, [c.cpf_cnpj, c.telefone, c.cidade, c.area].filter(Boolean).join(' · ') || '—'),
           ps.length ? h('div', { class: 'proc-chips' }, ps.slice(0, 4).map(chipProc), ps.length > 4 ? h('span', { class: 'peq' }, `+${ps.length - 4}`) : null) : null),
@@ -1073,9 +1089,11 @@
       ...cabCarteira('clientes', { busca, ir, filtros, nCli: todos.length, nProc: procs.length, nAjuizar }),
       h('div', { class: 'grupos-cli', role: 'group', 'aria-label': 'Grupo' },
         [['', 'Todos', base.length, 'Todos os clientes'], ['acao', 'Com ação', nAcao, 'Contrato, procuração ou processo'],
-          ['atendimento', 'Em atendimento', base.length - nAcao, 'Consulta, ainda sem contrato nem processo']].map(([v, nome, n, dica]) =>
+          ['atendimento', 'Em atendimento', base.length - nAcao, 'Consulta, ainda sem contrato nem processo'],
+          ['assinatura', '✍ Aguardando assinatura', nAssin, 'Procuração/contrato gerados, ainda não assinados']].map(([v, nome, n, dica]) =>
           h('button', { type: 'button', class: 'grupo-card g-' + (v || 'todos') + (grupo === v ? ' ativo' : ''), 'aria-pressed': String(grupo === v), onclick: () => ir({ grupo: v }) },
             h('b', {}, String(n)), h('span', { class: 'grupo-nome' }, nome), h('span', { class: 'peq' }, dica)))),
+      grupo === 'assinatura' ? blocoAssinaturas((assins || []).filter(a => base.some(c => c.id === a.cliente_id)), '✍ Aguardando assinatura — marque quando o cliente assinar') : null,
       h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'} na lista${busca ? ' para "' + busca + '"' : ''}`),
       lista.length ? h('ul', { class: 'lista-cli' }, lista.slice(0, limite).map(cartao)) : h('div', { class: 'caixa vazio-t' }, 'Nenhum cliente encontrado. ', busca ? h('a', { href: '#/processos?busca=' + encodeURIComponent(busca) }, 'Procurar nos processos') : null),
       lista.length > limite ? h('div', { class: 'acoes' }, botao(`Mostrar mais ${Math.min(100, lista.length - limite)}`, () => ir({ mais: String(limite + 100) }), 'sec')) : null);
@@ -1633,7 +1651,12 @@
 
     const pasta = () => { const d = caixaDocumentos(c); d.className = 'docs-pasta'; return d; };
     const assinBox = h('div');
-    api('documentos.assinaturas', { cliente_id: c.id }).then(l => { const b = blocoAssinaturas(l, '✍ Documentos aguardando assinatura'); if (b) assinBox.replaceChildren(b); }).catch(() => {});
+    api('documentos.assinaturas', { cliente_id: c.id }).then(l => {
+      const b = blocoAssinaturas(l, '✍ Documentos aguardando assinatura');
+      if (b) assinBox.replaceChildren(b);
+      else assinBox.replaceChildren(h('p', { class: 'peq acoes-sec' }, 'Fez procuração ou contrato fora do painel e o cliente ainda não assinou? ',
+        botao('Marcar "aguardando assinatura"', async ev => { ev.target.disabled = true; try { await api('documentos.assinatura', { acao: 'criar', cliente_id: c.id }); avisar('Marcado. Em 7 dias sem assinatura o painel lembra.'); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'mini sec')));
+    }).catch(() => {});
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
@@ -2243,7 +2266,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.4.4';
+  const VERSAO_PAINEL = '8.4.5';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

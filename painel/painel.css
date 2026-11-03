@@ -896,7 +896,7 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .pessoa-sem summary{cursor:pointer;font-size:13px;color:var(--mudo)}
 @media print{.pessoa-sem details{display:block}.pessoa-itens{max-height:none}}
 /* clientes: com ação × em atendimento */
-.grupos-cli{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.grupos-cli{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}
 .grupo-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--papel);border:1px solid var(--linha);border-left:5px solid var(--cor-g,#16171a);border-radius:10px;padding:12px 14px;cursor:pointer;box-shadow:var(--sombra);font:inherit;color:var(--tinta)}
 .grupo-card b{font-size:24px;line-height:1.1}
 .grupo-card .grupo-nome{font-weight:600}
@@ -955,7 +955,7 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;box-shadow:none}
 .etapas-proc .etapa-card{padding:10px 10px 8px}
 .carteira-busca .filtros-proc{margin:0}
 @media (max-width:700px){
-  .grupos-cli{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .grupos-cli{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
   .grupo-card{padding:10px;border-left-width:4px}
   .grupo-card .peq{display:none}
   .grupo-card b{font-size:20px}
@@ -1381,3 +1381,7 @@ body.modo-future .barra-cel{background:#2f855a}
 .fut-conta legend{font-weight:600;padding:0 6px}
 .fut-conta-campo{display:grid;gap:2px}
 .fut-conta-campo input{padding:6px 8px;border:1px solid #d6e2da;border-radius:6px;font:inherit}
+.faixa-assin{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0;padding:10px 14px;border-radius:10px;background:#fff7e0;border:1px solid #f0d58a;color:#6b4a00;text-decoration:none}
+.faixa-assin.atrasada{background:#fff1ef;border-color:#f1b3aa;color:#8f1d14}
+.faixa-assin:hover{filter:brightness(.98)}
+.grupo-card.g-assinatura b{color:#b7791f}

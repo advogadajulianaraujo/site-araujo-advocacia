@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.4.4';
+var VERSAO = '8.4.5';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4438,7 +4438,24 @@ function abrirPeticaoInicial_(c, tipoChave, contra, docs, u) {
     return novo.id;
   });
 }
+/** Uma vez: procuração/contrato gerados ANTES do controle de assinatura abriram direto a "Petição inicial (a ajuizar)".
+ *  Esses casos (sem número, criados pelo gerador) entram como "aguardando assinatura", ligados ao processo; o 1º lembrete vem em 7 dias. */
+function assinaturasAntigas_() {
+  if (config_('ASSIN_ANTIGAS')) return;
+  var tabA = tabela_('Assinaturas'), tem = {}, agora = new Date().toISOString(), cli = {};
+  tabA.linhas.forEach(function (a) { tem[a.cliente_id] = 1; });
+  tabela_('Clientes').linhas.forEach(function (c) { cli[c.id] = c; });
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (p.fase !== 'contratado' || p.numero || p.status === 'arquivado' || p.origem !== 'documentos' || !p.cliente_id || tem[p.cliente_id] || !cli[p.cliente_id]) return;
+    tem[p.cliente_id] = 1;
+    inserirLinha_(tabA, { id: novoId_('AS'), cliente_id: p.cliente_id, cliente_nome: cli[p.cliente_id].nome, documentos: 'Procuração e contrato (gerados antes do controle de assinatura)',
+      tipo_acao: '', parte_contraria: p.parte_contraria || '', gerado_em: p.criado_em || agora, gerado_por: '', situacao: 'aguardando', assinado_em: '', assinado_por: '',
+      processo_id: p.id, lembretes: '0', lembrete_em: agora, pasta_url: cli[p.cliente_id].pasta_url || '' });
+  });
+  setConfig_('ASSIN_ANTIGAS', agora, 'Petições iniciais antigas entraram em "aguardando assinatura"');
+}
 function listarAssinaturas_(d) {
+  try { assinaturasAntigas_(); } catch (e) { /* segue */ }
   var hoje = hojeSP_();
   return tabela_('Assinaturas').linhas.filter(function (a) { return d.todas ? true : a.situacao === 'aguardando'; })
     .filter(function (a) { return !d.cliente_id || a.cliente_id === d.cliente_id; })
@@ -4448,17 +4465,37 @@ function listarAssinaturas_(d) {
 }
 /** "✓ Assinado" (abre a petição inicial), "Não vai assinar" (arquiva) ou "Voltar a aguardar". */
 function marcarAssinatura_(d, u) {
+  if (d.acao === 'criar') { // marcado à mão na ficha (documentos feitos fora do painel)
+    return comTrava_(function () {
+      var tabA0 = tabela_('Assinaturas'), c0 = tabela_('Clientes').linhas.filter(function (x) { return x.id === d.cliente_id; })[0];
+      if (!c0) throw falha_('Cliente não encontrado.');
+      if (tabA0.linhas.some(function (x) { return x.cliente_id === c0.id && x.situacao === 'aguardando'; })) return { ok: true };
+      inserirLinha_(tabA0, { id: novoId_('AS'), cliente_id: c0.id, cliente_nome: c0.nome, documentos: String(d.documentos || 'Procuração e contrato').slice(0, 200), tipo_acao: c0.tipo_acao || '',
+        parte_contraria: '', gerado_em: new Date().toISOString(), gerado_por: u.usuario, situacao: 'aguardando', assinado_em: '', assinado_por: '', processo_id: '', lembretes: '0', lembrete_em: '', pasta_url: c0.pasta_url || '' });
+      return { ok: true };
+    });
+  }
   var tabA = tabela_('Assinaturas'), a = tabA.linhas.filter(function (x) { return x.id === d.id; })[0];
   if (!a) throw falha_('Registro de assinatura não encontrado.');
   var agora = new Date().toISOString(), proc = '';
   if (d.acao === 'assinado') {
     var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === a.cliente_id; })[0];
     if (!c) throw falha_('Cliente não encontrado.');
-    proc = abrirPeticaoInicial_(c, a.tipo_acao, a.parte_contraria, a.documentos, u);
+    proc = a.processo_id && tabela_('Processos').linhas.some(function (p) { return p.id === a.processo_id && p.status !== 'arquivado'; }) ? a.processo_id : abrirPeticaoInicial_(c, a.tipo_acao, a.parte_contraria, a.documentos, u);
     atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc });
     registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos);
   } else if (d.acao === 'desistiu') {
     atualizarLinha_(tabA, a, { situacao: 'não assinou', assinado_em: agora, assinado_por: u.nome || u.usuario });
+    // petição inicial aberta antes (casos antigos): arquiva o processo sem número e cancela a tarefa da inicial
+    if (a.processo_id) {
+      var tabP = tabela_('Processos'), pr = tabP.linhas.filter(function (p) { return p.id === a.processo_id && !p.numero && p.fase === 'contratado'; })[0];
+      if (pr) {
+        atualizarLinha_(tabP, pr, { status: 'arquivado', observacoes: (pr.observacoes ? pr.observacoes + ' ' : '') + 'Cliente não assinou (' + dataBR_(hojeSP_()) + ').', atualizado_em: agora, atualizado_por: u.usuario });
+        var tabT0 = tabela_('Tarefas');
+        tabT0.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[inicial:' + pr.id + ']') >= 0 && abertaT_(t); })
+          .forEach(function (t) { atualizarLinha_(tabT0, t, { situacao: 'cancelada', historico: historicoMais_(t.historico, u, 'cliente não assinou'), atualizado_em: agora, atualizado_por: u.usuario }); });
+      }
+    }
     registrar_(u.usuario, 'documentos não assinados', a.cliente_id + ' · ' + a.documentos);
   } else if (d.acao === 'reabrir') atualizarLinha_(tabA, a, { situacao: 'aguardando', assinado_em: '', assinado_por: '' });
   else throw falha_('Ação inválida.');
@@ -4473,6 +4510,7 @@ function marcarAssinatura_(d, u) {
 }
 /** Robô: procuração/contrato sem assinatura há 7 dias → tarefa "lembrar o cliente" (de novo a cada 7 dias, até 3 vezes). */
 function lembrarAssinaturas_(ctx) {
+  try { assinaturasAntigas_(); } catch (e) { /* segue */ }
   var tabA = tabela_('Assinaturas'), tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas'), hoje = hojeSP_(), feitas = 0, resp = respSecretaria_();
   tabA.linhas.forEach(function (a) {
     if (a.situacao !== 'aguardando' || feitas >= 15) return;
