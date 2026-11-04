@@ -73,7 +73,7 @@ em{font-style:italic;font-weight:400}
 .util .r{display:flex;gap:26px}
 header.site{position:sticky;top:0;z-index:50;background:var(--black);color:#fff;border-bottom:1px solid var(--line-d)}
 .head{display:flex;align-items:center;justify-content:space-between;gap:28px;height:92px}
-.brand img{width:101px;height:70px}
+.brand img{width:116px;height:80px}
 .nav{display:flex;align-items:center;gap:34px;font:500 12px/1 var(--sans);letter-spacing:.18em;text-transform:uppercase}
 .nav > a:not(.btn){color:#cfcbc3;padding:8px 0;border-bottom:1px solid transparent;transition:color .2s,border-color .2s}
 .nav > a:not(.btn):hover,.nav > a[aria-current]{color:#fff;border-bottom-color:#fff}
@@ -635,3 +635,17 @@ h1 em,h2 em{color:var(--gold-d)}
 .online{background:var(--ivory)}
 .online-cab{background:#000;box-shadow:0 0 0 100vmax #000;clip-path:inset(0 -100vmax);padding-bottom:78px}
 .online-grid{margin-top:-52px;position:relative}
+.tempo-box select{font:400 16px/1.3 var(--sans);padding:13px 14px;border:1px solid #cfc6b5;border-radius:10px;background:#fff;color:var(--ink);width:100%}
+.tempo-opc{text-transform:none;letter-spacing:0;font-weight:300;color:var(--muted)}
+/* Ajustes da revisão (nov/2026): primeira tela mais enxuta, pedido de retorno fora da abertura no celular */
+.hero2-grid{padding:clamp(32px,4.5vw,64px) 0 clamp(32px,4vw,52px)}
+.hero2 h1{font-size:clamp(40px,4.7vw,74px)}
+.hero2 .lead{margin:22px 0 30px}
+.hero-cliente{margin:18px 0 0;font:400 15px/1.5 var(--sans);color:#cfc8bb}
+.hero-cliente a{display:inline-flex;align-items:center;gap:10px;color:var(--gold-l);border-bottom:1px solid rgba(227,205,163,.4);padding-bottom:2px}
+.hero-cliente a:hover{color:#fff;border-bottom-color:#fff}
+.hero-cliente .arrow{width:22px}
+.ajuda-todas{margin:36px 0 0}
+.footer-nav a + a{margin-left:18px}
+@media (max-width:920px){.flutuante.tem-float .flut-liga{display:none}.hero2-foto{margin-top:4px}}
+@media (min-width:921px){.flut-liga{transition:opacity .3s}.flutuante:not(.rolou) .flut-liga{opacity:0;pointer-events:none}}

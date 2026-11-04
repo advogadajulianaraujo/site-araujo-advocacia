@@ -60,6 +60,7 @@
       '<button type="button" class="flut-liga" aria-haspopup="dialog">Prefere que a gente ligue?</button>';
     if (document.querySelector('a.float')) flut.classList.add('tem-float'); // no computador já existe o "Fale conosco"
     document.body.append(flut);
+    const rolou = () => flut.classList.toggle('rolou', scrollY > 500 || document.body.dataset.area === 'contato'); rolou(); addEventListener('scroll', rolou, { passive: true });
     flut.querySelector('[data-contact]').addEventListener('click', () => {
       window.dataLayer = window.dataLayer || [];
       window.dataLayer.push({ event: 'contact_click', contact_channel: 'whatsapp', contact_location: 'flutuante', practice_area: area });
@@ -70,6 +71,7 @@
       const sc = document.createElement('script'); sc.src = '/painel/config.js'; sc.onload = () => res(window.PAINEL_API_URL || ''); sc.onerror = () => res('');
       document.head.append(sc);
     });
+    document.querySelectorAll('[data-abrir-ligue]').forEach(b => b.addEventListener('click', () => flut.querySelector('.flut-liga').click()));
     flut.querySelector('.flut-liga').addEventListener('click', () => {
       if (!caixa) {
         caixa = document.createElement('dialog');

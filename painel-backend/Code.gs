@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.9.1';
+var VERSAO = '8.9.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4454,13 +4454,27 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
   if (feitas) registrar_('robô', 'robôs do escritório', JSON.stringify(r));
   if (erros.length) throw new Error(erros.join(' | '));
   return r;
+}
+
+/* 8.9.2: política de privacidade do site — pedidos de retorno ("Prefere que a gente ligue?") guardam nome e telefone por 12 meses.
+   Depois disso o robô apaga nome, telefone, assunto e horário e mantém só data, página e origem (números do Marketing). 1 vez por dia. */
+function limparContatosAntigos_() {
+  var hoje = hojeSP_(); if (config_('CONTATOS_LIMPOS_DIA') === hoje) return 0;
+  setConfig_('CONTATOS_LIMPOS_DIA', hoje, 'Último dia em que o robô apagou dados pessoais dos pedidos de retorno com mais de 12 meses');
+  var t = tabela_('Contatos'), limite = new Date(Date.now() - 365 * 86400000).toISOString(), mud = [];
+  t.linhas.forEach(function (c) {
+    if (!c.criado_em || c.criado_em >= limite || (!c.nome && !c.telefone && !c.assunto)) return;
+    c.nome = ''; c.telefone = ''; c.assunto = ''; c.horario = ''; c.observacoes = 'dados pessoais apagados após 12 meses (política de privacidade)'; c._mudou = true; mud.push(c);
+  });
+  if (mud.length) regravarMudadas_(t);
+  return mud.length;
 }
 
 /* 1) Alvará, RPV, precatório */

@@ -518,6 +518,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   vitrine do Acompanhe com celular desenhado em CSS (`.acomp-sec`, "Pedir o meu código" no WhatsApp). "Meu processo" no menu de TODAS as
   páginas (`.nav-proc`) e na barra do celular (WhatsApp | Meu processo | Ligar). Fotos do ensaio no Drive têm 8–12 MB (a ferramenta do Drive
   não baixa): para novas fotos no site, pedir versões menores. Pastas com fotos pessoais ou de clientes nunca entram.
+- Revisão nov/2026 (2 revisões juntas, pedido da usuária): abertura mais curta (título menor; "Escritório de advocacia em Tubarão/SC, com atuação
+  principal em Direito do Trabalho…"; "Falar no WhatsApp" + link "Já é cliente? Acompanhe seu processo"); "Entrar" (painel) saiu do menu e foi
+  para o rodapé ("Área da equipe"); lista das 6 áreas saiu da home (fica em /atuacao/, link embaixo dos cartões); Estrutura (fotos do
+  escritório) logo depois de "Quem cuida"; balão "Prefere que a gente ligue?" some no celular e no computador só aparece depois de rolar
+  (em /contato/ há o botão `data-abrir-ligue`); logo nítido `logo-araujo-3x.png` (116×80). Calculadora rápida pergunta o AVISO PRÉVIO e a
+  admissão (mesma regra da completa) e nunca diz "terminou" sem "pode ter terminado… não desista sem conversar". Rescisão: FGTS distingue
+  saque-rescisão e saque-aniversário. Privacidade reescrita (retorno por telefone, Acompanhe, calculadoras); `limparContatosAntigos_`
+  (robôs do escritório, 1×/dia) apaga nome/telefone/assunto dos pedidos de retorno com mais de 12 meses. A CONFIRMAR com a usuária: andar
+  da sala (2º?) e foto da entrada no Contato; pós-doutorado na trajetória.
 - Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
   "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados).
   8.9.0 (acesso à API pedido pela usuária em 11/2026): Marketing › "📣 Blog no perfil do Google" (rota `marketing.gbp`: status/conectar/

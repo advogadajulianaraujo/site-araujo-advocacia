@@ -31,8 +31,8 @@
       ? `<div class="calc-ok"><p><b>O prazo de 2 anos vai até ${dataBR(limite)}</b>${txtAviso}. Faltam cerca de <b>${restam} dias</b>.</p>
          <p>Se a ação for proposta hoje, ela alcança direitos a partir de <b>${dataBR(alcance > (adm || alcance) ? alcance : adm)}</b> (os 5 anos anteriores à ação).</p>
          ${restam < 120 ? '<p><b>Atenção:</b> o prazo está perto do fim. Procure orientação o quanto antes.</p>' : ''}</div>`
-      : `<div class="calc-alerta"><p><b>Pela regra geral, o prazo de 2 anos terminou em ${dataBR(limite)}</b>${txtAviso}.</p>
-         <p>Mesmo assim, vale conversar com uma advogada: há situações que mudam a contagem (por exemplo, trabalhador menor de idade ou uma ação anterior que interrompeu o prazo).</p></div>`;
+      : `<div class="calc-alerta"><p><b>Pela regra geral, o prazo de 2 anos pode ter terminado em ${dataBR(limite)}</b>${txtAviso}.</p>
+         <p><b>Não desista sem conversar com uma advogada:</b> há situações que mudam a contagem (aviso prévio, trabalhador menor de idade, uma ação ou protesto anterior que interrompeu o prazo, entre outras).</p></div>`;
     out.innerHTML += `<p class="calc-nota">Regra: Constituição Federal, art. 7º, XXIX (2 anos após o fim do contrato para entrar com a ação; alcança os 5 anos anteriores). O aviso prévio, mesmo indenizado, conta no tempo de contrato (OJ 83 da SDI-1 do TST). Estimativa informativa: confirme com a análise do seu caso.</p>
       <p><a class="btn" href="${zap('Olá, Dra. Júlian. Usei a calculadora de prazo do site e gostaria de uma orientação sobre o meu caso trabalhista.')}" target="_blank" rel="noopener noreferrer" data-contact="calculadora-prazo">Falar no WhatsApp</a></p>`;
     out.hidden = false; out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -85,7 +85,10 @@
       const multa = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
       if (multa) itens.push(['Multa do FGTS (' + (multa * 100) + '% sobre o saldo' + (saldoInf > 0 ? '' : ' estimado') + ')', saldoFgts * multa]);
       const total = itens.reduce((s, x) => s + x[1], 0);
-      const saque = motivo === 'sem_justa' ? 'pode sacar todo o FGTS' : motivo === 'acordo' ? 'pode sacar até 80% do FGTS' : 'não saca o FGTS (salvo exceções)';
+      const saque = motivo === 'sem_justa'
+        ? 'pode sacar o saldo da conta e a multa (saque-rescisão). Atenção: quem aderiu ao saque-aniversário, pela regra geral, saca só a multa de 40%; o saldo fica bloqueado'
+        : motivo === 'acordo' ? 'pode sacar até 80% do saldo e a multa de 20% (quem aderiu ao saque-aniversário, pela regra geral, saca só a multa)'
+        : 'não saca o FGTS (salvo exceções)';
       out.innerHTML = `<table class="calc-tab"><tbody>${itens.map(x => linha(x[0], reais(x[1]))).join('')}${linha('<b>Total estimado (bruto)</b>', '<b>' + reais(total) + '</b>', 'calc-total')}</tbody></table>
         <p>FGTS: ${saldoInf > 0 ? 'saldo informado ' + reais(saldoInf) : 'saldo estimado em cerca de ' + reais(saldoFgts) + ' (8% do salário por mês; confira o extrato no app FGTS)'} — o trabalhador ${saque}.${motivo === 'sem_justa' ? ' Na dispensa sem justa causa também pode haver direito ao seguro-desemprego.' : ''}</p>
         <p class="calc-nota">Estimativa informativa, em valores brutos (sem descontos de INSS e imposto de renda) e sem médias de horas extras, comissões, adicionais ou diferenças que o caso possa ter. Base: CLT arts. 477, 484-A e 487; Lei 12.506/2011 (aviso proporcional); Lei 8.036/1990 (FGTS); Súmulas 171 e 261 do TST. Para saber o valor certo, é preciso analisar os documentos.</p>
