@@ -499,7 +499,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - No navegador, a memória das telas também fica na aba (sessionStorage `painel_memoria`) para o F5 abrir na hora;
   é apagada ao sair, ao cair a sessão e ao fechar o navegador.
 - Contratos: CONTRATADA qualificada com o(a) advogado(a) só pela OAB (sem repetir endereço); assinaturas com nome em
-  negrito e o papel embaixo ("NOME|CONTRATANTE" no texto do modelo); testemunhas com nome e CPF.
+  negrito e o papel embaixo ("NOME|CONTRATANTE" no texto do modelo).
+- 8.8.1 (pedido da usuária): contratos de honorários (contrato, prestação, assessoria, previdenciário) e procurações são assinados SÓ pelo
+  cliente — sem a assinatura do escritório/CONTRATADA e sem testemunhas ("{{c:o|a}} CONTRATANTE assina o presente instrumento"); título
+  executivo pelo art. 24 do EAOAB + art. 784, XII, do CPC (o inciso III exigiria testemunhas). Chaves MODELO9_*/MODELO10_CONTRATO_PREV_ID.
 
 ## Site público
 

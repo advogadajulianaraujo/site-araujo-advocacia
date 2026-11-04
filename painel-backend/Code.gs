@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.8.0';
+var VERSAO = '8.8.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -5043,9 +5043,9 @@ var MODELOS = {
   video: { nome: 'Petição genérica — participação na audiência por videoconferência', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO9_VIDEO_ID' },
   manifestacao: { nome: 'Petição genérica — manifestação (texto livre)', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO9_MANIFESTACAO_ID' },
   substabelecimento: { nome: 'Substabelecimento com reserva de poderes', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_SUBSTABELECIMENTO_ID', antigo: ['MODELO5_SUBSTABELECIMENTO_ID', 'MODELO4_SUBSTABELECIMENTO_ID', 'MODELO3_SUBSTABELECIMENTO_ID'] },
-  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO8_CONTRATO_ID', antigo: ['MODELO7_CONTRATO_ID', 'MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
-  prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO8_PRESTACAO_ID', antigo: ['MODELO6_PRESTACAO_ID', 'MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
-  assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO8_ASSESSORIA_ID', antigo: ['MODELO6_ASSESSORIA_ID', 'MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
+  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO9_CONTRATO_ID', antigo: ['MODELO8_CONTRATO_ID', 'MODELO7_CONTRATO_ID', 'MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
+  prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO9_PRESTACAO_ID', antigo: ['MODELO8_PRESTACAO_ID', 'MODELO6_PRESTACAO_ID', 'MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
+  assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO9_ASSESSORIA_ID', antigo: ['MODELO8_ASSESSORIA_ID', 'MODELO6_ASSESSORIA_ID', 'MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
   recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO6_RECIBO_ID', antigo: ['MODELO5_RECIBO_ID', 'MODELO4_RECIBO_ID', 'MODELO3_RECIBO_ID', 'MODELO2_RECIBO_ID'] },
   cobranca: { nome: 'Notificação de cobrança de honorários em atraso', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, config: 'MODELO6_COBRANCA_ID', antigo: ['MODELO5_COBRANCA_ID', 'MODELO4_COBRANCA_ID', 'MODELO3_COBRANCA_ID'] },
   promissoria: { assinaCliente: true, nome: 'Notas promissórias das parcelas', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, gerado: true },
@@ -5053,7 +5053,7 @@ var MODELOS = {
   isencao_irpf: { assinaCliente: true, nome: 'Requerimento de isenção do imposto de renda (doença grave)', grupo: 'Procuração e declarações', config: 'MODELO7_ISENCAO_IRPF_ID' },
   comparecimento: { nome: 'Declaração de comparecimento ao escritório', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_COMPARECIMENTO_ID' },
   notificacao: { nome: 'Notificação extrajudicial (em nome do cliente)', grupo: 'Petições e notificações', config: 'MODELO7_NOTIFICACAO_ID' },
-  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO9_CONTRATO_PREV_ID', antigo: ['MODELO8_CONTRATO_PREV_ID', 'MODELO7_CONTRATO_PREV_ID'] }
+  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO10_CONTRATO_PREV_ID', antigo: ['MODELO9_CONTRATO_PREV_ID', 'MODELO8_CONTRATO_PREV_ID', 'MODELO7_CONTRATO_PREV_ID'] }
 };
 
 var CABECALHO_PETICAO = [
@@ -5262,7 +5262,7 @@ var TEXTO_MODELOS = {
     ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
     ['h', 'CLÁUSULA 8ª – DAS MULTAS POR DESISTÊNCIA E POR AUSÊNCIA EM AUDIÊNCIA'],
     ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência da ação ou da contratação; b) em caso de não comparecimento injustificado a audiência ou perícia para a qual tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA.'],
-    ['p', 'Parágrafo primeiro. As multas desta cláusula são devidas sem prejuízo dos honorários contratados e das consequências processuais da desistência ou da ausência, vencem na data do fato e, não pagas em 10 (dez) dias, podem ser cobradas judicialmente pela CONTRATADA, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, III, do Código de Processo Civil).'],
+    ['p', 'Parágrafo primeiro. As multas desta cláusula são devidas sem prejuízo dos honorários contratados e das consequências processuais da desistência ou da ausência, vencem na data do fato e, não pagas em 10 (dez) dias, podem ser cobradas judicialmente pela CONTRATADA, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do Código de Processo Civil).'],
     ['p', 'Parágrafo segundo. A desistência ou a revogação do mandato não desobriga {{c:o|a}} CONTRATANTE do pagamento dos honorários vencidos e dos proporcionais ao trabalho já realizado, nem dos honorários de êxito, caso o proveito econômico venha a ser obtido em razão dos atos praticados pela CONTRATADA.'],
     ['h', 'CLÁUSULA 9ª – DO DESCUMPRIMENTO'],
     ['p', 'Em caso de descumprimento de qualquer cláusula do presente contrato, a parte infratora pagará multa de 5% (cinco por cento) sobre o valor total do contrato, além de indenizar a parte prejudicada pelos danos e pelas despesas adicionais causados pelo descumprimento.'],
@@ -5270,13 +5270,9 @@ var TEXTO_MODELOS = {
     ['p', 'A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato e o cumprimento de obrigações legais, nos termos do Estatuto da Advocacia e da Lei nº 13.709/2018 (LGPD).'],
     ['h', 'CLÁUSULA 11ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma, na presença de 2 (duas) testemunhas.'],
+    ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
-    ['a', '{{nome}}|CONTRATANTE'],
-    ['a', '{{escritorio}}|CONTRATADA — {{advogado_assinatura}}, {{advogado_oab}}'],
-    ['h', 'TESTEMUNHAS'],
-    ['a', 'Testemunha 1|Nome: ____________________________   CPF: ________________'],
-    ['a', 'Testemunha 2|Nome: ____________________________   CPF: ________________']
+    ['a', '{{nome}}|CONTRATANTE']
   ],
   prestacao: [
     ['t', 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS'],
@@ -5306,13 +5302,9 @@ var TEXTO_MODELOS = {
     ['p', 'A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato, nos termos do Estatuto da Advocacia e da Lei nº 13.709/2018 (LGPD).'],
     ['h', 'CLÁUSULA 9ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma, na presença de 2 (duas) testemunhas.'],
+    ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
-    ['a', '{{nome}}|CONTRATANTE'],
-    ['a', '{{escritorio}}|CONTRATADA — {{advogado_assinatura}}, {{advogado_oab}}'],
-    ['h', 'TESTEMUNHAS'],
-    ['a', 'Testemunha 1|Nome: ____________________________   CPF: ________________'],
-    ['a', 'Testemunha 2|Nome: ____________________________   CPF: ________________']
+    ['a', '{{nome}}|CONTRATANTE']
   ],
   assessoria: [
     ['t', 'CONTRATO DE ASSESSORIA JURÍDICA'],
@@ -5337,13 +5329,9 @@ var TEXTO_MODELOS = {
     ['p', 'A CONTRATADA manterá sigilo sobre todas as informações recebidas em razão deste contrato, nos termos do Estatuto da Advocacia e da Lei Geral de Proteção de Dados Pessoais.'],
     ['h', 'CLÁUSULA 7ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma, na presença de 2 (duas) testemunhas.'],
+    ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
-    ['a', '{{nome}}|CONTRATANTE'],
-    ['a', '{{escritorio}}|CONTRATADA — {{advogado_assinatura}}, {{advogado_oab}}'],
-    ['h', 'TESTEMUNHAS'],
-    ['a', 'Testemunha 1|Nome: ____________________________   CPF: ________________'],
-    ['a', 'Testemunha 2|Nome: ____________________________   CPF: ________________']
+    ['a', '{{nome}}|CONTRATANTE']
   ],
   recibo: [
     ['t', 'RECIBO DE HONORÁRIOS ADVOCATÍCIOS'],
@@ -5409,7 +5397,7 @@ var TEXTO_MODELOS = {
     ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
     ['p', '{{c:O|A}} CONTRATANTE obriga-se a entregar os documentos solicitados, informar mudanças de telefone e endereço e comparecer às perícias médicas, avaliações sociais e audiências para as quais for convocad{{c:o|a}}.'],
     ['h', 'CLÁUSULA 5ª – DAS MULTAS, DO ATRASO E DA SUSPENSÃO DOS SERVIÇOS'],
-    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência; b) em caso de não comparecimento injustificado a perícia, avaliação social ou audiência para a qual tenha sido convocad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA. As multas são devidas sem prejuízo dos honorários e podem ser cobradas judicialmente, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, III, do Código de Processo Civil).'],
+    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência; b) em caso de não comparecimento injustificado a perícia, avaliação social ou audiência para a qual tenha sido convocad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA. As multas são devidas sem prejuízo dos honorários e podem ser cobradas judicialmente, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do Código de Processo Civil).'],
     ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
     ['h', 'CLÁUSULA 6ª – DO FALECIMENTO E DA HABILITAÇÃO DE HERDEIROS'],
     ['p', 'Em caso de falecimento d{{c:o|a}} CONTRATANTE, os sucessores obrigam-se a cumprir integralmente o presente contrato, sendo devidos honorários adicionais de 5% (cinco por cento) pela habilitação dos herdeiros.'],
@@ -5417,13 +5405,9 @@ var TEXTO_MODELOS = {
     ['p', 'A obrigação da CONTRATADA é de meio, e não de resultado. A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato (Lei nº 13.709/2018 — LGPD).'],
     ['h', 'CLÁUSULA 8ª – DO FORO'],
     ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
-    ['p', 'E, por estarem justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma.'],
+    ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
-    ['a', '{{nome}}|CONTRATANTE'],
-    ['a', '{{escritorio}}|CONTRATADA — {{advogado_assinatura}}, {{advogado_oab}}'],
-    ['h', 'TESTEMUNHAS'],
-    ['a', 'Testemunha 1|Nome: ____________________________   CPF: ________________'],
-    ['a', 'Testemunha 2|Nome: ____________________________   CPF: ________________']
+    ['a', '{{nome}}|CONTRATANTE']
   ],
   cobranca: [
     ['t', 'NOTIFICAÇÃO EXTRAJUDICIAL'],
