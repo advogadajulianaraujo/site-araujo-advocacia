@@ -440,6 +440,23 @@
             const x = await api('future.cobranca.pagarGrupo', { pagador: pag, mes: comp }); avisar(`${x.pagas} cobrança(s) de ${pag} pagas.`); recarregar();
           })) : null);
     });
+    // 8.7.0: lembrete do aluguel no WhatsApp — dia 5 ("vence dia 10") e dia 10 em diante ("vence hoje" / "venceu")
+    const diaHoje = +hojeISO().slice(8, 10), compHoje = hojeISO().slice(0, 7);
+    const qual = diaHoje >= 10 ? '10' : diaHoje >= 5 ? '5' : '';
+    const paraLembrar = qual && comp === compHoje ? faltam.filter(c => c.telefone && !c.pagador && !(qual === '10' ? c.lembrete10_em : c.lembrete5_em)) : [];
+    const textoLembrete = c => {
+      const nome = primeiro(c.pessoa), ap = c.unidade.replace(/^AP\s*/i, 'apartamento ').replace(/^SALA/i, 'sala'), refm = nomeMes(compMais(c.competencia, -1)).replace(/ de \d{4}$/, '');
+      const venc = dataBR(c.vencimento), hojeV = c.vencimento === hojeISO();
+      return qual === '5'
+        ? `Oi, ${nome}! Tudo bem? Passando para lembrar que o aluguel do ${ap}, referente a ${refm}, vence dia ${venc}, no valor de ${reais(c.total - c.valor_pago)}. Assim que pagar, pode mandar o comprovante por aqui. Se preferir, também aceitamos em dinheiro. Obrigada!`
+        : `Oi, ${nome}! Lembrete: o aluguel do ${ap}, referente a ${refm}, ${hojeV ? 'vence hoje' : 'venceu em ' + venc}, no valor de ${reais(c.total - c.valor_pago)}. Se já pagou, por favor mande o comprovante por aqui. Obrigada!`;
+    };
+    const blocoLembretes = paraLembrar.length ? h('section', { class: 'caixa fut-lembretes' },
+      h('h2', {}, qual === '5' ? `🔔 Lembrete do dia 5 — ${paraLembrar.length} para lembrar` : `🔔 Vence dia 10 — ${paraLembrar.length} ainda não pagaram`),
+      h('p', { class: 'peq' }, qual === '5' ? 'Lembre com antecedência quem ainda não pagou. O botão abre o WhatsApp com a mensagem pronta e marca como lembrado.' : 'Mensagem curta de "vence hoje / venceu", pedindo o comprovante.'),
+      h('ul', { class: 'fut-lemb-lista' }, paraLembrar.map(c => h('li', {}, h('span', {}, h('b', {}, c.unidade), ' · ' + c.pessoa + ' · ' + reais(c.total - c.valor_pago)),
+        h('a', { class: 'btn mini wa', href: whats(c.telefone, textoLembrete(c)), target: '_blank', rel: 'noopener noreferrer',
+          onclick: () => { api('future.cobranca.lembrete', { id: c.id, qual }).then(() => setTimeout(recarregar, 400)).catch(e => avisar(e.message, true)); } }, 'Lembrar no WhatsApp'))))) : null;
     const listaVer = ver === 'pagas' ? pagas : ver === 'todas' ? doMes : ver === 'mandar' ? faltam.filter(c => !c.enviado_em && !c.pagador) : ver === 'cobradas' ? cobradas : faltam.filter(c => !c.pagador);
     const aba = (id, rot, n) => h('button', { type: 'button', class: 'visao-bt' + (ver === id ? ' ativo' : ''), onclick: () => ir('cobrancas', { ver: id }, params) }, h('span', {}, rot), h('span', { class: 'visao-n' }, String(n)));
     mostrar(topo('Edifício Future', 'Cobranças', `Aluguel, taxas, energia e lavanderia de ${MESES[+ref.slice(5, 7) - 1]} · vencem em ${dataBR((doMes[0] || {}).vencimento || comp + '-10')}`,
@@ -452,6 +469,7 @@
         numero(naoEnviadas ? 'azul alerta' : 'azul', String(naoEnviadas), 'Falta mandar', `${cobradas.length} já cobrada(s), esperando pagamento`)),
       semEnergia ? h('p', { class: 'nota' }, `⚡ ${semEnergia} cobrança(s) ainda sem a energia de ${nomeMes(ref)}. Informe em Energia (ou cole a tabela da Celesc) antes de mandar — o total se atualiza sozinho.`) : null,
       !r.pagamento ? h('p', { class: 'nota' }, 'Cadastre os dados de pagamento (banco, Pix, agência e conta) em Configurações para irem junto na mensagem.') : null,
+      blocoLembretes,
       ...blocosGrupo,
       h('div', { class: 'visoes fut-filtro' }, aba('falta', 'Falta pagar', faltam.filter(c => !c.pagador).length), aba('mandar', '1 · Falta mandar', naoEnviadas), aba('cobradas', '2 · Cobradas', cobradas.length), aba('pagas', '3 · Pagas', pagas.length), aba('todas', 'Todas', doMes.length)),
       h('section', { class: 'fut-cob-lista' }, listaVer.length ? listaVer.map(cartao) : h('p', { class: 'caixa peq' }, ver === 'falta' ? 'Todo mundo pagou este mês. 🎉' : 'Nada aqui.')),

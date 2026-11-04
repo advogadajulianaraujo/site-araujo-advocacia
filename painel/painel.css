@@ -1417,3 +1417,18 @@ body.modo-future .barra-cel{background:#2f855a}
 .mkt-num{display:grid;grid-template-columns:1fr;gap:4px;margin:0}.mkt-num div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e6e2da;padding:3px 0}
 .mkt-num dt{color:#666;font-size:.88rem}.mkt-num dd{margin:0;text-align:right;font-weight:500}
 .mkt-geral.bom{background:#eaf6ee;border-color:#1f8a4c}.mkt-geral.ruim{background:#fdeceb;border-color:#8f1d14}
+/* Organizar cadastros 8.7 */
+.org-lista{list-style:none;margin:0;padding:0}
+.org-item{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #eee;flex-wrap:wrap}
+.org-txt{flex:1;min-width:240px}.org-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.org-busca{display:flex;gap:4px}.org-busca input{width:180px}
+.org-item.feita{background:#eaf6ee}
+.linha-tempo summary{cursor:pointer}
+.lt-lista{list-style:none;margin:10px 0 0;padding:0 0 0 6px;border-left:2px solid #e6e2da}
+.lt-lista li{display:flex;gap:10px;padding:6px 0 6px 10px;position:relative}
+.lt-ico{width:24px;flex:none;text-align:center}
+.lt-ato strong,.lt-ato a{color:#8a6a1c}.lt-intimacao a{color:#1f4e8a}
+.ads-script{width:100%;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#faf8f3;border:1px solid #e6e2da;border-radius:8px;padding:10px;box-sizing:border-box}
+.ads-passos li{margin:4px 0}
+.fut-lembretes{border-left:4px solid #1f8a4c}.fut-lemb-lista{list-style:none;margin:8px 0 0;padding:0}
+.fut-lemb-lista li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #eee;flex-wrap:wrap}

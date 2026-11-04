@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+      - name: Preparar a imagem do Instagram
+        run: npm install --no-save --prefix .github/robo-blog @resvg/resvg-js@2.6.2
       - name: Buscar decisões e escrever os textos
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

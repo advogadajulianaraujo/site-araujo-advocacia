@@ -330,6 +330,39 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "Como nos conheceu?" (Clientes.como_conheceu, `CANAIS_CONHECEU`), contratos assinados e honorários contratados/recebidos. Veredito por
   área bem explícito ("DÁ RETORNO: cada R$ 1 trouxe R$ x" / "AINDA NÃO SE PAGOU"). Uma campanha por área no Google Ads = uma linha por área.
 
+## 8.7.0 (organizar, PIX, petições, linha do tempo, calculadoras, blog, Google Ads, Future)
+
+- Organizar cadastros (#/organizar, botão "🔧 Organizar cadastros" em Clientes e processos; rotas `organizar.listar`/`organizar.ligar`):
+  processos ativos sem cliente com sugestões (mesmo nome / nome parecido) → "Ligar" ou "+ Criar cadastro" (nome do tribunal, origem
+  "processo (organizar cadastros)", sem pasta); "Cadastros para completar" (clientes com processo ativo; sem telefone primeiro) com
+  "Pedir no WhatsApp" só do que falta. SEM campo de e-mail para a equipe e SEM OAB nova (pedido da usuária: só a da Dra. Júlian).
+- PIX (`classificarPix_`, usado no robô e em `reprocessarPixPendentes_`, que reconfere os "a conferir" toda rodada): nome com 2 partes
+  iguais (`clientePor2Nomes_`); PIX do mesmo valor das parcelas do cliente sem parcela aberta perto (> 20 dias) = parcela de mês
+  ANTERIOR à importação do GEA → lança parcela paga "avulsa" (`parcelaAnteriorImportacao_`); "Não é honorário" pede o motivo (coluna
+  `categoria` em Pix) e o robô aprende pelo pagador (`categoriasPix_`). PIX ENVIADOS ("Pagamento Pix realizado", `lerPixSaida_`,
+  Config PIX_SAIDA_DESDE): viram despesa paga "PIX para NOME" (marca `[pix:id]`), ou dão baixa numa despesa prevista de mesmo valor ±10
+  dias; categoria aprendida pelo nome, senão "A classificar" (seleção na tabela do Caixa, rota `fin.despesa.categoria`, aplica às
+  outras do mesmo nome). Nenhum PIX recebido é do Edifício Future (palavra da usuária).
+- Petições genéricas (MODELO9_*, grupo Petições, precisam do nº): ciência, dilação de prazo, impulso, laudo, cálculos, alvará, novo
+  endereço, rol de testemunhas, videoconferência, manifestação livre. O campo "detalhes/objeto" do gerador entra em `{{detalhes_peticao}}`;
+  o que depende do caso fica "[COMPLETAR: …]".
+- Processo: "Como está o processo?" (`ia.resumirProcesso`: Gemini, histórico anonimizado, texto simples para o cliente + nota para a
+  equipe, botão WhatsApp; `chamarGemini_(…, livre)`) e "🕑 Linha do tempo" (`processos.linhaTempo`: DataJud, intimações, prazos, atos,
+  tarefas e log de documentos/WhatsApp).
+- Site: /calculadoras/ (assets/calculadoras.js/.css): "Ainda dá tempo?" (2 anos do fim do contrato, aviso indenizado projetado — OJ 83;
+  alcance de 5 anos) e estimativa de rescisão (saldo, aviso proporcional Lei 12.506, 13º e férias por avos ≥ 15 dias, férias vencidas,
+  multa 40%/20% do FGTS, acordo 484-A com metade do aviso). Tudo no aparelho, nada é enviado. Link na página Trabalhista e no sitemap.
+- Blog: o robô também lê STJ e TJSC pelo Google (`noticiasOutrasAreas`) e dá prioridade às áreas com menos textos recentes
+  (`areasDaVez`; no máx. 1 trabalhista quando houver outras); intercala as áreas. Imagem 1080×1080 + legenda para o Instagram
+  (`instagram.mjs` com @resvg/resvg-js instalado no workflow → blog/<slug>/instagram.png e instagram.txt). A tarefa semanal
+  "Postar no Google e no Instagram" traz os links da imagem e da legenda.
+- Google Ads automático: Marketing › "Ligar o Google Ads" mostra um script (com a URL do painel e a chave Config MARKETING_ADS_CHAVE,
+  rota `marketing.adsConfig`) para colar em Google Ads › Ferramentas › Ações em massa › Scripts (diário). Ele manda custo, cliques,
+  impressões e conversões por campanha/mês para a rota pública `marketing.ads` (confere a chave; obs "auto"); a área vem do nome da
+  campanha (`areaMkt_`). Lançamento à mão de Google Ads do mesmo mês/área é ignorado quando o automático já trouxe.
+- Edifício Future: lembrete do aluguel no WhatsApp — em Cobranças, do dia 5 ao 9 "Lembrete do dia 5" e do dia 10 em diante "Vence dia 10"
+  para quem não pagou (colunas `lembrete5_em`/`lembrete10_em`, rota `future.cobranca.lembrete`).
+
 ## Layout
 
 - Menu LATERAL à esquerda (tema 2026, pedido da usuária, no estilo do ADVBOX): grupos Escritório (Início, Clientes, Processos,

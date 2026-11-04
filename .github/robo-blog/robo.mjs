@@ -12,6 +12,7 @@
  * Opções (variáveis do repositório): BLOG_POSTS_SEMANA (padrão 3), GEMINI_MODELO.
  */
 import { gerar, lerPosts, salvarPosts, slugDe, AREAS } from './gerar.mjs';
+import { gerarImagens } from './instagram.mjs';
 
 const CHAVE = String(process.env.GEMINI_API_KEY || '').replace(/^[\s"']+|[\s"']+$/g, '');
 const QUANTOS = Math.max(1, Math.min(6, parseInt(process.env.BLOG_POSTS_SEMANA || '3', 10) || 3));
@@ -117,6 +118,34 @@ async function noticiasTST() {
   } catch (e) { log('TST não respondeu:', e.message); return []; }
 }
 
+/* 8.7.0: outras áreas — STJ (família, consumidor, previdenciário) e TJSC, lidos pelo Google como o TST. O link é conferido depois. */
+const FONTES_GOOGLE = [
+  { tribunal: 'STJ', url: 'https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Ultimas-noticias.aspx' },
+  { tribunal: 'TJSC', url: 'https://www.tjsc.jus.br/web/imprensa/noticias' }
+];
+async function noticiasOutrasAreas() {
+  const todas = [];
+  for (const f of FONTES_GOOGLE) {
+    try {
+      const t = await lerComGoogle(f.url, 'Liste as notícias desta página (até 25), na ordem. Responda só um bloco ```json com a lista [{"titulo":"título exatamente como está","url":"endereço completo do link da notícia","data":"dd/mm/aaaa se aparecer"}]. Não invente nada: só o que está na página.');
+      const l = t ? jsonDe(t) : [];
+      const itens = (Array.isArray(l) ? l : []).filter(x => x && x.titulo && x.url && /^https:\/\//.test(x.url))
+        .map(x => ({ titulo: String(x.titulo).trim(), url: String(x.url).trim(), data: dataISO(x.data), tribunal: f.tribunal }));
+      log(f.tribunal, 'pelo Google:', itens.length, 'notícias');
+      todas.push(...itens);
+    } catch (e) { log(f.tribunal, 'pelo Google: não abriu (' + (e.message || e) + ')'); }
+  }
+  return todas;
+}
+
+/** Áreas com menos textos nos últimos posts vêm primeiro (para o blog não ficar só trabalhista). */
+function areasDaVez(posts) {
+  const cont = {}; Object.keys(AREAS).forEach(a => { cont[a] = 0; });
+  posts.slice(0, 12).forEach(p => { if (cont[p.area] !== undefined) cont[p.area]++; });
+  return Object.keys(AREAS).filter(a => a !== 'criminal' && a !== 'empresarial').sort((a, b) => cont[a] - cont[b]);
+}
+let AREAS_DA_VEZ = [];
+
 /* Fontes extras lidas direto (quando o site do tribunal aceita o GitHub): RSS ou lista de notícias. */
 const FONTES_DIRETAS = [
   { tribunal: 'TST', url: 'https://www.tst.jus.br/noticias' },
@@ -175,7 +204,7 @@ async function escolher(cands) {
   const pedido = `Você ajuda um escritório de advocacia de Tubarão/SC a escolher notícias para o blog. Da lista abaixo, escolha até ${QUANTOS * 3}
 que sejam DECISÕES JUDICIAIS interessantes e úteis para trabalhadores, aposentados, famílias, consumidores ou pequenas empresas.
 Fora: eventos, homenagens, posses, sessões, campanhas, estatísticas, notícias institucionais e assuntos penais de grande repercussão política.
-Prioridade: Justiça do Trabalho (pelo menos metade, se houver). Ordene da mais interessante para a menos.
+Equilibre as áreas do blog: nesta semana dê PRIORIDADE a ${AREAS_DA_VEZ.slice(0, 3).map(a => AREAS[a].nome).join(', ')}; use no máximo 1 notícia de Direito do Trabalho se houver boas notícias das outras áreas. Ordene da mais interessante para a menos.
 Responda JSON: [{"n": número da lista, "area": "${Object.keys(AREAS).join('|')}"}]
 
 ${cands.map((c, i) => `${i}. [${c.tribunal}] ${c.titulo}`).join('\n')}`;
@@ -184,7 +213,11 @@ ${cands.map((c, i) => `${i}. [${c.tribunal}] ${c.titulo}`).join('\n')}`;
     const l = jsonDe(textoDe(r));
     const out = [];
     for (const x of Array.isArray(l) ? l : []) { const c = cands[+x.n]; if (c && !out.includes(c)) out.push({ ...c, area: AREAS[x.area] ? x.area : 'trabalhista' }); }
-    return out;
+    // intercala as áreas (uma de cada, na ordem da vez), para não sair três textos da mesma área
+    const porArea = {}; out.forEach(c => { (porArea[c.area] = porArea[c.area] || []).push(c); });
+    const ordem = AREAS_DA_VEZ.concat(Object.keys(porArea).filter(a => !AREAS_DA_VEZ.includes(a))), mix = [];
+    while (mix.length < out.length) ordem.forEach(a => { const c = (porArea[a] || []).shift(); if (c) mix.push(c); });
+    return mix;
   } catch (e) { log('escolha:', e.message); return cands.map(c => ({ ...c, area: 'trabalhista' })); }
 }
 
@@ -258,7 +291,9 @@ async function principal() {
   const jaUrls = new Set(posts.map(p => p.fonte && normal(p.fonte.url)).filter(Boolean));
   const jaTitulos = posts.map(p => p.fonte?.titulo || p.titulo);
   const jaVisto = c => jaUrls.has(normal(c.url)) || jaTitulos.some(t => parecidos(t, c.titulo) >= 0.7);
-  let cands = (await noticiasTST()).concat(await noticiasDiretas());
+  AREAS_DA_VEZ = areasDaVez(posts);
+  log('áreas da vez:', AREAS_DA_VEZ.join(', '));
+  let cands = (await noticiasTST()).concat(await noticiasOutrasAreas(), await noticiasDiretas());
   const vistos = new Set();
   cands = cands.filter(c => { const k = normal(c.url); if (vistos.has(k) || jaVisto(c)) return false; vistos.add(k); return true; });
   if (!cands.length) cands = (await noticiasPelaBusca(jaTitulos)).filter(c => !jaVisto(c));
@@ -278,7 +313,7 @@ async function principal() {
       while (posts.concat(novos).some(p => p.slug === slug)) slug = slugDe(texto.titulo) + '-' + k++;
       const dataFonte = /^\d{4}-\d{2}-\d{2}$/.test(c.data || '') ? c.data : '';
       novos.push({ slug, titulo: texto.titulo.trim(), resumo: texto.resumo.trim(), area: texto.area, data: HOJE, origem: 'robo',
-        fonte: { nome: `Notícia oficial — ${{ TST: 'Tribunal Superior do Trabalho (TST)', STF: 'Supremo Tribunal Federal (STF)', STJ: 'Superior Tribunal de Justiça (STJ)', 'TRT-SC': 'TRT da 12ª Região (SC)', CNJ: 'Conselho Nacional de Justiça (CNJ)' }[c.tribunal] || c.tribunal || new URL(c.url).hostname}`, url: c.url, titulo: c.titulo, data: dataFonte, conferida: ok.confirmada },
+        fonte: { nome: `Notícia oficial — ${{ TJSC: 'Tribunal de Justiça de Santa Catarina (TJSC)', TST: 'Tribunal Superior do Trabalho (TST)', STF: 'Supremo Tribunal Federal (STF)', STJ: 'Superior Tribunal de Justiça (STJ)', 'TRT-SC': 'TRT da 12ª Região (SC)', CNJ: 'Conselho Nacional de Justiça (CNJ)' }[c.tribunal] || c.tribunal || new URL(c.url).hostname}`, url: c.url, titulo: c.titulo, data: dataFonte, conferida: ok.confirmada },
         corpo: texto.corpo.map(s => String(s).trim()).filter(Boolean) });
       jaUrls.add(normal(c.url));
       log('novo texto:', texto.titulo);
@@ -287,6 +322,7 @@ async function principal() {
   if (SECO) { console.log(JSON.stringify(novos, null, 2)); return; }
   if (novos.length) { salvarPosts(novos.concat(posts)); }
   const total = gerar();
+  try { await gerarImagens(); } catch (e) { log('imagens do Instagram:', e.message); }
   log(`publicados ${novos.length} novos (total ${total}).`);
   if (!novos.length && (falhas || !lista.length)) {
     console.log('::error::O robô do blog não conseguiu publicar nada nesta semana. Veja o registro acima.');

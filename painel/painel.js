@@ -48,7 +48,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -82,7 +82,7 @@
   }
   /* Depois de gravar, apaga só o que a gravação pode ter mudado; o resto continua na tela na hora e é conferido por trás. */
   const AFETA = {
-    clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas'], documentos: ['clientes', 'fin', 'modelos', 'resumo', 'processos', 'tarefas', 'eu', 'documentos'],
+    clientes: ['eu', 'clientes', 'processos', 'resumo', 'modelos', 'tarefas', 'organizar'], organizar: ['organizar', 'clientes', 'processos', 'resumo', 'eu', 'inicio'], documentos: ['clientes', 'fin', 'modelos', 'resumo', 'processos', 'tarefas', 'eu', 'documentos'],
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
@@ -1037,7 +1037,8 @@
           h('p', {}, `${o.nCli} cliente${o.nCli === 1 ? '' : 's'} · ${o.nProc} processo${o.nProc === 1 ? '' : 's'}${o.nAjuizar ? ` · ${o.nAjuizar} petição(ões) inicial(is) a fazer` : ''}`)),
         h('div', { class: 'carteira-acoes' },
           h('button', { type: 'button', class: 'btn dourado', onclick: () => { location.hash = '#/cliente/novo'; } }, '+ Novo cliente'),
-          h('button', { type: 'button', class: 'btn sec', onclick: () => { location.hash = '#/processo/novo'; } }, '+ Novo processo'))),
+          h('button', { type: 'button', class: 'btn sec', onclick: () => { location.hash = '#/processo/novo'; } }, '+ Novo processo'),
+          h('button', { type: 'button', class: 'btn sec', title: 'Processos sem cliente e cadastros para completar', onclick: () => { location.hash = '#/organizar'; } }, '🔧 Organizar cadastros'))),
       h('section', { class: 'painel-busca carteira-busca' },
         h('div', { class: 'visoes', role: 'tablist', 'aria-label': 'Ver por' }, vis('clientes', 'clientes', 'Por cliente', o.nCli), vis('processos', 'processos', 'Por processo', o.nProc)),
         form, o.filtros || null),
@@ -1971,7 +1972,7 @@
         p.ultimo_movimento ? h('p', {}, h('strong', {}, 'Última movimentação'), p.ultimo_movimento_em ? ` (${new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR')})` : '', ': ', p.ultimo_movimento) : null) : null,
       !novo && p.fase === 'contratado' ? caixaPeticaoInicial(p, clientes.find(c => c.id === p.cliente_id)) : null,
       !novo && p.cliente_id && p.fase !== 'contratado' ? caixaAvisarCliente(p, clientes.find(c => c.id === p.cliente_id), params.get('avisar') === '1') : null,
-      novo ? null : blocoAndamentos(p), prazosProc, form);
+      novo ? null : blocoResumoIA(p), novo ? null : blocoAndamentos(p), novo ? null : blocoLinhaTempo(p), prazosProc, form);
   }
 
   /* ---------- usuários ---------- */
@@ -2340,7 +2341,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.6.0';
+  const VERSAO_PAINEL = '8.7.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3029,7 +3030,12 @@
               try { const res = await api('fin.pixBaixar', { id: x.id, parcela_id: sel.value }); avisar('Baixa feita' + (res.recibo ? ' e recibo gerado.' : '.')); if (res.recibo) mostrarRecibo(res.recibo); rota(); }
               catch (e) { ev.target.disabled = false; avisar(e.message, true); }
             }, 'mini'),
-            botao('Não é honorário', async () => { await api('fin.pixIgnorar', { id: x.id }); avisar('Marcado como "não é honorário".'); rota(); }, 'sec mini')));
+            (() => { // 8.7.0: "não é honorário" com o motivo; o robô aprende o pagador
+              const cat = h('select', { 'aria-label': 'O que é este PIX', class: 'mini' }, h('option', { value: '' }, 'Não é honorário: o que é?'),
+                ['Reembolso de custas/despesa do cliente', 'Transferência entre contas do escritório', 'Pessoal', 'Aluguel/Edifício Future', 'Outro'].map(c => h('option', { value: c }, c)));
+              cat.addEventListener('change', async () => { if (!cat.value) return; cat.disabled = true;
+                try { await api('fin.pixIgnorar', { id: x.id, categoria: cat.value }); avisar('Marcado: ' + cat.value + '. PIX deste pagador vão direto para cá.'); rota(); } catch (e) { cat.disabled = false; avisar(e.message, true); } });
+              return cat; })()));
       };
       caixa.replaceChildren(...[
         h('div', { class: 'pix-cab' }, h('div', {}, h('h2', {}, '⚡ PIX recebidos (Banco Inter)'),
@@ -3697,7 +3703,11 @@
       h('td', { class: 'num', 'data-r': 'Vencimento' }, dataBR(x.vencimento)),
       h('td', { 'data-r': 'Despesa' }, h('strong', {}, x.descricao), x.recorrente ? h('span', { class: 'tag info' }, 'mensal') : null,
         x.cliente ? h('div', { class: 'peq' }, (x.reembolsavel === 'sim' ? 'cobrar de ' : '') + x.cliente + (x.reembolsado_em ? ' · reembolsado em ' + dataBR(x.reembolsado_em) : '')) : null),
-      h('td', { 'data-r': 'Categoria' }, x.categoria),
+      h('td', { 'data-r': 'Categoria' }, x.categoria === 'A classificar'
+        ? (() => { const sc = h('select', { class: 'mini', 'aria-label': 'Categoria', onclick: ev => ev.stopPropagation() }, h('option', { value: '' }, '⚠ classificar…'), r.categorias.filter(c => c !== 'A classificar').map(c => h('option', { value: c }, c)));
+            sc.addEventListener('change', async () => { if (!sc.value) return; sc.disabled = true; try { await api('fin.despesa.categoria', { id: x.id, categoria: sc.value }); avisar('Categoria salva. Os próximos PIX para o mesmo nome já entram nela.'); rota(); } catch (e) { sc.disabled = false; avisar(e.message, true); } });
+            return sc; })()
+        : x.categoria),
       h('td', { class: 'num', 'data-r': 'Valor' }, reais(x.valor_pago || x.valor)),
       h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (SIT[x.situacao_conta] || '') }, x.situacao_conta), x.pago_em ? h('div', { class: 'peq' }, 'paga em ' + dataBR(x.pago_em)) : null),
       h('td', {}, h('div', { class: 'mini-acoes' },
@@ -3873,6 +3883,53 @@
           : h('p', { class: 'peq' }, 'Ainda não há tarefas ou prazos entregues no período.')));
   }
 
+  /* ---------- Organizar cadastros (8.7.0): processos sem cliente e cadastros para completar ---------- */
+  async function telaOrganizar(params) {
+    carregando();
+    const ver = params.get('ver') === 'cadastros' ? 'cadastros' : 'processos';
+    const q = semAcentoG(params.get('q') || '');
+    const [r, clis] = await Promise.all([api('organizar.listar', {}), api('clientes.listar', {})]);
+    const ir = mud => { const u = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) u.set(k, v); else u.delete(k); }); location.hash = '#/organizar?' + u; };
+    const ligar = async (el, dados, msg) => { el.querySelectorAll('button,select,input').forEach(b => { b.disabled = true; });
+      try { await api('organizar.ligar', dados); el.classList.add('feita'); el.replaceChildren(h('span', { class: 'tag ok' }, '✓ ' + msg)); } catch (e) { avisar(e.message, true); el.querySelectorAll('button,select,input').forEach(b => { b.disabled = false; }); } };
+    const linhaProc = x => {
+      const el = h('li', { class: 'org-item' });
+      const busca = h('input', { type: 'search', placeholder: 'Procurar outro cliente…', list: 'org-clis', 'aria-label': 'Procurar cliente' });
+      el.append(h('div', { class: 'org-txt' }, h('a', { href: '#/processo/' + x.id }, h('strong', {}, x.numero)), h('div', { class: 'peq' }, [x.area, x.orgao, x.contra ? 'contra ' + x.contra : ''].filter(Boolean).join(' · ')),
+          x.nome ? h('div', {}, 'Nome no aviso do tribunal: ', h('b', {}, x.nome)) : h('div', { class: 'peq' }, x.sigilo ? 'Processo em sigilo: abra no tribunal para ver o nome.' : 'O aviso não trouxe o nome do cliente.')),
+        h('div', { class: 'org-acoes' },
+          x.sugestoes.map(c => h('button', { type: 'button', class: 'btn mini', title: c.motivo, onclick: () => ligar(el, { processo_id: x.id, cliente_id: c.id }, 'ligado a ' + c.nome) }, 'Ligar a ' + c.nome + (c.motivo === 'nome parecido' ? ' (parecido)' : ''))),
+          x.nome && !x.sugestoes.some(c => c.motivo === 'mesmo nome') ? h('button', { type: 'button', class: 'btn mini sec', onclick: () => ligar(el, { processo_id: x.id, criar: true, nome: x.nome }, 'cadastro criado: ' + x.nome) }, '+ Criar cadastro "' + x.nome + '"') : null,
+          h('span', { class: 'org-busca' }, busca, h('button', { type: 'button', class: 'btn mini sec', onclick: () => { const c = clis.find(y => y.nome === busca.value); if (!c) { avisar('Escolha um cliente da lista.', true); return; } ligar(el, { processo_id: x.id, cliente_id: c.id }, 'ligado a ' + c.nome); } }, 'Ligar'))));
+      return el;
+    };
+    const pedirDados = x => { let tel = String(x.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      const nome = nomeProprioJS(primeiroNome(x.nome));
+      const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Estamos atualizando os cadastros para manter você sempre informado(a) sobre o seu processo. Pode nos enviar, por favor: ${x.falta.filter(f => f !== 'telefone').join(', ')}? Obrigado!`;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg); };
+    const linhaCad = x => h('li', { class: 'org-item' },
+      h('div', { class: 'org-txt' }, h('a', { href: '#/cliente/' + x.id }, h('strong', {}, x.nome)), h('div', { class: 'peq' }, 'Falta: ' + x.falta.join(', ') + (x.processos ? ` · ${x.processos} processo(s) ativo(s)` : ''))),
+      h('div', { class: 'org-acoes' }, pedirDados(x) && x.falta.some(f => f !== 'telefone') ? h('a', { class: 'btn mini wa', href: pedirDados(x), target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ cliente: x.nome }, 'pedir dados do cadastro') }, 'Pedir no WhatsApp')
+        : !x.telefone ? h('span', { class: 'tag atencao' }, 'sem telefone: procure no processo ou na pasta') : null,
+        h('a', { class: 'btn mini sec', href: '#/cliente/' + x.id }, 'Completar')));
+    const procs = r.semCliente.filter(x => !q || semAcentoG([x.numero, x.nome, x.contra, x.orgao].join(' ')).includes(q));
+    const cads = r.incompletos.filter(x => !q || semAcentoG([x.nome, x.falta.join(' ')].join(' ')).includes(q));
+    const bq = h('form', { class: 'busca-tarefas', role: 'search' }, h('input', { type: 'search', name: 'q', value: params.get('q') || '', placeholder: 'Buscar nome ou nº', 'aria-label': 'Buscar' }));
+    bq.addEventListener('submit', ev => { ev.preventDefault(); ir({ q: bq.q.value.trim() }); });
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, '🔧 Organizar cadastros'), h('p', {}, 'Processo sem cliente não recebe aviso de audiência nem WhatsApp. Cadastro completo evita retrabalho.')),
+        h('a', { class: 'btn sec', href: '#/clientes' }, 'Voltar')),
+      h('div', { class: 'tf-linha' }, h('div', { class: 'visoes', role: 'tablist' },
+        h('button', { type: 'button', class: 'visao-bt' + (ver === 'processos' ? ' ativo' : ''), onclick: () => ir({ ver: '' }) }, `Processos sem cliente (${r.totalSemCliente})`),
+        h('button', { type: 'button', class: 'visao-bt' + (ver === 'cadastros' ? ' ativo' : ''), onclick: () => ir({ ver: 'cadastros' }) }, `Cadastros para completar (${r.totalIncompletos})`)), bq),
+      h('datalist', { id: 'org-clis' }, clis.slice(0, 3000).map(c => h('option', { value: c.nome }))),
+      ver === 'processos'
+        ? h('section', { class: 'caixa' }, h('p', { class: 'peq' }, 'Primeiro os que têm sugestão: confira o nome e aperte "Ligar". Se o cliente não tem cadastro, "Criar cadastro" usa o nome que veio do tribunal (sem pasta nova). Dica: Usuários › Revisão geral faz isso em lote para os nomes iguais.'),
+            procs.length ? h('ul', { class: 'org-lista' }, procs.slice(0, 150).map(linhaProc)) : h('p', {}, 'Nenhum processo ativo sem cliente. 👏'), procs.length > 150 ? h('p', { class: 'peq' }, `Mostrando 150 de ${procs.length}. Use a busca.`) : null)
+        : h('section', { class: 'caixa' }, h('p', { class: 'peq' }, 'Clientes com processo ativo. Primeiro os sem telefone (sem telefone não há aviso de audiência). "Pedir no WhatsApp" manda a mensagem pedindo só o que falta.'),
+            cads.length ? h('ul', { class: 'org-lista' }, cads.slice(0, 200).map(linhaCad)) : h('p', {}, 'Todos os cadastros estão completos. 👏'), cads.length > 200 ? h('p', { class: 'peq' }, `Mostrando 200 de ${cads.length}. Use a busca.`) : null));
+  }
+
   /* ---------- Marketing (8.6.0): o site e o Google Ads dão retorno? Por área, bem explícito ---------- */
   async function telaMarketing(params) {
     carregando();
@@ -3925,7 +3982,7 @@
         h('td', {}, String(m.contatos)), h('td', {}, String(m.clientes)), h('td', {}, String(m.clientes_ads)), h('td', {}, String(m.contratos)), h('td', {}, reais(m.contratado_ads)))))));
     const tabCamp = r.campanhas.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab' },
       h('thead', {}, h('tr', {}, ['Mês', 'Onde', 'Área', 'Campanha', 'Investido', 'Cliques', ''].map(x => h('th', {}, x)))),
-      h('tbody', {}, r.campanhas.map(c => h('tr', {}, h('td', {}, c.mes), h('td', {}, c.canal), h('td', {}, c.area), h('td', {}, c.campanha || '—'), h('td', {}, reais(c.investimento)), h('td', {}, c.cliques || '—'),
+      h('tbody', {}, r.campanhas.map(c => h('tr', {}, h('td', {}, c.mes), h('td', {}, c.canal + (c.auto ? ' ⚡' : '')), h('td', {}, c.area), h('td', {}, c.campanha || '—'), h('td', {}, reais(c.investimento)), h('td', {}, c.cliques || '—'),
         h('td', {}, h('button', { type: 'button', class: 'btn mini sec', onclick: async () => { if (!confirm('Apagar este lançamento?')) return; await api('marketing.salvar', { excluir: c.id }); await apiFresco('marketing.resumo', { meses: nMeses }).catch(() => null); rota(); } }, 'Apagar'))))))) : h('p', { class: 'peq' }, 'Nenhum investimento lançado ainda.');
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Marketing: o site e o Google dão retorno?'),
@@ -3935,10 +3992,55 @@
       r.semMarcacao ? h('div', { class: 'nota alerta' }, `${r.semMarcacao} cliente(s) novo(s) sem "Como nos conheceu?". Sem isso o painel não sabe se veio do anúncio: pergunte ao cliente e marque no cadastro.`) : null,
       h('div', { class: 'mkt-grade' }, r.porArea.map(cartaoArea).filter(Boolean).length ? r.porArea.map(cartaoArea).filter(Boolean) : h('p', { class: 'caixa peq' }, 'Ainda não há dados no período.')),
       h('section', { class: 'caixa' }, h('h2', {}, 'Mês a mês'), tabMes),
-      h('section', { class: 'caixa' }, h('h2', {}, 'Lançar o investimento do mês'),
+      caixaGoogleAds(r),
+      h('section', { class: 'caixa' }, h('h2', {}, 'Lançar o investimento do mês (à mão)'),
         h('p', { class: 'peq' }, 'No Google Ads: Campanhas › escolha o mês › copie o "Custo" de cada campanha (uma por área). Faça uma vez por mês. Para outras áreas, crie uma campanha por área: assim o painel compara cada uma.'), f),
       h('section', { class: 'caixa' }, h('h2', {}, 'Investimentos lançados'), tabCamp),
       h('p', { class: 'peq' }, 'Como o painel sabe: o site marca cada clique no WhatsApp (sem dado pessoal) e se a pessoa chegou por um anúncio do Google. O cliente novo conta como "do anúncio" quando o cadastro diz "Como nos conheceu? → Google Ads". Honorários de êxito só entram quando houver valor.'));
+  }
+
+  /** 8.7.0: Google Ads automático — script pronto (com a chave secreta) para colar em Google Ads › Ferramentas › Scripts. */
+  function caixaGoogleAds(r) {
+    const corpo = h('div', {});
+    const montar = async nova => {
+      const c = await api('marketing.adsConfig', nova ? { nova: true } : {});
+      const script = `// Araújo Advocacia — manda ao painel o custo do Google Ads (roda todo dia)
+// Não mexa nestas duas linhas:
+var PAINEL = '${window.PAINEL_API_URL}';
+var CHAVE = '${c.chave}';
+
+function main() {
+  var fuso = AdsApp.currentAccount().getTimeZone();
+  var hoje = new Date(), ini = new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1);
+  var de = Utilities.formatDate(ini, fuso, 'yyyy-MM-dd'), ate = Utilities.formatDate(hoje, fuso, 'yyyy-MM-dd');
+  var q = 'SELECT campaign.name, segments.month, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions ' +
+          'FROM campaign WHERE segments.date BETWEEN "' + de + '" AND "' + ate + '"';
+  var linhas = [], it = AdsApp.search(q);
+  while (it.hasNext()) {
+    var r = it.next();
+    linhas.push({ mes: String(r.segments.month).slice(0, 7), campanha: r.campaign.name, custo: Number(r.metrics.costMicros || 0) / 1000000,
+      cliques: Number(r.metrics.clicks || 0), impressoes: Number(r.metrics.impressions || 0), conversoes: Number(r.metrics.conversions || 0) });
+  }
+  var resp = UrlFetchApp.fetch(PAINEL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true,
+    payload: JSON.stringify({ acao: 'marketing.ads', dados: { chave: CHAVE, linhas: linhas } }) });
+  Logger.log(linhas.length + ' linha(s) enviada(s). Resposta do painel: ' + resp.getContentText().slice(0, 200));
+}`;
+      const ta = h('textarea', { class: 'ads-script', readonly: true, rows: 12, 'aria-label': 'Script do Google Ads' }, script);
+      corpo.replaceChildren(
+        h('ol', { class: 'ads-passos' },
+          h('li', {}, 'Entre no Google Ads › ', h('b', {}, 'Ferramentas'), ' (ícone de chave) › ', h('b', {}, 'Ações em massa'), ' › ', h('b', {}, 'Scripts'), ' › botão ', h('b', {}, '+'), '.'),
+          h('li', {}, 'Apague o que vier escrito, cole o texto abaixo e dê o nome "Painel Araújo".'),
+          h('li', {}, 'Clique em ', h('b', {}, 'Autorizar'), ' (o Google pede permissão para ler as campanhas e enviar ao painel) e depois em ', h('b', {}, 'Visualizar'), ' para testar.'),
+          h('li', {}, 'Volte à lista de scripts e, em ', h('b', {}, 'Frequência'), ', escolha ', h('b', {}, 'Diariamente'), '. Pronto: o investimento entra sozinho aqui.'),
+          h('li', {}, 'Dica: coloque a ÁREA no nome de cada campanha (ex.: "Trabalhista — Tubarão", "Família", "Previdenciário"), para o painel separar o retorno por área.')),
+        ta,
+        h('div', { class: 'acoes' }, botao('Copiar o script', async () => { try { await navigator.clipboard.writeText(script); avisar('Script copiado.'); } catch (e) { ta.select(); document.execCommand('copy'); avisar('Script copiado.'); } }),
+          botao('Trocar a chave secreta', async () => { if (!confirm('Trocar a chave? O script antigo para de funcionar até você colar o novo no Google Ads.')) return; await montar(true); avisar('Chave trocada: cole o script novo no Google Ads.'); }, 'sec')),
+        h('p', { class: 'peq' }, 'A chave secreta só serve para o Google Ads mandar os números de investimento; ela não dá acesso a nada do painel. Não mande este texto para outras pessoas.'));
+    };
+    return h('section', { class: 'caixa' }, h('h2', {}, '⚡ Ligar o Google Ads (automático)'),
+      h('p', {}, r.adsUltima ? ['✓ Ligado. Último envio: ', h('b', {}, new Date(r.adsUltima.split(' · ')[0]).toLocaleString('pt-BR')), ' (' + (r.adsUltima.split(' · ')[1] || '') + ').'] : 'Ainda não ligado. Com o script, o custo, os cliques e as conversões de cada campanha entram aqui todos os dias, sem digitar nada.'),
+      corpo.childNodes.length ? corpo : h('div', {}, botao(r.adsUltima ? 'Ver o script de novo' : 'Mostrar o script e o passo a passo', async ev => { ev.target.remove(); try { await montar(false); } catch (e) { avisar(e.message, true); } }, r.adsUltima ? 'sec' : ''), corpo));
   }
 
   /** 8.6.0: resultados do mês — contratos fechados, clientes novos e processos finalizados, com os nomes. */
@@ -3959,6 +4061,47 @@
   }
 
   /* ---------- andamentos do processo (DataJud) ---------- */
+
+  /** 8.7.0: "Resumir o processo com IA" — texto simples para o cliente (com WhatsApp) e nota para a equipe. */
+  function blocoResumoIA(p) {
+    const corpo = h('div', {});
+    const bt = botao('✨ Resumir o processo com IA', async ev => {
+      ev.target.disabled = true; ev.target.textContent = 'Lendo o processo…';
+      try {
+        const r = await api('ia.resumirProcesso', { id: p.id });
+        let tel = String(r.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+        const msg = `Olá, ${nomeProprioJS(primeiroNome(r.nome)) || 'tudo bem'}! Aqui é do escritório Araújo Advocacia. Atualização do seu processo:\n\n${r.cliente}\n\nQualquer dúvida, estamos à disposição.`;
+        corpo.replaceChildren(
+          h('div', { class: 'ia-caixa' }, h('p', {}, h('strong', {}, 'Para o cliente: '), r.cliente || '—'),
+            tel && r.cliente ? h('a', { class: 'btn mini wa', href: 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: r.nome }, 'atualização do processo') }, 'Mandar ao cliente no WhatsApp') : null),
+          r.equipe ? h('div', { class: 'ia-caixa ia-estimativa' }, h('p', {}, h('strong', {}, 'Para a equipe: '), r.equipe)) : '',
+          h('p', { class: 'peq' }, 'Resumo automático (Gemini, sem nomes nem documentos). Confira antes de mandar; a IA não muda prazo.'));
+        ev.target.textContent = 'Resumir de novo';
+      } catch (e) { avisar(e.message, true); ev.target.textContent = '✨ Resumir o processo com IA'; }
+      ev.target.disabled = false;
+    }, 'sec');
+    return h('section', { class: 'caixa' }, h('div', { class: 'bloco-cab' }, h('h2', {}, 'Como está o processo?'), bt), corpo);
+  }
+  /** 8.7.0: linha do tempo — andamentos, intimações, prazos, audiências, tarefas e documentos numa lista só. */
+  function blocoLinhaTempo(p) {
+    const ICO = { andamento: '📄', intimacao: '📨', prazo: '⏱', ato: '⚖', tarefa: '☑', documento: '🖋' };
+    const NOME = { andamento: 'Andamento', intimacao: 'Intimação', prazo: 'Prazo', ato: 'Audiência/perícia', tarefa: 'Tarefa', documento: 'Documento/WhatsApp' };
+    const lista = h('div', {}, h('p', { class: 'peq' }, 'Abra para ver tudo o que aconteceu neste processo.'));
+    let carregou = false;
+    const det = h('details', { class: 'caixa linha-tempo', ontoggle: async () => {
+      if (!det.open || carregou) return; carregou = true;
+      lista.replaceChildren(h('p', { class: 'peq' }, 'Carregando…'));
+      try {
+        const r = await api('processos.linhaTempo', { id: p.id });
+        lista.replaceChildren(r.itens.length ? h('ol', { class: 'lt-lista' }, r.itens.map(x => h('li', { class: 'lt-' + x.tipo },
+          h('span', { class: 'lt-ico', title: NOME[x.tipo] }, ICO[x.tipo] || '•'),
+          h('div', {}, h('div', { class: 'peq' }, new Date(x.quando).toLocaleDateString('pt-BR') + ' · ' + (NOME[x.tipo] || x.tipo)),
+            x.link ? h('a', { href: x.link }, x.titulo) : h('strong', {}, x.titulo), x.detalhe ? h('div', { class: 'peq' }, x.detalhe) : null)))) : h('p', {}, 'Nada registrado ainda.'),
+          r.total > r.itens.length ? h('p', { class: 'peq' }, `Mostrando os ${r.itens.length} mais recentes de ${r.total}.`) : '');
+      } catch (e) { lista.replaceChildren(h('p', { class: 'erro' }, e.message)); carregou = false; }
+    } }, h('summary', {}, h('strong', {}, '🕑 Linha do tempo do processo')), lista);
+    return det;
+  }
 
   function blocoAndamentos(p) {
     const caixa = h('section', { class: 'caixa andamentos' }, h('div', { class: 'cab' }, h('h2', {}, 'Andamentos'),
@@ -4069,6 +4212,7 @@
         case 'tarefas': await telaTarefas(params); break;
         case 'relatorios': await telaRelatorios(params); break;
         case 'marketing': await telaMarketing(params); break;
+        case 'organizar': await telaOrganizar(params); break;
         case 'honorario': await telaHonorario(id, params); break;
         case 'future':
           if (!sessao.usuario.pode.future) { mostrar(h('div', { class: 'nota alerta' }, 'Você não tem acesso ao painel do Edifício Future.')); break; }
