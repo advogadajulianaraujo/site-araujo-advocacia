@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.7.0';
+var VERSAO = '8.7.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -9069,14 +9069,30 @@ function futMensagemConfig_() {
   var pix = config_('FUTURE_PIX') || '';
   var contas = futContas_();
   return { pix: pix, contas: contas, conta_padrao: config_('FUTURE_CONTA_PADRAO') || (contas[0] || {}).id || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet', taxas_itens: itens,
-    predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || (pix ? 'Pix: ' + pix : ''),
-    dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? '' : (config_('FUTURE_DINHEIRO_TXT') || 'Se preferir, o pagamento também pode ser feito em dinheiro.'),
+    predio: futNomeCerto_(config_('FUTURE_NOME_MSG')) || 'Edifício Future', pagamento: futNomeCerto_(config_('FUTURE_PAGAMENTO')) || (pix ? 'Pix: ' + pix : ''),
+    dinheiro: config_('FUTURE_DINHEIRO') === 'nao' ? '' : (futNomeCerto_(config_('FUTURE_DINHEIRO_TXT')) || 'Se preferir, o pagamento também pode ser feito em dinheiro.'),
     cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, pagadores: pagadores, assinatura: (function () {
       // pedido do Luiz: a mensagem sempre pede o comprovante, mesmo que a frase final seja trocada
-      var f = String(config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
+      var f = futNomeCerto_(config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
       return /comprovante/i.test(f) ? f : f + '\nFavor enviar o comprovante de pagamento.';
     })() };
 }
+/**
+ * 8.7.1 (pedido da usuária): o prédio é o EDIFÍCIO FUTURE — nunca "Edifício Cultura". Qualquer texto salvo nas Configurações
+ * com o nome antigo sai certo na mensagem, e a configuração gravada é corrigida uma vez (`futCorrigirNomePredio_`).
+ */
+function futNomeCerto_(t) {
+  return String(t || '').replace(/Edif[íi]cio\s+Cultura/gi, 'Edifício Future').replace(/\bEd\.?\s*Cultura\b/gi, 'Ed. Future').replace(/\bCultura\b/g, 'Future');
+}
+function futCorrigirNomePredio_() {
+  if (config_('FUTURE_FIX_NOME')) return;
+  ['FUTURE_NOME_MSG', 'FUTURE_FECHO', 'FUTURE_PAGAMENTO', 'FUTURE_DINHEIRO_TXT', 'FUTURE_TAXAS_DESC'].forEach(function (k) {
+    var v = config_(k);
+    if (v && /cultura/i.test(v)) setConfig_(k, futNomeCerto_(v), 'Texto do Edifício Future');
+  });
+  setConfig_('FUTURE_FIX_NOME', new Date().toISOString(), 'Nome do prédio corrigido para Edifício Future');
+}
+
 /** Desfaz a baixa: o pagamento feito pelo painel é apagado; o que veio do caixa/planilha (pagamento atrasado do mês anterior que o robô
  *  juntou por engano) vai para o mês de referência anterior, onde ele é de fato — e não volta a baixar esta cobrança. */
 function futDesfazerPagamento_(T, c, u) {
@@ -9776,7 +9792,7 @@ function futureConfig_(d, u) {
   return { usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome, acesso: podeFuture_(x) }; }),
     dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, importado: config_('FUTURE_IMPORTADO') || '',
     pix: config_('FUTURE_PIX') || '', taxas_desc: config_('FUTURE_TAXAS_DESC') || 'IPTU, taxa de lixo e internet',
-    predio: config_('FUTURE_NOME_MSG') || 'Edifício Cultura', pagamento: config_('FUTURE_PAGAMENTO') || '',
+    predio: futNomeCerto_(config_('FUTURE_NOME_MSG')) || 'Edifício Future', pagamento: config_('FUTURE_PAGAMENTO') || '',
     taxas_itens: config_('FUTURE_TAXAS_ITENS') || 'Taxa de lixo: 25,00\nInternet: 75,00\nIPTU: 40,00', pagadores: config_('FUTURE_PAGADORES') || '',
     cotacao: futN_(config_('FUTURE_COTACAO')) || 5.5, taxas_sala: futN_(config_('FUTURE_TAXAS_SALA')) || 107,
     fecho: config_('FUTURE_FECHO') || 'Após o pagamento, encaminhe o comprovante identificando o apartamento. Obrigada!',
@@ -9977,6 +9993,7 @@ function futureSincronizarDrive_(forcar) {
 /** Robô (de hora em hora): cobranças do mês e, perto do fim do mês, as do mês seguinte. */
 function futureRobo_() {
   if (!config_('FUTURE_IMPORTADO')) return 0;
+  try { futCorrigirNomePredio_(); } catch (eN) { /* segue */ }
   try { futureImportarPasta_(); } catch (eI) { /* tenta na próxima hora */ }
   try { futureSincronizarDrive_(false); } catch (e) { /* tenta amanhã */ }
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));

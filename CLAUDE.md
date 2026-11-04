@@ -138,7 +138,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   acha a unidade pela UC/medidor, "Sala n" ou nº do apartamento, e o valor; atualiza a cobrança do mês seguinte). Morador novo
   ganha pasta no Drive sozinho (`futCriarPasta_`); "+ criar pasta no Drive" em Locatários (rota `future.pessoa.pasta`).
 - 8.3 Cobrança no modelo do Luiz (`textoCobranca`/`textoGrupo` em future.js): "Oi, bom dia, Nome! … Segue o demonstrativo do
-  {Config FUTURE_NOME_MSG, padrão "Edifício Cultura"} — apartamento 101, referente a {mês ANTERIOR ao vencimento}" + Aluguel, taxas item
+  {Config FUTURE_NOME_MSG, padrão "Edifício Future" — NUNCA "Edifício Cultura" (8.7.1: `futNomeCerto_` troca em qualquer texto salvo; `futCorrigirNomePredio_` corrige a Config uma vez)} — apartamento 101, referente a {mês ANTERIOR ao vencimento}" + Aluguel, taxas item
   a item (Config FUTURE_TAXAS_ITENS "Nome: valor", só quando a soma bate com as taxas da unidade), Energia, Total, Vencimento, "Pagamento:"
   (Config FUTURE_PAGAMENTO, só na planilha — nunca no repositório) e fecho (FUTURE_FECHO). Entrada no meio do mês de referência = "Aluguel
   proporcional de 04/10 a 31/10 — 28 dias, pela base de 30 dias" (`futCalcCobranca_`, coluna `detalhe` = prop|entrada|fim|dias). Cobrança
