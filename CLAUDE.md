@@ -512,6 +512,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   credenciais) e "Equipe" (Júlian e Luís), blog logo depois, chamada final com retrato. Imagem com width/height no HTML precisa de
   `height:auto` no CSS. Fotos dos ensaios ficam no Drive; a ferramenta do Drive só baixa arquivos de até ~4 MB. Não usar fotos com
   terceiros/crianças (ex.: "FOTO EQUIPE" no restaurante) nem das pastas de clientes.
+- Início 2026.2 (pedido da usuária: "blog, calculadora e acompanhe estão escondidos"): logo abaixo da abertura, faixa "Resolva pelo site"
+  (`.online`: Acompanhe seu processo em destaque, Ainda dá tempo?, Quanto devo receber na rescisão?, Blog); botão "Acompanhar meu processo"
+  na abertura; calculadora rápida "Saiu da empresa? Veja se ainda dá tempo" na própria página (assets/tempo-rapido.js, tudo no aparelho);
+  vitrine do Acompanhe com celular desenhado em CSS (`.acomp-sec`, "Pedir o meu código" no WhatsApp). "Meu processo" no menu de TODAS as
+  páginas (`.nav-proc`) e na barra do celular (WhatsApp | Meu processo | Ligar). Fotos do ensaio no Drive têm 8–12 MB (a ferramenta do Drive
+  não baixa): para novas fotos no site, pedir versões menores. Pastas com fotos pessoais ou de clientes nunca entram.
 - Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
   "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados). Postar
   sozinho exigiria a API do Perfil da Empresa (aprovação do Google) — não disponível.
