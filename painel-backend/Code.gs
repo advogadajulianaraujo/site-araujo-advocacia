@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.9.0';
+var VERSAO = '8.9.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4796,12 +4796,13 @@ function postagemGoogle_(ctx) {
   if (!it) return 0;
   var texto = it.titulo + '\n\n' + it.resumo + '\n\nLeia a explicação completa no site da Araújo Advocacia.';
   var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
-  var auto = gbpLigado_() ? gbpPostar_(it) : null; // 8.9.0: postagem automática no perfil do Google (quando o Google aprovar a API)
-  if (auto && auto.ok) {
+  var zap = config_('GBP_ZAPIER') === 'sim'; // 8.9.1: o Zapier já posta o blog no perfil (lê o feed do site)
+  var auto = !zap && gbpLigado_() ? gbpPostar_(it) : null; // 8.9.0: postagem automática no perfil do Google (quando o Google aprovar a API)
+  if (zap || (auto && auto.ok)) {
     setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google');
     novaTarefaRobo_(tabT, { _motivo: 'texto novo do blog para o Instagram',
       titulo: 'Postar no Instagram: ' + it.titulo.slice(0, 80),
-      descricao: 'O texto desta semana JÁ FOI POSTADO SOZINHO no perfil do Google. Falta só o Instagram:\nIMAGEM: ' + it.link.replace(/\/?$/, '/') + 'instagram.png\nLEGENDA PRONTA: ' + it.link.replace(/\/?$/, '/') + 'instagram.txt\n[google:' + it.link.replace(/[\[\]]/g, '') + ']',
+      descricao: (zap ? 'O texto desta semana vai SOZINHO para o perfil do Google pelo Zapier (confira no perfil se apareceu).' : 'O texto desta semana JÁ FOI POSTADO SOZINHO no perfil do Google.') + ' Falta só o Instagram:\nIMAGEM: ' + it.link.replace(/\/?$/, '/') + 'instagram.png\nLEGENDA PRONTA: ' + it.link.replace(/\/?$/, '/') + 'instagram.txt\n[google:' + it.link.replace(/[\[\]]/g, '') + ']',
       responsavel: respSecretaria_(), vence_em: hoje, prioridade: 'normal', checklist: ['Postar a imagem pronta no Instagram com a legenda'] });
     return 1;
   }
@@ -4893,6 +4894,10 @@ function marketingGbp_(d, u) {
     setConfig_('GBP_AUTO', acao === 'ligar' ? 'sim' : 'nao', 'Postar o blog sozinho no perfil do Google (sim/nao)');
     registrar_(u.usuario, 'marketing: blog no Google', acao === 'ligar' ? 'ligou a postagem automática' : 'desligou a postagem automática');
     extra = { ok: true };
+  } else if (acao === 'zapier' || acao === 'semzapier') {
+    setConfig_('GBP_ZAPIER', acao === 'zapier' ? 'sim' : 'nao', 'O Zapier posta o blog no perfil do Google (sim/nao): a secretaria recebe só a tarefa do Instagram');
+    registrar_(u.usuario, 'marketing: blog no Google', acao === 'zapier' ? 'marcou que o Zapier posta o blog' : 'desmarcou o Zapier');
+    extra = { ok: true };
   } else if (acao === 'postar') {
     if (!config_('GBP_LOCAL')) { extra = gbpConectar_(); if (!extra.ok) return Object.assign(gbpStatus_(), { resultado: extra }); }
     var it = gbpUltimoDoBlog_();
@@ -4903,7 +4908,7 @@ function marketingGbp_(d, u) {
   return Object.assign(gbpStatus_(), { resultado: acao === 'status' ? null : extra });
 }
 function gbpStatus_() {
-  return { auto: config_('GBP_AUTO') === 'sim', local: config_('GBP_LOCAL') || '', nome: config_('GBP_LOCAL_NOME') || '', ultimo: config_('GBP_ULTIMO') || '' };
+  return { zapier: config_('GBP_ZAPIER') === 'sim', auto: config_('GBP_AUTO') === 'sim', local: config_('GBP_LOCAL') || '', nome: config_('GBP_LOCAL_NOME') || '', ultimo: config_('GBP_ULTIMO') || '' };
 }
 
 /* 7) Processo andou → e-mail curto ao cliente (só quem tem acesso ao "Acompanhe seu processo" e e-mail no cadastro). */

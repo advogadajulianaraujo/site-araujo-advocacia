@@ -163,7 +163,8 @@ ${posts.length ? '' : '<p class="muted">Os primeiros textos chegam nesta semana.
 
 function feed(posts) {
   const itens = posts.slice(0, 30).map(p => `<item><title>${esc(p.titulo)}</title><link>${SITE}/blog/${p.slug}/</link><guid>${SITE}/blog/${p.slug}/</guid>` +
-    `<pubDate>${new Date(p.data + 'T12:00:00-03:00').toUTCString()}</pubDate><category>${esc((AREAS[p.area] || {}).nome || '')}</category><description>${esc(p.resumo)}</description></item>`).join('\n');
+    `<pubDate>${new Date(p.data + 'T12:00:00-03:00').toUTCString()}</pubDate><category>${esc((AREAS[p.area] || {}).nome || '')}</category><description>${esc(p.resumo)}</description>` +
+    (fs.existsSync(path.join(RAIZ, 'blog', p.slug, 'instagram.png')) ? `<enclosure url="${SITE}/blog/${p.slug}/instagram.png" type="image/png" length="${fs.statSync(path.join(RAIZ, 'blog', p.slug, 'instagram.png')).size}"/>` : '') + `</item>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>Blog da Araújo Advocacia</title><link>${SITE}/blog/</link>` +
     `<description>Decisões e direitos explicados em linguagem simples.</description><language>pt-BR</language>\n${itens}\n</channel></rss>\n`;
 }

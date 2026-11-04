@@ -322,7 +322,7 @@ async function principal() {
   if (SECO) { console.log(JSON.stringify(novos, null, 2)); return; }
   if (novos.length) { salvarPosts(novos.concat(posts)); }
   const total = gerar();
-  try { await gerarImagens(); } catch (e) { log('imagens do Instagram:', e.message); }
+  try { await gerarImagens(); gerar(); } catch (e) { log('imagens do Instagram:', e.message); } // de novo: o feed leva a imagem nova (Zapier → Google)
   log(`publicados ${novos.length} novos (total ${total}).`);
   if (!novos.length && (falhas || !lista.length)) {
     console.log('::error::O robô do blog não conseguiu publicar nada nesta semana. Veja o registro acima.');

@@ -2341,7 +2341,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.9.0';
+  const VERSAO_PAINEL = '8.9.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4016,6 +4016,11 @@
         try { desenhar(await api('marketing.gbp', { acao: a })); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = rot; }
       }, cls);
       corpo.replaceChildren(
+        h('div', { class: 'gbp-zap' },
+          h('p', {}, st.zapier
+            ? ['✓ ', h('b', {}, 'O Zapier está postando o blog no perfil.'), ' A secretaria recebe só a tarefa do Instagram.']
+            : ['Jeito mais rápido (sem esperar o Google): o Zapier lê o blog e posta sozinho. Feed do blog para colar no Zapier: ', h('code', {}, 'https://araujoadvocaciasc.com.br/blog/feed.xml')]),
+          st.zapier ? acao('O Zapier parou (voltar a tarefa da secretaria)', 'semzapier', 'sec') : acao('✓ Já liguei o Zapier', 'zapier', 'sec')),
         h('p', {}, st.auto
           ? ['✓ ', h('b', {}, 'Ligado.'), ` Toda segunda-feira o texto novo do blog vai sozinho para o perfil "${st.nome || 'do escritório'}", com a imagem e o botão "Saiba mais". A secretaria recebe só a tarefa do Instagram.`]
           : 'Desligado. Enquanto estiver assim, toda segunda a secretaria recebe a tarefa "Postar no Google e no Instagram" com o texto pronto (como hoje).'),
@@ -4035,7 +4040,7 @@
             h('li', {}, h('b', {}, 'Aqui no painel: '), 'aperte "1. Testar a ligação". Deu ✓ → aperte "2. Ligar a postagem automática". Se der ✗, a mensagem diz qual passo falta.'))));
     };
     api('marketing.gbp', {}).then(desenhar).catch(e => corpo.replaceChildren(h('p', { class: 'peq' }, 'Atualize o Code.gs do Google para usar este quadro (' + e.message + ').')));
-    return h('section', { class: 'caixa' }, h('h2', {}, '📣 Blog no perfil do Google (automático)'), corpo);
+    return h('section', { class: 'caixa' }, h('h2', {}, '📣 Blog no perfil do Google (automático)'), h('p', { class: 'peq' }, 'Abaixo: Zapier (funciona hoje) ou a ligação direta (depois da aprovação do Google). Use só um dos dois.'), corpo);
   }
 
   /** 8.7.0: Google Ads automático — script pronto (com a chave secreta) para colar em Google Ads › Ferramentas › Scripts. */

@@ -525,6 +525,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   botão LEARN_MORE; `gbpErro_` traduz cota 0 / escopo / API desativada para o passo que falta). Com Config GBP_AUTO = sim, o robô de segunda
   posta sozinho e a secretaria recebe só "Postar no Instagram"; se falhar, volta a tarefa antiga com o aviso. Precisa: projeto do Cloud aprovado
   ligado ao Apps Script, 3 APIs ativas e o escopo business.manage no appsscript.json (já no repositório).
+  8.9.1 (pedido da usuária: "queria fazer automaticamente" sem esperar): ZAPIER grátis (RSS by Zapier → Google Business Profile › Create
+  Post) lê /blog/feed.xml; o feed tem `<enclosure>` com a imagem instagram.png de cada texto (gerar.mjs; robo.mjs roda o gerar de novo
+  depois das imagens). No painel, "✓ Já liguei o Zapier" grava Config GBP_ZAPIER = sim e o robô de segunda cria só a tarefa do Instagram.
 
 - /acompanhe/ ("Acompanhe seu processo"): o cliente entra com CPF + código de 8 caracteres gerado na ficha
   ("Acesso do cliente ao site"). O código aparece uma vez só e é guardado embaralhado (`acesso_hash`, nunca vai ao painel).
