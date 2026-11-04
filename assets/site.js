@@ -12,6 +12,36 @@
   nav?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setMenu(false)));
   document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
 
+  // Marketing (8.6): de onde a pessoa veio — anúncio do Google (gclid/utm cpc), Google sem anúncio, redes ou direto.
+  // Fica só nesta aba do navegador; nenhum dado pessoal é guardado ou enviado.
+  const origemVisita = (() => {
+    try {
+      const salvo = sessionStorage.getItem('aa_origem');
+      const q = new URLSearchParams(location.search), ref = document.referrer || '';
+      const ads = q.get('gclid') || q.get('gbraid') || q.get('wbraid') || /cpc|ppc|paid|ads/i.test(q.get('utm_medium') || '');
+      let o = ads ? 'ads' : /google\./.test(ref) ? 'google' : /instagram|facebook|fb\.|t\.co|linkedin/.test(ref) ? 'social' : ref && !ref.includes(location.host) ? 'outro' : '';
+      const camp = (q.get('utm_campaign') || '').slice(0, 60);
+      if (o && (!salvo || o === 'ads')) { sessionStorage.setItem('aa_origem', o); if (camp) sessionStorage.setItem('aa_camp', camp); }
+      return { origem: sessionStorage.getItem('aa_origem') || 'direto', campanha: sessionStorage.getItem('aa_camp') || '' };
+    } catch (e) { return { origem: 'direto', campanha: '' }; }
+  })();
+  let apiPainel = '';
+  const lerApi = () => new Promise(res => {
+    if (window.PAINEL_API_URL) return res(window.PAINEL_API_URL);
+    const sc = document.createElement('script'); sc.src = '/painel/config.js'; sc.onload = () => res(window.PAINEL_API_URL || ''); sc.onerror = () => res('');
+    document.head.append(sc);
+  });
+  if (document.body.dataset.area !== 'acompanhe') lerApi().then(u => { apiPainel = u; });
+  // cada clique no WhatsApp ou no telefone conta no Marketing do painel (página, área e se veio de anúncio)
+  document.addEventListener('click', ev => {
+    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+    if (!a || !apiPainel || document.body.dataset.area === 'acompanhe') return;
+    const canal = /wa\.me|whatsapp/.test(a.href) ? 'whatsapp' : /^tel:/.test(a.href) ? 'telefone' : '';
+    if (!canal) return;
+    const corpo = JSON.stringify({ acao: 'site.clique', dados: { pagina: location.pathname, area: document.body.dataset.area || '', origem: origemVisita.origem, campanha: origemVisita.campanha, canal } });
+    try { if (!navigator.sendBeacon || !navigator.sendBeacon(apiPainel, corpo)) fetch(apiPainel, { method: 'POST', body: corpo, credentials: 'omit', keepalive: true, mode: 'no-cors' }); } catch (e) { /* não atrapalha o clique */ }
+  }, true);
+
   // Onde o clique no WhatsApp aconteceu (sem texto da mensagem nem dados do caso).
   document.querySelectorAll('[data-contact]').forEach(a => a.addEventListener('click', () => {
     window.dataLayer = window.dataLayer || [];
@@ -64,7 +94,7 @@
           try {
             const api = await carregarApi();
             if (!api) throw new Error('Não foi possível enviar agora. Chame no WhatsApp, por favor.');
-            const dados = { nome: f.nome.value, telefone: f.telefone.value, assunto: f.assunto.value, horario: f.horario.value, aceite: f.aceite.checked, empresa_site: f.empresa_site.value, pagina: location.pathname };
+            const dados = { nome: f.nome.value, telefone: f.telefone.value, assunto: f.assunto.value, horario: f.horario.value, aceite: f.aceite.checked, empresa_site: f.empresa_site.value, pagina: location.pathname, origem: origemVisita.origem, campanha: origemVisita.campanha };
             const r = await fetch(api, { method: 'POST', body: JSON.stringify({ acao: 'site.contato', dados }), redirect: 'follow', credentials: 'omit' }).then(x => x.json());
             if (!r.ok) throw new Error(r.erro || 'Não foi possível enviar.');
             f.querySelectorAll('label, .btn').forEach(e => { e.hidden = true; });

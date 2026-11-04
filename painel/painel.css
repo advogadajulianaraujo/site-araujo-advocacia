@@ -1386,3 +1386,34 @@ body.modo-future .barra-cel{background:#2f855a}
 .faixa-assin:hover{filter:brightness(.98)}
 .grupo-card.g-assinatura b{color:#b7791f}
 .alerta-txt{color:var(--vermelho-f)}
+.notas-cli{border-left:4px solid #e0a23a;background:#fffaf0}
+.notas-cli ul{margin:6px 0 0;padding-left:18px}.notas-cli li{margin:3px 0}
+.cli-obs{font-size:.82rem;color:#7a5a12;background:#fff6e0;border-radius:6px;padding:2px 8px;margin-top:4px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Tarefas 8.6: lista do dia */
+.td-add{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
+.td-add input{min-width:0}
+@media (max-width:700px){.td-add{grid-template-columns:1fr 1fr}.td-add input{grid-column:1/-1}}
+.td-grupo{margin:14px 0}.td-grupo h2{font-size:1rem;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.td-grupo.td-atras h2{color:var(--vermelho-f)}.td-grupo.td-hoje h2{color:#8a6a1c}
+.td-lista{list-style:none;margin:0;padding:0;background:#fff;border-radius:12px;border:1px solid #e6e2da}
+.td-item{display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer;border-left:4px solid transparent}
+.td-item:last-child{border-bottom:0}.td-item:hover{background:#faf8f3}
+.td-item.atrasada{background:#fff6f5}.td-item.pri-borda-urgente{border-left-color:#8f1d14}.td-item.pri-borda-alta{border-left-color:#e0a23a}
+.td-item.feita .td-tit{text-decoration:line-through;color:#888}.td-item.movendo{opacity:.5}
+.td-check{width:24px;height:24px;border-radius:50%;border:2px solid #9aa0aa;background:#fff;flex:none;cursor:pointer;padding:0;font-size:14px;line-height:20px;color:#1f8a4c}
+.td-check:hover{border-color:#1f8a4c;background:#eaf6ee}.td-check.marcado{border-color:#1f8a4c;background:#1f8a4c;color:#fff;text-align:center}
+.td-txt{flex:1;min-width:0}.td-tit{font-weight:500;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.td-lado{display:flex;gap:8px;align-items:center;flex:none}.td-data{font-size:.82rem;color:#666;min-width:42px;text-align:right}
+.td-feitas{margin-top:12px}.td-feitas summary{cursor:pointer;color:#1f8a4c}
+.res-grade{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}
+@media (max-width:900px){.res-grade{grid-template-columns:1fr}}
+.res-col{background:#faf8f3;border-radius:10px;padding:12px}
+.res-num{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}.res-num b{font-size:1.8rem}
+.res-lista{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}.res-lista li{padding:3px 0;border-bottom:1px dashed #e6e2da}
+/* Marketing 8.6 */
+.mkt-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:14px 0}
+.mkt-area{border-top:5px solid #c9c4b8}.mkt-area.bom{border-top-color:#1f8a4c}.mkt-area.ruim{border-top-color:#8f1d14}.mkt-area.neutro{border-top-color:#e0a23a}
+.mkt-veredito{font-weight:600;margin:6px 0 10px}.mkt-area.bom .mkt-veredito{color:#1f6b3c}.mkt-area.ruim .mkt-veredito{color:#8f1d14}
+.mkt-num{display:grid;grid-template-columns:1fr;gap:4px;margin:0}.mkt-num div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e6e2da;padding:3px 0}
+.mkt-num dt{color:#666;font-size:.88rem}.mkt-num dd{margin:0;text-align:right;font-weight:500}
+.mkt-geral.bom{background:#eaf6ee;border-color:#1f8a4c}.mkt-geral.ruim{background:#fdeceb;border-color:#8f1d14}

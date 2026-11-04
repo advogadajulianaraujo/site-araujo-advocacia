@@ -17,6 +17,17 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Google Agenda os eventos que falharam. Ato designado SEM data no texto (PJe sigiloso) vira tarefa "abrir o processo e lançar na
   agenda" (`tarefaAtoSemData_`). O lembrete do ato é À PARTE: o prazo "para fazer" da intimação nunca é tirado.
   Botão "📅 Marcar na agenda" em cada intimação e na tela do prazo (rota `agenda.marcarAto`); conclui a tarefa de lançar.
+- Avisos de audiência (8.6.0, pedido da usuária: "NÃO PODEMOS PERDER AUDIÊNCIA"): `lembrarAudiencias_` usa `atosDaAgenda_` (aba Eventos +
+  agendas do Google AUDIÊNCIA CONCILIAÇÃO / INSTRUÇÃO / PERÍCIAS) e cria DOIS avisos para a secretaria (`respSecretaria_`): "Avisar o cliente
+  (1 semana antes)" (até 7 dias antes; `[lembrete:chave]`) e "⚖ HOJE — lembrar o cliente" no dia (`[lembrete:chave|dia]` + `[avisodia]`:
+  `whatsAto` manda a mensagem "HOJE é a sua…"). Início da secretaria/RH e da administração: blocos "Audiências e perícias de HOJE" (Lembrar
+  hoje) e "Próximos 7 dias — avisar o cliente" (Avisar); `agenda.avisado` com `quando` = dia|semana grava `avisado_dia_em`/`avisado_em`
+  (colunas novas em Eventos) e fecha a tarefa do aviso. O texto abaixo (2 dias úteis) é o comportamento ANTIGO.
+- Datas de audiência (8.6.0): `acharAto_` apaga números de processo do trecho antes de ler a data (lia "…2026.5.12.0041" como 05/12/2041
+  e criou 78 cópias de uma perícia); ano no máximo +3; `atoJaMarcado_` confere também a data da CHAVE do evento; evento de dia inteiro
+  é lido no fuso da agenda (`diaDoEvento_`). `limparAtosImpossiveis_` (uma vez, Config FIX_ATOS_86) apagou os eventos/lembretes com ano impossível.
+- "Não há prazo" (8.6.0): botão nos prazos PROVISÓRIOS/"conferir" (rota `prazos.situacao` situacao=semprazo): cancela, anota quem
+  conferiu e tira a intimação das abertas. A regra "nunca sem data" continua: o robô cria o provisório; a equipe descarta com 1 clique.
 - Robô do lembrete (6.9.9, `lembrarAudiencias_`, toda rodada do robô): 2 dias úteis antes de cada audiência ou perícia (aba Eventos
   e as agendas do Google AUDIÊNCIA CONCILIAÇÃO / INSTRUÇÃO / PERÍCIAS, inclusive as lançadas à mão) cria UMA tarefa "Lembrar o
   cliente: … em dd/mm às hh:mm — cliente" para o responsável do processo (ou o do sistema), prioridade alta (urgente se for amanhã),
@@ -298,6 +309,26 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   mudança de telefone/endereço), vedado acordo sem anuência, obrigação de meio, desistência = 2 salários mínimos,
   descumprimento = multa de 5%, foro de Tubarão/SC. Mudou texto em TEXTO_MODELOS? Suba a versão das chaves (hoje MODELO6_ → MODELO7_)
   para o Google Docs do modelo ser recriado.
+
+## Início do RH, Tarefas, Relatórios e Marketing (8.6.0)
+
+- Início da secretaria/RH: números Audiências hoje / Para avisar / Cobranças / Aniversários; blocos de HOJE, próximos 7 dias, "Vencem hoje —
+  lembrar", "Não pagos — cobrar" e aniversariantes, todos com WhatsApp. `inicio.extras` (param `dia`) fica na memória do servidor por perfil
+  (ROTAS_GUARDADAS + MEMORIA_POR_PERFIL), é aquecido pelo `aquecerMemoria_` e NÃO vai mais no lote (corre em paralelo); se passar de 25 s a
+  tela abre e se redesenha sozinha quando chegar (antes o RH via tudo vazio).
+- Tarefas: visão padrão "Lista do dia" (`listaDia` em telaTarefas; `tarefas_visao86`): campo "O que precisa ser feito?" + para quem +
+  quando, grupos Atrasadas/Hoje/Amanhã/7 dias/Depois/Sem data, ✓ de um clique (prazo usa o Conferido), WhatsApp na linha, "feitas hoje".
+  Quadro e Tabela continuam como opção.
+- Observações do cliente em todo lugar (`notasDoCliente`): tela do processo, do prazo e prévia (📝) no cartão da lista de clientes
+  (`obs`/`n_obs` em clientes.listar). "Aguardando assinatura" saiu de Modelos (fica em Clientes).
+- WhatsApp: "Abrir o WhatsApp Web do painel" no menu do nome abre a aba `whatsapp_painel`; aba aberta à mão não pode ser reaproveitada.
+- Relatórios: "Resultados de <mês>" (`blocoResultados`, `doMes` em relatorio.geral, `mes=aaaa-mm`): contratos fechados (Assinaturas
+  assinado), clientes novos e processos finalizados, com nomes; gráficos mensais de contratos fechados e finalizados.
+- Marketing (#/marketing, só administração; rotas `marketing.resumo`/`marketing.salvar`, aba Marketing): investimento por mês/canal/área
+  lançado à mão (custo do Google Ads), cliques anônimos do site (`site.clique` público → aba SiteCliques: página, área, origem ads/google/
+  social/direto, 300/h; site.js guarda a origem na sessionStorage pelo gclid/utm), contatos do site (Contatos.origem), clientes com
+  "Como nos conheceu?" (Clientes.como_conheceu, `CANAIS_CONHECEU`), contratos assinados e honorários contratados/recebidos. Veredito por
+  área bem explícito ("DÁ RETORNO: cada R$ 1 trouxe R$ x" / "AINDA NÃO SE PAGOU"). Uma campanha por área no Google Ads = uma linha por área.
 
 ## Layout
 

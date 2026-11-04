@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.5.0';
+var VERSAO = '8.6.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -59,7 +59,7 @@ var ESQUEMA = {
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
-    'acesso_hash', 'acesso_criado_em'],
+    'acesso_hash', 'acesso_criado_em', 'como_conheceu'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em'],
@@ -74,7 +74,7 @@ var ESQUEMA = {
     'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
-  Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por'],
+  Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
@@ -84,7 +84,9 @@ var ESQUEMA = {
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
-  Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes'],
+  Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
+  Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
+  SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
     'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda', 'modalidade', 'conta_receb'],
@@ -435,6 +437,9 @@ var ROTAS = {
   'fin.despesa.salvar': { permissao: 'financeiro', fn: salvarDespesa_ },
   'fin.despesa.acao': { permissao: 'financeiro', fn: acaoDespesa_ },
   'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
+  'marketing.resumo': { permissao: 'usuarios', fn: marketingResumo_ },
+  'marketing.salvar': { permissao: 'usuarios', fn: marketingSalvar_ },
+  'site.clique': { publica: true, fn: cliqueSite_ },
   'resumo.email.testar': { fn: testarResumoEmail_ },
   'ia.config': { permissao: 'usuarios', fn: configIA_ },
   'ia.resumirPrazo': { fn: resumirPrazoIA_ },
@@ -468,7 +473,7 @@ function rotear_(acao, token, dados) {
  * Memória do servidor para as listas grandes: a resposta fica guardada por até 10 minutos e é jogada fora
  * na hora em que qualquer coisa é gravada na planilha (pelo painel, pelo robô ou pelo configurar).
  */
-var ROTAS_GUARDADAS = { 'eu.painel': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
+var ROTAS_GUARDADAS = { 'inicio.extras': 1, 'eu.painel': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'fin.honorarios': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 function versaoDados_() {
   var c = CacheService.getScriptCache(), v = c.get('versao_dados');
   if (!v) { v = String(Date.now()); c.put('versao_dados', v, 21600); }
@@ -477,7 +482,7 @@ function versaoDados_() {
 function marcarMudanca_() {
   try { CacheService.getScriptCache().put('versao_dados', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue sem memória */ }
 }
-var MEMORIA_POR_PERFIL = { 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
+var MEMORIA_POR_PERFIL = { 'inicio.extras': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
 function comMemoria_(acao, u, dados, fn) {
   var cache = CacheService.getScriptCache();
   var limpo = {};
@@ -762,7 +767,7 @@ function trocarSenha_(d, u) {
 /* ------------------------------------------------------------------ */
 
 var CAMPOS_CLIENTE = ['tipo_acao', 'resumo_caso', 'providencias', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
-  'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'observacoes', 'situacao', 'genero'];
+  'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'observacoes', 'situacao', 'genero', 'como_conheceu'];
 
 function listarClientes_(d) {
   var busca = normalizar_(d.busca || '');
@@ -777,7 +782,8 @@ function listarClientes_(d) {
     })
     .map(function (c) {
       return { id: c.id, tipo: c.tipo, nome: c.nome, cpf_cnpj: c.cpf_cnpj, telefone: c.telefone, cidade: c.cidade,
-        area: c.area, situacao: c.situacao, pasta_url: c.pasta_url, processos: porCliente[c.id] || 0 };
+        area: c.area, situacao: c.situacao, pasta_url: c.pasta_url, processos: porCliente[c.id] || 0,
+        obs: String(c.observacoes || '').split('\n')[0].slice(0, 160), n_obs: c.observacoes ? String(c.observacoes).split('\n').length : 0 };
     })
     .sort(function (a, b) { return normalizar_(a.nome) < normalizar_(b.nome) ? -1 : 1; });
 }
@@ -2366,6 +2372,7 @@ function rodarRobo_(quem) {
     var navRecente = djenNav && (Date.now() - new Date(djenNav).getTime()) < 36 * 3600000;
     try { if (!ctx.gmailParcial && !navRecente) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
+    try { limparAtosImpossiveis_(ctx); } catch (eLA) { erros.push('Agenda (limpeza): ' + (eLA.message || eLA)); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
     try { robosEscritorio_(ctx); } catch (eR) { erros.push('Robôs do escritório: ' + (eR.message || eR)); }
@@ -2991,7 +2998,7 @@ function conferirPrazo_(d, u) {
 
 function mudarSituacaoPrazo_(d, u) {
   return comTrava_(function () {
-    var nova = { cumprido: 'cumprido', cancelado: 'cancelado', reabrir: 'calculado' }[d.situacao];
+    var nova = { cumprido: 'cumprido', cancelado: 'cancelado', reabrir: 'calculado', semprazo: 'cancelado' }[d.situacao];
     if (!nova) throw falha_('Situação inválida.');
     var tab = tabela_('Prazos');
     var z = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
@@ -3003,7 +3010,12 @@ function mudarSituacaoPrazo_(d, u) {
       conferido_por: nova === 'calculado' ? '' : z.conferido_por, conferido_em: nova === 'calculado' ? '' : z.conferido_em,
       cumprido_por: nova === 'cumprido' ? (u.nome || u.usuario) : (nova === 'cancelado' ? z.cumprido_por : ''),
       cumprido_em: nova === 'cumprido' ? agoraIso : (nova === 'cancelado' ? z.cumprido_em : '') });
-    registrar_(u.usuario, 'prazo ' + nova, z.id + ' ' + z.numero);
+    if (d.situacao === 'semprazo') { // 8.6.0: "Não há prazo" — conferido por alguém da equipe; a intimação também sai das abertas
+      atualizarLinha_(tab, z, { observacoes: (z.observacoes || '') + ' | sem prazo para o escritório (conferido por ' + (u.nome || u.usuario) + ' em ' + dataBR_(hojeSP_()) + ')' });
+      var tabI = tabela_('Intimacoes');
+      intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: u.nome || u.usuario, terminada_em: agoraIso, ok_por: 'sem prazo', ok_em: agoraIso }); });
+    }
+    registrar_(u.usuario, d.situacao === 'semprazo' ? 'prazo conferido: sem prazo' : 'prazo ' + nova, z.id + ' ' + z.numero);
     return { ok: true };
   });
 }
@@ -3604,7 +3616,7 @@ var MESES_ATO = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 
 function acharAto_(texto) {
   var t = normalizar_(texto);
   if (!t) return null;
-  var ehPericia = /pericia|perito/.test(t) && /(designad|marcad|agendad|realizar|realizacao|comparecer|data|dia|local)/.test(t);
+  var ehPericia = /pericia|perito/.test(t) && /(designad|designo|marcad|agendad|realizar|realizacao|comparecer|data|dia|local)/.test(t);
   var ehAudiencia = /audiencia|sessao de (conciliacao|mediacao)|cejusc/.test(t) &&
     /(designad|redesignad|marcad|agendad|pauta|comparecer|comparecimento|para o dia|realizar|realizacao|intimad|intimacao)/.test(t);
   if (!ehPericia && !ehAudiencia) return null;
@@ -3616,13 +3628,14 @@ function acharAto_(texto) {
     : /inicial|\buna\b/.test(t) ? 'audiência inicial' : 'audiência de conciliação';
   var agenda = ehPericia ? 'PERÍCIAS' : /instrucao/.test(t) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
   var pos = t.search(ehPericia ? /pericia|perito/ : /audiencia|sessao de|cejusc/);
-  var trecho = t.slice(Math.max(0, pos), pos + 600);
-  var hoje = hojeSP_(), achada = null;
-  var re = /(\d{1,2})\s*(?:\/|\.|-)\s*(\d{1,2})\s*(?:\/|\.|-)\s*(\d{4}|\d{2})(?!\d)|(\d{1,2})(?:º|o)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g, m;
+  // 8.6.0: números de processo ("…2026.5.12.0041") e de documentos não são data (o robô tinha lido 05/12/2041)
+  var trecho = t.slice(Math.max(0, pos), pos + 600).replace(/\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}/g, ' [processo] ');
+  var hoje = hojeSP_(), achada = null, anoMax = +hoje.slice(0, 4) + 3;
+  var re = /(?<![\d.\/-])(\d{1,2})\s*(?:\/|\.|-)\s*(\d{1,2})\s*(?:\/|\.|-)\s*(\d{4}|\d{2})(?!\d)|(\d{1,2})(?:º|o)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g, m;
   while ((m = re.exec(trecho))) {
     var dia = +(m[1] || m[4]), mes = m[2] ? +m[2] : MESES_ATO[m[5]], ano = +(m[3] || m[6]);
     if (ano < 100) ano += 2000;
-    if (!(dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 && ano >= 2000 && ano <= 2100)) continue;
+    if (!(dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 && ano >= 2000 && ano <= anoMax)) continue;
     var data = ano + '-' + ('0' + mes).slice(-2) + '-' + ('0' + dia).slice(-2);
     if (data < hoje) continue;
     var depois = trecho.slice(m.index + m[0].length, m.index + m[0].length + 45);
@@ -3659,7 +3672,12 @@ function tituloAto_(ctx, tipo, numero, proc) {
 /** Já existe na agenda este ato (mesmo processo, mesma data e mesmo tipo: audiência ou perícia)? */
 function atoJaMarcado_(ctx, numero, data, ehPericia) {
   ctx.eventos = ctx.eventos || tabela_('Eventos');
-  return ctx.eventos.linhas.some(function (e) { return e.numero === numero && e.data === data && (/per[ií]cia/.test(e.tipo) === !!ehPericia); });
+  // 8.6.0: confere também a data ORIGINAL guardada na chave ("ato|nº|tipo|data|hora"): se alguém mudou o dia no Google Agenda,
+  // o robô não marca de novo a data antiga (era o que criava dezenas de cópias).
+  return ctx.eventos.linhas.some(function (e) {
+    var dataChave = String(e.chave || '').split('|')[3] || '';
+    return e.numero === numero && (e.data === data || dataChave === data) && (/per[ií]cia/.test(e.tipo) === !!ehPericia);
+  });
 }
 
 /** Marca o ato na agenda e cria o lembrete com a data do ato (nunca apaga nem muda o prazo da intimação). */
@@ -4109,7 +4127,7 @@ function sincronizarAgenda_(ctx, limiteMs) {
         atualizarLinha_(ctx.eventos, e, { evento_id: 'apagado no Google' }); r.atos++;
         return;
       }
-      var ini = ev.getStartTime(), data = Utilities.formatDate(ini, TZ, 'yyyy-MM-dd'), hora = ev.isAllDayEvent() ? '' : Utilities.formatDate(ini, TZ, 'HH:mm');
+      var ini = ev.getStartTime(), data = diaDoEvento_(ev, c), hora = ev.isAllDayEvent() ? '' : Utilities.formatDate(ini, TZ, 'HH:mm');
       if (data === e.data && (hora === (e.hora || '') || (!e.hora && ev.isAllDayEvent()))) return;
       atualizarLinha_(ctx.eventos, e, { data: data, hora: hora });
       if (z) atualizarLinha_(ctx.prazos, z, { fatal: data, descricao: String(z.descricao || '').replace(/\d{2}\/\d{2}\/\d{4}( às \d{2}:\d{2})?/, dataBR_(data) + (hora ? ' às ' + hora : '')),
@@ -4122,6 +4140,47 @@ function sincronizarAgenda_(ctx, limiteMs) {
   if (r.criados || r.movidos || r.apagados || r.atos) registrar_('robô', 'agenda do Google', JSON.stringify(r));
   setConfig_('AGENDA_SINC', new Date().toISOString() + ' · ' + r.criados + ' prazo(s) novo(s), ' + r.movidos + ' movido(s), ' + r.apagados + ' tirado(s), ' + r.atos + ' audiência(s) atualizada(s)', 'Última sincronização com o Google Agenda');
   return r;
+}
+
+/**
+ * 8.6.0, uma vez (Config FIX_ATOS_86): apaga as audiências/perícias com ano impossível (o robô leu "5.12.0041" de um número de
+ * processo como 05/12/2041 e, com o dia mudando no Google Agenda, recriou a cada hora). Tira o evento do Google e cancela o lembrete.
+ */
+function limparAtosImpossiveis_(ctx) {
+  if (config_('FIX_ATOS_86')) return 0;
+  var anoMax = +hojeSP_().slice(0, 4) + 3, ids = {}, n = 0, agora = new Date().toISOString();
+  try { ids = agendas_(); } catch (e) { ids = {}; }
+  ctx.eventos = ctx.eventos || tabela_('Eventos');
+  var prazosPorId = {};
+  ctx.prazos.linhas.forEach(function (z) { prazosPorId[z.id] = z; });
+  ctx.eventos.linhas.forEach(function (e) {
+    var dataChave = String(e.chave || '').split('|')[3] || '';
+    if (+String(e.data || '').slice(0, 4) <= anoMax && +dataChave.slice(0, 4) <= anoMax) return;
+    if (e.evento_id && !/^(erro|apagado)/.test(e.evento_id)) {
+      try { var cal = ids[e.agenda] && CalendarApp.getCalendarById(ids[e.agenda]); var ev = cal && cal.getEventById(e.evento_id); if (ev) ev.deleteEvent(); } catch (eC) { /* segue */ }
+    }
+    atualizarLinha_(ctx.eventos, e, { evento_id: 'apagado (data impossível)', data: '' });
+    var z = prazosPorId[e.prazo_id];
+    if (z && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) atualizarLinha_(ctx.prazos, z, { situacao: 'cancelado', observacoes: (z.observacoes || '') + ' | cancelado: data lida errada (número de processo)', atualizado_em: agora, atualizado_por: 'robô' });
+    n++;
+  });
+  ctx.prazos.linhas.forEach(function (z) {
+    if (/^ato:/.test(z.observacoes || '') && +String(z.fatal || '').slice(0, 4) > anoMax && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) {
+      atualizarLinha_(ctx.prazos, z, { situacao: 'cancelado', observacoes: (z.observacoes || '') + ' | cancelado: data lida errada (número de processo)', atualizado_em: agora, atualizado_por: 'robô' }); n++;
+    }
+  });
+  setConfig_('FIX_ATOS_86', new Date().toISOString() + ' · ' + n, 'Limpeza das audiências/perícias com ano impossível (8.6.0)');
+  if (n) registrar_('robô', 'agenda: limpeza de datas impossíveis', n + ' item(ns)');
+  return n;
+}
+
+/** Dia do evento do Google Agenda. Evento de dia inteiro: no fuso da AGENDA (lido no fuso de Brasília voltava um dia). */
+function diaDoEvento_(ev, cal) {
+  if (ev.isAllDayEvent()) {
+    var fuso = TZ; try { fuso = (cal && cal.getTimeZone()) || TZ; } catch (e) { /* fuso padrão */ }
+    return Utilities.formatDate(ev.getAllDayStartDate(), fuso, 'yyyy-MM-dd');
+  }
+  return Utilities.formatDate(ev.getStartTime(), TZ, 'yyyy-MM-dd');
 }
 
 /* ---------- Robô: lembrete de audiência e perícia (2 dias úteis antes) ---------- */
@@ -4144,53 +4203,73 @@ function diaDoLembrete_(data, feriados) {
  * Para cada audiência ou perícia (aba Eventos e agendas do Google de audiências e perícias) que acontece daqui a até 2 dias úteis,
  * cria UMA tarefa "Lembrar o cliente" para o responsável, com checklist e a mensagem de WhatsApp pronta no painel.
  */
-function lembrarAudiencias_(ctx) {
-  var hoje = hojeSP_(), feriados = ctx.feriados || mapaFeriados_();
-  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
-  var ja = {};
-  tabT.linhas.forEach(function (t) { var m = /\[lembrete:([^\]]+)\]/.exec(t.descricao || ''); if (m) ja[m[1]] = 1; });
-  var porNumero = {};
-  ctx.procs.linhas.forEach(function (p) { if (p.numero) porNumero[p.numero] = p; });
+/**
+ * Audiências e perícias de hoje até "ate": aba Eventos + as lançadas direto no Google Agenda (AUDIÊNCIA CONCILIAÇÃO / INSTRUÇÃO / PERÍCIAS).
+ * Cada uma: { chave, tipo, nome, data, hora, numero, local, titulo, ev (linha de Eventos, quando houver) }.
+ */
+function atosDaAgenda_(hoje, ate, eventos) {
   var atos = [];
-  (ctx.eventos || tabela_('Eventos')).linhas.forEach(function (e) {
-    if (!e.data || e.data < hoje) return;
-    atos.push({ chave: 'E:' + e.numero + ':' + e.data + ':' + tipoAtoDe_(e.tipo), tipo: tipoAtoDe_(e.tipo), nome: e.tipo, data: e.data, hora: e.hora || '', numero: e.numero, local: '' });
+  eventos.linhas.forEach(function (e) {
+    if (!e.data || e.data < hoje || e.data > ate || /^apagado/.test(e.evento_id || '')) return;
+    atos.push({ chave: 'E:' + e.numero + ':' + e.data + ':' + tipoAtoDe_(e.tipo), tipo: tipoAtoDe_(e.tipo), nome: e.tipo, data: e.data, hora: e.hora || '', numero: e.numero, local: '', ev: e });
   });
-  // audiências lançadas direto no Google Agenda (sem passar pelo robô)
   try {
-    var ids = agendas_(), fim = new Date(somarDias_(hoje, 8) + 'T23:59:00-03:00');
+    var ids = agendas_(), fim = new Date(somarDias_(ate, 1) + 'T00:00:00-03:00');
     ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO', 'PERÍCIAS'].forEach(function (ag) {
       var cal = ids[ag] && CalendarApp.getCalendarById(ids[ag]);
       if (!cal) return;
       cal.getEvents(new Date(hoje + 'T00:00:00-03:00'), fim).forEach(function (ev) {
         var txt = ev.getTitle() + ' ' + (ev.getDescription() || '');
         var num = (RE_CNJ.exec(txt) || [])[1] || '';
-        var ini = ev.getStartTime(), data = Utilities.formatDate(ini, TZ, 'yyyy-MM-dd');
+        var ini = ev.getStartTime(), data = diaDoEvento_(ev, cal);
+        if (data < hoje || data > ate) return;
         var tipo = ag === 'PERÍCIAS' ? 'pericia' : ag === 'AUDIÊNCIA INSTRUÇÃO' ? 'instrucao' : 'conciliacao';
-        if (num && atos.some(function (a) { return a.numero === num && a.data === data && a.tipo === tipo; })) return;
-        atos.push({ chave: 'G:' + ev.getId().slice(0, 40) + ':' + data, tipo: tipo, nome: tipo === 'pericia' ? 'perícia' : tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação',
+        var evId = ev.getId();
+        if (atos.some(function (a) { return (a.ev && a.ev.evento_id === evId) || (num && a.numero === num && a.data === data && a.tipo === tipo); })) return;
+        atos.push({ chave: 'G:' + evId.slice(0, 40) + ':' + data, tipo: tipo, nome: tipo === 'pericia' ? 'perícia' : tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação',
           data: data, hora: ev.isAllDayEvent() ? '' : Utilities.formatDate(ini, TZ, 'HH:mm'), numero: num, local: ev.getLocation ? (ev.getLocation() || '') : '', titulo: ev.getTitle() });
       });
     });
   } catch (e) { /* sem acesso à agenda: segue com a aba Eventos */ }
+  return atos.sort(function (a, b) { return (a.data + a.hora) < (b.data + b.hora) ? -1 : 1; });
+}
+
+/**
+ * 8.6.0 (pedido da usuária: "não podemos perder audiência"): DOIS avisos ao cliente para cada audiência/perícia —
+ * 1 semana antes (ou assim que o robô souber, se faltar menos) e NO DIA. Cada aviso vira uma tarefa com o WhatsApp pronto.
+ */
+function lembrarAudiencias_(ctx) {
+  var hoje = hojeSP_();
+  var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var ja = {};
+  tabT.linhas.forEach(function (t) { var re = /\[lembrete:([^\]]+)\]/g, m; while ((m = re.exec(t.descricao || ''))) ja[m[1]] = 1; });
+  var porNumero = {};
+  ctx.procs.linhas.forEach(function (p) { if (p.numero) porNumero[p.numero] = p; });
+  var atos = atosDaAgenda_(hoje, somarDias_(hoje, 7), ctx.eventos || tabela_('Eventos'));
   var feitos = 0, agora = new Date().toISOString();
   atos.forEach(function (a) {
-    if (ja[a.chave] || hoje < diaDoLembrete_(a.data, feriados)) return;
-    ja[a.chave] = 1;
+    var noDia = a.data === hoje;
+    // aviso da semana: a antiga marca [lembrete:chave] (2 dias úteis) vale como aviso da semana
+    var chave = noDia ? a.chave + '|dia' : a.chave;
+    if (ja[chave] || (!noDia && (ja[a.chave + '|dia']))) return;
+    if (noDia && a.ev && a.ev.avisado_dia_em) return;
+    if (!noDia && a.ev && a.ev.avisado_em) return;
+    ja[chave] = 1;
     var p = porNumero[a.numero] || {};
     var cli = p.cliente_id ? (ctx.clientes.linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}) : {};
     var nomeCli = cli.nome || (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '';
     var quando = dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '');
     var nomeAto = a.nome.charAt(0).toUpperCase() + a.nome.slice(1);
     inserirLinha_(tabT, { id: novoId_('T'),
-      titulo: 'Lembrar o cliente: ' + a.nome + ' em ' + quando + (nomeCli ? ' — ' + nomeCli : ''),
+      titulo: (noDia ? '⚖ HOJE — lembrar o cliente: ' : 'Avisar o cliente (1 semana antes): ') + a.nome + ' em ' + quando + (nomeCli ? ' — ' + nomeCli : ''),
       descricao: nomeAto + ' ' + quando + (a.local ? ' · ' + a.local : '') + (a.numero ? ' · processo ' + a.numero : '') + (a.titulo && !a.numero ? ' · ' + a.titulo : '') +
-        '.\nAvise o cliente pelo botão de WhatsApp desta tarefa e confira o checklist. Depois aperte "✓ Conferido".\n' +
-        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + a.chave + ']',
-      responsavel: p.responsavel || responsavelPadrao_(p, a.numero) || '', processo_id: p.id || '', numero: a.numero || '', cliente_id: p.cliente_id || '',
-      vence_em: a.data > hoje ? somarDias_(a.data, -1) : hoje, etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
-      historico: historicoMais_('', { nome: 'robô' }, 'lembrete de ' + a.nome), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
-      prioridade: diffDias_(a.data, hoje) <= 1 ? 'urgente' : 'alta', checklist: JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })),
+        '.\n' + (noDia ? 'É HOJE: mande a mensagem de lembrete pelo botão de WhatsApp desta tarefa e confirme que o cliente vai.' : 'Avise o cliente pelo botão de WhatsApp desta tarefa e confira o checklist.') +
+        ' Depois aperte "✓ Conferido".\n' +
+        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + chave + ']' + (noDia ? '\n[avisodia]' : ''),
+      responsavel: respSecretaria_() || p.responsavel || responsavelPadrao_(p, a.numero) || '', processo_id: p.id || '', numero: a.numero || '', cliente_id: p.cliente_id || '',
+      vence_em: hoje, etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
+      historico: historicoMais_('', { nome: 'robô' }, (noDia ? 'lembrete do dia: ' : 'aviso de 1 semana: ') + a.nome), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
+      prioridade: noDia || diffDias_(a.data, hoje) <= 1 ? 'urgente' : 'alta', checklist: noDia ? '' : JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })),
       repetir: '', ok_por: '', ok_em: '' });
     feitos++;
   });
@@ -6385,7 +6464,7 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
 }
 function atoDaTarefa_(desc) {
   var m = /\[ato:([a-z]+)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(desc || '');
-  return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim() } : null;
+  return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim(), hoje: /\[avisodia\]/.test(desc || '') } : null;
 }
 
 function lerChecklist_(txt) {
@@ -6800,11 +6879,33 @@ function relatorioGeral_(d) {
       if (idx[k] !== undefined) { prazosEntregues[idx[k]]++; if (!z.fatal || q <= z.fatal) prazosNoPrazo[idx[k]]++; }
     } else if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje) abertosVencidos++;
   });
+  // 8.6.0 (pedido da usuária): o que fechamos (contrato assinado), clientes novos e processos finalizados — por mês e o do mês escolhido
+  var mesSel = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : hoje.slice(0, 7);
+  var nomes = {}, contratosFechados = serie(), processosFinalizados = serie(), doMes = { mes: mesSel, contratos: [], clientes: [], finalizados: [] };
+  tabela_('Clientes').linhas.forEach(function (c) {
+    nomes[c.id] = c.nome;
+    if ((c.criado_em || '').slice(0, 7) === mesSel && !importado.test(c.origem || '') && !importado.test(c.atualizado_por || '') && !/revisão geral|processo \(/.test(c.origem || ''))
+      doMes.clientes.push({ id: c.id, nome: c.nome, quando: diaSP_(c.criado_em), area: c.area || '', origem: c.origem || '' });
+  });
+  tabela_('Assinaturas').linhas.forEach(function (a) {
+    if (a.situacao !== 'assinado' || !a.assinado_em) return;
+    var k = diaSP_(a.assinado_em).slice(0, 7);
+    if (idx[k] !== undefined) contratosFechados[idx[k]]++;
+    if (k === mesSel) doMes.contratos.push({ cliente_id: a.cliente_id, nome: a.cliente_nome, quando: diaSP_(a.assinado_em), documentos: a.documentos, tipo_acao: (TIPOS_ACAO[a.tipo_acao] || {}).nome || '', por: a.assinado_por || '', processo_id: a.processo_id || '' });
+  });
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (p.status !== 'arquivado' && p.fase !== 'extinto') return;
+    var q = diaSP_(p.ultimo_movimento_em || p.atualizado_em || ''), k = q.slice(0, 7);
+    if (idx[k] !== undefined) processosFinalizados[idx[k]]++;
+    if (k === mesSel) doMes.finalizados.push({ id: p.id, numero: p.numero, cliente: nomes[p.cliente_id] || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', area: p.area || '', quando: q, motivo: String(p.ultimo_movimento || '').slice(0, 80) });
+  });
+  ['contratos', 'clientes', 'finalizados'].forEach(function (k) { doMes[k].sort(function (a, b) { return a.quando < b.quando ? 1 : -1; }); });
   var ent = prazosEntregues.reduce(function (a, b) { return a + b; }, 0), np = prazosNoPrazo.reduce(function (a, b) { return a + b; }, 0);
   var t = listarTarefas_({ dias: Math.min(parseInt(d.dias, 10) || 90, 365) }, { usuario: '' });
   var fluxo = fluxoMensal_(meses);
   return {
     hoje: hoje, meses: meses, clientesNovos: clientesNovos, processosNovos: processosNovos, intimacoes: intimacoes,
+    contratosFechados: contratosFechados, processosFinalizados: processosFinalizados, doMes: doMes,
     prazosEntregues: prazosEntregues, prazosNoPrazo: prazosNoPrazo, percentualNoPrazo: ent ? Math.round(np * 100 / ent) : null, prazosVencidosAbertos: abertosVencidos,
     porArea: Object.keys(porArea).map(function (k) { return porArea[k]; }).sort(function (a, b) { return b.ativos - a.ativos; }),
     porFase: porFase,
@@ -7093,7 +7194,7 @@ function revisaoGeral_(d, u) {
 function aquecerMemoria_() {
   var t0 = Date.now(), perfis = {};
   usuarios_().forEach(function (x) { if (x.ativo === 'sim' && PERFIS[x.perfil]) perfis[x.perfil] = x; });
-  var pedidos = [['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['intimacoes.listar', { limite: 30, abertas: true }], ['relatorio.geral', {}], ['fin.honorarios', {}]];
+  var pedidos = [['inicio.extras', { dia: hojeSP_() }], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['intimacoes.listar', { limite: 30, abertas: true }], ['relatorio.geral', {}], ['fin.honorarios', {}]];
   var n = 0;
   Object.keys(perfis).forEach(function (pf) {
     var u = perfis[pf];
@@ -7126,15 +7227,20 @@ function inicioExtras_(d, u) {
   var clis = {}, procs = {};
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
-  // audiências e perícias dos próximos 7 dias (o robô marca; aqui a secretaria avisa o cliente)
-  var audiencias = tabela_('Eventos').linhas.filter(function (e) { return e.data >= hoje && e.data <= ate; })
-    .sort(function (a, b) { return (a.data + a.hora) < (b.data + b.hora) ? -1 : 1; }).slice(0, 30)
-    .map(function (e) {
-      var p = procs[e.numero] || {}, c = clis[p.cliente_id] || {};
-      return { chave: e.chave, tipo: tipoAtoDe_(e.tipo), nome: e.tipo, data: e.data, hora: e.hora || '', numero: e.numero, local: p.orgao || '',
-        cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', telefone: c.telefone || '', processo_id: p.id || '',
-        avisado_em: e.avisado_em || '', avisado_por: e.avisado_por || '' };
-    });
+  // audiências e perícias de hoje e dos próximos 7 dias (Eventos + Google Agenda): aviso de 1 semana e aviso do dia
+  var tarefasAviso = {};
+  tabela_('Tarefas').linhas.forEach(function (t) {
+    var re = /\[lembrete:([^\]]+)\]/g, m;
+    while ((m = re.exec(t.descricao || ''))) tarefasAviso[m[1]] = { feita: !abertaT_(t) && t.situacao !== 'cancelada', por: t.concluida_por || '', em: t.concluida_em || '' };
+  });
+  var audiencias = atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 40).map(function (a) {
+    var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {};
+    var tSem = tarefasAviso[a.chave] || {}, tDia = tarefasAviso[a.chave + '|dia'] || {};
+    return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
+      titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', telefone: c.telefone || '', processo_id: p.id || '',
+      avisado_em: e.avisado_em || (tSem.feita ? tSem.em : ''), avisado_por: e.avisado_por || tSem.por || '',
+      avisado_dia_em: e.avisado_dia_em || (tDia.feita ? tDia.em : ''), avisado_dia_por: e.avisado_dia_por || tDia.por || '' };
+  });
   // aniversariantes de hoje
   var dm = hoje.slice(5);
   var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
@@ -7149,7 +7255,7 @@ function inicioExtras_(d, u) {
     cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje; })
       .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
       .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
-        return { id: q.id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',
+        return { id: q.id, cliente_id: q.cliente_id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',
           dias: diffDias_(hoje, q.vencimento), valor: verValor ? q.valor : null, mensagem_em: q.mensagem_em || '' }; })
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
@@ -7159,11 +7265,17 @@ function inicioExtras_(d, u) {
 
 /** "Avisei o cliente" da audiência: fica marcado para a equipe não avisar duas vezes. */
 function marcarAvisado_(d, u) {
+  var dia = d.quando === 'dia', agora = new Date().toISOString(), quem = u.nome || u.usuario;
   return comTrava_(function () {
     var tab = tabela_('Eventos'), e = tab.linhas.filter(function (x) { return x.chave === d.chave; })[0];
-    if (!e) throw falha_('Audiência não encontrada.');
-    atualizarLinha_(tab, e, { avisado_em: new Date().toISOString(), avisado_por: u.nome || u.usuario });
-    registrar_(u.usuario, 'whatsapp ao cliente', (e.numero || '') + ' · aviso de ' + e.tipo + ' em ' + dataBR_(e.data));
+    if (e) atualizarLinha_(tab, e, dia ? { avisado_dia_em: agora, avisado_dia_por: quem } : { avisado_em: agora, avisado_por: quem });
+    // fecha a tarefa do aviso (1 semana ou do dia) que o robô criou
+    var lembrete = (d.lembrete || '') + (dia ? '|dia' : ''), tabT = tabela_('Tarefas'), n = 0;
+    if (d.lembrete) tabT.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[lembrete:' + lembrete + ']') >= 0 && abertaT_(t); }).forEach(function (t) {
+      atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: u.usuario, historico: historicoMais_(t.historico, u, 'cliente avisado pelo WhatsApp'), atualizado_em: agora, atualizado_por: u.usuario }); n++;
+    });
+    if (!e && !n) throw falha_('Audiência não encontrada.');
+    registrar_(u.usuario, 'whatsapp ao cliente', (d.numero || (e && e.numero) || '') + ' · aviso ' + (dia ? 'do dia' : 'de 1 semana') + (e ? ' de ' + e.tipo + ' em ' + dataBR_(e.data) : ''));
     return { ok: true };
   });
 }
@@ -8070,7 +8182,7 @@ function contatoSite_(d) {
       responsavel: resp, processo_id: '', numero: '', cliente_id: '', vence_em: hojeSP_(), etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
       historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' site: pedido de contato', criado_em: agora, criado_por: 'site', atualizado_em: agora, atualizado_por: 'site' });
     inserirLinha_(tabela_('Contatos'), { id: id, criado_em: agora, nome: nome, telefone: fone, assunto: assunto, horario: horario, pagina: String(d.pagina || '').slice(0, 80),
-      situacao: 'novo', tarefa_id: tid, observacoes: '' });
+      situacao: 'novo', tarefa_id: tid, observacoes: '', origem: origemSite_(d.origem), campanha: String(d.campanha || '').replace(/[^\w .-]/g, '').slice(0, 60) });
   });
   try {
     var para = config_('CONTATO_EMAIL') || Session.getEffectiveUser().getEmail();
@@ -8082,6 +8194,114 @@ function contatoSite_(d) {
   return { ok: true };
 }
 
+
+/* ---------- Marketing (8.6.0): site e Google Ads — quanto investimos e o que voltou, por área ---------- */
+
+var AREAS_MKT = ['Trabalhista', 'Previdenciário', 'Família', 'Cível', 'Criminal', 'Empresarial'];
+var CANAIS_CONHECEU = ['Google Ads (anúncio)', 'Google (pesquisa ou mapa)', 'Site', 'Instagram / Facebook', 'Indicação', 'Já era cliente', 'Outro'];
+function origemSite_(o) { o = String(o || ''); return /^ads$/.test(o) ? 'ads' : /^(organico|google|social|direto|outro)$/.test(o) ? o : 'direto'; }
+/** Área de marketing pelo texto (área do cliente, página do site, assunto do contato). */
+function areaMkt_(t) {
+  t = normalizar_(t || '');
+  if (/trabalh/.test(t)) return 'Trabalhista';
+  if (/previd|inss|aposent/.test(t)) return 'Previdenciário';
+  if (/famil|divorc|pensao|guarda|invent/.test(t)) return 'Família';
+  if (/crimin|penal/.test(t)) return 'Criminal';
+  if (/empres|assessoria/.test(t)) return 'Empresarial';
+  if (/civel|civil|banco|consumidor|contrato|compra/.test(t)) return 'Cível';
+  return 'Geral';
+}
+
+/** Público (site): um clique no WhatsApp ou no telefone, sem nenhum dado pessoal (página, área e se veio de anúncio). */
+function cliqueSite_(d) {
+  var cache = CacheService.getScriptCache(), k = 'site_cliques_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMddHH');
+  var n = parseInt(cache.get(k) || '0', 10);
+  if (n >= 300) return { ok: true, ignorado: true };
+  cache.put(k, String(n + 1), 3700);
+  var pagina = String(d.pagina || '/').replace(/[^\w\/-]/g, '').slice(0, 60);
+  aba_('SiteCliques').appendRow([new Date().toISOString(), pagina, areaMkt_(d.area || pagina), origemSite_(d.origem),
+    String(d.campanha || '').replace(/[^\w .-]/g, '').slice(0, 60), /^(whatsapp|telefone|formulario)$/.test(d.canal || '') ? d.canal : 'whatsapp']);
+  return { ok: true };
+}
+
+/** Lança (ou apaga) o investimento de um mês numa campanha. */
+function marketingSalvar_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Marketing');
+    if (d.excluir) { var x = tab.linhas.filter(function (r) { return r.id === d.excluir; })[0]; if (x) atualizarLinha_(tab, x, { investimento: '0', obs: 'excluído por ' + u.usuario, mes: 'excluido' }); return { ok: true }; }
+    var m = d.item || {};
+    if (!/^\d{4}-\d{2}$/.test(m.mes || '')) throw falha_('Escolha o mês.');
+    var inv = dinheiro_(m.investimento);
+    if (!(inv >= 0)) throw falha_('Informe quanto foi investido (R$).');
+    var area = AREAS_MKT.indexOf(m.area) >= 0 ? m.area : 'Geral';
+    var dados = { mes: m.mes, canal: String(m.canal || 'Google Ads').slice(0, 40), campanha: String(m.campanha || '').slice(0, 80), area: area, investimento: inv.toFixed(2),
+      cliques: String(parseInt(m.cliques, 10) || ''), impressoes: String(parseInt(m.impressoes, 10) || ''), conversoes: String(parseInt(m.conversoes, 10) || ''), obs: String(m.obs || '').slice(0, 200) };
+    var igual = tab.linhas.filter(function (r) { return r.id === m.id || (!m.id && r.mes === dados.mes && r.canal === dados.canal && r.area === dados.area && r.campanha === dados.campanha); })[0];
+    if (igual) { atualizarLinha_(tab, igual, dados); registrar_(u.usuario, 'marketing', 'investimento alterado ' + dados.mes + ' ' + area); return { id: igual.id }; }
+    dados.id = novoId_('MK'); dados.criado_em = new Date().toISOString(); dados.criado_por = u.usuario;
+    inserirLinha_(tab, dados);
+    registrar_(u.usuario, 'marketing', 'investimento ' + dados.mes + ' ' + area + ' R$ ' + dados.investimento);
+    return { id: dados.id };
+  });
+}
+
+/**
+ * Resumo do retorno: por área e por mês — investimento, cliques no WhatsApp do site (de anúncio e sem anúncio), pedidos de
+ * contato, clientes novos (e quantos disseram que vieram do anúncio/Google/site), contratos assinados e valor contratado/recebido.
+ */
+function marketingResumo_(d) {
+  var hoje = hojeSP_(), nMeses = Math.min(Math.max(parseInt(d.meses, 10) || 6, 1), 24);
+  var meses = mesesAtras_(hoje, nMeses), de = meses[0], idx = {};
+  meses.forEach(function (m, i) { idx[m] = i; });
+  var areas = ['Geral'].concat(AREAS_MKT), vazio = function () {
+    return { investimento: 0, cliques_ads: 0, cliques_site: 0, contatos: 0, contatos_ads: 0, clientes: 0, clientes_ads: 0, clientes_google: 0, contratos: 0, contratos_ads: 0, contratado: 0, contratado_ads: 0, recebido: 0, recebido_ads: 0, exito_ads: 0 };
+  };
+  var porArea = {}, porMes = meses.map(function (m) { var o = vazio(); o.mes = m; return o; }), total = vazio();
+  areas.forEach(function (a) { porArea[a] = vazio(); porArea[a].area = a; });
+  var soma = function (area, mes, campo, v) { if (idx[mes] === undefined) return; porArea[area][campo] += v; porMes[idx[mes]][campo] += v; total[campo] += v; };
+  var campanhas = [];
+  tabela_('Marketing').linhas.forEach(function (r) {
+    if (idx[r.mes] === undefined) return;
+    var v = +r.investimento || 0; soma(r.area || 'Geral', r.mes, 'investimento', v);
+    campanhas.push({ id: r.id, mes: r.mes, canal: r.canal, campanha: r.campanha, area: r.area, investimento: v, cliques: r.cliques, impressoes: r.impressoes, conversoes: r.conversoes, obs: r.obs });
+  });
+  try {
+    tabela_('SiteCliques').linhas.forEach(function (c) {
+      var mes = diaSP_(c.quando).slice(0, 7);
+      soma(areas.indexOf(c.area) >= 0 ? c.area : 'Geral', mes, c.origem === 'ads' ? 'cliques_ads' : 'cliques_site', 1);
+    });
+  } catch (e) { /* aba nova */ }
+  tabela_('Contatos').linhas.forEach(function (c) {
+    var mes = diaSP_(c.criado_em).slice(0, 7), a = areaMkt_(c.assunto + ' ' + c.pagina);
+    soma(a, mes, 'contatos', 1); if (c.origem === 'ads') soma(a, mes, 'contatos_ads', 1);
+  });
+  var importado = /hist|GEA|carga|levantamento|planilha|importa|revisão geral|processo \(/i, novos = {};
+  tabela_('Clientes').linhas.forEach(function (c) {
+    var mes = diaSP_(c.criado_em).slice(0, 7);
+    if (idx[mes] === undefined || importado.test(c.origem || '') || importado.test(c.atualizado_por || '')) return;
+    var a = areaMkt_(c.area + ' ' + c.tipo_acao), ads = /ads|anuncio|anúncio/i.test(c.como_conheceu || ''), google = /google|site/i.test(c.como_conheceu || '');
+    novos[c.id] = { area: a, ads: ads, google: google || ads, mes: mes };
+    soma(a, mes, 'clientes', 1); if (ads) soma(a, mes, 'clientes_ads', 1); if (google || ads) soma(a, mes, 'clientes_google', 1);
+  });
+  tabela_('Assinaturas').linhas.forEach(function (x) {
+    var n = novos[x.cliente_id]; if (!n || x.situacao !== 'assinado') return;
+    var mes = diaSP_(x.assinado_em).slice(0, 7); soma(n.area, idx[mes] === undefined ? n.mes : mes, 'contratos', 1); if (n.ads) soma(n.area, idx[mes] === undefined ? n.mes : mes, 'contratos_ads', 1);
+  });
+  var honCli = {};
+  tabela_('Honorarios').linhas.forEach(function (h) {
+    var n = novos[h.cliente_id]; if (!n || /cancelad/.test(h.situacao || '')) return;
+    honCli[h.id] = n;
+    var v = h.tipo === 'mensal' ? (+h.valor_mensal || 0) * 12 : (+h.valor_total || 0);
+    soma(n.area, n.mes, 'contratado', v); if (n.ads) { soma(n.area, n.mes, 'contratado_ads', v); if (h.tipo === 'exito' || +h.percentual) soma(n.area, n.mes, 'exito_ads', 1); }
+  });
+  tabela_('Parcelas').linhas.forEach(function (q) {
+    var n = honCli[q.honorario_id]; if (!n || !q.pago_em) return;
+    var v = +q.valor_pago || +q.valor || 0; soma(n.area, n.mes, 'recebido', v); if (n.ads) soma(n.area, n.mes, 'recebido_ads', v);
+  });
+  return { meses: meses, de: de, porArea: areas.map(function (a) { return porArea[a]; }), porMes: porMes, total: total,
+    campanhas: campanhas.sort(function (a, b) { return a.mes < b.mes ? 1 : -1; }), areas: AREAS_MKT, canais: CANAIS_CONHECEU,
+    semMarcacao: Object.keys(novos).filter(function (k) { var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === k; })[0]; return c && !c.como_conheceu; }).length };
+}
 
 /* ---------- Robô de hora em hora e vigia (para nunca perder prazo) ---------- */
 
