@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.8.1';
+var VERSAO = '8.9.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -450,6 +450,7 @@ var ROTAS = {
   'site.clique': { publica: true, fn: cliqueSite_ },
   'marketing.ads': { publica: true, fn: receberGoogleAds_ },
   'marketing.adsConfig': { permissao: 'usuarios', fn: configGoogleAds_ },
+  'marketing.gbp': { permissao: 'usuarios', fn: marketingGbp_ },
   'resumo.email.testar': { fn: testarResumoEmail_ },
   'ia.config': { permissao: 'usuarios', fn: configIA_ },
   'ia.resumirPrazo': { fn: resumirPrazoIA_ },
@@ -4795,9 +4796,19 @@ function postagemGoogle_(ctx) {
   if (!it) return 0;
   var texto = it.titulo + '\n\n' + it.resumo + '\n\nLeia a explicação completa no site da Araújo Advocacia.';
   var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
+  var auto = gbpLigado_() ? gbpPostar_(it) : null; // 8.9.0: postagem automática no perfil do Google (quando o Google aprovar a API)
+  if (auto && auto.ok) {
+    setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google');
+    novaTarefaRobo_(tabT, { _motivo: 'texto novo do blog para o Instagram',
+      titulo: 'Postar no Instagram: ' + it.titulo.slice(0, 80),
+      descricao: 'O texto desta semana JÁ FOI POSTADO SOZINHO no perfil do Google. Falta só o Instagram:\nIMAGEM: ' + it.link.replace(/\/?$/, '/') + 'instagram.png\nLEGENDA PRONTA: ' + it.link.replace(/\/?$/, '/') + 'instagram.txt\n[google:' + it.link.replace(/[\[\]]/g, '') + ']',
+      responsavel: respSecretaria_(), vence_em: hoje, prioridade: 'normal', checklist: ['Postar a imagem pronta no Instagram com a legenda'] });
+    return 1;
+  }
   novaTarefaRobo_(tabT, { _motivo: 'texto novo do blog para o Google',
     titulo: 'Postar no Google e no Instagram: ' + it.titulo.slice(0, 80),
-    descricao: 'Toda semana o blog ganha textos novos. Poste o desta semana no perfil do Google (mantém o perfil ativo e traz clientes):\n' +
+    descricao: (auto && !auto.ok ? '⚠ A postagem automática no Google falhou (' + auto.erro + '). Poste à mão desta vez:\n\n' : '') +
+      'Toda semana o blog ganha textos novos. Poste o desta semana no perfil do Google (mantém o perfil ativo e traz clientes):\n' +
       '1) Abra https://business.google.com → "Adicionar atualização".\n2) Escolha uma foto do escritório ou da Dra. Júlian.\n3) Cole o texto abaixo.\n4) Botão "Saiba mais" com o link.\n\n' +
       'TEXTO:\n' + texto + '\n\nLINK:\n' + it.link +
       '\n\nINSTAGRAM (8.7.0): a imagem quadrada já está pronta — abra no celular, salve e poste com a legenda:\nIMAGEM: ' + it.link.replace(/\/?$/, '/') + 'instagram.png\nLEGENDA PRONTA: ' + it.link.replace(/\/?$/, '/') + 'instagram.txt' +
@@ -4806,6 +4817,93 @@ function postagemGoogle_(ctx) {
     checklist: ['Abrir o perfil do Google', 'Adicionar atualização com foto', 'Colar o texto e o link (botão "Saiba mais")', 'Postar a imagem pronta no Instagram com a legenda'] });
   setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google');
   return 1;
+}
+
+/* ---------- 8.9.0: blog no perfil do Google sozinho (API do Perfil da Empresa) ----------
+   Precisa: o Google aprovar o "Basic API Access" do projeto do Cloud, o Apps Script ligado a esse projeto e a permissão
+   business.manage no appsscript.json. Enquanto não houver tudo isso, o robô continua criando a tarefa para a secretaria. */
+function gbpLigado_() { return config_('GBP_AUTO') === 'sim' && /^accounts\/[^/]+\/locations\/[^/]+$/.test(config_('GBP_LOCAL') || ''); }
+function gbpFetch_(url, metodo, corpo) {
+  var op = { method: metodo || 'get', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } };
+  if (corpo) { op.contentType = 'application/json'; op.payload = JSON.stringify(corpo); }
+  var r = UrlFetchApp.fetch(url, op), cod = r.getResponseCode(), j = {};
+  try { j = JSON.parse(r.getContentText() || '{}'); } catch (e) { j = {}; }
+  return { cod: cod, j: j, msg: (j.error && j.error.message) || '' };
+}
+/** Traduz o erro do Google para o que a pessoa precisa fazer. */
+function gbpErro_(r) {
+  var m = String(r.msg || ''), cod = r.cod;
+  if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(m))
+    return 'falta a permissão do Perfil da Empresa no Apps Script (passo 4: appsscript.json com business.manage, depois rodar "configurar" e autorizar)';
+  if (/has not been used in project|is disabled|SERVICE_DISABLED/i.test(m)) {
+    var api = /(mybusiness[a-z]*\.googleapis\.com)/i.exec(m);
+    return 'a API ' + (api ? api[1] : 'do Perfil da Empresa') + ' não está ativada no projeto do Google Cloud (passo 3)';
+  }
+  if (cod === 429 || /quota|RATE_LIMIT|Quota exceeded/i.test(m))
+    return 'o Google ainda não aprovou o acesso (cota 0) ou a cota acabou. Se o e-mail de aprovação já chegou, confira se o Apps Script está ligado ao projeto aprovado (passo 2)';
+  if (cod === 401) return 'a autorização expirou: abra o Apps Script, rode "configurar" e autorize de novo';
+  if (cod === 403) return 'o Google recusou (' + m.slice(0, 160) + ')';
+  return 'erro ' + cod + (m ? ': ' + m.slice(0, 160) : '');
+}
+/** Acha a conta e o perfil (local) do escritório. */
+function gbpConectar_() {
+  var a = gbpFetch_('https://mybusinessaccountmanagement.googleapis.com/v1/accounts');
+  if (a.cod !== 200) return { ok: false, erro: gbpErro_(a) };
+  var contas = a.j.accounts || [], achados = [];
+  for (var i = 0; i < contas.length; i++) {
+    var l = gbpFetch_('https://mybusinessbusinessinformation.googleapis.com/v1/' + contas[i].name + '/locations?readMask=name,title,websiteUri&pageSize=100');
+    if (l.cod !== 200) return { ok: false, erro: gbpErro_(l) };
+    (l.j.locations || []).forEach(function (x) { achados.push({ local: contas[i].name + '/' + x.name, titulo: x.title || '', site: x.websiteUri || '' }); });
+  }
+  if (!achados.length) return { ok: false, erro: 'nenhum perfil de empresa nesta conta do Google (entre no Apps Script com a conta dona do perfil)' };
+  var esc = achados.filter(function (x) { return /ara[uú]jo/i.test(x.titulo) || /araujoadvocacia/i.test(x.site); })[0] || achados[0];
+  setConfig_('GBP_LOCAL', esc.local, 'Perfil do Google (Perfil da Empresa) onde o blog é postado');
+  setConfig_('GBP_LOCAL_NOME', esc.titulo, 'Nome do perfil do Google ligado ao painel');
+  return { ok: true, local: esc.local, titulo: esc.titulo, perfis: achados.length };
+}
+/** Posta um texto do blog como "atualização" do perfil, com a imagem quadrada do Instagram e o botão "Saiba mais". */
+function gbpPostar_(it) {
+  var local = config_('GBP_LOCAL'); if (!local) return { ok: false, erro: 'perfil não ligado' };
+  var resumo = (it.titulo + '\n\n' + (it.resumo || '')).slice(0, 1400);
+  var corpo = { languageCode: 'pt-BR', topicType: 'STANDARD', summary: resumo, callToAction: { actionType: 'LEARN_MORE', url: it.link } };
+  if (it.link) corpo.media = [{ mediaFormat: 'PHOTO', sourceUrl: it.link.replace(/\/?$/, '/') + 'instagram.png' }];
+  var r;
+  try { r = gbpFetch_('https://mybusiness.googleapis.com/v4/' + local + '/localPosts', 'post', corpo); }
+  catch (e) { return { ok: false, erro: String(e.message || e).slice(0, 160) }; }
+  if (r.cod === 400 && corpo.media) { delete corpo.media; r = gbpFetch_('https://mybusiness.googleapis.com/v4/' + local + '/localPosts', 'post', corpo); } // imagem recusada → posta só o texto
+  var res = r.cod === 200 ? { ok: true, url: r.j.searchUrl || '' } : { ok: false, erro: gbpErro_(r) };
+  setConfig_('GBP_ULTIMO', new Date().toISOString() + ' · ' + (res.ok ? 'postado: ' + it.titulo.slice(0, 80) : 'falhou: ' + res.erro), 'Última tentativa de postar o blog no perfil do Google');
+  return res;
+}
+/** Último texto do blog (para "Postar agora"). */
+function gbpUltimoDoBlog_() {
+  var r = UrlFetchApp.fetch('https://araujoadvocaciasc.com.br/blog/feed.xml?' + Date.now(), { muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw falha_('Não consegui ler o blog do site agora. Tente de novo em instantes.');
+  var it = (r.getContentText().match(/<item>[\s\S]*?<\/item>/) || [''])[0];
+  var g = function (tag) { var m = new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>').exec(it); return m ? m[1].replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() : ''; };
+  if (!g('link')) throw falha_('O blog ainda não tem textos.');
+  return { titulo: g('title'), link: g('link'), resumo: g('description') };
+}
+/** Tela Marketing › "Blog no perfil do Google": status, ligar ao perfil, ligar/desligar e postar agora. */
+function marketingGbp_(d, u) {
+  var acao = d.acao || 'status', extra = {};
+  if (acao === 'conectar') extra = gbpConectar_();
+  else if (acao === 'ligar' || acao === 'desligar') {
+    if (acao === 'ligar' && !config_('GBP_LOCAL')) { extra = gbpConectar_(); if (!extra.ok) return Object.assign(gbpStatus_(), { resultado: extra }); }
+    setConfig_('GBP_AUTO', acao === 'ligar' ? 'sim' : 'nao', 'Postar o blog sozinho no perfil do Google (sim/nao)');
+    registrar_(u.usuario, 'marketing: blog no Google', acao === 'ligar' ? 'ligou a postagem automática' : 'desligou a postagem automática');
+    extra = { ok: true };
+  } else if (acao === 'postar') {
+    if (!config_('GBP_LOCAL')) { extra = gbpConectar_(); if (!extra.ok) return Object.assign(gbpStatus_(), { resultado: extra }); }
+    var it = gbpUltimoDoBlog_();
+    extra = gbpPostar_(it); extra.titulo = it.titulo;
+    if (extra.ok) { var ja = config_('GOOGLE_POST_LINKS') || ''; if (ja.indexOf(it.link) < 0) setConfig_('GOOGLE_POST_LINKS', (it.link + ' ' + ja).slice(0, 4000), 'Textos do blog já mandados para o perfil do Google'); }
+    registrar_(u.usuario, 'marketing: blog no Google', (extra.ok ? 'postou: ' : 'tentou postar: ') + it.titulo.slice(0, 80));
+  }
+  return Object.assign(gbpStatus_(), { resultado: acao === 'status' ? null : extra });
+}
+function gbpStatus_() {
+  return { auto: config_('GBP_AUTO') === 'sim', local: config_('GBP_LOCAL') || '', nome: config_('GBP_LOCAL_NOME') || '', ultimo: config_('GBP_ULTIMO') || '' };
 }
 
 /* 7) Processo andou → e-mail curto ao cliente (só quem tem acesso ao "Acompanhe seu processo" e e-mail no cadastro). */

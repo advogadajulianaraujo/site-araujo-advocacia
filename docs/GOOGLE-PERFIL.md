@@ -145,5 +145,5 @@ Nada de "garantimos", "ganhe", "100%", valores ou preços nas postagens.
    - Number of locations managed: 1
 4. Aprovado = cota "Requests per minute" maior que 0 em APIs e serviços › Cotas (0 = ainda não aprovado).
    Depois: ativar "My Business Account Management API", "My Business Business Information API" e "Google My Business API",
-   trocar o projeto do Apps Script para esse projeto (Configurações do projeto › Projeto do Google Cloud) e ligar `postagemGoogle_`
-   para postar sozinho (hoje só cria a tarefa da secretaria).
+   trocar o projeto do Apps Script para esse projeto (Configurações do projeto › Projeto do Google Cloud), colar o appsscript.json
+   novo e, no painel, Marketing › "Blog no perfil do Google" › Testar › Ligar (8.9.0).

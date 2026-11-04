@@ -2341,7 +2341,7 @@
         ? h('button', { type: 'button', class: 'btn mini sec', onclick: parar(() => acaoPrazo('prazos.situacao', { id: z.id, situacao: 'reabrir' }, 'Prazo reaberto.')) }, 'Reabrir') : null);
   }
   const SITUACOES_ABERTAS = ['a definir', 'calculado', 'conferido'];
-  const VERSAO_PAINEL = '8.8.1';
+  const VERSAO_PAINEL = '8.9.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3993,10 +3993,49 @@
       h('div', { class: 'mkt-grade' }, r.porArea.map(cartaoArea).filter(Boolean).length ? r.porArea.map(cartaoArea).filter(Boolean) : h('p', { class: 'caixa peq' }, 'Ainda não há dados no período.')),
       h('section', { class: 'caixa' }, h('h2', {}, 'Mês a mês'), tabMes),
       caixaGoogleAds(r),
+      caixaBlogGoogle(),
       h('section', { class: 'caixa' }, h('h2', {}, 'Lançar o investimento do mês (à mão)'),
         h('p', { class: 'peq' }, 'No Google Ads: Campanhas › escolha o mês › copie o "Custo" de cada campanha (uma por área). Faça uma vez por mês. Para outras áreas, crie uma campanha por área: assim o painel compara cada uma.'), f),
       h('section', { class: 'caixa' }, h('h2', {}, 'Investimentos lançados'), tabCamp),
       h('p', { class: 'peq' }, 'Como o painel sabe: o site marca cada clique no WhatsApp (sem dado pessoal) e se a pessoa chegou por um anúncio do Google. O cliente novo conta como "do anúncio" quando o cadastro diz "Como nos conheceu? → Google Ads". Honorários de êxito só entram quando houver valor.'));
+  }
+
+  /** 8.9.0: blog no perfil do Google sozinho — passo a passo, testar e ligar (API do Perfil da Empresa). */
+  function caixaBlogGoogle() {
+    const raw = 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/painel-backend/appsscript.json';
+    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
+    const quando = t => { const d = new Date(String(t).split(' · ')[0]); return isNaN(d) ? '' : d.toLocaleString('pt-BR'); };
+    const desenhar = st => {
+      const res = st.resultado;
+      const msg = res ? (res.ok
+        ? h('p', { class: 'gbp-ok' }, res.titulo ? `✓ Postado no perfil do Google: "${res.titulo}".` : res.local ? `✓ Ligação OK: perfil "${res.titulo || res.local}".` : '✓ Feito.')
+        : h('p', { class: 'gbp-erro' }, '✗ Ainda não deu: ' + res.erro + '.')) : null;
+      const acao = (rot, a, cls, conf) => botao(rot, async ev => {
+        if (conf && !confirm(conf)) return;
+        ev.target.disabled = true; ev.target.textContent = 'Aguarde…';
+        try { desenhar(await api('marketing.gbp', { acao: a })); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = rot; }
+      }, cls);
+      corpo.replaceChildren(
+        h('p', {}, st.auto
+          ? ['✓ ', h('b', {}, 'Ligado.'), ` Toda segunda-feira o texto novo do blog vai sozinho para o perfil "${st.nome || 'do escritório'}", com a imagem e o botão "Saiba mais". A secretaria recebe só a tarefa do Instagram.`]
+          : 'Desligado. Enquanto estiver assim, toda segunda a secretaria recebe a tarefa "Postar no Google e no Instagram" com o texto pronto (como hoje).'),
+        st.ultimo ? h('p', { class: 'peq' }, 'Última tentativa: ' + quando(st.ultimo) + ' — ' + (st.ultimo.split(' · ')[1] || '')) : null,
+        msg,
+        h('div', { class: 'acoes' },
+          acao('1. Testar a ligação com o Google', 'conectar', 'sec'),
+          st.auto ? acao('Desligar', 'desligar', 'sec') : acao('2. Ligar a postagem automática', 'ligar'),
+          acao('Postar agora o texto mais recente', 'postar', 'sec', 'Postar agora no perfil do Google o texto mais recente do blog?')),
+        h('details', { class: 'gbp-passos', open: !st.local },
+          h('summary', {}, 'Passo a passo (uma vez só, depois que o Google aprovar)'),
+          h('ol', {},
+            h('li', {}, h('b', {}, 'Aprovação: '), 'espere o e-mail do Google aprovando o "Basic API Access". Para conferir: console.cloud.google.com › projeto "Araujo Advocacia Painel" › APIs e serviços › ', h('b', {}, 'Cotas'), ' — com "0 por minuto" ainda não foi aprovado.'),
+            h('li', {}, h('b', {}, 'Ligar o painel ao projeto: '), 'no Google Cloud, menu ☰ › APIs e serviços › ', h('b', {}, 'Tela de consentimento OAuth'), ' › Externo › nome "Painel Araújo", seu e-mail › salvar e, no fim, ', h('b', {}, 'Publicar o app'), ' ("Em produção"). Depois, no Apps Script do painel › ⚙ Configurações do projeto › ', h('b', {}, 'Projeto do Google Cloud'), ' › Alterar projeto › cole o NÚMERO do projeto.'),
+            h('li', {}, h('b', {}, 'Ativar 3 APIs: '), 'no Google Cloud › APIs e serviços › ', h('b', {}, 'Biblioteca'), ', procure e clique em Ativar: "My Business Account Management API", "My Business Business Information API" e "Google My Business API".'),
+            h('li', {}, h('b', {}, 'Permissão no Apps Script: '), '⚙ Configurações do projeto › marque "Mostrar o arquivo appsscript.json". Abra o arquivo appsscript.json, apague tudo e cole o deste link: ', h('a', { href: raw, target: '_blank', rel: 'noopener' }, 'appsscript.json'), '. Salve, escolha a função ', h('b', {}, 'configurar'), ' e clique em Executar → Autorizar (se aparecer "app não verificado": Avançado › Acessar). Por fim, Implantar › Gerenciar implantações › lápis › Nova versão.'),
+            h('li', {}, h('b', {}, 'Aqui no painel: '), 'aperte "1. Testar a ligação". Deu ✓ → aperte "2. Ligar a postagem automática". Se der ✗, a mensagem diz qual passo falta.'))));
+    };
+    api('marketing.gbp', {}).then(desenhar).catch(e => corpo.replaceChildren(h('p', { class: 'peq' }, 'Atualize o Code.gs do Google para usar este quadro (' + e.message + ').')));
+    return h('section', { class: 'caixa' }, h('h2', {}, '📣 Blog no perfil do Google (automático)'), corpo);
   }
 
   /** 8.7.0: Google Ads automático — script pronto (com a chave secreta) para colar em Google Ads › Ferramentas › Scripts. */

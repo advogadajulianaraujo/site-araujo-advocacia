@@ -1438,3 +1438,9 @@ body.modo-future .barra-cel{background:#2f855a}
 .fut-vig-cab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
 .fut-form-abre{background:#f4faf6;border-radius:10px;padding:12px;margin-top:10px}
 .fut-adit{border:1px solid #d7e8dc;border-radius:8px;padding:8px 12px}.fut-adit legend{font-weight:600}
+/* 8.9.0 blog no perfil do Google */
+.gbp-ok{background:#e9f4ec;border:1px solid #b9dcc3;color:#1d4a2a;padding:10px 14px;border-radius:10px}
+.gbp-erro{background:#fbeee6;border:1px solid #efc9b2;color:#6b2d0c;padding:10px 14px;border-radius:10px}
+.gbp-passos{margin-top:14px}
+.gbp-passos summary{cursor:pointer;font-weight:600}
+.gbp-passos li{margin:8px 0;line-height:1.5}

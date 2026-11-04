@@ -519,8 +519,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   páginas (`.nav-proc`) e na barra do celular (WhatsApp | Meu processo | Ligar). Fotos do ensaio no Drive têm 8–12 MB (a ferramenta do Drive
   não baixa): para novas fotos no site, pedir versões menores. Pastas com fotos pessoais ou de clientes nunca entram.
 - Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
-  "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados). Postar
-  sozinho exigiria a API do Perfil da Empresa (aprovação do Google) — não disponível.
+  "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados).
+  8.9.0 (acesso à API pedido pela usuária em 11/2026): Marketing › "📣 Blog no perfil do Google" (rota `marketing.gbp`: status/conectar/
+  ligar/desligar/postar; `gbpConectar_` acha conta+local → Config GBP_LOCAL; `gbpPostar_` = v4 localPosts com a imagem instagram.png e
+  botão LEARN_MORE; `gbpErro_` traduz cota 0 / escopo / API desativada para o passo que falta). Com Config GBP_AUTO = sim, o robô de segunda
+  posta sozinho e a secretaria recebe só "Postar no Instagram"; se falhar, volta a tarefa antiga com o aviso. Precisa: projeto do Cloud aprovado
+  ligado ao Apps Script, 3 APIs ativas e o escopo business.manage no appsscript.json (já no repositório).
 
 - /acompanhe/ ("Acompanhe seu processo"): o cliente entra com CPF + código de 8 caracteres gerado na ficha
   ("Acesso do cliente ao site"). O código aparece uma vez só e é guardado embaralhado (`acesso_hash`, nunca vai ao painel).
