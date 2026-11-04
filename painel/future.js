@@ -846,24 +846,98 @@
     const lista = K().tabela(['Apartamento', 'Locatário', 'Prazo', 'Garantia', 'Documentos'], r.contratos, c => [
       h('td', { 'data-r': 'Apartamento' }, h('strong', {}, c.unidade), h('div', { class: 'peq' }, 'gerado ' + dataBR(c.criado_em.slice(0, 10)) + (c.criado_por ? ' · ' + c.criado_por.split(' ')[0] : ''))),
       h('td', { 'data-r': 'Locatário' }, c.nome),
-      h('td', { 'data-r': 'Prazo' }, c.tipo === 'temporada' ? `Temporada · ${c.dias} dias` : `${c.prazo_meses} meses`, h('div', { class: 'peq' }, dataBR(c.inicio) + ' a ' + dataBR(c.fim))),
+      h('td', { 'data-r': 'Prazo' }, c.tipo === 'distrato' ? h('span', { class: 'tag urgente' }, 'Distrato') : c.tipo === 'aditivo' ? h('span', { class: 'tag info' }, 'Termo aditivo') : c.tipo === 'temporada' ? `Temporada · ${c.dias} dias` : `${c.prazo_meses} meses`,
+        h('div', { class: 'peq' }, c.tipo === 'distrato' ? 'encerrado em ' + dataBR(c.fim) : dataBR(c.inicio) + ' a ' + dataBR(c.fim)), c.situacao === 'encerrado' ? h('div', { class: 'peq' }, '(encerrado)') : null),
       h('td', { 'data-r': 'Garantia' }, c.tipo === 'temporada' ? reais(c.valor_total) + ' fechado' : c.caucao ? 'Caução ' + reais(c.caucao) : 'Sem caução'),
       h('td', { 'data-r': 'Documentos' }, h('div', { class: 'fut-docs' },
-        c.pdf_url ? h('a', { class: 'fut-doc', href: c.pdf_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📄 contrato') : null,
+        c.pdf_url ? h('a', { class: 'fut-doc', href: c.pdf_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, c.tipo === 'distrato' ? '📄 distrato' : c.tipo === 'aditivo' ? '📄 aditivo' : '📄 contrato') : null,
         c.laudo_pdf ? h('a', { class: 'fut-doc', href: c.laudo_pdf, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📋 laudo') : null,
         c.pasta_url ? h('a', { class: 'fut-doc', href: c.pasta_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📁 pasta') : null,
-        h('button', { type: 'button', class: 'link fut-doc', onclick: ev => { ev.stopPropagation(); ir('contratos', { renovar: c.id, ap: '' }); } }, '↻ renovar')))
+        /^(distrato|aditivo)$/.test(c.tipo) ? null : h('button', { type: 'button', class: 'link fut-doc', onclick: ev => { ev.stopPropagation(); ir('contratos', { renovar: c.id, ap: '' }); } }, '↻ renovar')))
     ], () => {}, 'Nenhum contrato gerado pelo painel ainda.');
+    // ----- 8.8.0: contratos EM VIGOR com Termo aditivo e Distrato -----
+    const vigentes = r.unidades.filter(u => /^(alugado|renovar)$/.test(u.situacao) && u.modalidade !== 'temporada');
+    const vagos = r.unidades.filter(u => !/^(alugado|renovar)$/.test(u.situacao));
+    const resultadoDoc = (alvo, titulo, x, msgWa) => {
+      const link = (u, t) => u ? h('a', { class: 'btn sec', href: u, target: '_blank', rel: 'noopener noreferrer' }, t) : null;
+      alvo.replaceChildren(h('div', { class: 'nota ok' }, h('strong', {}, '✓ ' + titulo + ' pronto — ' + x.unidade + ' · ' + x.nome),
+        h('div', { class: 'fut-acoes' }, link(x.documento.pdf, '📄 PDF'), link(x.documento.doc, '✎ Editar'), link(x.documento.pasta_url, '📁 Pasta'),
+          x.telefone && msgWa ? h('a', { class: 'btn wa', href: whats(x.telefone, msgWa), target: '_blank', rel: 'noopener noreferrer' }, 'Avisar no WhatsApp') : null),
+        h('p', { class: 'peq' }, 'Confira o texto antes de imprimir. O apartamento e o locatário já foram atualizados no painel.')));
+    };
+    const formDistrato = (u, alvo) => {
+      const hoje = hojeISO(), diasFalta = u.saida && u.saida > hoje ? Math.round((Date.parse(u.saida) - Date.parse(hoje)) / 86400000) : 0;
+      const multaSug = diasFalta ? Math.round(u.aluguel / 30 * diasFalta * 0.4 * 100) / 100 : 0;
+      const f = h('form', { class: 'campos fut-distrato', novalidate: true },
+        campo('data_encerramento', 'Encerra em', hoje, { tipo: 'date' }),
+        campo('data_chaves', 'Entrega das chaves', hoje, { tipo: 'date' }),
+        campo('motivo', 'Motivo', diasFalta > 0 ? 'acordo' : 'fim', { opcoes: [['fim', 'Fim do prazo do contrato'], ['acordo', 'Comum acordo'], ['locatario', 'Pedido do locatário antes do prazo'], ['locadora', 'Pedido da locadora']] }),
+        campo('multa', 'Multa por sair antes', 'dispensar', { opcoes: [['dispensar', 'Dispensar a multa'], ['cobrar', 'Cobrar a multa']] }),
+        campo('multa_valor', 'Valor da multa (R$)', multaSug ? String(multaSug).replace('.', ',') : '', { modo: 'decimal', dica: diasFalta ? `40% dos aluguéis dos ${diasFalta} dias que faltam` : 'só se for cobrar' }),
+        campo('vistoria', 'Vistoria final', 'ok', { opcoes: [['ok', 'Tudo certo (igual à vistoria inicial)'], ['ressalvas', 'Com ressalvas (descrever)']] }),
+        campo('vistoria_obs', 'Ressalvas da vistoria', '', { max: 600, largo: true }),
+        campo('pendencias', 'Valores do período', 'quitado', { opcoes: [['quitado', 'Está tudo pago'], ['valores', 'Ainda há valores a pagar']] }),
+        campo('aluguel_proporcional', 'Aluguel proporcional (R$)', '', { modo: 'decimal' }),
+        campo('energia', 'Energia (R$)', '', { modo: 'decimal' }),
+        campo('outros', 'Outros (R$)', '', { modo: 'decimal' }),
+        campo('outros_desc', 'O que é "outros"', '', { max: 200 }),
+        campo('vencimento', 'Pagar até', hoje, { tipo: 'date' }),
+        campo('cobranca_final', 'Criar a cobrança do acerto em Cobranças?', 'sim', { opcoes: [['sim', 'Sim'], ['nao', 'Não']] }),
+        u.caucao ? campo('caucao_desconto', `Descontar da caução de ${reais(u.caucao)} (R$)`, '', { modo: 'decimal', dica: 'deixe vazio para devolver tudo' }) : null,
+        u.caucao ? campo('caucao_motivo', 'Motivo do desconto', '', { max: 160 }) : null,
+        u.caucao ? campo('lancar_caucao', 'Lançar a devolução da caução no caixa?', 'sim', { opcoes: [['sim', 'Sim'], ['nao', 'Não']] }) : null,
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar o distrato e liberar o apartamento')), h('p', { class: 'erro largo' }));
+      K().aoEnviar(f, async fd => {
+        if (!confirm(`Encerrar a locação do ${u.id} (${u.locatario})? O apartamento fica vago no painel.`)) return;
+        const x = await api('future.contrato.distrato', { unidade: u.id, ...Object.fromEntries(fd.entries()) });
+        resultadoDoc(alvo, 'Distrato', x, `Olá, ${primeiro(x.nome)}! Segue o termo de distrato do ${x.unidade.replace('AP ', 'apartamento ')} para conferir e assinar. Obrigada por ter ficado com a gente!`);
+      });
+      return f;
+    };
+    const formAditivo = (u, alvo) => {
+      const sec = (nome, rot, ...campos) => h('fieldset', { class: 'largo fut-adit' }, h('legend', {}, h('label', {}, h('input', { type: 'checkbox', name: nome, value: 'sim' }), ' ' + rot)), h('div', { class: 'campos' }, ...campos));
+      const f = h('form', { class: 'campos', novalidate: true },
+        sec('prorrogar', '⏩ Prorrogar o prazo', campo('meses', 'Por mais quantos meses', '6', { tipo: 'number' }), campo('novo_fim', 'ou nova data de término', '', { tipo: 'date' })),
+        sec('reajustar', '💲 Reajustar o aluguel', campo('novo_aluguel', `Novo aluguel (hoje ${reais(u.aluguel)})`, '', { modo: 'decimal' }), campo('reajuste_desde', 'A partir de', hojeISO(), { tipo: 'date' }), campo('indice', 'Índice (opcional)', 'IGP-M/FGV', { max: 120 })),
+        sec('trocar', '🔁 Trocar de apartamento', campo('nova_unidade', 'Novo apartamento', '', { opcoes: [['', 'Escolha…']].concat(vagos.map(v => [v.id, v.id])) }), campo('troca_data', 'A partir de', hojeISO(), { tipo: 'date' })),
+        sec('livre', '✎ Outra cláusula', campo('titulo_livre', 'Título', 'DA ALTERAÇÃO', { max: 60 }), campo('texto_livre', 'Texto da cláusula', '', { area: true, largo: true, max: 1500 })),
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar o termo aditivo')), h('p', { class: 'erro largo' }));
+      K().aoEnviar(f, async fd => {
+        const d = Object.fromEntries(fd.entries());
+        if (d.livre !== 'sim') delete d.texto_livre;
+        const x = await api('future.contrato.aditivo', { unidade: u.id, ...d });
+        resultadoDoc(alvo, 'Termo aditivo', x, `Olá, ${primeiro(x.nome)}! Segue o termo aditivo do seu contrato de locação${x.novo_fim ? ' (prorrogado até ' + dataBR(x.novo_fim) + ')' : ''} para conferir e assinar.`);
+      });
+      return f;
+    };
+    const cartaoVigente = u => {
+      const area = h('div', {}), dias = u.saida ? Math.round((Date.parse(u.saida) - Date.parse(hojeISO())) / 86400000) : null;
+      const abrir = qual => { area.replaceChildren(h('div', { class: 'fut-form-abre' }, h('h3', {}, qual === 'd' ? '⏹ Encerrar a locação (distrato)' : '✎ Termo aditivo'), qual === 'd' ? formDistrato(u, area) : formAditivo(u, area))); };
+      const c = r.contratos.find(x => x.unidade === u.id && (x.tipo || 'mensal') === 'mensal');
+      return h('li', { class: 'fut-vig' },
+        h('div', { class: 'fut-vig-cab' },
+          h('div', {}, h('strong', {}, u.id), ' · ', u.locatario || '—', h('div', { class: 'peq' }, (u.entrada ? dataBR(u.entrada) : '?') + ' a ' + (u.saida ? dataBR(u.saida) : '?') + ' · ' + reais(u.aluguel) + '/mês' +
+            (u.caucao ? ' · caução ' + reais(u.caucao) : '') + (dias !== null ? (dias < 0 ? ` · venceu há ${-dias} dia(s)` : ` · faltam ${dias} dia(s)`) : ''))),
+          h('div', { class: 'fut-acoes' },
+            K().botao('✎ Termo aditivo', () => abrir('a'), 'sec mini'),
+            K().botao('⏹ Encerrar (distrato)', () => abrir('d'), 'sec mini'),
+            K().botao('↻ Renovar (contrato novo)', () => ir('contratos', c ? { renovar: c.id, ap: '' } : { ap: u.id, renovar: '' }), 'mini'))),
+        area);
+    };
+    const blocoVigentes = h('section', { class: 'caixa' }, h('h2', {}, `Contratos em vigor (${vigentes.length})`),
+      h('p', { class: 'peq' }, 'Aditivo = mudar algo no contrato atual (prorrogar, reajustar, trocar de apartamento). Distrato = encerrar a locação: o painel libera o apartamento e pode criar a cobrança do acerto.'),
+      vigentes.length ? h('ul', { class: 'fut-vig-lista' }, vigentes.map(cartaoVigente)) : h('p', { class: 'peq' }, 'Nenhum apartamento alugado.'));
     const vence = r.vencendo.length ? h('section', { class: 'caixa' }, h('h2', {}, 'Contratos terminando (45 dias)'),
       h('ul', { class: 'fut-lista fut-renovar' }, r.vencendo.map(u => h('li', {}, h('b', {}, u.id), ' · ', u.locatario || '—', ' · termina ', dataBR(u.saida), ' ',
         h('button', { type: 'button', class: 'btn mini sec', onclick: () => { const c = r.contratos.find(x => x.unidade === u.id); ir('contratos', c ? { renovar: c.id, ap: '' } : { ap: u.id, renovar: '' }); } }, 'Fazer o novo contrato'))))) : null;
-    mostrar(topo('Edifício Future', 'Contratos de locação', 'Mensal (3, 4, 6, 12 meses, com ou sem caução) ou por temporada (dias ou 1 mês, valor fechado) · contrato + laudo na pasta do morador',
+    mostrar(topo('Edifício Future', 'Contratos de locação', 'Em vigor (aditivo e distrato) · novo contrato mensal ou por temporada · histórico, tudo na pasta do morador',
         [h('a', { class: 'btn sec', href: '#/future/pessoas' }, 'Locatários')]),
       base ? h('p', { class: 'nota' }, `Renovação de ${base.nome} (${base.unidade}): o novo contrato começa no fim do anterior (${dataBR(base.fim)}). Confira os dados.`) : null,
+      base ? null : blocoVigentes,
+      vence,
       h('section', { class: 'caixa' }, h('h2', {}, base ? 'Renovar contrato' : 'Novo contrato'), f),
       saida,
-      vence,
-      h('section', { class: 'caixa' }, h('h2', {}, 'Contratos gerados'), lista));
+      h('section', { class: 'caixa' }, h('h2', {}, 'Histórico: contratos, aditivos e distratos'), lista));
     if (unSel) atualizar(base ? 'base' : 'troca'); else atualizar(false);
   }
 

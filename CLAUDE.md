@@ -189,6 +189,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   de 1 mês). "Desfazer pagamento" (`futDesfazerPagamento_`): pagamento feito pelo painel é apagado; recebimento que veio do caixa/planilha
   (atrasado do mês anterior que a baixa automática juntou) vai para o mês de referência anterior e não volta a baixar. Uma vez
   (`futCorrigirOutubro_`, Config FUTURE_FIX_OUT26): AP 202 e Sala 2 tinham pagamentos de setembro juntados a outubro → foram para setembro.
+- 8.8.0 Contratos remodelados (#/future/contratos): no topo "Contratos em vigor" (aptos alugado/renovar, fora temporada) com "✎ Termo aditivo",
+  "⏹ Encerrar (distrato)" e "↻ Renovar (contrato novo)". Modelos no Drive (MODELOS DE CONTRATO): "MODELO — DISTRATO DE LOCAÇÃO (painel)" e
+  "MODELO — TERMO ADITIVO DE LOCAÇÃO (painel)" (Config FUTURE_MODELO_DISTRATO/ADITIVO; dados da locadora só no modelo). `futContratoVigente_`
+  pega o último contrato "gerado" do apto (ou a unidade + locatário atual); `futGerarDoc_` copia, preenche, põe em negrito "CLÁUSULA nª – …" e faz o PDF.
+  Distrato (`future.contrato.distrato`): motivo fim/locatario/acordo/locadora, vistoria ok/ressalvas, pendências (aluguel proporcional, energia,
+  outros) com vencimento, multa (só no pedido do locatário: sugestão 40% × aluguel/30 × dias que faltam; cobrar ou dispensar), caução (devolver/
+  reter); libera o apto (vago), locatário "saiu", contrato "encerrado", cobrança do acerto opcional (`detalhe` distrato, o robô não recalcula) e
+  devolução da caução no caixa. Aditivo (`future.contrato.aditivo`, campos com valor "sim"): prorrogar (meses ou nova data), reajustar (novo
+  aluguel a partir de), trocar de apartamento (o antigo fica vago) e cláusula livre; numerado PRIMEIRO/SEGUNDO… por contrato; atualiza saída/aluguel.
+  Histórico mostra Distrato / Termo aditivo. Distrato do Richarles (AP 103, 04/11/2026) feito à mão no Drive.
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
 ## Processos

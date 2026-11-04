@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.7.1';
+var VERSAO = '8.8.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -429,6 +429,8 @@ var ROTAS = {
   'future.lancamento.lote': { future: true, fn: futureLancamentosLote_ },
   'future.importarPasta': { future: true, fn: function (d, u) { return comTrava_(function () { return futureImportarPasta_(u); }); } },
   'future.contrato.gerar': { future: true, fn: futureGerarContrato_ },
+  'future.contrato.distrato': { future: true, fn: futureDistrato_ },
+  'future.contrato.aditivo': { future: true, fn: futureAditivo_ },
   'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
   'fin.caixa': { permissao: 'financeiro', fn: caixa_ },
@@ -9254,7 +9256,8 @@ function futurePastaPessoa_(d, u) {
    Modelos (Google Docs) na pasta 05. ED. FUTURE › MODELOS DE CONTRATO, com marcas {{…}}; os dados da locadora ficam só lá.
    O contrato é um só modelo: sem caução, os parágrafos com [[SO_CAUCAO]] saem e as disposições finais viram a cláusula 9ª. */
 var FUT_MODELOS = { contrato: ['FUTURE_MODELO_CONTRATO', 'MODELO — CONTRATO DE LOCAÇÃO (painel)'], laudo: ['FUTURE_MODELO_LAUDO', 'MODELO — LAUDO DE VISTORIA (painel)'],
-  temporada: ['FUTURE_MODELO_TEMPORADA', 'MODELO — CONTRATO DE TEMPORADA (painel)'] };
+  temporada: ['FUTURE_MODELO_TEMPORADA', 'MODELO — CONTRATO DE TEMPORADA (painel)'],
+  distrato: ['FUTURE_MODELO_DISTRATO', 'MODELO — DISTRATO DE LOCAÇÃO (painel)'], aditivo: ['FUTURE_MODELO_ADITIVO', 'MODELO — TERMO ADITIVO DE LOCAÇÃO (painel)'] };
 function futModelo_(tipo) {
   var m = FUT_MODELOS[tipo], id = config_(m[0]);
   if (id) { try { var f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (e) { /* procura pelo nome */ } }
@@ -9309,10 +9312,11 @@ function futPreencherDoc_(doc, campos, manter) {
 function futureContratos_(d) {
   var T = futTabs_(), tc = tabela_('FutContratos'), hoje = hojeSP_();
   var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return /^AP /.test(x.id) && x.situacao !== 'proprio'; })
-    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, pasta_url: x.pasta_url || '' }; });
+    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, pasta_url: x.pasta_url || '',
+      caucao: futN_(x.caucao), garantia: x.garantia || '', modalidade: x.modalidade || '' }; });
   var lista = tc.linhas.filter(function (c) { return c.situacao !== 'excluido'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 60)
     .map(function (c) { return { id: c.id, criado_em: c.criado_em, criado_por: c.criado_por, unidade: c.unidade, nome: c.nome, telefone: c.telefone, prazo_meses: +c.prazo_meses || 0,
-      inicio: c.inicio, fim: c.fim, aluguel: futN_(c.aluguel), garantia: c.garantia, caucao: futN_(c.caucao), tipo: c.tipo || 'mensal', dias: +c.dias || 0, valor_total: futN_(c.valor_total), doc_url: c.doc_url, pdf_url: c.pdf_url, laudo_doc: c.laudo_doc, laudo_pdf: c.laudo_pdf, pasta_url: c.pasta_url }; });
+      inicio: c.inicio, fim: c.fim, aluguel: futN_(c.aluguel), garantia: c.garantia, caucao: futN_(c.caucao), tipo: c.tipo || 'mensal', situacao: c.situacao || '', dias: +c.dias || 0, valor_total: futN_(c.valor_total), doc_url: c.doc_url, pdf_url: c.pdf_url, laudo_doc: c.laudo_doc, laudo_pdf: c.laudo_pdf, pasta_url: c.pasta_url }; });
   var vencendo = unidades.filter(function (x) { return /^(alugado|renovar)$/.test(x.situacao) && x.saida && x.saida >= somarDias_(hoje, -15) && x.saida <= somarDias_(hoje, 45); })
     .sort(function (a, b) { return a.saida < b.saida ? -1 : 1; });
   var pessoas = T.pe.linhas.filter(function (p) { return p.situacao === 'atual'; }).map(function (p) { return { id: p.id, nome: p.nome, unidade: p.unidade, cpf: p.cpf, rg: p.rg || '', telefone: p.telefone, qualificacao: p.qualificacao || '', genero: p.genero || '' }; });
@@ -9392,6 +9396,179 @@ function futureGerarContrato_(d, u) {
     inserirLinha_(tc, reg);
     registrar_(u.usuario, 'future: contrato gerado', un.id + ' ' + nome + ' ' + meses + ' meses ' + (comCaucao ? 'com caução' : 'sem caução'));
     return { ok: true, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, unidade: un.id, nome: nome, telefone: telefone };
+  });
+}
+
+/* ---------- 8.8.0: DISTRATO (encerrar a locação) e TERMO ADITIVO (prorrogar, reajustar, trocar de apartamento, outra cláusula) ---------- */
+
+/** O contrato vigente de um apartamento: último registro "gerado" em FutContratos ou, para os antigos, os dados da unidade e do locatário. */
+function futContratoVigente_(T, d) {
+  var tc = tabela_('FutContratos');
+  var reg = d.contrato_id ? tc.linhas.filter(function (c) { return c.id === d.contrato_id; })[0] : null;
+  var unId = reg ? reg.unidade : futIdUnidade_(d.unidade);
+  var un = T.un.linhas.filter(function (x) { return x.id === unId; })[0];
+  if (!un) throw falha_('Escolha o apartamento.');
+  if (!reg) reg = tc.linhas.filter(function (c) { return c.unidade === un.id && c.situacao === 'gerado' && (c.tipo || 'mensal') === 'mensal'; })
+    .sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; })[0] || null;
+  var pessoa = T.pe.linhas.filter(function (p) { return p.unidade === un.id && p.situacao === 'atual'; })[0] ||
+    (reg ? T.pe.linhas.filter(function (p) { return p.id === reg.pessoa_id; })[0] : null);
+  if (!pessoa && !un.locatario) throw falha_('Este apartamento não tem locatário atual.');
+  var nome = String((pessoa && pessoa.nome) || un.locatario || '').toUpperCase();
+  var g = (pessoa && (pessoa.genero === 'F' || pessoa.genero === 'M')) ? pessoa.genero : generoPeloNome_(nome) || 'M';
+  return { tc: tc, reg: reg, un: un, pessoa: pessoa, nome: nome, genero: g, cpf: (pessoa && pessoa.cpf) || (reg && reg.cpf) || '',
+    inicio: (reg && reg.inicio) || (pessoa && pessoa.entrada) || un.entrada || '', fim: (reg && reg.fim) || un.saida || (pessoa && pessoa.saida) || '',
+    aluguel: futN_((reg && reg.aluguel) || un.aluguel), caucao: futN_((reg && reg.caucao) || un.caucao || (pessoa && pessoa.caucao)),
+    telefone: (pessoa && pessoa.telefone) || un.telefone || '', pasta_url: (pessoa && pessoa.pasta_url) || (reg && reg.pasta_url) || '' };
+}
+function futQualifDe_(v, d) {
+  var q = String(d.qualificacao || (v.pessoa && v.pessoa.qualificacao) || '').trim();
+  if (q) return q.replace(/[;.]\s*$/, '');
+  return futQualificacao_({ cpf: v.cpf, rg: d.rg || (v.pessoa && v.pessoa.rg) || '', profissao: d.profissao, estado_civil: d.estado_civil, endereco: d.endereco }, v.genero) ||
+    (v.cpf ? (v.genero === 'F' ? 'inscrita' : 'inscrito') + ' no CPF sob o nº ' + v.cpf : 'já qualificad' + (v.genero === 'F' ? 'a' : 'o') + ' no contrato de locação');
+}
+/** Gera o Doc + PDF a partir do modelo, na pasta do morador (ou na do apartamento). Negrita o começo "CLÁUSULA …." de cada alteração. */
+function futGerarDoc_(tipo, titulo, v, campos, manter) {
+  var pastaUrl = v.pasta_url || futCriarPasta_(v.un.id, v.nome);
+  var mId = /folders\/([\w-]+)/.exec(pastaUrl || '');
+  if (!mId) throw falha_('Não achei a pasta do apartamento no Drive.');
+  var pasta = DriveApp.getFolderById(mId[1]), arq = titulo + ' — ' + v.un.id + ' — ' + v.nome + ' — ' + dataBR_(hojeSP_()).replace(/\//g, '-');
+  var copia = futModelo_(tipo).makeCopy(arq, pasta), doc = DocumentApp.openById(copia.getId());
+  futPreencherDoc_(doc, campos, manter || {});
+  doc.getBody().getParagraphs().forEach(function (p) {
+    var m = /^(CLÁUSULA [^–\-]+[–\-][^.]+\.)/.exec(p.getText());
+    if (m) p.editAsText().setBold(0, m[1].length - 1, true);
+  });
+  doc.saveAndClose();
+  var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(arq + '.pdf');
+  return { doc: copia.getUrl(), pdf: pdf.getUrl(), pasta_url: pastaUrl };
+}
+
+/**
+ * Distrato: encerra a locação. Motivo (fim do prazo / pedido do locatário antes do prazo / comum acordo / pedido da locadora),
+ * vistoria final, valores pendentes (aluguel proporcional, energia, outros), multa (cláusula 8ª: 40% dos aluguéis que faltam — cobrar ou
+ * dispensar) e caução (devolver, descontar ou não houve). Libera o apartamento, marca a saída do locatário e pode criar a cobrança final.
+ */
+function futureDistrato_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), v = futContratoVigente_(T, d), hoje = hojeSP_(), agora = new Date().toISOString();
+    var enc = /^\d{4}-\d{2}-\d{2}$/.test(d.data_encerramento || '') ? d.data_encerramento : hoje;
+    var chaves = /^\d{4}-\d{2}-\d{2}$/.test(d.data_chaves || '') ? d.data_chaves : enc;
+    var papel = futPapel_(v.genero), motivo = d.motivo || 'acordo';
+    var MOT = {
+      fim: 'O encerramento decorre do término do prazo contratual.',
+      locatario: 'O encerramento se dá a pedido ' + papel.DO_LOCATARIO + ', antes do término do prazo contratual.',
+      acordo: 'O encerramento se dá por comum acordo entre as partes.',
+      locadora: 'O encerramento se dá a pedido da LOCADORA, com a comunicação prevista no contrato.'
+    };
+    var aluguelProp = futN_(d.aluguel_proporcional), energia = futN_(d.energia), outros = futN_(d.outros), outrosDesc = String(d.outros_desc || '').trim().slice(0, 200);
+    var pend = [];
+    if (aluguelProp > 0) pend.push('aluguel proporcional até a entrega das chaves: ' + valorComExtenso_(aluguelProp));
+    if (energia > 0) pend.push('energia elétrica do período: ' + valorComExtenso_(energia));
+    if (outros > 0) pend.push((outrosDesc || 'outros valores') + ': ' + valorComExtenso_(outros));
+    var totalPend = aluguelProp + energia + outros;
+    var PEND = d.pendencias === 'quitado' || !pend.length
+      ? 'As partes declaram que os aluguéis e encargos do período da locação estão quitados até a data de encerramento.'
+      : papel.O_LOCATARIO + ' pagará à LOCADORA os seguintes valores referentes ao período da locação: ' + pend.join('; ') + ', totalizando ' + valorComExtenso_(totalPend) +
+        ', até ' + dataBR_(/^\d{4}-\d{2}-\d{2}$/.test(d.vencimento || '') ? d.vencimento : chaves) + '.';
+    var multa = futN_(d.multa_valor), MULTA, multaCob = (motivo === 'locatario' && d.multa === 'cobrar' && multa > 0) ? multa : 0;
+    if (motivo === 'locatario' && d.multa === 'cobrar' && multa > 0) MULTA = 'Por se tratar de devolução antecipada, ' + papel.O_LOCATARIO_MIN + ' pagará a multa prevista no contrato (Cláusula 8ª, Parágrafo Primeiro), no valor de ' + valorComExtenso_(multa) + ', juntamente com os valores acima.';
+    else if (motivo === 'locatario') MULTA = 'Embora se trate de devolução antecipada, a LOCADORA dispensa, por liberalidade, a multa contratual prevista para esta hipótese.';
+    else MULTA = 'Não há multa a ser paga por qualquer das partes em razão deste encerramento.';
+    var cau = v.caucao, desconto = futN_(d.caucao_desconto), devolver = Math.max(0, cau - desconto), CAU;
+    if (!(cau > 0) || d.caucao === 'nao_houve') CAU = 'O contrato não previa caução, nada havendo a devolver a esse título.';
+    else if (desconto > 0) CAU = 'Do valor de ' + valorComExtenso_(cau) + ' pago a título de caução, a LOCADORA retém ' + valorComExtenso_(desconto) +
+      (d.caucao_motivo ? ', referente a ' + String(d.caucao_motivo).trim().slice(0, 160) : ', para abater os valores devidos') + (devolver > 0 ? ', e devolve ' + papel.AO_LOCATARIO + ' o saldo de ' + valorComExtenso_(devolver) + '.' : ', nada restando a devolver.');
+    else CAU = 'A LOCADORA devolve ' + papel.AO_LOCATARIO + ' o valor de ' + valorComExtenso_(cau) + ', pago a título de caução, por não haver valores a descontar.';
+    var VIST = d.vistoria === 'ressalvas'
+      ? 'Na vistoria final foram constatadas as seguintes ressalvas em relação à vistoria inicial: ' + String(d.vistoria_obs || '[COMPLETAR]').trim().slice(0, 600) + '.'
+      : 'Na vistoria final, o imóvel foi encontrado nas mesmas condições da vistoria inicial, ressalvado o desgaste natural decorrente do uso regular.';
+    var campos = Object.assign(papel, { LOC_NOME: v.nome, LOC_QUALIFICACAO: futQualifDe_(v, d), APTO: v.un.id.replace('AP ', ''),
+      DATA_CONTRATO: v.inicio ? dataBR_(v.inicio) : '[data do contrato]', FIM_ORIGINAL: v.fim ? dataBR_(v.fim) : '[data]', DATA_ENCERRAMENTO: dataBR_(enc),
+      DATA_CHAVES: dataBR_(chaves), MOTIVO_TEXTO: MOT[motivo] || MOT.acordo, VISTORIA_TEXTO: VIST, PENDENCIAS_TEXTO: PEND, MULTA_TEXTO: MULTA, CAUCAO_TEXTO: CAU,
+      DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje) });
+    var arq = futGerarDoc_('distrato', 'DISTRATO DE LOCAÇÃO', v, campos);
+    // apartamento livre e locatário com saída
+    atualizarLinha_(T.un, v.un, { situacao: 'vago', locatario: '', telefone: '', saida: enc, caucao: '', garantia: '', atualizado_em: agora, atualizado_por: u.usuario });
+    if (v.pessoa) atualizarLinha_(T.pe, v.pessoa, { situacao: 'saiu', saida: enc });
+    if (v.reg) atualizarLinha_(v.tc, v.reg, { situacao: 'encerrado' });
+    // cobrança final (fica de fora do recálculo do robô)
+    var cobranca = null;
+    if (d.cobranca_final === 'sim' && totalPend + multaCob > 0) {
+      var venc = /^\d{4}-\d{2}-\d{2}$/.test(d.vencimento || '') ? d.vencimento : chaves, tot = totalPend + multaCob;
+      cobranca = { id: novoId_('FC'), unidade: v.un.id, pessoa: v.nome, competencia: futComp_(venc), vencimento: venc, aluguel: txtDinheiro_(aluguelProp), taxas: '', energia: energia ? txtDinheiro_(energia) : '',
+        outros: txtDinheiro_(outros + multaCob), total: txtDinheiro_(tot), pago_em: '', valor_pago: '', forma: '', lanc_id: '', situacao: 'aberta',
+        obs: 'Acerto final do distrato' + (outrosDesc ? ' — ' + outrosDesc : '') + (multaCob ? ' — multa ' + reaisTxt_(multaCob) : ''), criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario,
+        pagador: '', enviado_em: '', enviado_por: '', detalhe: 'distrato', lavanderia: '' };
+      inserirLinha_(T.co, cobranca);
+    }
+    if (d.lancar_caucao === 'sim' && cau > 0 && devolver > 0) {
+      inserirLinha_(T.la, { id: novoId_('FL'), data: chaves, competencia: futComp_(chaves), tipo: 'despesa', categoria: 'Devolução de caução', unidade: v.un.id, pessoa: v.nome, valor: txtDinheiro_(devolver),
+        forma: String(d.forma_caucao || 'Pix').slice(0, 40), responsavel: u.nome || u.usuario, descricao: 'Devolução da caução (distrato)', origem: 'distrato', chave: '', criado_em: agora, criado_por: u.usuario });
+    }
+    inserirLinha_(v.tc, { id: novoId_('FK'), criado_em: agora, criado_por: u.nome || u.usuario, unidade: v.un.id, pessoa_id: v.pessoa ? v.pessoa.id : '', nome: v.nome, cpf: v.cpf, telefone: v.telefone,
+      prazo_meses: '', inicio: v.inicio, fim: enc, aluguel: txtDinheiro_(v.aluguel), garantia: '', caucao: cau ? txtDinheiro_(cau) : '', doc_url: arq.doc, pdf_url: arq.pdf, laudo_doc: '', laudo_pdf: '',
+      pasta_url: arq.pasta_url, situacao: 'distrato', tipo: 'distrato', dias: '', valor_total: txtDinheiro_(totalPend) });
+    registrar_(u.usuario, 'future: distrato', v.un.id + ' ' + v.nome + ' encerrado em ' + dataBR_(enc) + ' (' + motivo + ')');
+    return { ok: true, documento: arq, unidade: v.un.id, nome: v.nome, telefone: v.telefone, cobranca: cobranca ? { id: cobranca.id, total: futN_(cobranca.total), vencimento: cobranca.vencimento } : null, devolver: devolver };
+  });
+}
+
+/**
+ * Termo aditivo: prorrogar o prazo, reajustar o aluguel, trocar de apartamento e/ou uma cláusula escrita à mão.
+ * Atualiza o fim/aluguel do apartamento e do registro do contrato (a cobrança do mês seguinte já sai com o valor novo).
+ */
+function futureAditivo_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), v = futContratoVigente_(T, d), hoje = hojeSP_(), agora = new Date().toISOString(), papel = futPapel_(v.genero);
+    var alts = [], n = 1, mudaUn = {}, mudaReg = {};
+    var cl = function (titulo, txt) { alts.push('CLÁUSULA ' + n + 'ª – ' + titulo + '. ' + txt); n++; };
+    if (d.prorrogar === 'sim') {
+      var meses = parseInt(d.meses, 10), novoFim = /^\d{4}-\d{2}-\d{2}$/.test(d.novo_fim || '') ? d.novo_fim : (meses > 0 && v.fim ? futFimContrato_(v.fim, meses) : '');
+      if (!novoFim) throw falha_('Informe por quantos meses prorrogar (ou a nova data de término).');
+      cl('DA PRORROGAÇÃO DO PRAZO', 'O prazo da locação, que terminaria em ' + (v.fim ? dataBR_(v.fim) : '[data]') + ', fica prorrogado até ' + dataBR_(novoFim) +
+        (meses > 0 ? ', ou seja, por mais ' + futMesesTxt_(meses) : '') + ', mantidas as demais condições do contrato, salvo o que for alterado neste termo.');
+      mudaUn.saida = novoFim; mudaReg.fim = novoFim;
+    }
+    if (d.reajustar === 'sim') {
+      var novo = futN_(d.novo_aluguel), desde = /^\d{4}-\d{2}-\d{2}$/.test(d.reajuste_desde || '') ? d.reajuste_desde : hoje;
+      if (!(novo > 0)) throw falha_('Informe o novo valor do aluguel.');
+      cl('DO NOVO VALOR DO ALUGUEL', 'A partir de ' + dataBR_(desde) + ', o aluguel mensal passa de ' + valorComExtenso_(v.aluguel) + ' para ' + valorComExtenso_(novo) +
+        (d.indice ? ', conforme ' + String(d.indice).trim().slice(0, 120) : '') + ', mantidos o dia de vencimento e a forma de pagamento.');
+      mudaUn.aluguel = txtDinheiro_(novo); mudaReg.aluguel = txtDinheiro_(novo);
+    }
+    var novaUn = null;
+    if (d.trocar === 'sim') {
+      novaUn = T.un.linhas.filter(function (x) { return x.id === futIdUnidade_(d.nova_unidade); })[0];
+      if (!novaUn || novaUn.id === v.un.id) throw falha_('Escolha o novo apartamento.');
+      if (/^(alugado|renovar)$/.test(novaUn.situacao)) throw falha_('O ' + novaUn.id + ' está alugado.');
+      var dt = /^\d{4}-\d{2}-\d{2}$/.test(d.troca_data || '') ? d.troca_data : hoje;
+      cl('DA TROCA DE UNIDADE', 'A partir de ' + dataBR_(dt) + ', o objeto da locação passa a ser o apartamento ' + novaUn.id.replace('AP ', '') + ' do mesmo edifício, em substituição ao apartamento ' +
+        v.un.id.replace('AP ', '') + ', que ' + papel.O_LOCATARIO_MIN + ' devolve nas condições da vistoria. Será feito novo laudo de vistoria do apartamento ' + novaUn.id.replace('AP ', '') + ', que integra este termo.');
+    }
+    if (String(d.texto_livre || '').trim()) cl(String(d.titulo_livre || 'DA ALTERAÇÃO').trim().toUpperCase().slice(0, 60), String(d.texto_livre).trim().slice(0, 1500));
+    if (!alts.length) throw falha_('Escolha pelo menos uma alteração (prorrogar, reajustar, trocar de apartamento ou escrever uma cláusula).');
+    var ja = v.tc.linhas.filter(function (c) { return c.unidade === v.un.id && c.tipo === 'aditivo' && c.pessoa_id === (v.pessoa ? v.pessoa.id : '') && (!v.inicio || c.inicio === v.inicio); }).length;
+    var ORD = ['PRIMEIRO', 'SEGUNDO', 'TERCEIRO', 'QUARTO', 'QUINTO', 'SEXTO', 'SÉTIMO', 'OITAVO', 'NONO', 'DÉCIMO'];
+    var campos = Object.assign(papel, { N_ADITIVO: ORD[ja] || (ja + 1) + 'º', LOC_NOME: v.nome, LOC_QUALIFICACAO: futQualifDe_(v, d), APTO: v.un.id.replace('AP ', ''),
+      DATA_CONTRATO: v.inicio ? dataBR_(v.inicio) : '[data do contrato]', ALTERACAO_1: alts[0], ALTERACAO_2: alts[1] || '', ALTERACAO_3: alts[2] || '', ALTERACAO_4: alts[3] || '',
+      CLAUSULA_RATIFICACAO: 'CLÁUSULA ' + n + 'ª – DA RATIFICAÇÃO E DO FORO.', DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje) });
+    var arq = futGerarDoc_('aditivo', (ORD[ja] || '') + ' TERMO ADITIVO', v, campos, { SO_DOIS: alts.length > 1, SO_TRES: alts.length > 2, SO_QUATRO: alts.length > 3 });
+    if (Object.keys(mudaUn).length) { mudaUn.situacao = v.un.situacao === 'renovar' ? 'alugado' : v.un.situacao; mudaUn.atualizado_em = agora; mudaUn.atualizado_por = u.usuario; atualizarLinha_(T.un, v.un, mudaUn); }
+    if (v.pessoa && mudaUn.saida) atualizarLinha_(T.pe, v.pessoa, { saida: mudaUn.saida });
+    if (v.reg && Object.keys(mudaReg).length) atualizarLinha_(v.tc, v.reg, mudaReg);
+    if (novaUn) { // troca de apartamento: o locatário vai para o novo, o antigo fica vago
+      var dtt = /^\d{4}-\d{2}-\d{2}$/.test(d.troca_data || '') ? d.troca_data : hoje;
+      atualizarLinha_(T.un, novaUn, { situacao: 'alugado', locatario: v.nome, telefone: v.telefone, entrada: dtt, saida: mudaUn.saida || v.fim || '', aluguel: mudaUn.aluguel || txtDinheiro_(v.aluguel),
+        caucao: v.caucao ? txtDinheiro_(v.caucao) : '', garantia: v.un.garantia || '', modalidade: 'mensal', atualizado_em: agora, atualizado_por: u.usuario });
+      atualizarLinha_(T.un, v.un, { situacao: 'vago', locatario: '', telefone: '', saida: dtt, caucao: '', garantia: '', atualizado_em: agora, atualizado_por: u.usuario });
+      if (v.pessoa) atualizarLinha_(T.pe, v.pessoa, { unidade: novaUn.id });
+      if (v.reg) atualizarLinha_(v.tc, v.reg, { unidade: novaUn.id });
+    }
+    inserirLinha_(v.tc, { id: novoId_('FK'), criado_em: agora, criado_por: u.nome || u.usuario, unidade: (novaUn || v.un).id, pessoa_id: v.pessoa ? v.pessoa.id : '', nome: v.nome, cpf: v.cpf, telefone: v.telefone,
+      prazo_meses: '', inicio: v.inicio, fim: mudaUn.saida || v.fim, aluguel: mudaUn.aluguel || txtDinheiro_(v.aluguel), garantia: '', caucao: '', doc_url: arq.doc, pdf_url: arq.pdf, laudo_doc: '', laudo_pdf: '',
+      pasta_url: arq.pasta_url, situacao: 'aditivo', tipo: 'aditivo', dias: '', valor_total: '' });
+    registrar_(u.usuario, 'future: termo aditivo', v.un.id + ' ' + v.nome + ' (' + alts.length + ' alteração(ões))');
+    return { ok: true, documento: arq, unidade: (novaUn || v.un).id, nome: v.nome, telefone: v.telefone, novo_fim: mudaUn.saida || '', novo_aluguel: mudaUn.aluguel ? futN_(mudaUn.aluguel) : 0 };
   });
 }
 

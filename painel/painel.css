@@ -1432,3 +1432,9 @@ body.modo-future .barra-cel{background:#2f855a}
 .ads-passos li{margin:4px 0}
 .fut-lembretes{border-left:4px solid #1f8a4c}.fut-lemb-lista{list-style:none;margin:8px 0 0;padding:0}
 .fut-lemb-lista li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #eee;flex-wrap:wrap}
+/* Future 8.8: contratos em vigor */
+.fut-vig-lista{list-style:none;margin:0;padding:0}
+.fut-vig{border-bottom:1px solid #e5efe8;padding:10px 0}
+.fut-vig-cab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.fut-form-abre{background:#f4faf6;border-radius:10px;padding:12px;margin-top:10px}
+.fut-adit{border:1px solid #d7e8dc;border-radius:8px;padding:8px 12px}.fut-adit legend{font-weight:600}
