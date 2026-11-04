@@ -129,3 +129,21 @@ Nada de "garantimos", "ganhe", "100%", valores ou preços nas postagens.
 - Nome, endereço e telefone **iguais** aos do site e do Instagram (o Google compara).
 - Instagram no perfil: em "Perfis sociais", @araujoadvocaciasc.
 - Responder mensagens do perfil (se ligar o chat) em até 24 h, ou deixar o chat desligado.
+
+## Pedido de acesso à API do Perfil da Empresa (postagem automática do blog)
+
+1. Projeto no Google Cloud: console.cloud.google.com › Novo projeto "Araujo Advocacia Painel" (conta dona do Perfil).
+   Anotar o NÚMERO do projeto (cartão "Informações do projeto" no painel), não o ID.
+2. Formulário "GBP API contact form" › "Application for Basic API Access", com o e-mail dono/administrador do Perfil.
+3. Respostas prontas (em inglês, como o formulário pede):
+   - Company/business name: Araújo Advocacia
+   - Website: https://araujoadvocaciasc.com.br
+   - Use case: "We are a single law firm managing only our own Business Profile (one location, Tubarão/SC, Brazil).
+     We want to publish our weekly blog posts (legal news explained in plain language, already on our website)
+     as Business Profile updates (localPosts), and read basic profile information. No third-party profiles,
+     no reviews automation, no data resale. Requests: about 1–5 per week."
+   - Number of locations managed: 1
+4. Aprovado = cota "Requests per minute" maior que 0 em APIs e serviços › Cotas (0 = ainda não aprovado).
+   Depois: ativar "My Business Account Management API", "My Business Business Information API" e "Google My Business API",
+   trocar o projeto do Apps Script para esse projeto (Configurações do projeto › Projeto do Google Cloud) e ligar `postagemGoogle_`
+   para postar sozinho (hoje só cria a tarefa da secretaria).
