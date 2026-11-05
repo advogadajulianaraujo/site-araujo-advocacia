@@ -557,6 +557,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   saque-rescisão e saque-aniversário. Privacidade reescrita (retorno por telefone, Acompanhe, calculadoras); `limparContatosAntigos_`
   (robôs do escritório, 1×/dia) apaga nome/telefone/assunto dos pedidos de retorno com mais de 12 meses. Confirmado pela usuária: a sala NÃO
   fica no 2º andar e a Dra. Júlian NÃO vai fazer pós-doutorado (não colocar no site).
+- Equipe nov/2026 (palavra do Luís): o escritório é SÓ a Dra. Júlian e o Luís Fernando. O site não fala mais em secretaria, "equipe de
+  apoio" nem "advogados parceiros"; textos na 1ª pessoa ("Nós agendamos", "Respondemos"). Bloco "Quem atende você" (Dois irmãos…).
+  Estrutura abre com `sala-atendimento-2026.webp` (foto do WhatsApp da sala nova, com o retrato dos dois na parede). Todas as fotos e
+  vídeos do fotógrafo + as do WhatsApp ficam no Drive em "FOTOS E VÍDEOS DO ESCRITÓRIO (ensaio do fotógrafo + WhatsApp)"
+  (13TgmS_qSygSifMS2xvpVCudCi6mPqKra). "Fotos da equipe" (DSC093xx–095xx, inauguração) tem ex-colaboradores e convidados: não usar no site.
 - Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
   "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados).
   8.9.0 (acesso à API pedido pela usuária em 11/2026): Marketing › "📣 Blog no perfil do Google" (rota `marketing.gbp`: status/conectar/

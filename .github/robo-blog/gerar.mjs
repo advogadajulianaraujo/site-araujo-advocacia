@@ -124,7 +124,7 @@ function paginaPost(p, todos) {
 ${corpoHtml(p.corpo)}
 ${fonte}
 <p class="post-aviso">${aviso}</p>
-<div class="post-cta"><div><b>Ficou com dúvida sobre a sua situação?</b><p>Conte o caso em poucas palavras. A equipe agenda o atendimento presencial, em Tubarão, ou por videoconferência.</p></div>
+<div class="post-cta"><div><b>Ficou com dúvida sobre a sua situação?</b><p>Conte o caso em poucas palavras. Nós agendamos o atendimento presencial, em Tubarão, ou por videoconferência.</p></div>
 <a class="btn" href="${WA}${encodeURIComponent('Olá, Dra. Júlian. Li o texto "' + p.titulo + '" no site e gostaria de uma orientação.')}" target="_blank" rel="noopener noreferrer" data-contact="blog">Falar no WhatsApp</a></div>
 <div class="post-partilha"><span>Compartilhe com quem precisa saber disso:</span>
 <a class="btn line sm" href="https://wa.me/?text=${encodeURIComponent(p.titulo + ' — ' + url)}" target="_blank" rel="noopener noreferrer" data-contact="blog-compartilhar">WhatsApp</a>
