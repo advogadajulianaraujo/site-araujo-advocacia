@@ -1053,6 +1053,28 @@
   /* ---------- Clientes e processos (uma aba, duas visões) ---------- */
 
   const semAcentoG = x => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  /** 8.10 (pedido da usuária): "toni" acha TONI e TONINHO, mas não ANTÔNIO nem quem só tem essas letras no meio.
+      Cada palavra digitada precisa ser o COMEÇO de uma palavra do texto. Com números, compara os dígitos (CPF, telefone, nº do processo). */
+  const palavrasComecam = (texto, busca) => {
+    const ws = semAcentoG(busca).split(/[^a-z0-9]+/).filter(Boolean);
+    if (!ws.length) return true;
+    const ps = semAcentoG(texto).split(/[^a-z0-9]+/).filter(Boolean);
+    return ws.every(w => ps.some(p => p.startsWith(w)));
+  };
+  const bateBusca = (texto, busca) => {
+    const qd = String(busca || '').replace(/\D/g, '');
+    if (qd.length >= 3 && /^[\d\s.\-/()]+$/.test(String(busca).trim())) return String(texto || '').replace(/\D/g, '').includes(qd);
+    return palavrasComecam(texto, busca);
+  };
+  // caixas com lista (datalist): o navegador mostraria tudo que CONTÉM as letras; aqui a lista vira só quem começa com a palavra digitada
+  const LISTAS_ORIG = new WeakMap();
+  document.addEventListener('input', ev => {
+    const inp = ev.target; const dl = inp && inp.list; if (!dl || inp.tagName !== 'INPUT') return;
+    if (!LISTAS_ORIG.has(dl)) LISTAS_ORIG.set(dl, [...dl.options].map(o => [o.value, o.textContent]));
+    const todas = LISTAS_ORIG.get(dl), q = inp.value.trim();
+    const ok = q ? todas.filter(([v, t]) => v === inp.value || bateBusca(v + ' ' + (t || ''), q)).slice(0, 40) : todas.slice(0, 200);
+    dl.replaceChildren(...ok.map(([v, t]) => { const o = document.createElement('option'); o.value = v; if (t) o.textContent = t; return o; }));
+  }, true);
   function lembrarVisao(v) { try { localStorage.setItem('carteira_visao', v); } catch (e) { /* ok */ } }
 
   /** Cabeçalho comum: título, números, troca de visão (por cliente / por processo), botões e a busca única. */
@@ -1122,11 +1144,15 @@
     procs.forEach(p => { if (p.cliente_id) (porCli[p.cliente_id] = porCli[p.cliente_id] || []).push(p); });
     // busca única: dados do cliente ou de qualquer processo dele
     const q = semAcentoG(busca.trim()), qd = busca.replace(/\D/g, '');
-    const procBate = p => q && (semAcentoG([p.numero, p.parte_contraria, p.orgao, p.tribunal].join(' ')).includes(q) || (qd.length >= 4 && String(p.numero || '').replace(/\D/g, '').includes(qd)));
-    const cliBate = c => !q || semAcentoG([c.nome, c.cidade, c.area, c.tipo_acao].join(' ')).includes(q) ||
-      (qd.length >= 3 && (String(c.cpf_cnpj || '').replace(/\D/g, '').includes(qd) || String(c.telefone || '').replace(/\D/g, '').includes(qd))) ||
-      (porCli[c.id] || []).some(procBate);
-    let base = todos.filter(cliBate);
+    // 8.10: primeiro pelo NOME (cada palavra digitada = começo de uma palavra do nome); só se nenhum nome bater, procura em
+    // cidade, área, parte contrária, vara e nº do processo — assim "toni" não traz gente que nada tem a ver com o nome
+    const soDigitos = qd.length >= 3 && /^[\d\s.\-/()]+$/.test(busca.trim());
+    const procBate = p => q && (soDigitos ? String(p.numero || '').replace(/\D/g, '').includes(qd) : palavrasComecam([p.parte_contraria, p.orgao, p.tribunal].join(' '), busca));
+    const porNome = q && !soDigitos ? todos.filter(c => palavrasComecam(c.nome, busca)) : [];
+    const cliBate = c => !q || (soDigitos
+      ? (String(c.cpf_cnpj || '').replace(/\D/g, '').includes(qd) || String(c.telefone || '').replace(/\D/g, '').includes(qd) || (porCli[c.id] || []).some(procBate))
+      : palavrasComecam([c.nome, c.cidade, c.area, c.tipo_acao].join(' '), busca) || (porCli[c.id] || []).some(procBate));
+    let base = porNome.length ? porNome : todos.filter(cliBate);
     if (soConferir) base = base.filter(c => c.situacao !== 'completo');
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
     const temAcao = c => (porCli[c.id] || []).length > 0 || c.processos > 0;
@@ -1696,12 +1722,27 @@
     const notas = () => {
       const lista = h('ul', { class: 'notas' });
       const desenhar = obs => {
-        const linhas = String(obs || '').split('\n').map(l => l.trim()).filter(Boolean)
-          .flatMap(l => /^\[\d{2}\/\d{2}\/\d{4}/.test(l) ? [l] : l.split(' | '));
-        lista.replaceChildren(...(linhas.length ? linhas.map(l => {
-          const m = /^\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}) — ([^\]]+)\] (.*)$/.exec(l);
-          return m ? h('li', {}, h('div', { class: 'nota-cab' }, h('strong', {}, m[2]), ' · ', m[1]), h('div', {}, m[3]))
-            : h('li', { class: 'antiga' }, h('div', { class: 'nota-cab' }, 'registro antigo'), h('div', {}, l));
+        // 8.10: cada anotação tem "Editar" (corrige ou apaga; fica registrado quem editou)
+        const brutas = String(obs || '').split('\n');
+        const itens = brutas.map((l, i) => ({ l: l.trim(), i })).filter(x => x.l);
+        const editar = (li, x, textoAtual) => {
+          const ta = h('textarea', { rows: 3, maxlength: 2000 }, textoAtual);
+          const salvar = async apagar => {
+            if (apagar && !confirm('Apagar esta observação? Fica registrado no histórico quem apagou.')) return;
+            try { const r = await api('clientes.notaEditar', { id: c.id, indice: x.i, original: x.l, texto: apagar ? '' : ta.value }); c.observacoes = r.observacoes; desenhar(r.observacoes); avisar(apagar ? 'Observação apagada.' : 'Observação corrigida.'); }
+            catch (e) { avisar(e.message, true); }
+          };
+          li.replaceChildren(ta, h('div', { class: 'acoes' }, botao('Salvar correção', () => salvar(false)), botao('Apagar', () => salvar(true), 'sec'), botao('Cancelar', () => desenhar(c.observacoes), 'sec')));
+          ta.focus();
+        };
+        lista.replaceChildren(...(itens.length ? itens.map(x => {
+          const m = /^\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}) — ([^\]]+)\] (.*)$/.exec(x.l);
+          const corpo = m ? m[3] : x.l.split(' | ').join('\n');
+          const li = h('li', m ? {} : { class: 'antiga' },
+            h('div', { class: 'nota-cab' }, m ? [h('strong', {}, m[2]), ' · ', m[1]] : 'registro antigo',
+              h('button', { type: 'button', class: 'link nota-editar', title: 'Corrigir ou apagar esta observação', onclick: () => editar(li, x, corpo.replace(/\s*\(editado em [^)]*\)\s*$/, '')) }, '✎ editar')),
+            h('div', { class: 'nota-texto' }, corpo));
+          return li;
         }) : [h('li', { class: 'vazia' }, 'Nenhuma observação ainda.')]));
       };
       desenhar(c.observacoes);
@@ -1765,7 +1806,8 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
-        h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos')),
+        h('div', { class: 'barra' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
+          h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'))),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
         : faltam.length ? h('div', { class: 'nota' }, 'Falta no cadastro: ', h('strong', {}, faltam.join(', ')), '. Complete em "Editar cadastro" antes de gerar procuração ou contrato.') : null,
       r.processos.length ? null : h('div', { class: 'nota faixa-atend' },
@@ -2044,7 +2086,7 @@
         campo('usuario', 'Usuário (ex.: Estagiario)', '', { obrigatorio: true }),
         campo('perfil', 'Perfil', 'secretario', { opcoes: PERFIS }),
         campo('senha', 'Senha inicial', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' }),
-        campo('email', 'E-mail (para o resumo das 7h)', '', { tipo: 'email', auto: 'off' })),
+        campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', '', { tipo: 'email', auto: 'off' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Criar usuário')),
       h('p', { class: 'erro' }));
     aoEnviar(form, async fd => {
@@ -2157,7 +2199,7 @@
         campo('nome', 'Nome', u.nome, { obrigatorio: true }),
         campo('perfil', 'Perfil', u.perfil, { opcoes: PERFIS }),
         campo('ativo', 'Situação', u.ativo, { opcoes: [['sim', 'Ativo'], ['nao', 'Desativado']] }),
-        campo('email', 'E-mail', u.email, { tipo: 'email', auto: 'off' }),
+        campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', u.email, { tipo: 'email', auto: 'off' }),
         campo('resumo_email', 'Resumo das 7h por e-mail', u.resumo_email === 'nao' ? 'nao' : 'sim', { opcoes: [['sim', 'Receber'], ['nao', 'Não receber']] }),
         campo('senha', 'Nova senha (deixe em branco para manter)', '', { tipo: 'password', auto: 'new-password' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
@@ -2240,6 +2282,7 @@
     if (z.situacao === 'calculado') return h('span', {},
       /PROVISÓRIO/i.test(z.descricao || '') ? h('span', { class: 'tag conferir', title: 'O aviso não diz qual é o ato. O robô usou o prazo mais curto: confira no sistema do tribunal.' }, 'provisório · conferir no tribunal') : null,
       ' ', h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir'));
+    if (z.situacao === 'cumprido') return h('span', { class: 'tag cumprido' }, '✓ cumprido' + (z.cumprido_por ? ' por ' + z.cumprido_por : ''));
     return h('span', { class: 'tag' }, z.situacao);
   }
   function textoDias(z) {
@@ -2419,7 +2462,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.9.2';
+  const VERSAO_PAINEL = '8.10.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3390,6 +3433,7 @@
       secao('Modelos do escritório', () => h('div', {},
         info.pastaEscritorio ? h('p', {}, h('a', { class: 'btn sec', href: info.pastaEscritorio, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir a pasta de modelos no Drive'),
           h('span', { class: 'peq' }, '  Todo Google Docs colocado nessa pasta aparece sozinho aqui. Campos entre colchetes, como [NOME DA PARTE], [VARA] e [CIDADE/UF], são preenchidos.')) : null,
+        blocoLiberarModelos(),
         h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{nome}}, {{qualificacao_resto}}, {{advogado_nome}}, {{numero_processo}}, {{objeto}} e {{clausula_honorarios}}; o painel preenche sozinho. Padrão visual: EB Garamond 12, justificado, logo no topo e rodapé do escritório.'),
         h('div', { class: 'modelos-grade' }, Object.keys(grupos).map(g => h('div', {}, h('h4', {}, g),
           h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))))))), false),
@@ -3398,6 +3442,25 @@
         h('div', { class: 'chips' }, info.tipos.map(t => h('span', { class: 'chip-filtro' }, t.nome)))), false),
       secao('Advogados (outorgados)', advs, false),
       h('p', { class: 'peq' }, 'Os textos iniciais foram redigidos pelo Claude a partir do modelo de juntada do escritório. A Dra. Júlian deve revisá-los antes do primeiro uso.'));
+  }
+
+  /** 8.10: liberar a EDIÇÃO dos modelos (Google Docs) para a equipe — sem isso o Google pede "solicitar acesso" a quem não é a dona. */
+  function blocoLiberarModelos() {
+    if (!sessao.usuario.pode.usuarios) return h('p', { class: 'nota' }, 'Ao abrir um modelo, o Google pediu "Solicitar acesso"? Peça à administração para apertar "Liberar a edição dos modelos para a equipe" aqui em Modelos (é preciso ter o seu e-mail Google cadastrado em Usuários).');
+    const campoEm = h('input', { type: 'text', placeholder: 'outros e-mails Google, separados por vírgula (opcional)', 'aria-label': 'Outros e-mails' });
+    const saida = h('div', { class: 'peq' });
+    return h('div', { class: 'nota liberar-modelos' },
+      h('p', {}, h('strong', {}, 'A equipe toda pode editar os modelos. '), 'O painel dá permissão de edição nos modelos (e na pasta de modelos do escritório) para o e-mail Google de cada pessoa cadastrada em Usuários. Pastas de clientes não são tocadas.'),
+      h('div', { class: 'barra' }, campoEm, botao('Liberar a edição dos modelos para a equipe', async ev => {
+        const b = ev.currentTarget; b.disabled = true; b.textContent = 'Liberando…';
+        try {
+          const r = await api('modelos.liberarEdicao', { emails: campoEm.value });
+          saida.replaceChildren(h('p', {}, `✓ Edição liberada para: ${r.emails.join(', ')} (${r.arquivos} modelo(s)/pasta).`),
+            r.semEmail.length ? h('p', {}, `Sem e-mail Google em Usuários: ${r.semEmail.join(', ')} — cadastre o e-mail e aperte de novo.`) : null,
+            r.erros.length ? h('p', { class: 'erro' }, 'Não deu em: ' + r.erros.join(' · ')) : null);
+        } catch (e) { avisar(e.message, true); }
+        b.disabled = false; b.textContent = 'Liberar a edição dos modelos para a equipe';
+      }, 'sec')), saida);
   }
 
   /* ---------- gráficos (SVG feito aqui mesmo: a segurança do painel não deixa carregar bibliotecas de fora) ---------- */
@@ -4092,11 +4155,48 @@
       h('div', { class: 'mkt-grade' }, r.porArea.map(cartaoArea).filter(Boolean).length ? r.porArea.map(cartaoArea).filter(Boolean) : h('p', { class: 'caixa peq' }, 'Ainda não há dados no período.')),
       h('section', { class: 'caixa' }, h('h2', {}, 'Mês a mês'), tabMes),
       caixaGoogleAds(r),
+      caixaFunilPaginas(),
       caixaBlogGoogle(),
       h('section', { class: 'caixa' }, h('h2', {}, 'Lançar o investimento do mês (à mão)'),
         h('p', { class: 'peq' }, 'No Google Ads: Campanhas › escolha o mês › copie o "Custo" de cada campanha (uma por área). Faça uma vez por mês. Para outras áreas, crie uma campanha por área: assim o painel compara cada uma.'), f),
       h('section', { class: 'caixa' }, h('h2', {}, 'Investimentos lançados'), tabCamp),
       h('p', { class: 'peq' }, 'Como o painel sabe: o site marca cada clique no WhatsApp (sem dado pessoal) e se a pessoa chegou por um anúncio do Google. O cliente novo conta como "do anúncio" quando o cadastro diz "Como nos conheceu? → Google Ads". Honorários de êxito só entram quando houver valor.'));
+  }
+
+  /** 8.10: funil por página — cliques (automático) → conversas iniciadas → consultas agendadas (a equipe lança os totais do mês). */
+  function caixaFunilPaginas() {
+    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
+    const NOME = p => ({ '/': 'Início', '/trabalhista/': 'Trabalhista', '/previdenciario/': 'Previdenciário', '/familia/': 'Família', '/civil/': 'Civil e consumidor',
+      '/empresarial/': 'Empresarial', '/criminal/': 'Criminal', '/contato/': 'Contato', '/escritorio/': 'O escritório', '/calculadoras/': 'Calculadoras', '/blog/': 'Blog', '/atuacao/': 'Atuação' }[p] || (/^\/blog\//.test(p) ? 'Blog: ' + p.split('/')[2].replace(/-/g, ' ').slice(0, 40) : p));
+    const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+    const montar = async (mes, salvar) => {
+      try {
+        const r = await api('marketing.funil', salvar ? { mes, salvar: true, linhas: salvar } : { mes });
+        const inputs = [];
+        const linhas = r.paginas.length ? r.paginas : [{ pagina: '/', whatsapp: 0, telefone: 0, anuncio: 0, conversas: 0, consultas: 0 }];
+        const tab = h('table', { class: 'tabela funil-tab' },
+          h('thead', {}, h('tr', {}, ['Página do site', 'Cliques (WhatsApp / telefone)', 'Conversas iniciadas', 'Consultas agendadas', 'De clique a consulta'].map(t => h('th', {}, t)))),
+          h('tbody', {}, linhas.map(x => {
+            const ic = h('input', { type: 'number', min: 0, value: x.conversas || '', class: 'num-mini', 'aria-label': 'Conversas ' + NOME(x.pagina) });
+            const iq = h('input', { type: 'number', min: 0, value: x.consultas || '', class: 'num-mini', 'aria-label': 'Consultas ' + NOME(x.pagina) });
+            inputs.push({ pagina: x.pagina, ic, iq });
+            const cliques = x.whatsapp + x.telefone;
+            return h('tr', {}, h('td', {}, NOME(x.pagina), h('div', { class: 'peq' }, x.pagina)),
+              h('td', {}, String(cliques), h('div', { class: 'peq' }, `${x.whatsapp} WhatsApp · ${x.telefone} telefone${x.anuncio ? ' · ' + x.anuncio + ' do anúncio' : ''}`)),
+              h('td', {}, ic), h('td', {}, iq), h('td', {}, pct(x.consultas, cliques)));
+          })));
+        const [a, m] = r.mes.split('-').map(Number), outro = d => new Date(Date.UTC(a, m - 1 + d, 15)).toISOString().slice(0, 7);
+        corpo.replaceChildren(
+          h('div', { class: 'barra' }, h('button', { type: 'button', class: 'link', onclick: () => montar(outro(-1)) }, '‹ mês anterior'),
+            h('strong', {}, new Date(Date.UTC(a, m - 1, 15)).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' })),
+            h('button', { type: 'button', class: 'link', onclick: () => montar(outro(1)) }, 'próximo mês ›')),
+          h('div', { class: 'tabela-rolagem' }, tab),
+          h('div', { class: 'acoes' }, botao('Salvar os totais do mês', async ev => { ev.target.disabled = true; await montar(r.mes, inputs.map(i => ({ pagina: i.pagina, conversas: i.ic.value, consultas: i.iq.value }))); avisar('Totais salvos.'); }, '')),
+          h('p', { class: 'peq' }, 'Os cliques o site conta sozinho, sem identificar ninguém. Conversas iniciadas e consultas agendadas: a equipe lança só os TOTAIS do mês por página (sem nome nem detalhe do caso). Assim dá para ver quais temas trazem atendimento de verdade e onde vale investir no Google Ads.'));
+      } catch (e) { corpo.replaceChildren(h('p', { class: 'erro' }, e.message), botao('Tentar de novo', () => montar(mes), 'sec')); }
+    };
+    montar(new Date().toISOString().slice(0, 7));
+    return h('section', { class: 'caixa' }, h('h2', {}, '📊 Quais páginas trazem consultas (funil por página)'), corpo);
   }
 
   /** 8.9.0: blog no perfil do Google sozinho — passo a passo, testar e ligar (API do Perfil da Empresa). */

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.9.2';
+var VERSAO = '8.10.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -87,6 +87,7 @@ var ESQUEMA = {
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
   Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
   SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
+  MktFunil: ['mes', 'pagina', 'conversas', 'consultas', 'atualizado_em', 'atualizado_por'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao', 'categoria'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
     'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda', 'modalidade', 'conta_receb'],
@@ -340,6 +341,7 @@ var ROTAS = {
   'whatsapp.entrada': { fn: function () { var e = pastaEntradaWhats_(); return { url: e.getUrl(), pendentes: config_('WHATSAPP_SEM_CLIENTE') || '' }; } },
   'clientes.criarPasta': { fn: criarPastaCliente_ },
   'clientes.nota': { fn: anotarCliente_ },
+  'clientes.notaEditar': { fn: editarNotaCliente_ },
   'processos.listar': { fn: listarProcessos_ },
   'processos.salvar': { fn: salvarProcesso_ },
   'prazos.listar': { fn: listarPrazos_ },
@@ -371,6 +373,7 @@ var ROTAS = {
   'relatorio.cumpridos': { permissao: 'usuarios', fn: relatorioCumpridos_ },
   'clientes.documentos': { fn: documentosCliente_ },
   'modelos.listar': { fn: listarModelos_ },
+  'modelos.liberarEdicao': { permissao: 'usuarios', fn: liberarEdicaoModelos_ },
   'advogados.salvar': { permissao: 'usuarios', fn: salvarAdvogado_ },
   'documentos.gerar': { fn: gerarDocumentos_ },
   'documentos.assinaturas': { fn: listarAssinaturas_ },
@@ -451,6 +454,7 @@ var ROTAS = {
   'site.clique': { publica: true, fn: cliqueSite_ },
   'marketing.ads': { publica: true, fn: receberGoogleAds_ },
   'marketing.adsConfig': { permissao: 'usuarios', fn: configGoogleAds_ },
+  'marketing.funil': { permissao: 'usuarios', fn: marketingFunil_ },
   'marketing.gbp': { permissao: 'usuarios', fn: marketingGbp_ },
   'resumo.email.testar': { fn: testarResumoEmail_ },
   'ia.config': { permissao: 'usuarios', fn: configIA_ },
@@ -889,6 +893,29 @@ function anotarCliente_(d, u) {
     var obs = (nova + (c.observacoes ? '\n' + c.observacoes : '')).slice(0, 45000);
     atualizarLinha_(tab, c, { observacoes: obs, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, 'observação no cliente', c.id);
+    return { observacoes: obs };
+  });
+}
+
+/** 8.10 (pedido da usuária: "poder editar as observações"): corrige ou apaga UMA anotação (linha n), mantendo data e autor
+    e marcando "(editado em … por …)". Texto vazio = apagar. Tudo fica no Log. */
+function editarNotaCliente_(d, u) {
+  var texto = String(d.texto || '').replace(/\s+/g, ' ').trim();
+  if (texto.length > 2000) throw falha_('Observação longa demais (até 2.000 letras).');
+  return comTrava_(function () {
+    var tab = tabela_('Clientes');
+    var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!c) throw falha_('Cliente não encontrado.');
+    var linhas = String(c.observacoes || '').split('\n'), i = parseInt(d.indice, 10);
+    if (!(i >= 0 && i < linhas.length)) throw falha_('Observação não encontrada (a ficha mudou). Atualize a tela.');
+    if (d.original !== undefined && String(d.original).trim() !== linhas[i].trim()) throw falha_('Alguém mudou esta observação agora há pouco. Atualize a tela e tente de novo.');
+    var antes = linhas[i], m = /^(\[[^\]]+\])\s*(.*)$/.exec(antes);
+    var carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+    if (!texto) linhas.splice(i, 1);
+    else linhas[i] = (m ? m[1] + ' ' : '') + texto.replace(/\s*\(editado em [^)]*\)\s*$/, '') + ' (editado em ' + carimbo + ' por ' + (u.nome || u.usuario) + ')';
+    var obs = linhas.filter(function (l) { return l.trim(); }).join('\n');
+    atualizarLinha_(tab, c, { observacoes: obs, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+    registrar_(u.usuario, texto ? 'observação editada' : 'observação apagada', c.id + ' · antes: ' + antes.slice(0, 300));
     return { observacoes: obs };
   });
 }
@@ -4991,6 +5018,39 @@ function gbpStatus_() {
   return { zapier: config_('GBP_ZAPIER') === 'sim', auto: config_('GBP_AUTO') === 'sim', local: config_('GBP_LOCAL') || '', nome: config_('GBP_LOCAL_NOME') || '', ultimo: config_('GBP_ULTIMO') || '' };
 }
 
+/** 8.10: funil por página do site — cliques no WhatsApp/telefone (o site conta sozinho) → conversas iniciadas → consultas agendadas
+    (a equipe lança os TOTAIS do mês por página, sem nome nem detalhe do caso). Mostra quais páginas/temas trazem atendimento de verdade. */
+function marketingFunil_(d, u) {
+  var mes = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : hojeSP_().slice(0, 7);
+  var tf = tabela_('MktFunil');
+  if (d.salvar) {
+    return comTrava_(function () {
+      (d.linhas || []).slice(0, 80).forEach(function (l) {
+        var pag = String(l.pagina || '').replace(/[^\w\/-]/g, '').slice(0, 60) || '/';
+        var conv = Math.max(0, parseInt(l.conversas, 10) || 0), cons = Math.max(0, parseInt(l.consultas, 10) || 0);
+        var r = tf.linhas.filter(function (x) { return x.mes === mes && x.pagina === pag; })[0];
+        var dados = { mes: mes, pagina: pag, conversas: String(conv), consultas: String(cons), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario };
+        if (r) { if (String(r.conversas) !== dados.conversas || String(r.consultas) !== dados.consultas) atualizarLinha_(tf, r, dados); }
+        else if (conv || cons) inserirLinha_(tf, dados);
+      });
+      registrar_(u.usuario, 'marketing: funil por página', mes);
+      return marketingFunil_({ mes: mes }, u);
+    });
+  }
+  var porPag = {};
+  var pg = function (p) { return (porPag[p] = porPag[p] || { pagina: p, whatsapp: 0, telefone: 0, anuncio: 0, conversas: 0, consultas: 0 }); };
+  tabela_('SiteCliques').linhas.forEach(function (c) {
+    if (String(c.quando || '').slice(0, 7) !== mes) return;
+    var x = pg(c.pagina || '/');
+    if (c.canal === 'telefone') x.telefone++; else x.whatsapp++;
+    if (c.origem === 'ads') x.anuncio++;
+  });
+  tf.linhas.forEach(function (r) { if (r.mes === mes) { var x = pg(r.pagina); x.conversas = +r.conversas || 0; x.consultas = +r.consultas || 0; } });
+  var lista = Object.keys(porPag).map(function (k) { return porPag[k]; })
+    .sort(function (a, b) { return (b.consultas - a.consultas) || ((b.whatsapp + b.telefone) - (a.whatsapp + a.telefone)); });
+  return { mes: mes, paginas: lista };
+}
+
 /* 7) Processo andou → e-mail curto ao cliente (só quem tem acesso ao "Acompanhe seu processo" e e-mail no cadastro). */
 function avisarMovimentoClientes_(ctx) {
   if (config_('MOV_AVISO') === 'nao') return 0;
@@ -5226,7 +5286,7 @@ var MODELOS = {
   video: { nome: 'Petição genérica — participação na audiência por videoconferência', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO9_VIDEO_ID' },
   manifestacao: { nome: 'Petição genérica — manifestação (texto livre)', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO9_MANIFESTACAO_ID' },
   substabelecimento: { nome: 'Substabelecimento com reserva de poderes', grupo: 'Petições (precisam do nº do processo)', processo: true, config: 'MODELO6_SUBSTABELECIMENTO_ID', antigo: ['MODELO5_SUBSTABELECIMENTO_ID', 'MODELO4_SUBSTABELECIMENTO_ID', 'MODELO3_SUBSTABELECIMENTO_ID'] },
-  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO9_CONTRATO_ID', antigo: ['MODELO8_CONTRATO_ID', 'MODELO7_CONTRATO_ID', 'MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
+  contrato: { assinaCliente: true, nome: 'Contrato de honorários advocatícios', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, umaFolha: 'mini', config: 'MODELO10_CONTRATO_ID', antigo: ['MODELO9_CONTRATO_ID', 'MODELO8_CONTRATO_ID', 'MODELO7_CONTRATO_ID', 'MODELO6_CONTRATO_ID', 'MODELO5_CONTRATO_ID', 'MODELO4_CONTRATO_ID', 'MODELO3_CONTRATO_ID', 'MODELO2_CONTRATO_ID', 'MODELO_CONTRATO_ID'] },
   prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO9_PRESTACAO_ID', antigo: ['MODELO8_PRESTACAO_ID', 'MODELO6_PRESTACAO_ID', 'MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
   assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO9_ASSESSORIA_ID', antigo: ['MODELO8_ASSESSORIA_ID', 'MODELO6_ASSESSORIA_ID', 'MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
   recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO6_RECIBO_ID', antigo: ['MODELO5_RECIBO_ID', 'MODELO4_RECIBO_ID', 'MODELO3_RECIBO_ID', 'MODELO2_RECIBO_ID'] },
@@ -5415,44 +5475,22 @@ var TEXTO_MODELOS = {
     ['c', '**{{substabelecente_nome}}**'],
     ['c', '{{substabelecente_oab}}']
   ],
-  contrato: [
+  contrato: [ // 8.10: mesmas 11 cláusulas, texto enxuto para caber em UMA folha (pedido da usuária)
     ['t', 'CONTRATO DE HONORÁRIOS ADVOCATÍCIOS'],
-    ['p', 'Contrato de prestação de serviços advocatícios e de honorários que fazem entre si as partes abaixo qualificadas, nas condições a seguir especificadas:'],
     ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
-    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
-    ['h', 'CLÁUSULA 1ª – DO OBJETO'],
-    ['p', 'A CONTRATADA obriga-se a prestar {{c:ao|à}} CONTRATANTE os serviços advocatícios consistentes em: {{objeto}}.'],
-    ['p', 'Parágrafo primeiro. Não estão incluídos neste contrato outros processos, incidentes autônomos, ações rescisórias e medidas não relacionadas ao objeto acima, que dependerão de ajuste próprio.'],
-    ['p', 'Parágrafo segundo. Não estão incluídos neste contrato as despesas e os honorários para a realização de sustentação oral nas Turmas Recursais dos Juizados Especiais e/ou nos Tribunais, nem a interposição de recursos e/ou a apresentação de contrarrazões à Turma Nacional de Uniformização, aos Tribunais Superiores e ao Supremo Tribunal Federal, os quais dependerão de prévio acordo com {{c:o|a}} CONTRATANTE.'],
-    ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS E DO PAGAMENTO'],
-    ['p', '{{clausula_honorarios}}'],
-    ['p', 'Parágrafo primeiro. Os pagamentos serão feitos por PIX ou depósito em favor da CONTRATADA ({{escritorio_pix}}), valendo o comprovante como recibo.'],
-    ['p', 'Parágrafo segundo. Os valores contratados não excluem o direito da CONTRATADA ao recebimento integral dos honorários de sucumbência fixados em decisão judicial, que lhe pertencem com exclusividade (arts. 22 e 23 da Lei nº 8.906/1994).'],
-    ['p', 'Parágrafo terceiro. Havendo recebimento de valores por meio de alvará, RPV, precatório, acordo ou depósito judicial, fica a CONTRATADA autorizada a reter o valor dos honorários contratados, repassando o saldo {{c:ao|à}} CONTRATANTE com a devida prestação de contas.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, representada por **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
+    ['p', '**CLÁUSULA 1ª – OBJETO.** A CONTRATADA prestará {{c:ao|à}} CONTRATANTE os serviços advocatícios de: {{objeto}}. Não estão incluídos outros processos, incidentes autônomos, ações rescisórias, sustentação oral, nem recursos ou contrarrazões à TNU, aos Tribunais Superiores e ao STF, que dependerão de ajuste próprio.'],
+    ['p', '**CLÁUSULA 2ª – HONORÁRIOS.** {{clausula_honorarios}} § 1º O pagamento será feito por PIX ou depósito ({{escritorio_pix}}), valendo o comprovante como recibo. § 2º Os honorários de sucumbência pertencem integralmente à CONTRATADA (arts. 22 e 23 da Lei nº 8.906/1994). § 3º Havendo alvará, RPV, precatório, acordo ou depósito judicial, a CONTRATADA poderá reter os seus honorários, repassando o saldo {{c:ao|à}} CONTRATANTE com prestação de contas.'],
     ['p', '{{clausula_promissoria_contrato}}'],
-    ['h', 'CLÁUSULA 3ª – DAS DESPESAS'],
-    ['p', 'Não estão incluídas nos honorários as despesas com perícias, custas judiciais e/ou administrativas, emolumentos, cópias, certidões e diligências fora da Comarca de ajuizamento da ação, as quais correrão por conta d{{c:o|a}} CONTRATANTE.'],
-    ['p', 'Parágrafo único. {{c:O|A}} CONTRATANTE arcará, ainda, com as despesas de deslocamento superiores a 100 km (cem quilômetros) da sede da CONTRATADA, quando a viagem se destinar a tratar de assuntos de seu interesse.'],
-    ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
-    ['p', '{{c:O|A}} CONTRATANTE obriga-se a: a) providenciar e entregar à CONTRATADA todos os documentos e informações por ela solicitados, de forma verdadeira e completa; b) informar imediatamente qualquer mudança de telefone, endereço ou e-mail; c) comparecer às audiências, perícias e demais atos para os quais for intimad{{c:o|a}} ou convocad{{c:o|a}}.'],
-    ['p', 'Parágrafo único. A CONTRATADA não se responsabiliza por prejuízos decorrentes da omissão ou da inexatidão de informações e documentos de responsabilidade d{{c:o|a}} CONTRATANTE.'],
-    ['h', 'CLÁUSULA 5ª – DOS ACORDOS E DO RECEBIMENTO DE VALORES'],
-    ['p', 'Fica expressamente vedado {{c:ao|à}} CONTRATANTE firmar qualquer acordo ou transação, bem como receber quaisquer importâncias referentes ao litígio objeto do presente contrato, sem a expressa anuência da CONTRATADA, hipótese em que os honorários serão devidos integralmente.'],
-    ['h', 'CLÁUSULA 6ª – DA NATUREZA DA OBRIGAÇÃO'],
-    ['p', 'A obrigação assumida pela CONTRATADA é de meio, e não de resultado, não se obrigando a garantir o resultado eventualmente esperado pel{{c:o|a}} CONTRATANTE, mas a empregar todo o zelo e a técnica profissional na defesa de seus interesses.'],
-    ['h', 'CLÁUSULA 7ª – DO ATRASO E DA SUSPENSÃO DOS SERVIÇOS'],
-    ['p', 'O atraso no pagamento de qualquer parcela sujeitará {{c:o|a}} CONTRATANTE à multa de 2% (dois por cento), a juros de 1% (um por cento) ao mês e à correção monetária pelo INPC, e o atraso superior a 30 (trinta) dias acarretará o vencimento antecipado das parcelas restantes, podendo a CONTRATADA promover a cobrança judicial, inclusive pela execução das notas promissórias e deste contrato, que vale como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994).'],
-    ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
-    ['h', 'CLÁUSULA 8ª – DAS MULTAS POR DESISTÊNCIA E POR AUSÊNCIA EM AUDIÊNCIA'],
-    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência da ação ou da contratação; b) em caso de não comparecimento injustificado a audiência ou perícia para a qual tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA.'],
-    ['p', 'Parágrafo primeiro. As multas desta cláusula são devidas sem prejuízo dos honorários contratados e das consequências processuais da desistência ou da ausência, vencem na data do fato e, não pagas em 10 (dez) dias, podem ser cobradas judicialmente pela CONTRATADA, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do Código de Processo Civil).'],
-    ['p', 'Parágrafo segundo. A desistência ou a revogação do mandato não desobriga {{c:o|a}} CONTRATANTE do pagamento dos honorários vencidos e dos proporcionais ao trabalho já realizado, nem dos honorários de êxito, caso o proveito econômico venha a ser obtido em razão dos atos praticados pela CONTRATADA.'],
-    ['h', 'CLÁUSULA 9ª – DO DESCUMPRIMENTO'],
-    ['p', 'Em caso de descumprimento de qualquer cláusula do presente contrato, a parte infratora pagará multa de 5% (cinco por cento) sobre o valor total do contrato, além de indenizar a parte prejudicada pelos danos e pelas despesas adicionais causados pelo descumprimento.'],
-    ['h', 'CLÁUSULA 10ª – DO SIGILO E DOS DADOS PESSOAIS'],
-    ['p', 'A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato e o cumprimento de obrigações legais, nos termos do Estatuto da Advocacia e da Lei nº 13.709/2018 (LGPD).'],
-    ['h', 'CLÁUSULA 11ª – DO FORO'],
-    ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
+    ['p', '**CLÁUSULA 3ª – DESPESAS.** Custas, perícias, emolumentos, cópias, certidões, diligências fora da comarca e deslocamentos acima de 100 km da sede da CONTRATADA não estão incluídos nos honorários e correm por conta d{{c:o|a}} CONTRATANTE.'],
+    ['p', '**CLÁUSULA 4ª – OBRIGAÇÕES D{{c:O|A}} CONTRATANTE.** Entregar os documentos e as informações pedidos, de forma verdadeira e completa; avisar mudança de telefone, endereço ou e-mail; e comparecer às audiências, perícias e atos para os quais for intimad{{c:o|a}} ou convocad{{c:o|a}}. A CONTRATADA não responde por prejuízo causado pela falta ou inexatidão dessas informações.'],
+    ['p', '**CLÁUSULA 5ª – ACORDOS.** É vedado {{c:ao|à}} CONTRATANTE fazer acordo ou receber valores do litígio sem a anuência da CONTRATADA; se o fizer, os honorários serão devidos integralmente.'],
+    ['p', '**CLÁUSULA 6ª – OBRIGAÇÃO DE MEIO.** A CONTRATADA empregará todo o zelo e a técnica profissional na defesa d{{c:o|a}} CONTRATANTE, sem garantir o resultado.'],
+    ['p', '**CLÁUSULA 7ª – ATRASO.** A parcela em atraso terá multa de 2%, juros de 1% ao mês e correção pelo INPC. O atraso superior a 30 dias antecipa o vencimento das demais parcelas e autoriza a CONTRATADA a suspender os serviços não urgentes e, persistindo, a renunciar ao mandato com aviso de 10 dias (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do CPC), sem prejuízo dos honorários vencidos e dos proporcionais ao trabalho realizado.'],
+    ['p', '**CLÁUSULA 8ª – DESISTÊNCIA E AUSÊNCIA.** {{c:O|A}} CONTRATANTE pagará multa de 2 (dois) salários mínimos se desistir da ação ou da contratação ou se faltar sem justificativa a audiência ou perícia para a qual tenha sido intimad{{c:o|a}} ou avisad{{c:o|a}}, vencível em 10 dias, sem prejuízo dos honorários vencidos, dos proporcionais e do êxito obtido com o trabalho da CONTRATADA.'],
+    ['p', '**CLÁUSULA 9ª – DESCUMPRIMENTO.** A parte que descumprir este contrato pagará multa de 5% sobre o seu valor total, além das perdas e danos.'],
+    ['p', '**CLÁUSULA 10ª – SIGILO E DADOS.** A CONTRATADA manterá sigilo e usará os dados d{{c:o|a}} CONTRATANTE apenas para executar este contrato e cumprir a lei (Estatuto da Advocacia e Lei nº 13.709/2018 – LGPD).'],
+    ['p', '**CLÁUSULA 11ª – TÍTULO EXECUTIVO E FORO.** Este contrato é título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do CPC). Fica eleito o foro da Comarca de {{foro}}.'],
     ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}|CONTRATANTE']
@@ -5848,9 +5886,11 @@ function montarPadraoVisual_(doc, linhas, compacto) {
   var A = DocumentApp.HorizontalAlignment;
   var corpo = doc.getBody();
   corpo.clear();
-  if (compacto) corpo.setMarginTop(28).setMarginBottom(28).setMarginLeft(71).setMarginRight(50);
+  var mini = compacto === 'mini'; // 8.10: contrato de honorários em UMA folha (fonte 10,5, espaço simples), sem perder o padrão visual
+  if (mini) corpo.setMarginTop(20).setMarginBottom(20).setMarginLeft(62).setMarginRight(48);
+  else if (compacto) corpo.setMarginTop(28).setMarginBottom(28).setMarginLeft(71).setMarginRight(50);
   else corpo.setMarginTop(42).setMarginBottom(42).setMarginLeft(85).setMarginRight(57);
-  var fonte = function (el, tam) { var t = el.editAsText(); if (t.getText().length) t.setFontFamily('EB Garamond').setFontSize(tam || 12); return el; };
+  var fonte = function (el, tam) { var t = el.editAsText(); if (t.getText().length) t.setFontFamily('EB Garamond').setFontSize(tam || (mini ? 10.5 : 12)); return el; };
   // cabeçalho: logo + linha
   var cab = doc.getHeader() || doc.addHeader();
   var pLogo = cab.getParagraphs()[0] || cab.appendParagraph('');
@@ -5860,7 +5900,7 @@ function montarPadraoVisual_(doc, linhas, compacto) {
     try { var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); if (r.getResponseCode() === 200) blob = r.getBlob(); } catch (e) { /* tenta o próximo */ }
     return !!blob;
   });
-  if (blob) pLogo.appendInlineImage(blob).setWidth(compacto ? 80 : 105).setHeight(compacto ? 63 : 83);
+  if (blob) pLogo.appendInlineImage(blob).setWidth(mini ? 62 : compacto ? 80 : 105).setHeight(mini ? 49 : compacto ? 63 : 83);
   else { pLogo.appendText('ARAÚJO ADVOCACIA'); fonte(pLogo, 14); }
   cab.appendParagraph('').appendHorizontalRule();
   // rodapé: linha + dados do escritório
@@ -5874,7 +5914,7 @@ function montarPadraoVisual_(doc, linhas, compacto) {
     var t = trechosNegrito_(txt);
     var p = corpo.appendParagraph(t.texto);
     var dep = depois === undefined ? 10 : depois;
-    p.setAlignment(alin).setSpacingAfter(compacto ? Math.min(dep, 6) : dep).setSpacingBefore(compacto ? Math.min(antes || 0, 8) : (antes || 0)).setLineSpacing(compacto ? 1.1 : 1.5);
+    p.setAlignment(alin).setSpacingAfter(mini ? Math.min(dep, 3) : compacto ? Math.min(dep, 6) : dep).setSpacingBefore(mini ? Math.min(antes || 0, 4) : compacto ? Math.min(antes || 0, 8) : (antes || 0)).setLineSpacing(mini ? 1.0 : compacto ? 1.1 : 1.5);
     fonte(p);
     var ed = p.editAsText();
     t.negritos.forEach(function (r) { if (r[1] >= r[0]) ed.setBold(r[0], r[1], true); });
@@ -5894,7 +5934,7 @@ function montarPadraoVisual_(doc, linhas, compacto) {
     }
     if (tipo === 'a') {
       var partesA = txt.split('|');
-      par('', A.CENTER, 0, 18);
+      par('', A.CENTER, 0, mini ? 10 : 18);
       par('_____________________________________________', A.CENTER, 0);
       if (partesA.length > 1) {
         par('**' + partesA[0] + '**', A.CENTER, 0);
@@ -5905,6 +5945,32 @@ function montarPadraoVisual_(doc, linhas, compacto) {
     }
     par(txt, A.JUSTIFY, 10);
   });
+}
+
+/** 8.10 (pedido da usuária: "deixe todo mundo mexer nos modelos"): dá permissão de EDIÇÃO nos modelos (Google Docs do painel e a pasta
+    de modelos do escritório) para os e-mails Google da equipe (coluna email de Usuários) e para os e-mails digitados. Não toca em pasta de cliente. */
+function liberarEdicaoModelos_(d, u) {
+  var extras = String(d.emails || '').split(/[\s,;]+/).map(function (e) { return e.trim().toLowerCase(); }).filter(function (e) { return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e); });
+  var equipe = usuarios_().filter(function (x) { return x.ativo === 'sim'; });
+  var semEmail = equipe.filter(function (x) { return !/@/.test(x.email || ''); }).map(function (x) { return x.nome || x.usuario; });
+  var emails = equipe.map(function (x) { return String(x.email || '').trim().toLowerCase(); }).filter(function (e) { return /@/.test(e); }).concat(extras)
+    .filter(function (e, i, a) { return a.indexOf(e) === i; });
+  if (!emails.length) throw falha_('Ninguém da equipe tem e-mail Google cadastrado. Cadastre em Usuários (campo E-mail) ou digite os e-mails aqui.');
+  var alvos = [], erros = [];
+  try { alvos.push({ nome: 'pasta de modelos do escritório', obj: DriveApp.getFolderById(config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO) }); } catch (e) { erros.push('pasta de modelos: ' + (e.message || e)); }
+  Object.keys(MODELOS).forEach(function (k) {
+    if (MODELOS[k].gerado) return;
+    try { alvos.push({ nome: MODELOS[k].nome, obj: DriveApp.getFileById(modeloId_(k)) }); } catch (e) { erros.push(MODELOS[k].nome + ': ' + (e.message || e)); }
+  });
+  var feitos = 0;
+  alvos.forEach(function (a) {
+    var ja = {}; try { a.obj.getEditors().forEach(function (x) { ja[String(x.getEmail()).toLowerCase()] = 1; }); } catch (e) { /* segue */ }
+    var novos = emails.filter(function (e) { return !ja[e]; });
+    if (!novos.length) return;
+    try { a.obj.addEditors(novos); feitos++; } catch (e) { erros.push(a.nome + ': ' + String(e.message || e).slice(0, 120)); }
+  });
+  registrar_(u.usuario, 'modelos: edição liberada', emails.join(', '));
+  return { emails: emails, semEmail: semEmail, arquivos: alvos.length, atualizados: feitos, erros: erros.slice(0, 10) };
 }
 
 function listarModelos_(d, u) {
@@ -6447,7 +6513,7 @@ function gerarDocumentos_(d, u) {
     ? 'Parágrafo segundo. O pagamento das parcelas é garantido por nota(s) promissória(s) emitida(s) pel{{c:o|a}} CONTRATANTE em favor da CONTRATADA, no valor e com o vencimento de cada parcela, as quais perderão a validade e serão devolvidas à medida que as parcelas forem quitadas.'
     : REMOVER;
   if (!valores['{{poderes_especificos}}']) valores['{{poderes_especificos}}'] = REMOVER;
-  valores['{{clausula_promissoria_contrato}}'] = temParcelasFixas ? valores['{{clausula_promissoria}}'].replace('Parágrafo segundo.', 'Parágrafo quarto.') : REMOVER;
+  valores['{{clausula_promissoria_contrato}}'] = temParcelasFixas ? valores['{{clausula_promissoria}}'].replace('Parágrafo segundo. O pagamento das parcelas é garantido', '§ 4º As parcelas são garantidas').replace('as quais perderão a validade e serão devolvidas à medida que as parcelas forem quitadas', 'devolvidas à medida que forem quitadas') : REMOVER;
   if (textoMenores) {
     valores['{{rotulo_outorgantes}}'] = menores.length > 1 ? 'OUTORGANTES' : 'OUTORGANTE';
     valores['{{menores_qualificacao}}'] = textoMenores.qualificacao;

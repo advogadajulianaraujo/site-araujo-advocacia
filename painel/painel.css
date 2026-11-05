@@ -1486,3 +1486,14 @@ body.modo-future .barra-cel{background:#2f855a}
 .jor-falta{opacity:.6}
 @media (max-width:700px){.jor-linha{grid-template-columns:1fr 1fr}}
 .selo-data.faixa-conferir{border-left-color:#e0a21a;background:#fff7e3}
+.nota-editar{margin-left:8px;font-size:12px;color:#8c6a35}
+.nota-texto{white-space:pre-line}
+.liberar-modelos .barra input{min-width:280px;flex:1}
+/* Paleta nov/2026 (pedido da usuária): menu lateral grafite quente, fundo marfim, cartões e tabelas brancos,
+   dourado só na marca e na aba selecionada. Prazos: âmbar = a conferir, vermelho = confirmado em risco/vencido, verde = cumprido. */
+:root{--lateral:#1C1A17;--lateral-2:#26231F;--lateral-txt:#B9B2A6;--acento:#B58D52;--acento-f:#F4ECDF;--marfim:#F8F5EF;--linha:#E6E0D4}
+body{background:var(--marfim)}
+.lateral .abas a[aria-current]{background:#fff;color:var(--tinta);box-shadow:inset 3px 0 0 var(--acento)}
+.lateral .abas a:hover:not([aria-current]){background:var(--lateral-2);color:#fff}
+.tag.cumprido{background:var(--verde-f);color:var(--verde);font-weight:500}
+.funil-tab .num-mini{width:90px;padding:6px 8px;border:1px solid var(--linha);border-radius:8px}

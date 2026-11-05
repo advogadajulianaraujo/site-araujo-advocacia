@@ -32,7 +32,7 @@ Ordem sugerida (leva uns 30 minutos): 1 → 2 → 3 → 4 → 5 (fotos) → 6 (p
 > é a área principal do escritório, que também atua em Direito Previdenciário (INSS), Família, Civil e Consumidor, Penal e
 > assessoria a empresas. O atendimento é presencial, em frente à nova rodoviária de Tubarão, ou online, para todo o Brasil.
 > Cada cliente acompanha o próprio processo pelo site, na área "Acompanhe seu processo". Atendimento de segunda a sexta,
-> das 9h às 12h e das 13h30 às 18h, com hora marcada pelo WhatsApp (48) 99612-6491.
+> das 8h às 12h e das 13h30 às 18h, com hora marcada pelo WhatsApp (48) 99612-6491.
 
 ## 3. Serviços (cadastrar cada um em "Serviços", com a descrição)
 

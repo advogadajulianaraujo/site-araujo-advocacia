@@ -201,6 +201,36 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Histórico mostra Distrato / Termo aditivo. Distrato do Richarles (AP 103, 04/11/2026) feito à mão no Drive.
 - Falta (o Luiz vai mandar): e-mails do PIX agendado no Gmail (baixa automática), a tabela de energia (UC × apartamento) e os telefones.
 
+## 8.10.0 (nov/2026: revisão externa + pedidos da usuária)
+
+- Prazos em FILAS (`filaPrazo_` no servidor, `filaDe` no painel): 'conferir' (provisório, a definir ou IA divergente "⚠ ATENÇÃO" → abrir no
+  tribunal), 'calculado' (robô calculou, só confirmar a data) e 'confirmado'. Tela Intimações e prazos com as 3 filas (`?fila=`), divergência
+  sempre no topo. Cores: ÂMBAR = conferir no tribunal (`linha-conferir`, `tag conferir`), VERMELHO só para prazo confirmado/calculado em risco
+  ou vencido, VERDE = cumprido — sempre com o texto do status junto. "Conferi no tribunal" pede a FONTE (Prazos.conferido_fonte; o servidor
+  recusa confirmar provisório/divergente sem fonte). Agenda: provisório = "⚠ CONFERIR NO TRIBUNAL" em amarelo no Google (agenda_data com "|c")
+  e no painel (`ag-conferir`); confirmado = "⏱" vermelho.
+- Início: "Precisa de ação agora" (`inicio.acoes`, `blocoAcoesAgora`): prazo vencendo em 2 dias sem responsável (vermelho), divergência da IA e
+  provisório vencendo em 3 dias (âmbar), audiência/perícia em 7 dias sem horário ou sem aviso ao cliente (azul), intimações a fazer sem
+  responsável (só a conta). Cada linha: próxima ação + quem cuida. Colaborador vê só o dele (+ os sem responsável).
+- Robô: DataJud 502/504 fica na fila (não vira erro se leu algo), `DATAJUD_OK` = última leitura boa; cartão mostra última leitura boa e a
+  próxima tentativa (+4 h). DJEN só lê com o painel aberto (o CNJ bloqueia o Google) — dito no cartão. "Carregando…" > 20 s mostra
+  "Tentar de novo" (`carregando`).
+- Ficha do cliente: "Onde o atendimento está" (documentos gerados → assinatura → assinado → financeiro; `documentos.assinaturas` com
+  `todas`), botão "✎ Editar cadastro" no topo e "✎ editar" em cada observação (`clientes.notaEditar`: corrige/apaga uma linha, mantém
+  data/autor, marca "(editado em … por …)", confere a linha original e registra no Log).
+- Busca de cliente por PALAVRA (`palavrasComecam`/`bateBusca`): "toni" acha Toni/Toninho, não Antônio; nomes primeiro, outros campos só se
+  nenhum nome bater; com números compara dígitos. Todas as caixas com lista (datalist) filtram assim (ouvinte global de input).
+- Modelos: todos os perfis geram tudo (já era); "Liberar a edição dos modelos para a equipe" (`modelos.liberarEdicao`, só administração) dá
+  EDIÇÃO nos Google Docs dos modelos e na pasta de modelos do escritório para o e-mail Google de cada usuário ativo (campo E-mail em Usuários).
+- Contrato de honorários em UMA folha: mesmas 11 cláusulas em texto enxuto, título junto do texto ("CLÁUSULA 1ª – OBJETO. …"), modo
+  `umaFolha: 'mini'` (EB Garamond 10,5, espaço simples, margens 20/48/62, logo menor), chave MODELO10_CONTRATO_ID; promissória vira "§ 4º".
+- Marketing: "Quais páginas trazem consultas" (`marketing.funil`, aba MktFunil): cliques por página (automático) + conversas iniciadas e
+  consultas agendadas (totais do mês lançados pela equipe, sem nome).
+- Paleta: site grafite quente #171513, dourado fosco #B58D52, marfim #F8F5EF; painel com menu grafite (#1C1A17), fundo marfim, cartões
+  brancos e dourado só na marca e na aba ativa.
+- Site: atua em TODAS as áreas (sem "área principal"/"especialidade" trabalhista); horário 8h–12h e 13h30–18h (JSON-LD opens 08:00);
+  menu "Empresarial" (não "Empresas"); "Entrar" discreto na faixa de cima à direita (`util-entrar`), no menu do celular e no rodapé.
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em
@@ -525,8 +555,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (em /contato/ há o botão `data-abrir-ligue`); logo nítido `logo-araujo-3x.png` (116×80). Calculadora rápida pergunta o AVISO PRÉVIO e a
   admissão (mesma regra da completa) e nunca diz "terminou" sem "pode ter terminado… não desista sem conversar". Rescisão: FGTS distingue
   saque-rescisão e saque-aniversário. Privacidade reescrita (retorno por telefone, Acompanhe, calculadoras); `limparContatosAntigos_`
-  (robôs do escritório, 1×/dia) apaga nome/telefone/assunto dos pedidos de retorno com mais de 12 meses. A CONFIRMAR com a usuária: andar
-  da sala (2º?) e foto da entrada no Contato; pós-doutorado na trajetória.
+  (robôs do escritório, 1×/dia) apaga nome/telefone/assunto dos pedidos de retorno com mais de 12 meses. Confirmado pela usuária: a sala NÃO
+  fica no 2º andar e a Dra. Júlian NÃO vai fazer pós-doutorado (não colocar no site).
 - Postagem no Google (`postagemGoogle_`, robôs do escritório, só às segundas): lê /blog/feed.xml e cria para a secretaria a tarefa
   "Postar no perfil do Google" com texto e link prontos (`[google:link]`; Config GOOGLE_POST_LINKS guarda os já mandados).
   8.9.0 (acesso à API pedido pela usuária em 11/2026): Marketing › "📣 Blog no perfil do Google" (rota `marketing.gbp`: status/conectar/
