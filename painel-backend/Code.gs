@@ -67,7 +67,7 @@ var ESQUEMA = {
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
-    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data'],
+    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte'],
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
@@ -400,6 +400,7 @@ var ROTAS = {
   'eu.painel': { fn: meuPainel_ },
   'trabalho.assumir': { fn: assumirTrabalho_ },
   'inicio.extras': { fn: inicioExtras_ },
+  'inicio.acoes': { fn: inicioAcoes_ },
   'agenda.avisado': { fn: marcarAvisado_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
@@ -458,7 +459,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -2925,6 +2926,54 @@ function recalcularPrazosAbertos_(ctx) {
   });
 }
 
+/** 8.10: "Precisa de ação agora" no topo do Início — só o que pede uma atitude, cada linha com quem cuida e a próxima ação.
+    nivel: 'risco' (vermelho: prazo confirmado/calculado em risco), 'conferir' (âmbar: conferir no tribunal), 'aviso' (azul: avisar/organizar). */
+function inicioAcoes_(d, u) {
+  var hoje = hojeSP_(), em3 = somarDias_(hoje, 3), em7 = somarDias_(hoje, 7), itens = [];
+  var procs = {}, nomes = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var usuarios = {}; usuarios_().forEach(function (x) { usuarios[x.usuario] = x.nome || x.usuario; });
+  var nomeDe = function (us) { return us ? (usuarios[us] || us) : ''; };
+  var cli = function (z) { var p = procs[z.processo_id] || {}; return nomes[p.cliente_id] || p.cliente_nome || 'cliente a identificar'; };
+  var prazos = tabela_('Prazos').linhas, porId = {};
+  prazos.forEach(function (z) {
+    porId[z.id] = z;
+    var fila = filaPrazo_(z); if (!fila) return;
+    var base = { id: z.id, link: '#/prazo/' + z.id, fatal: z.fatal || '', quem: nomeDe(z.responsavel), quem_us: z.responsavel || '', sub: cli(z) + ' · ' + z.numero };
+    if (fila === 'conferir' && /⚠ ATENÇÃO/.test(z.resumo_ia || ''))
+      itens.push(Object.assign(base, { tipo: 'divergencia', nivel: 'conferir', ordem: 1, titulo: 'A IA achou outro prazo: ' + (z.descricao || 'prazo').slice(0, 90), acao: 'Abrir no tribunal, conferir os dias e confirmar a data' }));
+    else if (fila === 'conferir' && (!z.fatal || z.fatal <= em3))
+      itens.push(Object.assign(base, { tipo: 'provisorio', nivel: 'conferir', ordem: 2, titulo: (z.fatal ? 'Provisório vence ' + dataBR_(z.fatal) : 'Prazo sem data') + ': ' + (z.descricao || '').replace(/PROVISÓRIO:?\s*/i, '').slice(0, 80), acao: 'Conferir no tribunal hoje' }));
+    else if (fila !== 'conferir' && z.fatal && z.fatal <= somarDias_(hoje, 2) && !z.responsavel)
+      itens.push(Object.assign(base, { tipo: 'semresp', nivel: 'risco', ordem: 0, titulo: 'Vence ' + (z.fatal === hoje ? 'HOJE' : dataBR_(z.fatal)) + ' e ninguém assumiu: ' + (z.descricao || '').replace(/PROVISÓRIO:?\s*/i, '').slice(0, 80), acao: 'Definir quem faz ("Eu faço" / "Passar para")' }));
+  });
+  // intimações a fazer sem ninguém cuidando (só a conta: a lista completa fica em Intimações e prazos)
+  var comTarefa = {};
+  tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && t.situacao !== 'cancelada') comTarefa[m[1]] = 1; });
+  var semResp = 0, semRespRecentes = 0, limite30 = somarDias_(hoje, -30);
+  tabela_('Intimacoes').linhas.forEach(function (i) {
+    if (i.terminada_por) return;
+    var z = porId[i.prazo_id];
+    if (z && (z.situacao === 'cumprido' || z.situacao === 'cancelado')) return;
+    if ((z && z.responsavel) || comTarefa[i.id]) return;
+    semResp++; if (String(i.recebido_em || '').slice(0, 10) >= limite30) semRespRecentes++;
+  });
+  // audiências e perícias dos próximos 7 dias: sem horário ou cliente ainda não avisado
+  var sec = respSecretaria_(), porNumero = {};
+  Object.keys(procs).forEach(function (k) { if (procs[k].numero) porNumero[procs[k].numero] = procs[k]; });
+  tabela_('Eventos').linhas.forEach(function (e) {
+    if (!e.data || e.data < hoje || e.data > em7 || !/audi|per[ií]cia/i.test(e.tipo || '')) return;
+    var proc = porNumero[e.numero] || null;
+    var quem = nomeDe(sec), sub = (proc ? (nomes[proc.cliente_id] || proc.cliente_nome || '') + ' · ' : '') + e.numero;
+    var tit = (e.tipo || 'Ato') + ' em ' + dataBR_(e.data) + (e.hora ? ' às ' + e.hora : '');
+    if (!e.hora) itens.push({ tipo: 'semhora', nivel: 'aviso', ordem: 3, titulo: tit + ' — sem horário', sub: sub, quem: quem, quem_us: sec || '', acao: 'Abrir o processo e lançar o horário na agenda', link: '#/agenda?visao=dia&data=' + e.data, fatal: e.data });
+    else if (!e.avisado_em) itens.push({ tipo: 'aviso', nivel: 'aviso', ordem: 4, titulo: tit + ' — cliente ainda não avisado', sub: sub, quem: quem, quem_us: sec || '', acao: 'Avisar o cliente no WhatsApp (Início › Próximos 7 dias)', link: '#/agenda?visao=dia&data=' + e.data, fatal: e.data });
+  });
+  itens.sort(function (a, b) { return (a.ordem - b.ordem) || ((a.fatal || '9') < (b.fatal || '9') ? -1 : (a.fatal || '9') > (b.fatal || '9') ? 1 : 0); });
+  return { itens: itens.slice(0, 40), total: itens.length, intimSemResp: semResp, intimSemRespRecentes: semRespRecentes };
+}
+
 function prazoPublico_(z, procs, nomes) {
   var p = procs[z.processo_id] || {};
   var x = limpar_(z);
@@ -2934,7 +2983,17 @@ function prazoPublico_(z, procs, nomes) {
   x.tribunal = p.tribunal || tribunalDoNumero_(z.numero);
   x.orgao = p.orgao || '';
   x.sistema = p.sistema || '';
+  x.fila = filaPrazo_(z);
+  x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(z.resumo_ia || '');
   return x;
+}
+/** 8.10: fila do prazo — 'conferir' (provisório, a definir ou IA divergente: abrir no tribunal), 'calculado' (robô calculou, falta
+    confirmar a data), 'confirmado' (alguém conferiu). Fechados = ''. */
+function filaPrazo_(z) {
+  if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return '';
+  if (z.situacao === 'conferido') return 'confirmado';
+  if (z.situacao === 'a definir' || /PROVISÓRIO/i.test(z.descricao || '') || /⚠ ATENÇÃO/.test(z.resumo_ia || '')) return 'conferir';
+  return 'calculado';
 }
 
 function listarPrazos_(d) {
@@ -3001,9 +3060,11 @@ function conferirPrazo_(d, u) {
     if (!z) throw falha_('Prazo não encontrado.');
     if (!z.fatal) throw falha_('Defina os dias e a data de ciência antes de conferir.');
     if (z.situacao === 'conferido') return { ok: true, repetido: true };
-    atualizarLinha_(tab, z, { situacao: 'conferido', conferido_por: u.nome || u.usuario, conferido_em: new Date().toISOString(),
+    var fonte = String(d.fonte || '').trim().slice(0, 160);
+    if (filaPrazo_(z) === 'conferir' && !fonte) throw falha_('Diga onde conferiu (sistema do tribunal, DJEN…) antes de confirmar um prazo provisório ou com divergência.');
+    atualizarLinha_(tab, z, { situacao: 'conferido', conferido_por: u.nome || u.usuario, conferido_em: new Date().toISOString(), conferido_fonte: fonte,
       atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
-    registrar_(u.usuario, 'prazo conferido', z.id + ' ' + z.numero + ' fatal ' + z.fatal);
+    registrar_(u.usuario, 'prazo conferido', z.id + ' ' + z.numero + ' fatal ' + z.fatal + (fonte ? ' · fonte: ' + fonte : ''));
     return { ok: true };
   });
 }
@@ -4233,15 +4294,19 @@ function sincronizarAgenda_(ctx, limiteMs) {
         return;
       }
       var p = procs[z.processo_id] || {}, cli = clis[p.cliente_id] || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '';
-      var titulo = '⏱ ' + String(z.descricao || 'Prazo').slice(0, 70) + (cli ? ' — ' + cli : '') + ' — ' + z.numero;
+      // 8.10: provisório / divergente = "⚠ CONFERIR" em amarelo; confirmado ou calculado = "⏱" em vermelho (marca "|c" em agenda_data)
+      var conferir = filaPrazo_(z) === 'conferir', chave = z.fatal + (conferir ? '|c' : '');
+      var titulo = (conferir ? '⚠ CONFERIR NO TRIBUNAL — ' : '⏱ ') + String(z.descricao || 'Prazo').replace(/PROVISÓRIO:?\s*/i, '').slice(0, 70) + (cli ? ' — ' + cli : '') + ' — ' + z.numero;
+      var cor = function (e) { try { e.setColor(conferir ? CalendarApp.EventColor.YELLOW : CalendarApp.EventColor.RED); } catch (er) { /* sem cor */ } };
       var dia = new Date(z.fatal + 'T12:00:00-03:00');
       if (z.agenda_id) {
         var ev = cal.getEventById(z.agenda_id);
-        if (ev && z.agenda_data === z.fatal) return;
-        if (ev) { ev.setAllDayDate(dia); ev.setTitle(titulo); atualizarLinha_(ctx.prazos, z, { agenda_data: z.fatal }); r.movidos++; return; }
+        if (ev && z.agenda_data === chave) return;
+        if (ev) { ev.setAllDayDate(dia); ev.setTitle(titulo); cor(ev); atualizarLinha_(ctx.prazos, z, { agenda_data: chave }); r.movidos++; return; }
       }
-      var novo = cal.createAllDayEvent(titulo, dia, { description: 'Prazo fatal lançado pelo painel. Responsável: ' + (z.responsavel || '—') + '. Ao cumprir no painel, este evento some sozinho.' });
-      atualizarLinha_(ctx.prazos, z, { agenda_id: novo.getId(), agenda_data: z.fatal }); r.criados++;
+      var novo = cal.createAllDayEvent(titulo, dia, { description: (conferir ? 'PRAZO PROVISÓRIO: abra o processo no tribunal, confira o ato e confirme no painel (Intimações e prazos › Conferir no tribunal). ' : 'Prazo fatal lançado pelo painel. ') + 'Responsável: ' + (z.responsavel || '—') + '. Ao cumprir no painel, este evento some sozinho.' });
+      cor(novo);
+      atualizarLinha_(ctx.prazos, z, { agenda_id: novo.getId(), agenda_data: chave }); r.criados++;
     } catch (e) { /* um evento com problema não para os outros */ }
   });
   // audiências e perícias mudadas no Google Agenda voltam para o painel
@@ -4713,7 +4778,8 @@ function listarAssinaturas_(d) {
     .sort(function (a, b) { return a.gerado_em < b.gerado_em ? -1 : 1; })
     .map(function (a) { return { id: a.id, cliente_id: a.cliente_id, cliente: a.cliente_nome, documentos: a.documentos, tipo_acao: (TIPOS_ACAO[a.tipo_acao] || {}).nome || '', gerado_em: a.gerado_em,
       gerado_por: a.gerado_por, situacao: a.situacao, dias: diffDias_(hoje, diaSP_(a.gerado_em)), assinado_em: a.assinado_em, processo_id: a.processo_id,
-      honorario: a.honorarios && !a.honorarios_lancados ? (function () { try { return JSON.parse(a.honorarios).resumo || 'honorário combinado'; } catch (e) { return 'honorário combinado'; } })() : '' }; });
+      honorario: a.honorarios && !a.honorarios_lancados ? (function () { try { return JSON.parse(a.honorarios).resumo || 'honorário combinado'; } catch (e) { return 'honorário combinado'; } })() : '',
+      tem_honorarios: !!a.honorarios, honorarios_lancados: a.honorarios_lancados || '' }; });
 }
 /** "✓ Assinado" (abre a petição inicial), "Não vai assinar" (arquiva) ou "Voltar a aguardar". */
 function marcarAssinatura_(d, u) {
@@ -8550,7 +8616,7 @@ function atualizarAndamentos_(limiteMs, maximo) {
   tab.adiar = true;
   // O CNJ limita o ritmo (código 429): lotes pequenos, pausa entre eles e, se pedir calma, espera e tenta de novo;
   // persistindo, para por aqui sem marcar erro — os que faltaram ficam para a próxima rodada (de 4 em 4 horas).
-  var chave = chaveDatajud_(false), renovou = false, lidos = 0, achados = 0, erro = '', aviso = '', pausa = 1200, LOTE = 4;
+  var chave = chaveDatajud_(false), renovou = false, lidos = 0, achados = 0, erro = '', aviso = '', pausa = 1200, LOTE = 4, instaveis = 0;
   for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 120000); i += LOTE) {
     var lote = fila.slice(i, i + LOTE);
     var resps = UrlFetchApp.fetchAll(lote.map(function (p) { return pedidoDatajud_(p.numero, chave); }));
@@ -8563,6 +8629,7 @@ function atualizarAndamentos_(limiteMs, maximo) {
     for (var k = 0; k < lote.length; k++) {
       var code = resps[k].getResponseCode();
       if (code === 429 || code === 503) { limitados.push(lote[k]); continue; }
+      if (code >= 500) { instaveis++; continue; } // 502/504: o CNJ ficou lento; fica na fila para a próxima rodada
       if (code !== 200) { erro = 'DataJud respondeu ' + code + ' (processo ' + lote[k].numero + ')'; continue; }
       try { if (guardarAndamentos_(tab, lote[k], lerDatajud_(resps[k].getContentText()))) achados++; lidos++; }
       catch (e) { erro = String(e.message || e); }
@@ -8581,6 +8648,9 @@ function atualizarAndamentos_(limiteMs, maximo) {
   }
   regravarMudadas_(tab);
   var faltam = Math.max(0, fila.length - lidos);
+  if (instaveis && !aviso) aviso = instaveis + ' consulta(s) sem resposta do CNJ (lento); ficam na fila para a próxima rodada';
+  if (lidos && erro && /respondeu/.test(erro)) erro = ''; // leu parte: não é falha geral
+  if (lidos) setConfig_('DATAJUD_OK', new Date().toISOString(), 'Última leitura do DataJud que trouxe andamentos');
   setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · ' + lidos + ' consultado(s), ' + achados + ' com andamentos' + (faltam ? ' · ' + faltam + ' na fila' : '') + (aviso ? ' · ' + aviso : ''), 'Última leitura do DataJud');
   setConfig_('DATAJUD_ERRO', erro, 'Último problema do DataJud');
   return { lidos: lidos, achados: achados, erro: erro, aviso: aviso };
@@ -8610,7 +8680,7 @@ function andamentosProcesso_(d, u) {
 }
 
 function estadoExtras_() {
-  return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO') },
+  return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO, agenda: config_('AGENDA_SINC') || '' };
 }

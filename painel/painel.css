@@ -1446,3 +1446,43 @@ body.modo-future .barra-cel{background:#2f855a}
 .gbp-passos li{margin:8px 0;line-height:1.5}
 .gbp-zap{background:#f6f1e7;border:1px solid #e6dcc8;border-radius:10px;padding:12px 14px;margin-bottom:14px}
 .gbp-zap code{word-break:break-all;background:#fff;padding:2px 6px;border-radius:6px}
+/* 8.10: filas de prazo (âmbar = conferir no tribunal; vermelho só para prazo confirmado em risco) */
+.tag.conferir{background:#fff3d6;color:#8a5a00;font-weight:500;border:1px solid #f0cf7a}
+.btn.mini.conferir{background:#f5b82e;border-color:#f5b82e;color:#2b1d00}
+.tabela tr.linha-conferir td:first-child{border-left-color:#e0a21a}
+.tabela tr.linha-conferir td{background:#fffaf0}
+.nota.conferir{background:#fff7e3;border:1px solid #f0d28a;color:#5c3d00;padding:12px 16px;border-radius:10px}
+.ag-conferir{border-color:#e0a21a;background:#fff6dd;color:#6b4600}
+.bolinha.ag-conferir{background:#e0a21a}
+.filas-prazo{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
+.fila-bt{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;text-align:left;background:#fff;border:1px solid var(--linha,#e5e1d8);border-radius:12px;padding:10px 14px;cursor:pointer;min-width:220px;flex:1}
+.fila-bt b{grid-row:span 2;font-size:26px;line-height:1}
+.fila-bt span{font-weight:600}
+.fila-bt small{color:#6b665d;font-size:12px}
+.fila-bt.fila-conferir{border-left:5px solid #e0a21a}.fila-bt.fila-conferir b{color:#a26a00}
+.fila-bt.fila-calculado{border-left:5px solid #8a94a6}
+.fila-bt.fila-confirmado{border-left:5px solid #2f7d4a}.fila-bt.fila-confirmado b{color:#2f7d4a}
+.fila-bt.ativo{box-shadow:0 0 0 2px #141414 inset}
+/* Início: precisa de ação agora */
+.acoes-agora{background:#fff;border:1px solid #e5e1d8;border-radius:12px;padding:16px 18px;margin:0 0 18px}
+.acoes-lista{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.acoes-lista li{display:grid;grid-template-columns:150px minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,.7fr);gap:12px;align-items:center;padding:10px 12px;border-radius:10px;border-left:5px solid;cursor:pointer;background:#fafaf7}
+.acoes-lista li:hover{background:#f3f1ea}
+.acoes-lista .acao-risco{border-left-color:#b42318;background:#fff5f3}
+.acoes-lista .acao-conferir{border-left-color:#e0a21a;background:#fffaf0}
+.acoes-lista .acao-aviso{border-left-color:#2f5d9a;background:#f4f7fc}
+.acao-nivel{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.acao-risco .acao-nivel{color:#b42318}.acao-conferir .acao-nivel{color:#8a5a00}.acao-aviso .acao-nivel{color:#2f5d9a}
+.acao-prox div,.acao-quem div{font-size:14px}
+@media (max-width:900px){.acoes-lista li{grid-template-columns:1fr}}
+/* Ficha: onde o atendimento está */
+.jor-linha{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0;margin:8px 0 0;counter-reset:j}
+.jor-linha li{display:grid;gap:2px;padding:10px 12px;border-radius:10px;background:#f6f5f1;position:relative}
+.jor-bola{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;border:2px solid #cfc8b8;color:#fff}
+.jor-ok .jor-bola{background:#2f7d4a;border-color:#2f7d4a}
+.jor-agora{background:#fff7e3!important;outline:2px solid #e0a21a}
+.jor-agora .jor-bola{background:#e0a21a;border-color:#e0a21a}
+.jor-parou .jor-bola{background:#8a8a8a;border-color:#8a8a8a}
+.jor-falta{opacity:.6}
+@media (max-width:700px){.jor-linha{grid-template-columns:1fr 1fr}}
+.selo-data.faixa-conferir{border-left-color:#e0a21a;background:#fff7e3}
