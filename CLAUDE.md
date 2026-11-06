@@ -267,6 +267,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "importado — conferir"); "Não lançar" (Config LEVANT_IGNORADOS); "Lançar os N de êxito" só para processo ativo. Nada é lançado sozinho.
   Em 06/11/2026: todos os 1.431 clientes do GEA já estavam no painel; 479 contratos, 25 cobranças e 94 promissórias sem honorário.
 
+- 8.11.1: observações SEM limite (pedido da usuária): sem os 2.000 caracteres por anotação; `seguro_` corta célula só em 49 mil (antes cortava
+  TODA célula em 5 mil e as observações antigas sumiam). Passou de ~45 mil na célula → `guardarObsCliente_` move as anotações mais antigas para
+  a aba ObsArquivo (cliente_id, texto) e a ficha mostra "Observações antigas". Obs. de despesas e do Edifício Future também sem corte.
+  Parcelas que faltam pagar em VERMELHO (`parcelasAbertasCliente_` em clientes.obter → `seloParcelas` no topo da ficha; `parc_abertas`/
+  `parc_atrasadas` em clientes.listar → etiqueta no cartão): ignora honorário cancelado/encerrado; RH vê só as contas, sem valores.
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em

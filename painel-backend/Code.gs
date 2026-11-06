@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.11.0';
+var VERSAO = '8.11.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -56,6 +56,7 @@ var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 
 var ESQUEMA = {
   Config: ['chave', 'valor', 'descricao'],
   Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email'],
+  ObsArquivo: ['id', 'cliente_id', 'texto', 'arquivado_em'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
@@ -793,6 +794,13 @@ function listarClientes_(d) {
   var procs = tabela_('Processos').linhas;
   var porCliente = {};
   procs.forEach(function (p) { if (p.cliente_id) porCliente[p.cliente_id] = (porCliente[p.cliente_id] || 0) + 1; });
+  // 8.11.1: parcelas que faltam pagar por cliente (etiqueta vermelha no cartão)
+  var canc = {}, parc = {}, hojeL = hojeSP_();
+  tabela_('Honorarios').linhas.forEach(function (h) { if (/cancelad|encerrad/.test(h.situacao || '')) canc[h.id] = 1; });
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    if (p.pago_em || canc[p.honorario_id] || !p.cliente_id) return;
+    var x = parc[p.cliente_id] = parc[p.cliente_id] || [0, 0]; x[0]++; if (p.vencimento && p.vencimento < hojeL) x[1]++;
+  });
   return tabela_('Clientes').linhas
     .filter(function (c) {
       if (!busca) return true;
@@ -802,7 +810,8 @@ function listarClientes_(d) {
     .map(function (c) {
       return { id: c.id, tipo: c.tipo, nome: c.nome, cpf_cnpj: c.cpf_cnpj, telefone: c.telefone, cidade: c.cidade,
         area: c.area, situacao: c.situacao, pasta_url: c.pasta_url, processos: porCliente[c.id] || 0,
-        obs: String(c.observacoes || '').split('\n')[0].slice(0, 160), n_obs: c.observacoes ? String(c.observacoes).split('\n').length : 0 };
+        obs: String(c.observacoes || '').split('\n')[0].slice(0, 160), n_obs: c.observacoes ? String(c.observacoes).split('\n').length : 0,
+        parc_abertas: parc[c.id] ? parc[c.id][0] : 0, parc_atrasadas: parc[c.id] ? parc[c.id][1] : 0 };
     })
     .sort(function (a, b) { return normalizar_(a.nome) < normalizar_(b.nome) ? -1 : 1; });
 }
@@ -812,7 +821,21 @@ function obterCliente_(d) {
   if (!c) throw falha_('Cliente não encontrado.');
   var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === c.id; });
   var cli = limpar_(c); cli.acesso_ativo = !!c.acesso_hash; delete cli.acesso_hash;
-  return { cliente: cli, processos: procs.map(limpar_) };
+  try { // 8.11.1: observações antigas que passaram do tamanho da célula (a mais nova primeiro)
+    cli.obs_antigas = tabela_('ObsArquivo').linhas.filter(function (x) { return x.cliente_id === c.id; }).map(function (x) { return x.texto; }).reverse().join('\n');
+  } catch (e) { cli.obs_antigas = ''; }
+  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id) };
+}
+
+/** 8.11.1 (pedido da usuária): quantas parcelas o cliente ainda deve (em vermelho na ficha e no cartão). Ignora honorário cancelado/encerrado. */
+function parcelasAbertasCliente_(cid, parcelas, hons) {
+  var hoje = hojeSP_(), canc = {};
+  (hons || tabela_('Honorarios').linhas).forEach(function (h) { if (/cancelad|encerrad/.test(h.situacao || '')) canc[h.id] = 1; });
+  var ab = (parcelas || tabela_('Parcelas').linhas).filter(function (p) { return p.cliente_id === cid && !p.pago_em && !canc[p.honorario_id]; })
+    .sort(function (a, b) { return (a.vencimento || '') < (b.vencimento || '') ? -1 : 1; });
+  var atras = ab.filter(function (p) { return p.vencimento && p.vencimento < hoje; });
+  var soma = function (l) { return Math.round(l.reduce(function (t, p) { return t + (dinheiro_(p.valor) - dinheiro_(p.valor_pago)); }, 0) * 100) / 100; };
+  return { abertas: ab.length, atrasadas: atras.length, valor: soma(ab), valor_atrasado: soma(atras), proxima: ab[0] ? { vencimento: ab[0].vencimento, valor: dinheiro_(ab[0].valor) } : null };
 }
 
 function salvarCliente_(d, u) {
@@ -879,6 +902,19 @@ function salvarCliente_(d, u) {
   return resultado;
 }
 
+/** 8.11.1: observações sem limite. A célula da planilha guarda até ~45 mil letras; o que passar disso (as anotações mais ANTIGAS)
+ *  vai inteiro para a aba ObsArquivo e continua aparecendo na ficha ("observações antigas"). Nada se perde. */
+function guardarObsCliente_(c, obs) {
+  if (obs.length <= 45000) return obs;
+  var linhas = obs.split('\n'), fica = [], tam = 0, i = 0;
+  for (; i < linhas.length; i++) { if (tam + linhas[i].length + 1 > 45000 && fica.length) break; fica.push(linhas[i]); tam += linhas[i].length + 1; }
+  var tabA = tabela_('ObsArquivo'), agora = new Date().toISOString();
+  linhas.slice(i).reverse().forEach(function (l) { // a mais antiga primeiro
+    for (var k = 0; k < l.length; k += 45000) inserirLinha_(tabA, { id: novoId_('OA'), cliente_id: c.id, texto: l.slice(k, k + 45000), arquivado_em: agora });
+  });
+  return fica.join('\n');
+}
+
 /**
  * Acrescenta uma observação ao cliente, com data, hora e quem escreveu (a mais nova fica em cima).
  * Formato guardado: "[27/10/2026 14:05 — Julian] texto", uma por linha.
@@ -886,14 +922,14 @@ function salvarCliente_(d, u) {
 function anotarCliente_(d, u) {
   var texto = String(d.texto || '').replace(/\s+/g, ' ').trim();
   if (!texto) throw falha_('Escreva a observação.');
-  if (texto.length > 2000) throw falha_('Observação longa demais (até 2.000 letras).');
+  // 8.11.1 (pedido da usuária): observação sem limite de tamanho
   return comTrava_(function () {
     var tab = tabela_('Clientes');
     var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
     if (!c) throw falha_('Cliente não encontrado.');
     var carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
     var nova = '[' + carimbo + ' — ' + (u.nome || u.usuario) + '] ' + texto;
-    var obs = (nova + (c.observacoes ? '\n' + c.observacoes : '')).slice(0, 45000);
+    var obs = guardarObsCliente_(c, nova + (c.observacoes ? '\n' + c.observacoes : ''));
     atualizarLinha_(tab, c, { observacoes: obs, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, 'observação no cliente', c.id);
     return { observacoes: obs };
@@ -904,7 +940,6 @@ function anotarCliente_(d, u) {
     e marcando "(editado em … por …)". Texto vazio = apagar. Tudo fica no Log. */
 function editarNotaCliente_(d, u) {
   var texto = String(d.texto || '').replace(/\s+/g, ' ').trim();
-  if (texto.length > 2000) throw falha_('Observação longa demais (até 2.000 letras).');
   return comTrava_(function () {
     var tab = tabela_('Clientes');
     var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
@@ -916,7 +951,7 @@ function editarNotaCliente_(d, u) {
     var carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
     if (!texto) linhas.splice(i, 1);
     else linhas[i] = (m ? m[1] + ' ' : '') + texto.replace(/\s*\(editado em [^)]*\)\s*$/, '') + ' (editado em ' + carimbo + ' por ' + (u.nome || u.usuario) + ')';
-    var obs = linhas.filter(function (l) { return l.trim(); }).join('\n');
+    var obs = guardarObsCliente_(c, linhas.filter(function (l) { return l.trim(); }).join('\n'));
     atualizarLinha_(tab, c, { observacoes: obs, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, texto ? 'observação editada' : 'observação apagada', c.id + ' · antes: ' + antes.slice(0, 300));
     return { observacoes: obs };
@@ -1742,7 +1777,7 @@ function lerTabela_(nome) {
 
 function seguro_(v) {
   v = v === null || v === undefined ? '' : String(v);
-  if (v.length > 5000) v = v.slice(0, 5000);
+  if (v.length > 49000) v = v.slice(0, 49000); // limite da célula do Google Planilhas (50 mil); antes era 5 mil e cortava observações
   return /^[=+\-@\t\r]/.test(v) ? "'" + v : v; // impede que um texto vire fórmula
 }
 
@@ -7422,7 +7457,7 @@ function salvarDespesa_(d, u) {
     if (reemb === 'sim' && !x.cliente_id) throw falha_('Para cobrar do cliente depois, escolha o cliente.');
     var agora = new Date().toISOString();
     var dados = { descricao: descricao, categoria: cat, valor: txtDinheiro_(valor), vencimento: x.vencimento, cliente_id: String(x.cliente_id || ''),
-      processo_id: String(x.processo_id || ''), reembolsavel: reemb, observacoes: String(x.observacoes || '').trim().slice(0, 1000),
+      processo_id: String(x.processo_id || ''), reembolsavel: reemb, observacoes: String(x.observacoes || '').trim(),
       atualizado_em: agora, atualizado_por: u.usuario };
     if (x.pago_em !== undefined) { dados.pago_em = x.pago_em || ''; dados.valor_pago = x.pago_em ? txtDinheiro_(dinheiro_(x.valor_pago) || valor) : ''; dados.forma = String(x.forma || ''); }
     var tab = tabela_('Despesas');
@@ -9401,7 +9436,7 @@ function futureSalvarUnidade_(d, u) {
     if (!x) throw falha_('Unidade não encontrada.');
     var m = {};
     ['aluguel', 'taxas', 'caucao'].forEach(function (k) { if (d[k] !== undefined) m[k] = d[k] === '' ? '' : txtDinheiro_(futN_(d[k])); });
-    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador', 'cobra_energia', 'moeda', 'conta_receb'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
+    ['locatario', 'telefone', 'garantia', 'energia_resp', 'kit', 'uc', 'medidor', 'obs', 'pagador', 'cobra_energia', 'moeda', 'conta_receb'].forEach(function (k) { if (d[k] !== undefined) m[k] = k === 'obs' ? String(d[k]).trim() : String(d[k]).trim().slice(0, 300); });
     ['entrada', 'saida'].forEach(function (k) { if (d[k] !== undefined) m[k] = /^\d{4}-\d{2}-\d{2}$/.test(d[k]) ? d[k] : ''; });
     if (d.situacao !== undefined) { if (FUT_SITUACOES.indexOf(d.situacao) < 0) throw falha_('Situação inválida.'); m.situacao = d.situacao; }
     if (m.situacao === 'disponivel') m.locatario = '';
@@ -9434,7 +9469,7 @@ function futurePessoas_(d) {
 function futureSalvarPessoa_(d, u) {
   return comTrava_(function () {
     var T = futTabs_(), p = d.id ? T.pe.linhas.filter(function (x) { return x.id === d.id; })[0] : null, agora = new Date().toISOString();
-    var m = {}; ['nome', 'telefone', 'cpf', 'garantia', 'obs'].forEach(function (k) { if (d[k] !== undefined) m[k] = String(d[k]).trim().slice(0, 300); });
+    var m = {}; ['nome', 'telefone', 'cpf', 'garantia', 'obs'].forEach(function (k) { if (d[k] !== undefined) m[k] = k === 'obs' ? String(d[k]).trim() : String(d[k]).trim().slice(0, 300); });
     ['entrada', 'saida'].forEach(function (k) { if (d[k] !== undefined) m[k] = /^\d{4}-\d{2}-\d{2}$/.test(d[k]) ? d[k] : ''; });
     if (d.caucao !== undefined) m.caucao = d.caucao === '' ? '' : txtDinheiro_(futN_(d.caucao));
     if (d.unidade !== undefined) m.unidade = futIdUnidade_(d.unidade) || '';
@@ -9537,7 +9572,7 @@ function futurePagarCobranca_(d, u) {
     if (d.desfazer) { futDesfazerPagamento_(T, c, u); return { ok: true }; }
     if (d.ajustar) { // muda valores da cobrança (aluguel, energia, outros); depois disso o robô não recalcula mais
       var en = futN_(d.energia), ou = futN_(d.outros), al = d.aluguel !== undefined && d.aluguel !== '' ? futN_(d.aluguel) : futN_(c.aluguel);
-      atualizarLinha_(T.co, c, { aluguel: txtDinheiro_(al), energia: en ? txtDinheiro_(en) : '', outros: ou ? txtDinheiro_(ou) : '', obs: String(d.obs !== undefined ? d.obs : c.obs || '').slice(0, 300),
+      atualizarLinha_(T.co, c, { aluguel: txtDinheiro_(al), energia: en ? txtDinheiro_(en) : '', outros: ou ? txtDinheiro_(ou) : '', obs: String(d.obs !== undefined ? d.obs : c.obs || ''),
         detalhe: Math.abs(al - futN_(c.aluguel)) > 0.009 ? '' : c.detalhe,
         total: txtDinheiro_(al + futN_(c.taxas) + en + ou + futN_(c.lavanderia)), atualizado_em: agora, atualizado_por: u.usuario });
       return { ok: true };

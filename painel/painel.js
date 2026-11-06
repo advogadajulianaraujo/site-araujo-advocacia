@@ -1196,6 +1196,7 @@
             aguarda[c.id] ? h('span', { class: 'tag ' + (aguarda[c.id].dias >= 7 ? 'urgente' : 'atencao') }, '✍ aguardando assinatura' + (aguarda[c.id].dias ? ` · ${aguarda[c.id].dias}d` : '')) : null,
             c.situacao && c.situacao !== 'completo' ? h('span', { class: 'tag atencao mini-tag' }, 'cadastro a completar') : null),
           h('div', { class: 'peq' }, [c.cpf_cnpj, c.telefone, c.cidade, c.area].filter(Boolean).join(' · ') || '—'),
+          c.parc_abertas ? h('div', { class: 'cli-parc' + (c.parc_atrasadas ? ' atrasado' : '') }, `💰 faltam ${c.parc_abertas} parcela${c.parc_abertas === 1 ? '' : 's'}` + (c.parc_atrasadas ? ` · ${c.parc_atrasadas} atrasada${c.parc_atrasadas === 1 ? '' : 's'}` : '')) : null,
           c.obs ? h('div', { class: 'cli-obs', title: c.n_obs > 1 ? `${c.n_obs} anotações — abra a ficha para ver todas` : '' }, '📝 ' + c.obs.replace(/^\[[^\]]+\]\s*/, '') + (c.n_obs > 1 ? ` (+${c.n_obs - 1})` : '')) : null,
           ps.length ? h('div', { class: 'proc-chips' }, ps.slice(0, 4).map(chipProc), ps.length > 4 ? h('span', { class: 'peq' }, `+${ps.length - 4}`) : null) : null),
         h('div', { class: 'cli-card-lado' },
@@ -1684,6 +1685,17 @@
     return det;
   }
 
+  /** 8.11.1 (pedido da usuária): quantas parcelas faltam pagar — em vermelho na ficha (e no cartão da lista). */
+  function seloParcelas(p, cid) {
+    if (!p || !p.abertas) return null;
+    const rh = sessao.usuario.pode.ocultarValores;
+    return h('a', { class: 'selo-parcelas' + (p.atrasadas ? ' atrasado' : ''), href: '#/cliente/' + cid, title: 'Ver os honorários deste cliente', onclick: ev => { ev.preventDefault(); const alvo = document.querySelector('.fin-cliente'); if (alvo) alvo.scrollIntoView({ behavior: 'smooth' }); else location.hash = '#/financeiro?ver=honorarios'; } },
+      h('strong', {}, `💰 Faltam ${p.abertas} parcela${p.abertas === 1 ? '' : 's'}`),
+      p.atrasadas ? h('span', {}, ` · ${p.atrasadas} atrasada${p.atrasadas === 1 ? '' : 's'}` + (rh ? '' : ` (${reais(p.valor_atrasado)})`)) : null,
+      rh ? null : h('span', {}, ` · total em aberto ${reais(p.valor)}`),
+      p.proxima ? h('span', {}, ` · próxima ${dataBR(p.proxima.vencimento)}`) : null);
+  }
+
   async function telaCliente(id, params) {
     carregando();
     params = params || new URLSearchParams();
@@ -1729,7 +1741,7 @@
         const brutas = String(obs || '').split('\n');
         const itens = brutas.map((l, i) => ({ l: l.trim(), i })).filter(x => x.l);
         const editar = (li, x, textoAtual) => {
-          const ta = h('textarea', { rows: 3, maxlength: 2000 }, textoAtual);
+          const ta = h('textarea', { rows: Math.min(14, Math.max(3, Math.ceil(textoAtual.length / 90))) }, textoAtual);
           const salvar = async apagar => {
             if (apagar && !confirm('Apagar esta observação? Fica registrado no histórico quem apagou.')) return;
             try { const r = await api('clientes.notaEditar', { id: c.id, indice: x.i, original: x.l, texto: apagar ? '' : ta.value }); c.observacoes = r.observacoes; desenhar(r.observacoes); avisar(apagar ? 'Observação apagada.' : 'Observação corrigida.'); }
@@ -1750,13 +1762,16 @@
       };
       desenhar(c.observacoes);
       const f = h('form', { class: 'nota-form', novalidate: true },
-        h('textarea', { name: 'texto', rows: 3, maxlength: 2000, placeholder: 'Escreva uma observação sobre o cliente (atendimento, combinado, pendência…)', 'aria-label': 'Nova observação' }),
+        h('textarea', { name: 'texto', rows: 3, placeholder: 'Escreva uma observação sobre o cliente (atendimento, combinado, pendência…) — sem limite de tamanho', 'aria-label': 'Nova observação' }),
         h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação')), h('p', { class: 'erro' }));
       aoEnviar(f, async fd => {
         const r = await api('clientes.nota', { id: c.id, texto: fd.get('texto') });
         c.observacoes = r.observacoes; f.reset(); desenhar(r.observacoes); avisar('Observação salva.');
       });
-      return h('div', {}, f, lista);
+      const antigas = String(c.obs_antigas || '').split('\n').filter(x => x.trim());
+      return h('div', {}, f, lista, antigas.length ? h('details', { class: 'notas-antigas' }, h('summary', {}, `Observações antigas (${antigas.length})`),
+        h('ul', { class: 'notas' }, antigas.map(l => { const m = /^\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}) — ([^\]]+)\] (.*)$/.exec(l);
+          return h('li', {}, h('div', { class: 'nota-cab' }, m ? [h('strong', {}, m[2]), ' · ', m[1]] : 'registro antigo'), h('div', { class: 'nota-texto' }, m ? m[3] : l)); }))) : null);
     };
 
     const procs = () => h('div', {},
@@ -1771,7 +1786,7 @@
       ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo ligado a este cliente.'));
 
     const hons = () => {
-      const caixa = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
+      const caixa = h('div', { class: 'fin-cliente' }, h('p', { class: 'peq' }, 'Carregando…'));
       api('fin.honorarios', { cliente_id: c.id }).catch(() => []).then(hs => caixa.replaceChildren(
         h('div', { class: 'acoes-sec' }, botao('Novo honorário', () => { location.hash = '#/honorario/novo?cliente=' + c.id; }, 'sec')),
         tabela(['Tipo', 'Descrição', 'Recebido', 'Em atraso', 'Situação'], hs, x => [
@@ -1813,7 +1828,8 @@
     }).catch(() => {});
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
-        h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : '')),
+        h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : ''),
+        seloParcelas(r.parcelas, c.id)),
         h('div', { class: 'barra' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
           h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'))),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
@@ -2510,7 +2526,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.11.0';
+  const VERSAO_PAINEL = '8.11.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
