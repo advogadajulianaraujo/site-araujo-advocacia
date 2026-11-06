@@ -58,7 +58,12 @@
       const dia = s => s.getUTCDate();
       const itens = [];
       // saldo de salário
-      itens.push(['Saldo de salário (' + dia(saida) + ' dias do mês da saída)', sal / 30 * dia(saida)]);
+      // mensalista: o mês vale 30 dias. Saiu no último dia do mês (31/10, 28/02) = salário cheio; nunca mais de 30 dias
+      const ultimo = new Date(Date.UTC(saida.getUTCFullYear(), saida.getUTCMonth() + 1, 0)).getUTCDate();
+      const mesmoMes = adm.getUTCFullYear() === saida.getUTCFullYear() && adm.getUTCMonth() === saida.getUTCMonth();
+      let diasSaldo = dia(saida) === ultimo ? 30 : Math.min(30, dia(saida));
+      if (mesmoMes) diasSaldo = Math.min(diasSaldo, dia(saida) === ultimo && dia(adm) === 1 ? 30 : dia(saida) - dia(adm) + 1);
+      itens.push(['Saldo de salário (' + diasSaldo + ' dias do mês da saída)', sal / 30 * diasSaldo]);
       if (diasAv) itens.push(['Aviso prévio indenizado (' + diasAv + ' dias)', sal / 30 * diasAv]);
       // meses que contam (fração de 15 dias ou mais conta como mês)
       // avos: cada mês contado a partir do início vale 1/12; a fração final conta se tiver 15 dias ou mais

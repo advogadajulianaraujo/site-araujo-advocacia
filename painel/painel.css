@@ -1497,3 +1497,7 @@ body{background:var(--marfim)}
 .lateral .abas a:hover:not([aria-current]){background:var(--lateral-2);color:#fff}
 .tag.cumprido{background:var(--verde-f);color:var(--verde);font-weight:500}
 .funil-tab .num-mini{width:90px;padding:6px 8px;border:1px solid var(--linha);border-radius:8px}
+/* 8.11: "Aguardando o seu OK" numa linha só; a lista abre no "ver a lista" */
+.aguarda-compacta{margin-bottom:0;padding:2px 0}
+.aguarda-compacta strong{font-size:15px}
+.aguarda-ok .aguarda-lista{margin-top:12px}

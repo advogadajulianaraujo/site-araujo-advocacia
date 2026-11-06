@@ -17,7 +17,8 @@
   const primeiro = n => K().nomeProprioJS(String(n || '').trim().split(/\s+/)[0] || '');
   const ir = (rota, mud, params) => { const q = new URLSearchParams(params || ''); Object.entries(mud || {}).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/future' + (rota ? '/' + rota : '') + (q.toString() ? '?' + q : ''); };
   function whats(tel, msg) {
-    let t = String(tel || '').replace(/\D/g, ''); if (!t) return null;
+    const partes = String(tel || '').split(/\s*(?:[\/;,|]|\bou\b|\be\b)\s*/i).filter(x => x.replace(/\D/g, '').length >= 10); // só o 1º telefone
+    let t = String(partes[0] || tel || '').replace(/\D/g, ''); if (!t) return null;
     if (t.length <= 11) t = '55' + t;
     return 'https://wa.me/' + t + '?text=' + encodeURIComponent(msg);
   }

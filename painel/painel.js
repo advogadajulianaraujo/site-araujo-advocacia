@@ -543,7 +543,9 @@
     });
   }
   function telefoneWhats(bruto) {
-    let t = String(bruto || '').replace(/\D/g, '');
+    // 8.11: cadastro com dois telefones ("48 99999-0000 / 48 3626-0000", "… ou …") → só o primeiro, ANTES de juntar os dígitos
+    const partes = String(bruto || '').split(/\s*(?:[\/;,|]|\bou\b|\be\b)\s*/i).filter(x => x.replace(/\D/g, '').length >= 10);
+    let t = String(partes[0] || bruto || '').replace(/\D/g, '');
     if (t.startsWith('55') && t.length > 13) t = t.slice(2);
     if (!t.startsWith('55') || t.length < 12) {
       t = t.replace(/^0+/, '');
@@ -874,7 +876,7 @@
       audSemana.length ? h('ul', { class: 'ini-lista' }, audSemana.slice(0, 12).map(a => linhaAud(a, false))) : vazio('Nenhuma audiência ou perícia nos próximos 7 dias.'));
 
     // ----- aniversariantes de hoje -----
-    const parabens = c => { let tel = String(c.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+    const parabens = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.nome).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Hoje é o seu dia e não podíamos deixar passar: feliz aniversário! Desejamos muita saúde, paz e conquistas. Conte sempre com a gente. 🎉`); };
     const blocoAniversarios = bloco('🎂 Aniversariantes de hoje', null, null,
       ext.aniversarios.length ? h('ul', { class: 'ini-lista' }, ext.aniversarios.map(c => item(() => { location.hash = '#/cliente/' + c.id; },
@@ -883,7 +885,7 @@
         : vazio('Ninguém faz aniversário hoje.'));
 
     // ----- cobranças do dia (parcelas que vencem hoje e atrasadas) -----
-    const cobrar = x => { let tel = String(x.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+    const cobrar = x => { let tel = telefoneWhats(x.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       const nome = nomeProprioJS(String(x.cliente).split(' ')[0]), parc = x.numero ? `a ${x.numero}ª parcela` : 'uma parcela';
       const valor = x.valor !== null && x.valor !== undefined ? `, no valor de ${reais(+x.valor)},` : '';
       const msg = x.dias === 0 ? `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para lembrar que ${parc} dos honorários${valor} vence hoje. O pagamento pode ser feito por PIX. Se já pagou, desconsidere. Obrigado!`
@@ -1010,9 +1012,10 @@
           catch (e) { avisar(e.message, true); ev.target.disabled = false; }
         }, 'mini'),
         botao('Não vai assinar', async ev => {
+          ev.stopPropagation();
           if (!confirm(`${a.cliente} não vai assinar? O registro sai da lista (os arquivos continuam na pasta).`)) return;
           ev.target.disabled = true;
-          try { await api('documentos.assinatura', { id: a.id, acao: 'desistiu' }); el.replaceChildren(h('span', { class: 'peq' }, 'Marcado: não vai assinar.')); if (depois) depois(); }
+          try { await api('documentos.assinatura', { id: a.id, acao: 'desistiu' }); el.replaceChildren(h('span', { class: 'peq' }, 'Marcado: não vai assinar.')); avisar(`${a.cliente}: não vai assinar. Saiu da lista de aguardando.`); if (depois) depois(); else setTimeout(rota, 400); }
           catch (e) { avisar(e.message, true); ev.target.disabled = false; }
         }, 'mini sec')));
     return el;
@@ -1618,7 +1621,7 @@
       ev.target.disabled = true;
       try {
         const r = await api('clientes.acesso', { id: c.id, acao: 'gerar' });
-        let tel = String(c.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+        let tel = telefoneWhats(c.telefone || ''); if (tel && tel.length <= 11) tel = '55' + tel;
         const nome = nomeProprioJS(String(c.nome || '').split(' ')[0]);
         const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Agora você pode acompanhar seu processo pelo nosso site: ${r.link}\nDigite seu CPF e este código: ${r.codigo}\nGuarde o código e não o compartilhe. Qualquer dúvida, estamos à disposição.`;
         saida.replaceChildren(h('div', { class: 'nota ok' },
@@ -1795,7 +1798,12 @@
           passo('Documentos gerados', (a.gerado_em ? dataBR(a.gerado_em.slice(0, 10)) : '') + (a.documentos ? ' · ' + String(a.documentos).slice(0, 60) : ''), 'ok'),
           passo(desist ? 'Não vai assinar' : 'Assinatura', desist ? '' : ass ? '' : `aguardando há ${a.dias || 0} dia(s)`, desist ? 'parou' : ass ? 'ok' : 'agora'),
           passo('Assinado', ass && a.assinado_em ? dataBR(String(a.assinado_em).slice(0, 10)) : '', ass ? 'ok' : 'falta'),
-          passo(fin[0], fin[1], desist ? 'falta' : fin[2]))));
+          passo(fin[0], fin[1], desist ? 'falta' : fin[2])),
+        ass ? h('p', { class: 'peq' }, 'Marcou "Assinado" por engano ou o cliente desistiu? ', botao('Não vai fechar', async ev => {
+          if (!confirm(`${c.nome} não vai fechar? A petição inicial sem número é arquivada e o honorário lançado ao assinar sai do Financeiro (parcelas pagas ficam).`)) return;
+          ev.target.disabled = true;
+          try { const r = await api('documentos.assinatura', { id: a.id, acao: 'desistiu' }); avisar('Pronto: não fechou.' + (r && r.honorarios ? '' : '')); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'mini sec')) : null));
     }).catch(() => {});
     api('documentos.assinaturas', { cliente_id: c.id }).then(l => {
       const b = blocoAssinaturas(l, '✍ Documentos aguardando assinatura');
@@ -1839,8 +1847,8 @@
   function etiquetaFase(f) { return f ? h('span', { class: 'tag fase fase-' + f }, FASES[f] || f) : '—'; }
 
   /** Mensagem pronta para avisar o cliente do processo (opcional: com um código novo de acesso ao site). */
-  function whatsProcesso(p, cliente, codigo) {
-    let tel = String((cliente && cliente.telefone) || '').replace(/\D/g, '');
+  function whatsProcesso(p, cliente, codigo, jaTem) {
+    let tel = telefoneWhats((cliente && cliente.telefone) || '');
     if (!tel) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String((cliente && cliente.nome) || '').split(' ')[0]);
@@ -1849,6 +1857,7 @@
       ? `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Informamos que sua ação foi protocolada na Justiça: processo nº ${p.numero}${p.orgao ? ' (' + p.orgao + ')' : ''}. Vamos acompanhar cada passo e avisar você das novidades.`
       : `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Recebemos sua procuração e o contrato. Já estamos preparando a sua ação e avisaremos assim que ela for protocolada.`;
     const acomp = codigo ? `\n\nVocê também pode acompanhar pelo nosso site: ${site}\nDigite seu CPF e este código: ${codigo} (guarde e não compartilhe).`
+      : jaTem ? `\n\nVocê também pode acompanhar pelo nosso site: ${site} com o seu CPF e o código de acesso que já enviamos (se perdeu, é só pedir).`
       : `\n\nVocê também pode acompanhar pelo nosso site: ${site} (se ainda não tem o código de acesso, é só pedir para nós).`;
     return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(corpo + acomp);
   }
@@ -1861,10 +1870,26 @@
     return el;
   }
 
+  /** 8.11: "Não vai fechar" — o cliente desistiu (mesmo se alguém marcou "Assinado" por engano). Arquiva a inicial sem número,
+   *  cancela a tarefa e tira do Financeiro o honorário lançado ao assinar (só parcelas não pagas). */
+  function botaoNaoFechou(p, cls) {
+    return h('button', { type: 'button', class: 'btn mini ' + (cls || 'sec'), title: 'O cliente não vai fechar: arquiva esta petição inicial e cancela o honorário lançado', onclick: async ev => {
+      ev.stopPropagation();
+      const motivo = prompt(`${p.cliente_nome || 'Cliente'} não vai fechar?\n\nA petição inicial é arquivada, a tarefa da inicial é cancelada e o honorário lançado ao assinar sai do Financeiro (parcelas já pagas não são mexidas).\n\nMotivo (opcional):`, 'cliente desistiu');
+      if (motivo === null) return;
+      ev.target.disabled = true;
+      try {
+        const r = await api('processos.naoFechou', { id: p.id, motivo });
+        avisar('Pronto: não fechou.' + (r.honorarios ? ` ${r.honorarios} honorário(s) e ${r.parcelas} parcela(s) saíram do Financeiro.` : ''));
+        if (location.hash.startsWith('#/processo/')) location.hash = '#/processos'; else rota();
+      } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+    } }, 'Não vai fechar');
+  }
+
   /** Processo "a ajuizar": 1) avisar o cliente no WhatsApp; 2) Conferido (quem fez a inicial e, se já tiver, o número). */
   function caixaPeticaoInicial(p, cliente) {
     const msgFeita = (() => {
-      let tel = String((cliente && cliente.telefone) || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      let tel = telefoneWhats((cliente && cliente.telefone) || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       const nome = nomeProprioJS(String(cliente.nome || '').split(' ')[0]);
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e está sendo protocolada na Justiça. Assim que sair o número do processo, enviamos para você. Você poderá acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
     })();
@@ -1872,7 +1897,7 @@
     return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
       h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
         h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Ninguém pegou ainda. Aperte "Eu faço" para ir para as suas Tarefas.')),
-        h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''))),
+        h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''), botaoNaoFechou(p))),
       h('ol', { class: 'passos-inicial' },
         h('li', {}, h('span', { class: 'passo-n' }, '1'), h('div', {}, h('strong', {}, 'Avise o cliente'), h('div', { class: 'peq' }, 'Mensagem pronta no WhatsApp.')),
           msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial') }, 'WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone')),
@@ -1880,10 +1905,18 @@
           botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', extra))));
   }
 
+  /** 8.11: o código do Acompanhe gerado ao protocolar só existe nesta aba (o servidor guarda embaralhado). */
+  const PROTOCOLOS = {};
+  function guardarProtocolo(id, r) { PROTOCOLOS[id] = r; }
   function caixaAvisarCliente(p, cliente, novo) {
     const saida = h('div', { class: 'barra' });
-    const desenhar = cod => { const l = whatsProcesso(p, cliente, cod); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer' }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
-    desenhar('');
+    const prot = PROTOCOLOS[p.id] || null;
+    const desenhar = cod => { const l = whatsProcesso(p, cliente, cod, prot && prot.ja_tinha_codigo); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'processo protocolado') }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
+    desenhar(prot && prot.codigo || '');
+    const notaProt = prot ? h('div', { class: 'nota' }, prot.codigo ? h('span', {}, 'Código do "Acompanhe seu processo" gerado agora: ', h('strong', { class: 'num' }, prot.codigo), ' — já está na mensagem. Ele não aparece de novo.')
+      : prot.ja_tinha_codigo ? 'O cliente já tinha código de acesso ao site: a mensagem pede para usar o mesmo (se perdeu, marque "Incluir código" para gerar outro).'
+      : prot.sem_cpf ? 'Sem CPF no cadastro: o código do site não foi gerado. Complete o CPF e marque "Incluir código de acesso ao site".' : prot.erro_codigo ? 'Código não gerado: ' + prot.erro_codigo : null,
+      prot.andamentos ? h('div', { class: 'peq' }, `Andamentos lidos no DataJud: ${prot.andamentos}.`) : h('div', { class: 'peq' }, 'Processo novo costuma levar alguns dias para aparecer no DataJud; o robô confere de 4 em 4 horas.')) : null;
     const comCodigo = cliente && cliente.telefone ? h('label', { class: 'marcar' }, h('input', { type: 'checkbox', onchange: async ev => {
       if (!ev.target.checked) { desenhar(''); return; }
       if (!confirm('Gerar um código novo de acesso ao site? Se o cliente já tinha um, o antigo deixa de valer.')) { ev.target.checked = false; return; }
@@ -1893,7 +1926,7 @@
     return h('section', { class: 'caixa avisar-cliente' + (novo ? ' destaque-caixa' : '') },
       h('h2', {}, novo ? '✓ Processo salvo. Avise o cliente' : 'Avisar o cliente'),
       h('p', { class: 'peq' }, 'Abre o WhatsApp com a mensagem pronta, com o número do processo e o link do "Acompanhe seu processo".'),
-      saida, comCodigo);
+      notaProt, saida, prot && prot.codigo ? null : comCodigo);
   }
 
   async function telaProcessos(params) {
@@ -1971,7 +2004,7 @@
             p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'cartao-ato' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null,
             h('div', { class: 'cartao-proc-pe', onclick: ev => ev.stopPropagation() },
               i > 0 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1], card) }, '←') : h('span'),
-              col === 'contratado' ? botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →')
+              col === 'contratado' ? h('span', { class: 'barra' }, botaoNaoFechou(p), botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →'))
                 : i < ordemCol.length - 1 ? h('button', { type: 'button', class: 'btn mini', title: 'Concluir etapa e passar para ' + (NOME_COLUNA[ordemCol[i + 1]] || FASES[ordemCol[i + 1]]), onclick: () => moverFase(p, ordemCol[i + 1], card) }, 'Concluir etapa →') : null));
           return card;
         }),
@@ -2047,6 +2080,7 @@
       if (!novo) dados.id = p.id;
       dados.cliente_nome = dados.cliente_id ? '' : 'a identificar';
       const res = await api('processos.salvar', { processo: dados });
+      if (res.protocolado) guardarProtocolo(res.id, res);
       avisar(novo ? 'Processo cadastrado.' : 'Alterações salvas.');
       location.hash = '#/processo/' + res.id + (novo || (!p.numero && dados.numero) ? '?avisar=1' : '');
       if (!novo) telaProcesso(res.id, new URLSearchParams());
@@ -2254,8 +2288,9 @@
     const fim = new Date(fatal + 'T23:59:59-03:00').getTime();
     const ms = fim - Date.now();
     if (ms < 0) {
-      const d = Math.floor(-ms / 86400000);
-      return { cls: 'tag', texto: d === 0 ? 'venceu hoje' : `venceu há ${d} dia${d === 1 ? '' : 's'}`, vencido: true };
+      // 8.11: conta em DIAS DO CALENDÁRIO (fatal 04/11 visto em 05/11 = "venceu ontem", não "venceu hoje")
+      const d = Math.max(1, -(diasAte(fatal) || 0));
+      return { cls: 'tag', texto: d === 1 ? 'venceu ontem' : `venceu há ${d} dias`, vencido: true };
     }
     const d = Math.floor(ms / 86400000);
     const hrs = Math.floor((ms % 86400000) / 3600000);
@@ -2332,6 +2367,8 @@
     try { r = await api('trabalho.conferir', { tipo, id, por: q.usuario, numero: q.extra || '' }); }
     catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; }
     avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
+    // 8.11: inicial protocolada → abre o processo com a mensagem do WhatsApp pronta (com o código do Acompanhe gerado sozinho)
+    if (tipo === 'inicial' && r.protocolado) { guardarProtocolo(id, r); location.hash = '#/processo/' + id + '?avisar=1'; return true; }
     rota();
     return true;
   }
@@ -2376,14 +2413,25 @@
       try { itens = await api('trabalho.aguardando'); } catch (e) { caixa.remove(); return; }
       if (!itens.length) { caixa.replaceChildren(h('div', { class: 'aguarda-vazio' }, '✓ Nada esperando o seu OK. Tudo o que a equipe conferiu já foi aprovado.')); return; }
       const ICO = { prazo: '⏱', intimacao: '📨', inicial: '⚖' }, NOME = { prazo: 'Prazo', intimacao: 'Intimação', inicial: 'Petição inicial' };
+      // 8.11 (pedido da usuária): uma linha só, com um botão pequeno de OK; a lista inteira só abre no "ver a lista"
+      let aberta = false; try { aberta = localStorage.getItem('aguarda_aberta') === '1'; } catch (e) { /* segue fechada */ }
+      const lista = h('ul', { class: 'aguarda-lista', hidden: !aberta });
+      const verBt = h('button', { type: 'button', class: 'btn mini sec', 'aria-expanded': String(aberta), onclick: () => {
+        aberta = !aberta; lista.hidden = !aberta; verBt.textContent = aberta ? 'esconder a lista' : 'ver a lista'; verBt.setAttribute('aria-expanded', String(aberta));
+        try { localStorage.setItem('aguarda_aberta', aberta ? '1' : '0'); } catch (e) { /* ok */ }
+      } }, aberta ? 'esconder a lista' : 'ver a lista');
+      const PLURAL = { prazo: ['prazo', 'prazos'], intimacao: ['intimação', 'intimações'], inicial: ['petição inicial', 'petições iniciais'] };
+      const porTipo = ['prazo', 'intimacao', 'inicial'].map(t => [t, itens.filter(x => x.tipo === t).length]).filter(x => x[1]).map(([t, n]) => `${n} ${PLURAL[t][n === 1 ? 0 : 1]}`).join(' · ');
       caixa.replaceChildren(
-        h('div', { class: 'aguarda-cab' }, h('div', {}, h('h2', {}, `Aguardando o seu OK (${itens.length})`),
-          h('p', { class: 'peq' }, 'A equipe já conferiu. Dê o OK ou devolva. Isto só aparece para a administração.')),
-          botao(`✓ OK em todos (${itens.length})`, async ev => {
-            if (!confirm(`Dar OK nos ${itens.length} itens?`)) return;
-            ev.target.disabled = true; const r = await api('trabalho.ok', { itens: itens.map(x => ({ tipo: x.tipo, id: x.id })) }); avisar(`${r.feitos} OK dado(s).`); rota();
-          }, 'ok-bt')),
-        h('ul', { class: 'aguarda-lista' }, itens.map(x => h('li', { class: 'aguarda-item t-' + x.tipo },
+        h('div', { class: 'aguarda-cab aguarda-compacta' }, h('div', {}, h('strong', {}, `Aguardando o seu OK: ${itens.length}`), h('span', { class: 'peq' }, ' · ' + porTipo)),
+          h('div', { class: 'barra' },
+            botao('✓ OK', async ev => {
+              if (!confirm(`Dar OK nos ${itens.length} itens que a equipe conferiu?`)) return;
+              ev.target.disabled = true; const r = await api('trabalho.ok', { itens: itens.map(x => ({ tipo: x.tipo, id: x.id })) }); avisar(`${r.feitos} OK dado(s).`); rota();
+            }, 'mini ok-bt'),
+            verBt)),
+        lista);
+      lista.append(...itens.map(x => h('li', { class: 'aguarda-item t-' + x.tipo },
           h('span', { class: 'aguarda-ico', 'aria-hidden': 'true' }, ICO[x.tipo]),
           h('div', { class: 'aguarda-txt' },
             h('div', {}, h('span', { class: 'tag mini-tag' }, NOME[x.tipo]), ' ', h('a', { href: x.link }, h('strong', {}, String(x.titulo || '').slice(0, 90)))),
@@ -2391,7 +2439,7 @@
             h('div', { class: 'peq aguarda-quem' }, h('span', { class: 'quem-ini mini' }, iniciais(x.por)), ' feito por ', h('strong', {}, x.por || '—'),
               x.em ? ' · ' + new Date(x.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
               x.tipo === 'prazo' && x.fatal ? h('span', { class: 'tag mini-tag ' + (x.no_prazo ? 'ok' : 'urgente') }, x.no_prazo ? 'no prazo' : 'depois do fatal') : null)),
-          h('div', { class: 'aguarda-bts' }, botoesOk(x.tipo, x.id))))));
+          h('div', { class: 'aguarda-bts' }, botoesOk(x.tipo, x.id)))));
     })();
     caixa.append(h('p', { class: 'peq' }, 'Carregando o que espera o seu OK…'));
     return caixa;
@@ -2400,7 +2448,7 @@
   /** Guarda no relatório que o cliente foi avisado pelo WhatsApp (não atrapalha se falhar). */
   function registrarWhats(z, motivo) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo }).catch(() => {}); }
   function whatsPrazo(z) {
-    let tel = String(z.telefone || '').replace(/\D/g, '');
+    let tel = telefoneWhats(z.telefone || '');
     if (!tel || !z.cliente) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(z.cliente).split(' ')[0]);
@@ -3044,7 +3092,7 @@
 
   const nomeProprioJS = n => n ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : '';
   function linkWhats(p) {
-    let tel = String(p.telefone || '').replace(/\D/g, '');
+    let tel = telefoneWhats(p.telefone || '');
     if (!tel) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(p.cliente || '').split(' ')[0]);
@@ -3064,7 +3112,7 @@
   /** Caixa com o recibo recém-gerado: abrir/imprimir o PDF e mandar ao cliente pelo WhatsApp. */
   function mostrarRecibo(rec) {
     const caixa = document.getElementById('recibo-pronto') || document.body.appendChild(h('div', { id: 'recibo-pronto', class: 'ag-detalhe recibo-pronto', role: 'dialog', 'aria-modal': 'false' }));
-    let tel = String(rec.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+    let tel = telefoneWhats(rec.telefone || ''); if (tel && tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(rec.cliente || '').split(' ')[0]);
     const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Recebemos o pagamento ${rec.numero ? 'da ' + rec.numero + 'ª parcela ' : ''}dos honorários${rec.honorario ? ' (' + rec.honorario + ')' : ''}, no valor de ${reais(rec.valor)}, em ${dataBR(rec.data)}. Segue o recibo. Obrigado!`;
     caixa.replaceChildren(
@@ -3129,7 +3177,7 @@
 
   /** Agradecimento com o recibo no WhatsApp (o PDF é anexado à mão: não deixamos o arquivo público). */
   function botaoReciboWhats(x) {
-    let tel = String(x.telefone || '').replace(/\D/g, '');
+    let tel = telefoneWhats(x.telefone || '');
     if (!tel) return h('span', { class: 'peq' }, 'Cliente sem telefone');
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(x.cliente || '').split(' ')[0]);
@@ -3436,7 +3484,7 @@
         blocoLiberarModelos(),
         h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{nome}}, {{qualificacao_resto}}, {{advogado_nome}}, {{numero_processo}}, {{objeto}} e {{clausula_honorarios}}; o painel preenche sozinho. Padrão visual: EB Garamond 12, justificado, logo no topo e rodapé do escritório.'),
         h('div', { class: 'modelos-grade' }, Object.keys(grupos).map(g => h('div', {}, h('h4', {}, g),
-          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs')))))))), false),
+          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', m.url ? h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs') : h('span', { class: 'peq' }, 'montado pelo painel a partir das parcelas (não tem modelo para editar)')))))))), false),
       secao('Tipos de ação', () => h('div', {},
         h('p', { class: 'peq' }, 'Cada tipo preenche a finalidade da procuração e acrescenta os poderes específicos daquela ação (por exemplo, perícias e Meu INSS na previdenciária, prisão civil na pensão alimentícia, art. 44 do CPP na queixa-crime).'),
         h('div', { class: 'chips' }, info.tipos.map(t => h('span', { class: 'chip-filtro' }, t.nome)))), false),
@@ -3541,7 +3589,7 @@
   const NOME_ATO = { conciliacao: 'Audiência de conciliação', instrucao: 'Audiência de instrução', pericia: 'Perícia' };
   /** Mensagem pronta para lembrar o cliente da audiência ou perícia (tarefa criada pelo robô 2 dias úteis antes). */
   function whatsAto(x) {
-    let tel = String(x.telefone || '').replace(/\D/g, '');
+    let tel = telefoneWhats(x.telefone || '');
     if (!tel || !x.ato) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(String(x.cliente || '').split(' ')[0]) || 'tudo bem';
@@ -3563,7 +3611,7 @@
   let LINK_AVAL = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Tubar%C3%A3o%20-%20SC';
   const MOTIVO_WA = { retomar: 'retomar contato', assinar: 'cobrar assinatura', avaliacao: 'pedido de avaliação', valor: 'aviso de alvará/RPV' };
   function whatsTarefa(x) {
-    let tel = String(x.telefone || '').replace(/\D/g, '');
+    let tel = telefoneWhats(x.telefone || '');
     if (!tel || !x.wa) return null;
     if (tel.length <= 11) tel = '55' + tel;
     const nome = nomeProprioJS(primeiroNome(x.cliente)) || 'tudo bem';
@@ -4065,7 +4113,7 @@
           h('span', { class: 'org-busca' }, busca, h('button', { type: 'button', class: 'btn mini sec', onclick: () => { const c = clis.find(y => y.nome === busca.value); if (!c) { avisar('Escolha um cliente da lista.', true); return; } ligar(el, { processo_id: x.id, cliente_id: c.id }, 'ligado a ' + c.nome); } }, 'Ligar'))));
       return el;
     };
-    const pedirDados = x => { let tel = String(x.telefone || '').replace(/\D/g, ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+    const pedirDados = x => { let tel = telefoneWhats(x.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       const nome = nomeProprioJS(primeiroNome(x.nome));
       const msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Estamos atualizando os cadastros para manter você sempre informado(a) sobre o seu processo. Pode nos enviar, por favor: ${x.falta.filter(f => f !== 'telefone').join(', ')}? Obrigado!`;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg); };
@@ -4101,6 +4149,7 @@
     const veredito = a => {
       const inv = a.investimento, volta = Math.max(a.contratado_ads, a.recebido_ads);
       if (!inv) return a.cliques_ads || a.clientes_ads ? { cls: 'neutro', txt: 'Lance quanto foi investido nesta área para o painel calcular o retorno.' } : null;
+      if (!a.clientes_ads && a.sem_origem) return { cls: 'neutro', txt: `RETORNO NÃO MEDIDO: investimos ${reais(inv)}, mas ${a.sem_origem} cliente(s) novo(s) estão sem "Como nos conheceu?". Preencha nos cadastros (Clientes › Editar cadastro) para o painel dizer se o anúncio se paga.` };
       if (!a.clientes_ads) return { cls: 'ruim', txt: `Investimos ${reais(inv)} e nenhum cliente disse que veio do anúncio${a.cliques_ads ? ` (houve ${a.cliques_ads} clique(s) no WhatsApp vindos do anúncio)` : ''}. Hoje NÃO está dando retorno — ou falta marcar "Como nos conheceu?" nos clientes novos.` };
       const x = volta / inv;
       const custo = inv / a.clientes_ads;
@@ -4312,7 +4361,7 @@ function main() {
       ev.target.disabled = true; ev.target.textContent = 'Lendo o processo…';
       try {
         const r = await api('ia.resumirProcesso', { id: p.id });
-        let tel = String(r.telefone || '').replace(/\D/g, ''); if (tel && tel.length <= 11) tel = '55' + tel;
+        let tel = telefoneWhats(r.telefone || ''); if (tel && tel.length <= 11) tel = '55' + tel;
         const msg = `Olá, ${nomeProprioJS(primeiroNome(r.nome)) || 'tudo bem'}! Aqui é do escritório Araújo Advocacia. Atualização do seu processo:\n\n${r.cliente}\n\nQualquer dúvida, estamos à disposição.`;
         corpo.replaceChildren(
           h('div', { class: 'ia-caixa' }, h('p', {}, h('strong', {}, 'Para o cliente: '), r.cliente || '—'),

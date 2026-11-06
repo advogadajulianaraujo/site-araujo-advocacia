@@ -378,6 +378,7 @@ var ROTAS = {
   'documentos.gerar': { fn: gerarDocumentos_ },
   'documentos.assinaturas': { fn: listarAssinaturas_ },
   'documentos.assinatura': { fn: marcarAssinatura_ },
+  'processos.naoFechou': { fn: naoFechou_ },
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
   'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
@@ -1532,7 +1533,7 @@ function salvarProcesso_(d, u) {
       if (protocolou) concluirPeticaoInicial_(linha, u);
       else if (dados.responsavel !== undefined) passarPeticaoInicial_(linha, dados.responsavel, u);
       registrar_(u.usuario, 'processo alterado', linha.id + ' ' + (numero || linha.numero));
-      return { id: linha.id };
+      return Object.assign({ id: linha.id }, protocolou ? aoProtocolar_(linha, u) : {});
     }
     dados.id = novoId_('P');
     dados.status = dados.status || 'ativo';
@@ -1570,6 +1571,22 @@ function tarefaPeticaoInicial_(proc, u, tipoNome) {
 }
 
 /** Protocolou (o número entrou no processo): a tarefa da petição inicial vai para "Protocolado". */
+/** 8.11: a inicial foi protocolada (o processo ganhou número). Gera sozinho o código do "Acompanhe seu processo" para o cliente
+ *  que ainda não tem (precisa de CPF) e já tenta ler os andamentos no DataJud. O código volta UMA vez para a tela pôr na mensagem
+ *  do WhatsApp; fica guardado embaralhado. Quem já tinha código continua com o mesmo (o painel não sabe qual é). */
+function aoProtocolar_(p, u) {
+  var r = { protocolado: true };
+  try {
+    var c = p.cliente_id ? tabela_('Clientes').linhas.filter(function (x) { return x.id === p.cliente_id; })[0] : null;
+    if (c && !c.acesso_hash && String(c.cpf_cnpj || '').replace(/\D/g, '').length >= 11) {
+      var g = acessoCliente_({ id: c.id, acao: 'gerar' }, u);
+      r.codigo = g.codigo; r.codigo_novo = true;
+    } else if (c && c.acesso_hash) r.ja_tinha_codigo = true;
+    else if (c) r.sem_cpf = true;
+  } catch (e) { r.erro_codigo = e.publico ? e.message : 'não consegui gerar o código agora'; }
+  try { if (aliasDatajud_(p.numero)) { var a = andamentosProcesso_({ id: p.id, atualizar: true }, u); r.andamentos = (a.lista || []).length; } } catch (e2) { /* o robô lê de 4 em 4 h */ }
+  return r;
+}
 function concluirPeticaoInicial_(proc, u) {
   var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']', agora = new Date().toISOString();
   tab.linhas.forEach(function (x) {
@@ -4833,21 +4850,13 @@ function marcarAssinatura_(d, u) {
       try { var hp = JSON.parse(a.honorarios); lanc = lancarHonorariosForm_(hp.f || {}, c, hp.descricao || 'Honorários', u); }
       catch (eH) { throw falha_('Não consegui lançar o honorário no Financeiro: ' + (eH.publico ? eH.message : 'confira os valores do contrato') + '. Tente de novo.'); }
     }
-    atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc, honorarios_lancados: a.honorarios ? agora : '' });
+    atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc, honorarios_lancados: a.honorarios ? agora + (lanc.length ? '|' + lanc.join(',') : '') : '' });
     registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos + (lanc.length ? ' + financeiro' : ''));
     resLanc = { lancados: lanc.length, ja_lancados: lanc.repetidos || 0 };
   } else if (d.acao === 'desistiu') {
-    atualizarLinha_(tabA, a, { situacao: 'não assinou', assinado_em: agora, assinado_por: u.nome || u.usuario });
-    // petição inicial aberta antes (casos antigos): arquiva o processo sem número e cancela a tarefa da inicial
-    if (a.processo_id) {
-      var tabP = tabela_('Processos'), pr = tabP.linhas.filter(function (p) { return p.id === a.processo_id && !p.numero && p.fase === 'contratado'; })[0];
-      if (pr) {
-        atualizarLinha_(tabP, pr, { status: 'arquivado', observacoes: (pr.observacoes ? pr.observacoes + ' ' : '') + 'Cliente não assinou (' + dataBR_(hojeSP_()) + ').', atualizado_em: agora, atualizado_por: u.usuario });
-        var tabT0 = tabela_('Tarefas');
-        tabT0.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[inicial:' + pr.id + ']') >= 0 && abertaT_(t); })
-          .forEach(function (t) { atualizarLinha_(tabT0, t, { situacao: 'cancelada', historico: historicoMais_(t.historico, u, 'cliente não assinou'), atualizado_em: agora, atualizado_por: u.usuario }); });
-      }
-    }
+    // 8.11: vale também para quem foi marcado "Assinado" por engano: arquiva a petição inicial sem número e tira do Financeiro o
+    // honorário lançado ao assinar (parcelas ainda não pagas)
+    desfazerFechamento_(a, a.processo_id, u, agora, 'cliente não assinou');
     registrar_(u.usuario, 'documentos não assinados', a.cliente_id + ' · ' + a.documentos);
   } else if (d.acao === 'reabrir') atualizarLinha_(tabA, a, { situacao: 'aguardando', assinado_em: '', assinado_por: '' });
   else throw falha_('Ação inválida.');
@@ -4859,6 +4868,66 @@ function marcarAssinatura_(d, u) {
     });
   }
   return Object.assign({ ok: true, processo_id: proc }, resLanc || {});
+}
+/** Apaga de vez uma linha (fica em branco; a leitura ignora linhas vazias). Só para o que nunca deveria ter existido. */
+function apagarLinha_(tab, obj) {
+  var vazio = tab.cab.map(function () { return ''; });
+  tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).setValues([vazio]); marcarMudanca_();
+  tab.linhas = tab.linhas.filter(function (x) { return x !== obj; });
+}
+/** 8.11: o cliente NÃO vai fechar (não assinou, ou foi marcado "Assinado" por engano). Arquiva a petição inicial sem número,
+ *  cancela a tarefa da inicial e os lembretes, e cancela o honorário lançado ao assinar (só parcelas NÃO pagas somem). */
+function desfazerFechamento_(a, procId, u, agora, motivo) {
+  var res = { processo: '', honorarios: 0, parcelas: 0 };
+  if (a) atualizarLinha_(tabela_('Assinaturas'), a, { situacao: 'não assinou', assinado_em: agora, assinado_por: u.nome || u.usuario });
+  var tabP = tabela_('Processos'), pr = procId ? tabP.linhas.filter(function (p) { return p.id === procId; })[0] : null;
+  if (!pr && a) pr = tabP.linhas.filter(function (p) { return p.cliente_id === a.cliente_id && !p.numero && p.fase === 'contratado' && p.status !== 'arquivado'; })[0];
+  if (pr && !pr.numero && pr.status !== 'arquivado') {
+    atualizarLinha_(tabP, pr, { status: 'arquivado', fase: 'extinto', fase_auto: 'nao', proximo_ato: '', proximo_ato_data: '',
+      observacoes: (pr.observacoes ? pr.observacoes + ' ' : '') + 'Não fechou: ' + motivo + ' (' + dataBR_(hojeSP_()) + ', ' + (u.nome || u.usuario) + ').', atualizado_em: agora, atualizado_por: u.usuario });
+    res.processo = pr.id;
+    var tabT0 = tabela_('Tarefas');
+    tabT0.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[inicial:' + pr.id + ']') >= 0 && abertaT_(t); })
+      .forEach(function (t) { atualizarLinha_(tabT0, t, { situacao: 'cancelada', historico: historicoMais_(t.historico, u, motivo), atualizado_em: agora, atualizado_por: u.usuario }); });
+  }
+  if (a && a.honorarios_lancados) {
+    var ids = String(a.honorarios_lancados).split('|')[1];
+    var tabH = tabela_('Honorarios'), tabPa = tabela_('Parcelas');
+    var alvo = tabH.linhas.filter(function (h) {
+      if (h.cliente_id !== a.cliente_id || h.situacao === 'cancelado') return false;
+      if (ids) return ids.split(',').indexOf(h.id) >= 0;
+      // registro antigo sem os ids: os lançados pelo gerador depois de gerar os documentos
+      return /Lançado ao gerar o contrato/.test(h.observacoes || '') && (h.criado_em || '') >= String(a.gerado_em || '').slice(0, 10);
+    });
+    alvo.forEach(function (h) {
+      var ps = tabPa.linhas.filter(function (p) { return p.honorario_id === h.id; });
+      if (ps.some(function (p) { return p.pago_em; })) return; // já recebeu algo: não mexe, a equipe decide no Financeiro
+      ps.forEach(function (p) { apagarLinha_(tabPa, p); res.parcelas++; });
+      atualizarLinha_(tabH, h, { situacao: 'cancelado', observacoes: (h.observacoes ? h.observacoes + ' ' : '') + 'Cancelado: ' + motivo + ' (' + dataBR_(hojeSP_()) + ').', atualizado_em: agora, atualizado_por: u.usuario });
+      res.honorarios++;
+    });
+    if (res.honorarios) atualizarLinha_(tabela_('Assinaturas'), a, { honorarios_lancados: '' });
+  }
+  if (a) {
+    var tabT = tabela_('Tarefas');
+    tabT.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[assinatura:' + a.id + ']') >= 0 && abertaT_(t); }).forEach(function (t) {
+      atualizarLinha_(tabT, t, { situacao: 'cancelada', historico: historicoMais_(t.historico, u, motivo), atualizado_em: agora, atualizado_por: u.usuario });
+    });
+  }
+  return res;
+}
+/** Botão "Não vai fechar" na petição inicial (processo sem número). */
+function naoFechou_(d, u) {
+  return comTrava_(function () {
+    var pr = tabela_('Processos').linhas.filter(function (p) { return p.id === d.id; })[0];
+    if (!pr) throw falha_('Processo não encontrado.');
+    if (pr.numero) throw falha_('Este processo já tem número: para encerrar, mude a etapa para Encerrado.');
+    var a = tabela_('Assinaturas').linhas.filter(function (x) { return x.cliente_id === pr.cliente_id && x.situacao !== 'não assinou'; })
+      .sort(function (x, y) { return (x.gerado_em || '') < (y.gerado_em || '') ? 1 : -1; })[0] || null;
+    var r = desfazerFechamento_(a, pr.id, u, new Date().toISOString(), String(d.motivo || 'cliente não vai fechar').slice(0, 200));
+    registrar_(u.usuario, 'cliente não fechou', pr.cliente_id + ' · ' + pr.id + (r.honorarios ? ' · ' + r.honorarios + ' honorário(s) cancelado(s)' : ''));
+    return Object.assign({ ok: true }, r);
+  });
 }
 /** Robô: procuração/contrato sem assinatura há 7 dias → tarefa "lembrar o cliente" (de novo a cada 7 dias, até 3 vezes). */
 function lembrarAssinaturas_(ctx) {
@@ -7920,7 +7989,7 @@ function conferirTrabalho_(d, u) {
       if (!achou) tarefaPeticaoInicial_(p, u);
       var cli = p.cliente_id ? (tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}).nome : '';
       registrar_(quem.usuario, 'petição inicial feita', (cli || 'cliente') + (numero ? ' · ' + numero : '') + marcado);
-      return { ok: true, por: quem.nome, fase: m.fase };
+      return Object.assign({ ok: true, por: quem.nome, fase: m.fase }, numero ? aoProtocolar_(p, u) : {});
     }
     throw falha_('Tipo inválido.');
   });
@@ -8484,9 +8553,22 @@ function lerRespostaGemini_(resp, z) {
   if (code !== 200) throw new Error('Gemini respondeu ' + code + (j.error && j.error.message ? ': ' + String(j.error.message).slice(0, 160) : ''));
   var txt = (((j.candidates || [])[0] || {}).content || {}).parts;
   txt = txt && txt[0] && txt[0].text || '';
-  var o;
-  try { o = JSON.parse(String(txt).replace(/^```(json)?|```$/g, '').trim()); } catch (e) { o = { resumo: String(txt).slice(0, 300) }; }
-  var partes = [String(o.resumo || '').trim()];
+  var o, corte = ((j.candidates || [])[0] || {}).finishReason === 'MAX_TOKENS';
+  var bruto = String(txt).replace(/```(json)?/gi, '').trim();
+  try { o = JSON.parse(bruto); } catch (e) {
+    // 8.11: resposta cortada ou fora do formato → nunca mostra pedaço de código; tenta achar o "resumo" e limpa o resto
+    var m = /"resumo"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(bruto);
+    o = { resumo: (m ? m[1].replace(/\\n/g, ' ').replace(/\\"/g, '"') : bruto.replace(/[{}\[\]"]+/g, ' ').replace(/\b(resumo|providencia|prazo_dias|fundamento|data_ato)\s*:/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 300) };
+    corte = true;
+  }
+  var limpa = function (t, cortado) { // tira restos de código; se a resposta veio cortada, termina numa frase inteira
+    t = String(t || '').replace(/[`{}<>]|\\[nrt]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (cortado && t && !/[.!?)]$/.test(t)) { var k = Math.max(t.lastIndexOf('. '), t.lastIndexOf('; ')); t = k > 40 ? t.slice(0, k + 1) : t + '…'; }
+    return t;
+  };
+  o.resumo = limpa(o.resumo, corte); if (o.providencia) o.providencia = limpa(o.providencia, false);
+  if (!o.resumo) throw new Error('A IA respondeu sem resumo. Tente de novo.');
+  var partes = [String(o.resumo || '').trim() + (corte ? ' (resposta da IA incompleta — confira no texto do ato)' : '')];
   if (o.providencia) partes.push('Providência: ' + String(o.providencia).trim());
   var dt = parseInt(o.prazo_dias, 10);
   if (dt) partes.push('Prazo citado no texto: ' + dt + ' dias' + (o.fundamento ? ' (' + String(o.fundamento).slice(0, 60) + ')' : ''));
@@ -8890,7 +8972,7 @@ function marketingResumo_(d) {
   var meses = mesesAtras_(hoje, nMeses), de = meses[0], idx = {};
   meses.forEach(function (m, i) { idx[m] = i; });
   var areas = ['Geral'].concat(AREAS_MKT), vazio = function () {
-    return { investimento: 0, cliques_ads: 0, cliques_site: 0, contatos: 0, contatos_ads: 0, clientes: 0, clientes_ads: 0, clientes_google: 0, contratos: 0, contratos_ads: 0, contratado: 0, contratado_ads: 0, recebido: 0, recebido_ads: 0, exito_ads: 0 };
+    return { investimento: 0, cliques_ads: 0, cliques_site: 0, contatos: 0, contatos_ads: 0, clientes: 0, clientes_ads: 0, clientes_google: 0, sem_origem: 0, contratos: 0, contratos_ads: 0, contratado: 0, contratado_ads: 0, recebido: 0, recebido_ads: 0, exito_ads: 0 };
   };
   var porArea = {}, porMes = meses.map(function (m) { var o = vazio(); o.mes = m; return o; }), total = vazio();
   areas.forEach(function (a) { porArea[a] = vazio(); porArea[a].area = a; });
@@ -8920,6 +9002,7 @@ function marketingResumo_(d) {
     var a = areaMkt_(c.area + ' ' + c.tipo_acao), ads = /ads|anuncio|anúncio/i.test(c.como_conheceu || ''), google = /google|site/i.test(c.como_conheceu || '');
     novos[c.id] = { area: a, ads: ads, google: google || ads, mes: mes };
     soma(a, mes, 'clientes', 1); if (ads) soma(a, mes, 'clientes_ads', 1); if (google || ads) soma(a, mes, 'clientes_google', 1);
+    if (!String(c.como_conheceu || '').trim()) soma(a, mes, 'sem_origem', 1); // 8.11: sem origem = retorno NÃO MEDIDO
   });
   tabela_('Assinaturas').linhas.forEach(function (x) {
     var n = novos[x.cliente_id]; if (!n || x.situacao !== 'assinado') return;
