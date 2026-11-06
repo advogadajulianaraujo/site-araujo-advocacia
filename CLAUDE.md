@@ -231,6 +231,42 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Site: atua em TODAS as áreas (sem "área principal"/"especialidade" trabalhista); horário 8h–12h e 13h30–18h (JSON-LD opens 08:00);
   menu "Empresarial" (não "Empresas"); "Entrar" discreto na faixa de cima à direita (`util-entrar`), no menu do celular e no rodapé.
 
+## 8.11.0 (nov/2026: revisão externa + pedidos da usuária e do Luís)
+
+- "Não vai assinar" / "Não vai fechar" (`desfazerFechamento_`, rota `processos.naoFechou`; `documentos.assinatura` acao=desistiu vale também
+  para quem já foi marcado "Assinado"): arquiva a petição inicial SEM número (fase extinto), cancela a tarefa da inicial e os lembretes e
+  cancela o honorário lançado ao assinar — só se nenhuma parcela foi paga; as parcelas não pagas são apagadas (`apagarLinha_`: linha em
+  branco). O "✓ Assinado" agora guarda os ids lançados em `honorarios_lancados` ("data|id,id"). Botão na caixa da Petição inicial, no cartão
+  do quadro e na "jornada" da ficha.
+- Protocolou (número na inicial, `trabalho.conferir` inicial ou `processos.salvar`): `aoProtocolar_` gera sozinho o código do Acompanhe
+  (cliente com CPF e sem código; quem já tem fica com o dele) e já lê o DataJud. A tela do processo abre com a mensagem do WhatsApp com o
+  código (`PROTOCOLOS`/`guardarProtocolo` em painel.js; o código só existe naquela aba).
+- "Aguardando o seu OK" numa linha só: "✓ OK" pequeno + "ver a lista" (lembra em localStorage `aguarda_aberta`).
+- Telefone com dois números ("… / …", "ou", "e") → só o primeiro ANTES de juntar os dígitos (`telefoneWhats` em painel.js e `whats` em
+  future.js); os links de WhatsApp das telas usam `telefoneWhats`.
+- Calculadora de rescisão: mensalista = 30 dias; saiu no último dia do mês = salário cheio (31/10 não vira 31/30).
+- Prazo vencido conta dias do calendário: "venceu ontem" (antes, fatal 04/11 visto em 05/11 dizia "venceu hoje").
+- IA: `lerRespostaGemini_` nunca mostra pedaço de JSON/código; resposta cortada termina na última frase inteira + "(resposta da IA incompleta…)".
+- Marketing: cliente novo sem "Como nos conheceu?" → "RETORNO NÃO MEDIDO" (não "não está dando retorno").
+- Site: "Agendar pelo WhatsApp"; legenda "Nossa identidade" (não "Recepção"); pergunta repetida tirada do Criminal.
+- Padrão de petições do escritório: docs/PADRAO-PETICOES.md (cópia em painel/padrao-peticoes.md; botão "📋 Copiar o padrão de petições (para
+  IA)" em Modelos). `padraoPeticao_` formata as petições geradas (modelos do painel com `processo` e modelos do Drive que são petição):
+  entrelinha 1,5, 8 pt depois, recuo 1 cm, títulos em MAIÚSCULAS, artigo citado ("Art.", "§", aspas) em fonte 10 com recuo de 6 cm.
+  Contratos do Edifício Future seguem o mesmo espaçamento (`futPreencherDoc_`). Mudou o padrão? Atualize os dois arquivos .md juntos.
+- Edifício Future: distrato feito à mão → "Já fiz o distrato fora do painel" (`sem_documento`) só libera o apartamento (vago) e tira o
+  locatário. Contrato e laudo: UC + medidor (relógio) + leitura, chaves e controles, ressalvas, e-mail do locatário (`email` em FutPessoas e
+  FutContratos; `video_url`, `enviado_em/por`). `futAtualizarModelos811_` (uma vez, Config FUTURE_MODELOS_811) acrescentou nos modelos do Drive:
+  "A VISTORIA É PARTE DESTE CONTRATO", "RESPONSABILIDADE PELO QUE FOI ENTREGUE", caução como garantia (não paga aluguel/último mês; devolvida
+  só depois da vistoria final), quadro "4.1 ITENS CONFERIDOS NA ENTREGA" no laudo e o prazo `{{PRAZO_LAUDO}}`. Prazo para apontar
+  divergência no laudo: a Lei 8.245/91 não fixa (é contratual) → padrão 5 dias corridos da entrega das chaves (Config FUTURE_PRAZO_LAUDO_DIAS).
+  "✉ enviar vistoria" (rota `future.vistoria.enviar`): Gmail com contrato + laudo em PDF anexos e o link do vídeo (compartilhado só com esse
+  e-mail); WhatsApp com mensagem pronta (os PDFs e o vídeo são anexados à mão — nada fica público).
+- Financeiro › "📥 Antigos para lançar" (rota `fin.levantamento`, permissão financeiro): lê a planilha "Honorários Araújo — levantamento e
+  conciliação" (Config LEVANTAMENTO_ID; abas Contratos, Mensalistas, Cobranças, Promissórias) e mostra os clientes do painel SEM honorário que
+  têm contrato/promissória/cobrança. "Lançar" abre o honorário preenchido (params tipo, valor, parcelas, venc, pct, mensal, obs → situação
+  "importado — conferir"); "Não lançar" (Config LEVANT_IGNORADOS); "Lançar os N de êxito" só para processo ativo. Nada é lançado sozinho.
+  Em 06/11/2026: todos os 1.431 clientes do GEA já estavam no painel; 479 contratos, 25 cobranças e 94 promissórias sem honorário.
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.10.0';
+var VERSAO = '8.11.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -91,12 +91,12 @@ var ESQUEMA = {
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao', 'categoria'],
   FutUnidades: ['id', 'tipo', 'andar', 'ordem', 'aluguel', 'taxas', 'situacao', 'locatario', 'telefone', 'entrada', 'saida', 'garantia', 'caucao',
     'energia_resp', 'kit', 'uc', 'medidor', 'uc_antiga', 'obs', 'atualizado_em', 'atualizado_por', 'pagador', 'pasta_url', 'cobra_energia', 'moeda', 'modalidade', 'conta_receb'],
-  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url', 'rg', 'qualificacao', 'genero', 'laudo_url'],
+  FutPessoas: ['id', 'nome', 'telefone', 'cpf', 'unidade', 'entrada', 'saida', 'garantia', 'caucao', 'situacao', 'obs', 'origem', 'criado_em', 'pasta_url', 'arquivos', 'contrato_url', 'rg', 'qualificacao', 'genero', 'laudo_url', 'email'],
   FutLanc: ['id', 'data', 'competencia', 'tipo', 'categoria', 'unidade', 'pessoa', 'valor', 'forma', 'responsavel', 'descricao', 'origem', 'chave', 'criado_em', 'criado_por'],
   FutCobrancas: ['id', 'unidade', 'pessoa', 'competencia', 'vencimento', 'aluguel', 'taxas', 'energia', 'outros', 'total', 'pago_em', 'valor_pago', 'forma', 'lanc_id',
     'situacao', 'obs', 'criado_em', 'atualizado_em', 'atualizado_por', 'pagador', 'enviado_em', 'enviado_por', 'detalhe', 'lavanderia', 'lembrete5_em', 'lembrete10_em'],
   FutContratos: ['id', 'criado_em', 'criado_por', 'unidade', 'pessoa_id', 'nome', 'cpf', 'telefone', 'prazo_meses', 'inicio', 'fim', 'aluguel', 'garantia', 'caucao',
-    'doc_url', 'pdf_url', 'laudo_doc', 'laudo_pdf', 'pasta_url', 'situacao', 'tipo', 'dias', 'valor_total'],
+    'doc_url', 'pdf_url', 'laudo_doc', 'laudo_pdf', 'pasta_url', 'situacao', 'tipo', 'dias', 'valor_total', 'email', 'video_url', 'enviado_em', 'enviado_por'],
   FutEnergia: ['id', 'competencia', 'unidade', 'valor', 'kwh', 'origem', 'criado_em'],
   FutLavagens: ['id', 'data', 'competencia', 'unidade', 'pessoa', 'quantidade', 'valor', 'obs', 'criado_em', 'criado_por', 'situacao', 'tipo', 'chave'],
   Despesas: ['id', 'descricao', 'categoria', 'valor', 'vencimento', 'pago_em', 'valor_pago', 'forma', 'cliente_id', 'processo_id',
@@ -379,6 +379,7 @@ var ROTAS = {
   'documentos.assinaturas': { fn: listarAssinaturas_ },
   'documentos.assinatura': { fn: marcarAssinatura_ },
   'processos.naoFechou': { fn: naoFechou_ },
+  'fin.levantamento': { permissao: 'financeiro', fn: levantamentoHonorarios_ },
   'feriados.listar': { fn: function () { return tabela_('Feriados').linhas.map(limpar_); } },
   'feriados.salvar': { permissao: 'usuarios', fn: salvarFeriado_ },
   'fin.resumo': { permissao: 'financeiro', fn: resumoFinanceiro_ },
@@ -435,6 +436,7 @@ var ROTAS = {
   'future.importarPasta': { future: true, fn: function (d, u) { return comTrava_(function () { return futureImportarPasta_(u); }); } },
   'future.contrato.gerar': { future: true, fn: futureGerarContrato_ },
   'future.contrato.distrato': { future: true, fn: futureDistrato_ },
+  'future.vistoria.enviar': { future: true, fn: futureEnviarVistoria_ },
   'future.contrato.aditivo': { future: true, fn: futureAditivo_ },
   'future.drive': { future: true, fn: function () { return comTrava_(function () { return futureSincronizarDrive_(true) || { unidades: 0, pessoas: 0, novas: 0 }; }); } },
   'revisao.geral': { permissao: 'usuarios', fn: revisaoGeral_ },
@@ -6016,6 +6018,96 @@ function montarPadraoVisual_(doc, linhas, compacto) {
   });
 }
 
+/** 8.11: PADRÃO DE PETIÇÕES do escritório (docs/PADRAO-PETICOES.md), aplicado na cópia gerada (o modelo editado pela equipe fica como está):
+ *  EB Garamond 12, justificado, entrelinha 1,5, 8 pt depois do parágrafo, recuo de 1 cm na 1ª linha; títulos (parágrafo todo em negrito,
+ *  alinhado à esquerda) em MAIÚSCULAS; artigo citado (parágrafo que começa com "Art." ou entre aspas) em fonte 10 com recuo de 6 cm. */
+function padraoPeticao_(corpo) {
+  var A = DocumentApp.HorizontalAlignment, CM = 28.35;
+  corpo.getParagraphs().forEach(function (p) {
+    var pai = p.getParent(); if (pai && pai.getType() === DocumentApp.ElementType.TABLE_CELL) return;
+    var t = p.getText(); if (!t.trim()) { p.setSpacingAfter(0); return; }
+    var al = p.getAlignment(), ed = p.editAsText();
+    var todoNegrito = ed.isBold(0) && ed.isBold(t.length - 1) && ed.isBold(Math.floor(t.length / 2));
+    if (al === A.CENTER || al === A.RIGHT) return;
+    if (todoNegrito && t.length < 140) { // título de tópico
+      if (t !== t.toUpperCase()) { p.setText(t.toUpperCase()); p.editAsText().setBold(true).setFontFamily('EB Garamond').setFontSize(12); }
+      p.setIndentFirstLine(0).setIndentStart(0).setLineSpacing(1.5).setSpacingAfter(8).setSpacingBefore(8);
+      return;
+    }
+    if (/^\s*(Art\.|Artigo\s+\d|§|“|")/.test(t) && t.length < 1500) { // dispositivo legal citado
+      p.setAlignment(A.JUSTIFY).setIndentStart(6 * CM).setIndentFirstLine(6 * CM).setLineSpacing(1.0).setSpacingAfter(8);
+      p.editAsText().setFontSize(10);
+      return;
+    }
+    if (al === A.JUSTIFY || al === A.LEFT && t.length > 160) p.setAlignment(A.JUSTIFY).setIndentFirstLine((p.getIndentStart() || 0) + CM).setLineSpacing(1.5).setSpacingAfter(8);
+  });
+}
+
+/* ---------- 8.11: honorários do levantamento (GEA + contratos/promissórias do Drive) que ainda não estão no painel ---------- */
+/** Lê a planilha "Honorários Araújo — levantamento e conciliação" (abas Contratos, Mensalistas, Cobranças, Promissórias) e devolve,
+ *  por cliente do painel SEM honorário, o que foi achado. Nada é lançado sozinho: a equipe confere e aperta "Lançar" (ou "Não lançar"). */
+function levantamentoHonorarios_(d, u) {
+  var ign = {}; try { ign = JSON.parse(config_('LEVANT_IGNORADOS') || '{}'); } catch (e) { ign = {}; }
+  if (d.acao === 'ignorar' || d.acao === 'voltar') {
+    if (d.acao === 'ignorar') ign[d.cliente_id] = (u.nome || u.usuario) + ' ' + hojeSP_(); else delete ign[d.cliente_id];
+    setConfig_('LEVANT_IGNORADOS', JSON.stringify(ign), 'Clientes do levantamento de honorários marcados "não lançar"');
+    return { ok: true };
+  }
+  if (d.acao === 'lancar_exito') {
+    var ids = (d.itens || []).slice(0, 150), feitos = 0;
+    ids.forEach(function (it) {
+      try {
+        salvarHonorario_({ honorario: { cliente_id: it.cliente_id, processo_id: it.processo_id || '', tipo: 'exito', percentual: String(it.percentual),
+          descricao: 'Êxito (contrato antigo)', situacao: 'importado — conferir', observacoes: 'Do levantamento de contratos (GEA/Drive). ' + String(it.fonte || '').slice(0, 300) } }, u);
+        feitos++;
+      } catch (e) { /* segue com os outros */ }
+    });
+    registrar_(u.usuario, 'honorários do levantamento lançados', feitos + ' de êxito');
+    return { ok: true, feitos: feitos };
+  }
+  var id = config_('LEVANTAMENTO_ID');
+  if (!id) {
+    var it = DriveApp.searchFiles("title contains 'Honorários Araújo — levantamento' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
+    if (!it.hasNext()) throw falha_('Não achei a planilha "Honorários Araújo — levantamento e conciliação" no Drive.');
+    id = it.next().getId(); setConfig_('LEVANTAMENTO_ID', id, 'Planilha do levantamento de honorários (GEA + contratos)');
+  }
+  var ss = SpreadsheetApp.openById(id);
+  var semAc = function (t) { return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/PASTA:|—.*$| - .*$|QUALIFICA.*$/g, '').replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim(); };
+  var clientes = tabela_('Clientes').linhas, porNome = {}, porPontas = {};
+  clientes.forEach(function (c) { var k = semAc(c.nome); porNome[k] = c; var p = k.split(' '); if (p.length > 1) { var kk = p[0] + '|' + p[p.length - 1]; porPontas[kk] = porPontas[kk] === undefined ? c : null; } });
+  var acha = function (n) { var k = semAc(n); if (porNome[k]) return porNome[k]; var p = k.split(' '); return p.length > 1 ? porPontas[p[0] + '|' + p[p.length - 1]] || null : null; };
+  var temHon = {}; tabela_('Honorarios').linhas.forEach(function (h) { if (h.situacao !== 'cancelado') temHon[h.cliente_id] = 1; });
+  var procAtivo = {}; tabela_('Processos').linhas.forEach(function (p) { if (p.cliente_id && p.status !== 'arquivado' && p.numero) procAtivo[p.cliente_id] = procAtivo[p.cliente_id] || p.id; });
+  var MES = { janeiro: '01', fevereiro: '02', marco: '03', abril: '04', maio: '05', junho: '06', julho: '07', agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12' };
+  var dataExt = function (t) { var m = /(\d{1,2}) de ([a-zçã]+) de (\d{4})/i.exec(String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()); return m && MES[m[2]] ? m[3] + '-' + MES[m[2]] + '-' + ('0' + m[1]).slice(-2) : ''; };
+  var por = {};
+  var add = function (n, f) {
+    var c = acha(n); if (!c || temHon[c.id]) return;
+    var x = por[c.id] = por[c.id] || { cliente_id: c.id, nome: c.nome, telefone: c.telefone || '', processo_id: procAtivo[c.id] || '', ativo: !!procAtivo[c.id], ignorado: ign[c.id] || '', fontes: [] };
+    if (x.fontes.length < 6) x.fontes.push(f);
+  };
+  var aba = function (nome, cab, fn) {
+    var sh = ss.getSheetByName(nome); if (!sh) return;
+    var v = sh.getDataRange().getValues(), i = 0;
+    while (i < v.length && !v[i].some(function (c) { return cab.test(String(c)); })) i++;
+    for (var r = i + 1; r < v.length; r++) if (v[r][0]) fn(v[r]);
+  };
+  aba('Contratos', /^Contratante/, function (r) {
+    var pct = +r[3] || 0, val = +r[2] || 0, parc = +r[4] || 0;
+    add(r[0], { aba: 'Contrato', modalidade: String(r[1] || ''), percentual: pct ? Math.round(pct * (pct <= 1 ? 100 : 1) * 100) / 100 : 0, valor: val, parcelas: parc,
+      assinatura: String(r[5] || ''), trecho: String(r[6] || '').slice(0, 220), link: String(r[8] || '') });
+  });
+  aba('Mensalistas', /^Cliente/, function (r) { add(r[0], { aba: 'Mensalista', mensal: +r[1] || 0, parcelas: +r[2] || 0, inicio: r[3] instanceof Date ? Utilities.formatDate(r[3], 'America/Sao_Paulo', 'yyyy-MM-dd') : '', obs: String(r[5] || '').slice(0, 200), link: String(r[6] || '') }); });
+  aba('Cobranças', /^Cliente/, function (r) { add(r[0], { aba: 'Cobrança', situacao: String(r[1] || '') + ' · ' + String(r[3] || ''), valor: +r[2] || 0, obs: String(r[5] || '').slice(0, 200), link: /^https?:/.test(String(r[6] || '')) ? String(r[6]) : '' }); });
+  aba('Promissórias', /^Emitente/, function (r) {
+    var venc = String(r[3] || ''), n = venc ? venc.split('/').length : 0;
+    add(r[0], { aba: 'Promissórias', valor: +String(r[2] || '').replace(/[^\d,.]/g, '').replace(',', '.') || 0, parcelas: n, primeiro: dataExt(venc), vencimentos: venc.slice(0, 160), link: String(r[5] || '') });
+  });
+  var lista = Object.keys(por).map(function (k) { return por[k]; })
+    .sort(function (a, b) { return (b.ativo - a.ativo) || (!!a.ignorado - !!b.ignorado) || (a.nome < b.nome ? -1 : 1); });
+  return { lista: lista, total: lista.length, ativos: lista.filter(function (x) { return x.ativo && !x.ignorado; }).length };
+}
+
 /** 8.10 (pedido da usuária: "deixe todo mundo mexer nos modelos"): dá permissão de EDIÇÃO nos modelos (Google Docs do painel e a pasta
     de modelos do escritório) para os e-mails Google da equipe (coluna email de Usuários) e para os e-mails digitados. Não toca em pasta de cliente. */
 function liberarEdicaoModelos_(d, u) {
@@ -6616,6 +6708,7 @@ function gerarDocumentos_(d, u) {
     var copia = DriveApp.getFileById(m.id).makeCopy(nomeArq, pasta);
     var doc = DocumentApp.openById(copia.getId());
     preencherColchetes_(doc.getBody(), ctxColchetes);
+    if (modeloDrivePrecisaProcesso_(m.nome) || /peti[cç][aã]o|apela[cç]|reclama[cç]|recurso|contesta/i.test(nomeModeloDrive_(m.nome))) padraoPeticao_(doc.getBody());
     doc.saveAndClose();
     var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
     gerados.push({ modelo: nomeModeloDrive_(m.nome), doc: copia.getUrl(), pdf: pdf.getUrl() });
@@ -6651,6 +6744,7 @@ function gerarDocumentos_(d, u) {
     resolverGenero_(corpo, generos);
     corpo.getParagraphs().forEach(function (pp) { if (pp.getText().indexOf(REMOVER) >= 0) { try { pp.removeFromParent(); } catch (e) { pp.setText(''); } } });
     if (k === 'procuracao_menor') negritar_(corpo, menores.map(function (m) { return m.nome.toUpperCase(); }));
+    if (MODELOS[k].processo && k !== 'substabelecimento') padraoPeticao_(corpo);
     doc.saveAndClose();
     var pdf = dest.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
     gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl(), assinar: !!MODELOS[k].assinaCliente, _docId: copia.getId(), _ordem: Object.keys(MODELOS).indexOf(k) });
@@ -9624,7 +9718,12 @@ function futPreencherDoc_(doc, campos, manter) {
   body.getParagraphs().forEach(function (p) {
     var naTabela = p.getParent() && p.getParent().getType() === DocumentApp.ElementType.TABLE_CELL;
     if (!naTabela && p.getAlignment() !== DocumentApp.HorizontalAlignment.CENTER) p.setAlignment(DocumentApp.HorizontalAlignment.JUSTIFY);
-    if (!naTabela) p.setLineSpacing(1.15).setSpacingAfter(6);
+    // 8.11: todo contrato segue o padrão do escritório (docs/PADRAO-PETICOES.md): entrelinha 1,5, 8 pt depois e recuo de 1 cm no texto corrido
+    if (!naTabela) {
+      var tx = p.getText(), titulo = !tx.trim() || /^(CLÁUSULA|\d+\.\s|[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 .ºª–\-]{6,}$)/.test(tx.trim()) || p.getAlignment() === DocumentApp.HorizontalAlignment.CENTER;
+      p.setLineSpacing(1.5).setSpacingAfter(tx.trim() ? 8 : 0);
+      if (!titulo && tx.length > 80) p.setIndentFirstLine(28.35);
+    }
   });
   body.setMarginTop(56).setMarginBottom(56).setMarginLeft(68).setMarginRight(56);
 }
@@ -9632,14 +9731,14 @@ function futPreencherDoc_(doc, campos, manter) {
 function futureContratos_(d) {
   var T = futTabs_(), tc = tabela_('FutContratos'), hoje = hojeSP_();
   var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return /^AP /.test(x.id) && x.situacao !== 'proprio'; })
-    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, pasta_url: x.pasta_url || '',
+    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, medidor: x.medidor || '', pasta_url: x.pasta_url || '',
       caucao: futN_(x.caucao), garantia: x.garantia || '', modalidade: x.modalidade || '' }; });
   var lista = tc.linhas.filter(function (c) { return c.situacao !== 'excluido'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 60)
     .map(function (c) { return { id: c.id, criado_em: c.criado_em, criado_por: c.criado_por, unidade: c.unidade, nome: c.nome, telefone: c.telefone, prazo_meses: +c.prazo_meses || 0,
-      inicio: c.inicio, fim: c.fim, aluguel: futN_(c.aluguel), garantia: c.garantia, caucao: futN_(c.caucao), tipo: c.tipo || 'mensal', situacao: c.situacao || '', dias: +c.dias || 0, valor_total: futN_(c.valor_total), doc_url: c.doc_url, pdf_url: c.pdf_url, laudo_doc: c.laudo_doc, laudo_pdf: c.laudo_pdf, pasta_url: c.pasta_url }; });
+      inicio: c.inicio, fim: c.fim, aluguel: futN_(c.aluguel), garantia: c.garantia, caucao: futN_(c.caucao), tipo: c.tipo || 'mensal', situacao: c.situacao || '', dias: +c.dias || 0, valor_total: futN_(c.valor_total), doc_url: c.doc_url, pdf_url: c.pdf_url, laudo_doc: c.laudo_doc, laudo_pdf: c.laudo_pdf, pasta_url: c.pasta_url, email: c.email || '', video_url: c.video_url || '', enviado_em: c.enviado_em || '' }; });
   var vencendo = unidades.filter(function (x) { return /^(alugado|renovar)$/.test(x.situacao) && x.saida && x.saida >= somarDias_(hoje, -15) && x.saida <= somarDias_(hoje, 45); })
     .sort(function (a, b) { return a.saida < b.saida ? -1 : 1; });
-  var pessoas = T.pe.linhas.filter(function (p) { return p.situacao === 'atual'; }).map(function (p) { return { id: p.id, nome: p.nome, unidade: p.unidade, cpf: p.cpf, rg: p.rg || '', telefone: p.telefone, qualificacao: p.qualificacao || '', genero: p.genero || '' }; });
+  var pessoas = T.pe.linhas.filter(function (p) { return p.situacao === 'atual'; }).map(function (p) { return { id: p.id, nome: p.nome, unidade: p.unidade, cpf: p.cpf, rg: p.rg || '', telefone: p.telefone, qualificacao: p.qualificacao || '', genero: p.genero || '', email: p.email || '' }; });
   return { unidades: unidades, contratos: lista, vencendo: vencendo, pessoas: pessoas, dia_venc: parseInt(config_('FUTURE_DIA_VENC'), 10) || 10, hoje: hoje };
 }
 
@@ -9676,8 +9775,13 @@ function futureGerarContrato_(d, u) {
       TITULO_GARANTIA: comCaucao ? 'COM CAUÇÃO' : 'SEM CAUÇÃO', TITULO_GARANTIA_TEXTO: comCaucao ? ' COM CAUÇÃO' : '',
       CAUCAO_ATO: comCaucao ? 'No ato da assinatura deste contrato, ' + (g === 'F' ? 'A LOCATÁRIA' : 'O LOCATÁRIO') + ' efetuará o pagamento de ' + valorComExtenso_(caucao) + ', a título de caução, nos termos da Cláusula 9ª. ' : '',
       N_FINAL: comCaucao ? '10ª' : '9ª', DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje),
-      DATA_VISTORIA: dataBR_(vistoria), VIDEO_DURACAO: String(d.video_duracao || '').trim() || '___ minutos'
+      DATA_VISTORIA: dataBR_(vistoria), VIDEO_DURACAO: String(d.video_duracao || '').trim() || '___ minutos',
+      // 8.11: UC + medidor (relógio) no contrato e no laudo; e-mail para mandar o laudo e o vídeo; prazo para apontar divergências
+      MEDIDOR: String(d.medidor || un.medidor || '—').replace(/\.0$/, ''), LOC_EMAIL: String(d.email || '').trim() || 'informado pelo(a) locatário(a)',
+      PRAZO_LAUDO: futPrazoLaudo_(), CHAVES: String(d.chaves || '').trim() || 'conforme registrado no vídeo da vistoria',
+      LEITURA: String(d.leitura || '').trim() || '________', OBS_VISTORIA: String(d.obs_vistoria || '').trim() || 'Nenhuma ressalva além do desgaste natural.'
     });
+    try { futAtualizarModelos811_(); } catch (eM) { /* segue com o modelo como está */ }
     // pasta do morador: APARTAMENTOS › AP x › NOME (só agora, com o contrato)
     var pastaUrl = futCriarPasta_(un.id, nome);
     if (!pastaUrl) throw falha_('Não achei a pasta 05. ED. FUTURE no Drive.');
@@ -9695,7 +9799,7 @@ function futureGerarContrato_(d, u) {
     var pessoa = T.pe.linhas.filter(function (p) { return p.unidade === un.id && (futMesmaPessoa_(p.nome, nome) || (p.cpf && p.cpf.replace(/\D/g, '') === cpf.replace(/\D/g, ''))); })[0];
     var dadosP = { nome: nome, telefone: telefone, cpf: cpf, rg: String(d.rg || '').trim(), qualificacao: String(d.qualificacao || '').trim() || campos.LOC_QUALIFICACAO, genero: g,
       entrada: pessoa && pessoa.entrada && pessoa.entrada < inicio ? pessoa.entrada : inicio, saida: fim, garantia: comCaucao ? 'Caução' : 'Sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
-      pasta_url: pastaUrl, contrato_url: ct.pdf, laudo_url: la.pdf };
+      pasta_url: pastaUrl, contrato_url: ct.pdf, laudo_url: la.pdf, email: futEmailOk_(d.email) };
     if (mudaUnidade) {
       T.pe.linhas.filter(function (p) { return p.unidade === un.id && p.situacao === 'atual' && p !== pessoa; }).forEach(function (p) {
         atualizarLinha_(T.pe, p, { situacao: 'saiu', saida: p.saida && p.saida <= inicio ? p.saida : inicio });
@@ -9712,11 +9816,97 @@ function futureGerarContrato_(d, u) {
     }
     var reg = { id: novoId_('FK'), criado_em: agora, criado_por: u.nome || u.usuario, unidade: un.id, pessoa_id: pessoa.id, nome: nome, cpf: cpf, telefone: telefone,
       prazo_meses: String(meses), inicio: inicio, fim: fim, aluguel: txtDinheiro_(aluguel), garantia: comCaucao ? 'caução' : 'sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
-      doc_url: ct.doc, pdf_url: ct.pdf, laudo_doc: la.doc, laudo_pdf: la.pdf, pasta_url: pastaUrl, situacao: 'gerado', tipo: 'mensal', dias: '', valor_total: '' };
+      doc_url: ct.doc, pdf_url: ct.pdf, laudo_doc: la.doc, laudo_pdf: la.pdf, pasta_url: pastaUrl, situacao: 'gerado', tipo: 'mensal', dias: '', valor_total: '', email: futEmailOk_(d.email), video_url: '', enviado_em: '', enviado_por: '' };
     inserirLinha_(tc, reg);
     registrar_(u.usuario, 'future: contrato gerado', un.id + ' ' + nome + ' ' + meses + ' meses ' + (comCaucao ? 'com caução' : 'sem caução'));
-    return { ok: true, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, unidade: un.id, nome: nome, telefone: telefone };
+    return { ok: true, id: reg.id, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, unidade: un.id, nome: nome, telefone: telefone, email: reg.email };
   });
+}
+
+/* ---------- 8.11: laudo completo, UC + medidor, prazo do laudo, envio por e-mail ---------- */
+/** Prazo para o locatário apontar divergências no laudo. A Lei 8.245/91 não fixa prazo (art. 22, V, e 23, III): é contratual.
+ *  Padrão 5 dias corridos da entrega das chaves (Config FUTURE_PRAZO_LAUDO_DIAS). */
+function futPrazoLaudo_() {
+  var n = parseInt(config_('FUTURE_PRAZO_LAUDO_DIAS'), 10); if (!(n >= 1 && n <= 30)) n = 5;
+  return n + ' (' + futNumExtenso_(n) + ') ' + (n === 1 ? 'dia' : 'dias') + ' corridos';
+}
+function futEmailOk_(e) { e = String(e || '').trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e) ? e : ''; }
+/** Uma vez (Config FUTURE_MODELOS_811): acrescenta nos modelos do Drive (contrato e laudo) UC + medidor, o prazo do laudo, o envio por
+ *  WhatsApp ou e-mail, a responsabilidade de devolver tudo como no laudo, a caução como garantia e o quadro "itens conferidos". */
+function futAtualizarModelos811_() {
+  if (config_('FUTURE_MODELOS_811')) return;
+  var achar = function (body, re) { var ps = body.getParagraphs(); for (var i = 0; i < ps.length; i++) if (re.test(ps[i].getText())) return ps[i]; return null; };
+  var depois = function (body, p, txt, negritoAte) {
+    var np = body.insertParagraph(body.getChildIndex(p) + 1, txt);
+    np.setHeading(DocumentApp.ParagraphHeading.NORMAL).editAsText().setBold(false);
+    if (negritoAte) np.editAsText().setBold(0, negritoAte - 1, true);
+    return np;
+  };
+  // ----- contrato -----
+  var dc = DocumentApp.openById(futModelo_('contrato').getId()), bc = dc.getBody();
+  bc.replaceText('conforme projeto da unidade consumidora do condomínio nº \\{\\{UC\\}\\}', 'unidade consumidora (UC) nº {{UC}} e medidor de energia (relógio) nº {{MEDIDOR}}');
+  bc.replaceText('encaminhado por WhatsApp ao número \\{\\{LOC_TELEFONE\\}\\}\\.', 'encaminhado por WhatsApp ao número {{LOC_TELEFONE}} ou por e-mail para {{LOC_EMAIL}}.');
+  bc.replaceText('48 \\(quarenta e oito\\) horas', '{{PRAZO_LAUDO}}');
+  var pu = achar(bc, /^PARÁGRAFO ÚNICO\. O imóvel possui as características descritas no auto de vistoria/);
+  if (pu && !achar(bc, /A VISTORIA É PARTE DESTE CONTRATO/)) {
+    var a1 = depois(bc, pu, 'A VISTORIA É PARTE DESTE CONTRATO. A vistoria é feita antes da entrega das chaves, junto com a assinatura deste contrato, e registra em laudo e em vídeo cada cômodo, as luzes, tomadas, interruptores, móveis, eletrodomésticos, utensílios, louças, esquadrias, chaves e a leitura do medidor de energia. O laudo e o vídeo são enviados {{AO_LOCATARIO}} por WhatsApp ou e-mail e integram este contrato.', 'A VISTORIA É PARTE DESTE CONTRATO.'.length);
+    depois(bc, a1, 'RESPONSABILIDADE PELO QUE FOI ENTREGUE. {{O_LOCATARIO}} é responsável por conservar e devolver o imóvel e todos os itens descritos no laudo nas mesmas condições em que os recebeu, ressalvado o desgaste natural do uso regular. O que estiver danificado, faltando ou sem funcionar na vistoria final, em comparação com o laudo e o vídeo da vistoria inicial, será reparado ou reposto à sua custa, podendo o valor ser descontado da caução.', 'RESPONSABILIDADE PELO QUE FOI ENTREGUE.'.length);
+  }
+  var cau = achar(bc, /PARÁGRAFO SEGUNDO\. A LOCADORA obriga-se a devolver o valor pago a título de caução/);
+  if (cau && !achar(bc, /A caução é garantia da LOCADORA/)) {
+    depois(bc, cau, '[[SO_CAUCAO]]PARÁGRAFO TERCEIRO. A caução é garantia da LOCADORA e não poderá ser usada {{AO_LOCATARIO}} para pagar aluguéis, nem o último mês da locação. Só será devolvida depois da vistoria final, da entrega das chaves e da quitação dos aluguéis, da energia e dos demais encargos, podendo a LOCADORA reter o necessário para cobrir os danos e as faltas constatados em comparação com o laudo de vistoria inicial.', '[[SO_CAUCAO]]PARÁGRAFO TERCEIRO.'.length);
+  }
+  dc.saveAndClose();
+  // ----- laudo -----
+  var dl = DocumentApp.openById(futModelo_('laudo').getId()), bl = dl.getBody();
+  bl.replaceText('quadro de medição kit \\{\\{KIT\\}\\}, Bairro', 'quadro de medição kit {{KIT}}, unidade consumidora (UC) nº {{UC}}, medidor de energia (relógio) nº {{MEDIDOR}}, Bairro');
+  bl.replaceText('48 \\(quarenta e oito\\) horas', '{{PRAZO_LAUDO}}');
+  bl.replaceText('será encaminhado por e-mail ou WhatsApp', 'é encaminhado por WhatsApp ({{LOC_TELEFONE}}) ou por e-mail ({{LOC_EMAIL}})');
+  var concl = achar(bl, /^5\. CONCLUSÃO/);
+  if (concl && !achar(bl, /ITENS CONFERIDOS NA ENTREGA/)) {
+    var idx = bl.getChildIndex(concl);
+    var tit = bl.insertParagraph(idx, '4.1 ITENS CONFERIDOS NA ENTREGA'); tit.editAsText().setBold(true);
+    var linhas = [
+      ['Energia', 'UC nº {{UC}} · medidor (relógio) nº {{MEDIDOR}} · leitura na entrega das chaves: {{LEITURA}} kWh.'],
+      ['Iluminação', 'Todos os pontos de luz, lâmpadas, luminárias e luminárias de leitura da sala/cozinha, do quarto e do banheiro acesos e funcionando.'],
+      ['Tomadas e interruptores', 'Todas as tomadas e todos os interruptores de cada cômodo testados e funcionando, com espelhos inteiros.'],
+      ['Chuveiro e água quente', 'Chuveiro elétrico, registros e torneiras funcionando, sem vazamentos.'],
+      ['Ar-condicionado', 'Ar-condicionado split ligando, resfriando e com controle remoto entregue.'],
+      ['Chaves e controles', '{{CHAVES}}'],
+      ['Ressalvas da vistoria', '{{OBS_VISTORIA}}']];
+    var tb = bl.insertTable(idx + 1, linhas);
+    for (var r = 0; r < tb.getNumRows(); r++) tb.getCell(r, 0).editAsText().setBold(true);
+    bl.insertParagraph(idx + 2, 'O vídeo mostra, cômodo por cômodo, todos os itens listados neste laudo, inclusive as luzes acesas, e vale junto com ele.');
+  }
+  dl.saveAndClose();
+  setConfig_('FUTURE_MODELOS_811', new Date().toISOString(), 'Modelos do Edifício Future atualizados (UC, medidor, vistoria, caução)');
+}
+/** Manda o contrato e o laudo (PDF anexo) e o link do vídeo da vistoria por e-mail; o vídeo fica compartilhado só com esse e-mail. */
+function futureEnviarVistoria_(d, u) {
+  var tc = tabela_('FutContratos'), c = tc.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!c) throw falha_('Contrato não encontrado.');
+  var email = futEmailOk_(d.email || c.email);
+  if (!email) throw falha_('Informe um e-mail válido do(a) locatário(a).');
+  var video = String(d.video_url || c.video_url || '').trim();
+  var idDe = function (url) { var m = /\/d\/([\w-]{20,})|[?&]id=([\w-]{20,})/.exec(url || ''); return m ? (m[1] || m[2]) : ''; };
+  var anexos = [];
+  [c.pdf_url, c.laudo_pdf].forEach(function (url) { var id = idDe(url); if (id) try { anexos.push(DriveApp.getFileById(id).getBlob()); } catch (e) { /* segue sem */ } });
+  if (video && idDe(video)) { try { DriveApp.getFileById(idDe(video)).addViewer(email); } catch (e) { /* conta sem Google: o link pede acesso */ } }
+  var nome = String(c.nome || '').split(' ')[0];
+  nome = nome ? nome.charAt(0) + nome.slice(1).toLowerCase() : '';
+  var apto = String(c.unidade || '').replace('AP ', 'apartamento ');
+  var corpo = 'Olá, ' + nome + '!\n\nSeguem em anexo o contrato de locação e o laudo de vistoria do ' + apto + ' do Edifício Future.' +
+    (video ? '\n\nVídeo da vistoria (faz parte do laudo): ' + video : '') +
+    '\n\nConfira o laudo e o vídeo. Se encontrar alguma divergência, avise por escrito em até ' + futPrazoLaudo_() + ' da entrega das chaves; depois desse prazo, vale o estado descrito no laudo.' +
+    '\n\nA devolução do apartamento deve ser feita nas mesmas condições registradas na vistoria. A caução é a garantia da locação e só é devolvida depois da vistoria final.\n\nQualquer dúvida, estamos à disposição.\n\nAdministração do ' + (config_('FUTURE_NOME_MSG') || 'Edifício Future');
+  GmailApp.sendEmail(email, 'Contrato e laudo de vistoria — ' + apto + ' — Edifício Future', corpo, { attachments: anexos, name: config_('FUTURE_NOME_MSG') || 'Edifício Future' });
+  comTrava_(function () {
+    atualizarLinha_(tc, c, { email: email, video_url: video, enviado_em: new Date().toISOString(), enviado_por: u.nome || u.usuario });
+    var T = futTabs_(), p = T.pe.linhas.filter(function (x) { return x.id === c.pessoa_id; })[0];
+    if (p && !p.email) atualizarLinha_(T.pe, p, { email: email });
+  });
+  registrar_(u.usuario, 'future: laudo enviado por e-mail', c.unidade + ' ' + c.nome);
+  return { ok: true, email: email, anexos: anexos.length };
 }
 
 /* ---------- 8.8.0: DISTRATO (encerrar a locação) e TERMO ADITIVO (prorrogar, reajustar, trocar de apartamento, outra cláusula) ---------- */
@@ -9806,7 +9996,8 @@ function futureDistrato_(d, u) {
       DATA_CONTRATO: v.inicio ? dataBR_(v.inicio) : '[data do contrato]', FIM_ORIGINAL: v.fim ? dataBR_(v.fim) : '[data]', DATA_ENCERRAMENTO: dataBR_(enc),
       DATA_CHAVES: dataBR_(chaves), MOTIVO_TEXTO: MOT[motivo] || MOT.acordo, VISTORIA_TEXTO: VIST, PENDENCIAS_TEXTO: PEND, MULTA_TEXTO: MULTA, CAUCAO_TEXTO: CAU,
       DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje) });
-    var arq = futGerarDoc_('distrato', 'DISTRATO DE LOCAÇÃO', v, campos);
+    // 8.11: distrato feito à mão (fora do painel) → só libera o apartamento e registra a saída, sem gerar documento
+    var arq = d.sem_documento === 'sim' ? { doc: '', pdf: '', pasta_url: v.pasta_url || '' } : futGerarDoc_('distrato', 'DISTRATO DE LOCAÇÃO', v, campos);
     // apartamento livre e locatário com saída
     atualizarLinha_(T.un, v.un, { situacao: 'vago', locatario: '', telefone: '', saida: enc, caucao: '', garantia: '', atualizado_em: agora, atualizado_por: u.usuario });
     if (v.pessoa) atualizarLinha_(T.pe, v.pessoa, { situacao: 'saiu', saida: enc });

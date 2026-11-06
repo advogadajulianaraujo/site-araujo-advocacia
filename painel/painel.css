@@ -1501,3 +1501,14 @@ body{background:var(--marfim)}
 .aguarda-compacta{margin-bottom:0;padding:2px 0}
 .aguarda-compacta strong{font-size:15px}
 .aguarda-ok .aguarda-lista{margin-top:12px}
+/* 8.11: distrato feito à mão → só "liberar o apartamento" */
+.fut-distrato.so-liberar > :not(.fut-manual):not(.acoes):not(.erro){display:none}
+.fut-manual{background:#FFF7E6;border:1px solid #E8C98A;border-radius:10px;padding:10px 12px}
+.fut-enviar-box{margin-top:16px;border-top:1px solid #e5e0d6;padding-top:12px}
+/* 8.11: honorários antigos para lançar */
+.lev-lista{list-style:none;padding:0;margin:8px 0;display:grid;gap:8px}
+.lev-item{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border:1px solid #e5e0d6;border-radius:10px;padding:10px 12px;background:#fff}
+.lev-item.ativo{border-left:4px solid #B58D52}
+.lev-txt .tag{margin-left:8px}
+.lev-fontes{margin:6px 0 0;padding-left:18px;font-size:14px}
+.lev-fontes li{margin:3px 0}

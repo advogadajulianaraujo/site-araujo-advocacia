@@ -2510,7 +2510,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.10.0';
+  const VERSAO_PAINEL = '8.11.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3278,6 +3278,7 @@
         tabelaParcelas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉', true))
       : ver === 'proximas' ? tabelaParcelas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.', true)
       : ver === 'pix' ? blocoPix()
+      : ver === 'antigos' ? blocoLevantamento()
       : ver === 'levantar' ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'O robô acha alvará, RPV e precatório nas intimações e cria a tarefa para quem cuida do processo. Depois de levantar, abra o honorário e use "Lançar alvará ou depósito": a tarefa fecha sozinha.'),
         tabela(['Cliente', 'Processo', 'Tipo', 'Valor citado', 'Honorário previsto', 'Com quem', ''], lev, x => [
           h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente || '—')),
@@ -3316,8 +3317,52 @@
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
           aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'Próximos 30 dias', r.proximas.length),
-          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length)),
+          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('antigos', '📥 Antigos para lançar', null)),
         conteudo));
+  }
+
+  /** 8.11: honorários que estão nos contratos/promissórias/GEA (planilha do levantamento) e ainda não estão no painel. Nada é lançado sozinho. */
+  function blocoLevantamento() {
+    const caixa = h('div', {}, h('p', { class: 'peq' }, 'Lendo a planilha do levantamento (contratos, promissórias, GEA)…'));
+    let mostrarTodos = false;
+    const desenhar = r => {
+      const pend = r.lista.filter(x => !x.ignorado), ign = r.lista.filter(x => x.ignorado);
+      const exitoAtivos = pend.filter(x => x.ativo && x.fontes.some(f => f.percentual > 0));
+      const resumoF = f => f.aba === 'Contrato' ? `Contrato: ${f.percentual ? f.percentual + '% de êxito' : ''}${f.valor ? ' ' + reais(f.valor) : ''}${f.parcelas ? ' em ' + f.parcelas + 'x' : ''}${!f.percentual && !f.valor ? (f.modalidade || 'condição a conferir') : ''}${/não verificada/i.test(f.assinatura || '') ? ' (assinatura não conferida)' : ''}`
+        : f.aba === 'Mensalista' ? `Mensalista: ${reais(f.mensal)}/mês${f.parcelas ? ' · ' + f.parcelas + ' meses' : ''}`
+        : f.aba === 'Cobrança' ? `Cobrança: ${f.valor ? reais(f.valor) + ' · ' : ''}${f.situacao}`
+        : `Promissórias: ${f.parcelas || '?'} × ${f.valor ? reais(f.valor) : '?'}${f.primeiro ? ' desde ' + dataBR(f.primeiro) : ''}`;
+      const linkNovo = (x, f) => {
+        const q = new URLSearchParams({ cliente: x.cliente_id });
+        if (f.aba === 'Mensalista') { q.set('tipo', 'mensal'); q.set('mensal', String(f.mensal)); if (f.inicio) q.set('inicio', f.inicio); }
+        else if (f.percentual && !f.valor) { q.set('tipo', 'exito'); q.set('pct', String(f.percentual)); }
+        else { q.set('tipo', 'parcelado'); const n = f.parcelas || 1; if (f.aba === 'Promissórias' && f.valor) q.set('valor', String(f.valor * n)); else if (f.valor) q.set('valor', String(f.valor)); q.set('parcelas', String(n)); if (f.primeiro) q.set('venc', f.primeiro); }
+        q.set('obs', 'Do levantamento (' + f.aba + ')' + (f.link ? ': ' + f.link : ''));
+        return '#/honorario/novo?' + q;
+      };
+      const linha = x => h('li', { class: 'lev-item' + (x.ativo ? ' ativo' : '') },
+        h('div', { class: 'lev-txt' }, h('a', { href: '#/cliente/' + x.cliente_id }, h('strong', {}, x.nome)), x.ativo ? h('span', { class: 'tag ok' }, 'processo ativo') : h('span', { class: 'tag' }, 'sem processo ativo'),
+          h('ul', { class: 'lev-fontes' }, x.fontes.map(f => h('li', {}, resumoF(f), ' ', f.link ? h('a', { href: f.link, target: '_blank', rel: 'noopener noreferrer' }, 'ver') : null, ' ',
+            h('a', { class: 'btn mini', href: linkNovo(x, f) }, 'Lançar'))))),
+        h('div', { class: 'lev-bts' }, x.ignorado ? botao('Voltar para a lista', async ev => { ev.target.disabled = true; await api('fin.levantamento', { acao: 'voltar', cliente_id: x.cliente_id }); carregar(); }, 'mini sec')
+          : botao('Não lançar', async ev => { ev.target.disabled = true; await api('fin.levantamento', { acao: 'ignorar', cliente_id: x.cliente_id }); ev.target.closest('li').remove(); }, 'mini sec')));
+      const visiveis = mostrarTodos ? pend : pend.slice(0, 60);
+      caixa.replaceChildren(
+        h('p', { class: 'peq fin-dica' }, `${pend.length} cliente(s) têm honorário nos contratos, promissórias ou no GEA e ainda não têm honorário no painel. Os dados vieram da leitura dos PDFs: confira antes de lançar. "Lançar" abre o honorário já preenchido.`),
+        exitoAtivos.length ? h('div', { class: 'nota' }, `${exitoAtivos.length} são de êxito (percentual) com processo ativo. `,
+          botao(`Lançar os ${exitoAtivos.length} de êxito (ficam "Importado — conferir")`, async ev => {
+            if (!confirm(`Lançar ${exitoAtivos.length} honorários de êxito, cada um com o percentual do contrato, como "Importado — conferir"? Não cria parcelas.`)) return;
+            ev.target.disabled = true;
+            const itens = exitoAtivos.map(x => { const f = x.fontes.find(f => f.percentual > 0); return { cliente_id: x.cliente_id, processo_id: x.processo_id, percentual: f.percentual, fonte: f.link || '' }; });
+            const r2 = await api('fin.levantamento', { acao: 'lancar_exito', itens }); avisar(`${r2.feitos} honorário(s) de êxito lançado(s).`); carregar();
+          }, 'mini')) : null,
+        h('ul', { class: 'lev-lista' }, visiveis.map(linha)),
+        pend.length > visiveis.length ? botao(`Mostrar todos (${pend.length})`, () => { mostrarTodos = true; desenhar(r); }, 'sec') : null,
+        ign.length ? h('details', {}, h('summary', {}, `Marcados "não lançar" (${ign.length})`), h('ul', { class: 'lev-lista' }, ign.map(linha))) : null);
+    };
+    const carregar = () => api('fin.levantamento', {}).then(desenhar).catch(e => caixa.replaceChildren(h('p', { class: 'erro' }, e.message)));
+    carregar();
+    return caixa;
   }
 
   /** A receber: quem deve ao escritório, por cliente e honorário (para conferir, cobrar e imprimir). */
@@ -3372,7 +3417,9 @@
     carregando();
     const novo = id === 'novo';
     const [clientes, procs, dados] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}), novo ? null : api('fin.honorario', { id })]);
-    const x = novo ? { cliente_id: params.get('cliente') || '', tipo: 'parcelado', situacao: 'ativo' } : dados.honorario;
+    // 8.11: "Lançar" do levantamento chega com os dados no endereço (tipo, valor, parcelas, vencimento, %, mensalidade, observação)
+    const x = novo ? { cliente_id: params.get('cliente') || '', tipo: ['parcelado', 'exito', 'mensal'].includes(params.get('tipo')) ? params.get('tipo') : 'parcelado', situacao: params.get('obs') ? 'importado — conferir' : 'ativo',
+      valor_total: params.get('valor') || '', percentual: params.get('pct') || '', valor_mensal: params.get('mensal') || '', inicio: params.get('inicio') || '', observacoes: params.get('obs') || '' } : dados.honorario;
     const recarregar = () => telaHonorario(id, params);
     const opCli = [['', '— escolha o cliente —']].concat(clientes.map(c => [c.id, c.nome]));
     const opProc = [['', '— sem processo —']].concat(procs.filter(p => p.numero).map(p => [p.id, p.numero + ' · ' + (p.cliente_nome || '')]));
@@ -3384,8 +3431,8 @@
         campo('tipo', 'Tipo', x.tipo, { opcoes: Object.entries(TIPOS_HON) }),
         campo('descricao', 'Descrição', x.descricao, { max: 200, dica: 'Ex.: Ação trabalhista, Divórcio, Assessoria mensal' }),
         so('parcelado', campo('valor_total', 'Valor total (R$)', x.valor_total ? String(x.valor_total).replace('.', ',') : '', { modo: 'decimal' })),
-        novo ? so('parcelado', campo('parcelas', 'Número de parcelas', '1', { modo: 'numeric', max: 3 })) : null,
-        novo ? so('parcelado', campo('primeiro_vencimento', '1º vencimento', hojeISO(), { tipo: 'date' })) : null,
+        novo ? so('parcelado', campo('parcelas', 'Número de parcelas', params.get('parcelas') || '1', { modo: 'numeric', max: 3 })) : null,
+        novo ? so('parcelado', campo('primeiro_vencimento', '1º vencimento', params.get('venc') || hojeISO(), { tipo: 'date' })) : null,
         novo ? so('parcelado', campo('dia_demais', 'Demais parcelas: todo dia', '', { modo: 'numeric', max: 2, dica: 'Vazio = mesmo dia da 1ª' })) : null,
         so('exito', campo('percentual', 'Percentual do êxito (%)', x.percentual, { modo: 'decimal', max: 6 })),
         so('mensal', campo('valor_mensal', 'Mensalidade (R$)', x.valor_mensal ? String(x.valor_mensal).replace('.', ',') : '', { modo: 'decimal' })),
@@ -3473,7 +3520,16 @@
     // 8.6.0 (pedido da usuária): "Aguardando assinatura" fica só em Clientes; em Modelos não aparece mais
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'),
-        h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.'))),
+        h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.')),
+        h('div', { class: 'barra' }, botao('📋 Copiar o padrão de petições (para IA)', async ev => {
+          // 8.11: o comando do escritório para qualquer IA (formatação, estrutura, artigos, jurisprudência, cálculos, pedidos)
+          try {
+            const t = await (await fetch('/painel/padrao-peticoes.md?v=' + VERSAO_PAINEL, { cache: 'no-cache' })).text();
+            const corpo = t.split(/\n---\n/).slice(1).join('\n---\n').replace(/^#+\s*/gm, '').trim();
+            await navigator.clipboard.writeText(corpo);
+            avisar('Padrão copiado. Cole na IA e acrescente o relato do caso e os documentos (de preferência com o PDF de referência).');
+          } catch (e) { avisar('Não consegui copiar. Abra docs/PADRAO-PETICOES.md no repositório.', true); }
+        }, 'sec'))),
       assinTopo,
       novoCli ? h('div', { class: 'passo-ok' }, h('strong', {}, `✓ ${novoCli.nome} cadastrado(a).`), ' Agora escolha o tipo de ação e gere a procuração e o contrato.') : null,
       h('section', { class: 'caixa' + (novoCli ? ' destaque-caixa' : '') }, h('h2', {}, 'Gerar para um cliente'),

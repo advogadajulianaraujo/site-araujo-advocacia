@@ -777,6 +777,7 @@
       campo('cpf', 'CPF', base ? base.cpf : '', { max: 18 }),
       campo('rg', 'RG', pes.rg || '', { max: 30 }),
       campo('telefone', 'WhatsApp', base ? base.telefone : '', { tipo: 'tel', max: 30, dica: 'vai no contrato (vistoria enviada por WhatsApp)' }),
+      campo('email', 'E-mail (Gmail)', pes.email || '', { tipo: 'email', max: 120, dica: 'para mandar o contrato, o laudo e o vídeo da vistoria' }),
       campo('nacionalidade', 'Nacionalidade', '', { dica: 'vazio = brasileiro(a)' }),
       campo('estado_civil', 'Estado civil', '', { opcoes: [['', '—'], ['solteiro(a)', 'Solteiro(a)'], ['casado(a)', 'Casado(a)'], ['divorciado(a)', 'Divorciado(a)'], ['viúvo(a)', 'Viúvo(a)'], ['união estável', 'União estável']] }),
       campo('profissao', 'Profissão', ''),
@@ -786,7 +787,10 @@
       campo('data_vistoria', 'Data da vistoria', base ? base.fim : hojeISO(), { tipo: 'date' }),
       campo('video_duracao', 'Duração do vídeo da vistoria', '', { dica: 'ex.: 6 minutos e 40 segundos' }),
       campo('data_assinatura', 'Data da assinatura', hojeISO(), { tipo: 'date' }),
-      campo('kit', 'Nº da kit (quadro de medição)', ''), campo('uc', 'Unidade consumidora (UC)', ''),
+      campo('kit', 'Nº da kit (quadro de medição)', ''), campo('uc', 'Unidade consumidora (UC)', ''), campo('medidor', 'Medidor de energia (relógio)', ''),
+      campo('leitura', 'Leitura do medidor na entrega (kWh)', '', { modo: 'decimal' }),
+      campo('chaves', 'Chaves e controles entregues', '', { largo: true, dica: 'ex.: 2 chaves da porta, 1 chave do portão, 1 controle do ar-condicionado' }),
+      campo('obs_vistoria', 'Ressalvas da vistoria (o que já tinha algum defeito)', '', { area: true, largo: true, dica: 'vazio = nenhuma ressalva. Tudo o que aparece no vídeo já está listado no laudo (luzes, tomadas, móveis, eletrodomésticos, louças, esquadrias).' }),
       campo('atualizar_unidade', 'Atualizar o apartamento', 'sim', { opcoes: [['sim', 'Sim: passa a ser o(a) locatário(a) atual'], ['nao', 'Não: contrato para depois (o apartamento fica como está)']] }),
       h('div', { class: 'fut-resumo largo', 'aria-live': 'polite' }),
       h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar contrato e laudo'), h('p', { class: 'erro' })));
@@ -798,7 +802,7 @@
       const u = r.unidades.find(x => x.id === q('unidade').value);
       if (u && deUnidade) {
         if (!base || deUnidade === 'troca') q('aluguel').value = u.aluguel ? String(u.aluguel).replace('.', ',') : '';
-        q('kit').value = String(u.kit || '').replace(/\.0$/, ''); q('uc').value = String(u.uc || '').replace(/\.0$/, '');
+        q('kit').value = String(u.kit || '').replace(/\.0$/, ''); q('uc').value = String(u.uc || '').replace(/\.0$/, ''); q('medidor').value = String(u.medidor || '').replace(/\.0$/, '');
         if (!q('telefone').value && u.telefone && base) q('telefone').value = u.telefone;
       }
       const temp = (f.querySelector('[name="tipo"]:checked') || {}).value === 'temporada';
@@ -841,7 +845,8 @@
       saida.replaceChildren(h('section', { class: 'caixa fut-pronto' }, h('h2', {}, '✓ Contrato pronto — ' + x.unidade + ' · ' + x.nome),
         h('p', { class: 'peq' }, `Termina em ${dataBR(x.fim)}.` + (x.temporada ? ` Temporada de ${reais(x.total)} · ${x.parcelas} cobrança(s) criada(s) em Cobranças.` : x.caucao ? ` Caução: ${reais(x.caucao)}.` : ' Sem caução.') + ' Confira o texto antes de imprimir; os Google Docs podem ser ajustados.'),
         h('div', { class: 'fut-acoes' }, link(x.contrato.pdf, '📄 Contrato (PDF)'), link(x.contrato.doc, '✎ Contrato (editar)'), link(x.laudo.pdf, '📋 Laudo (PDF)'), link(x.laudo.doc, '✎ Laudo (editar)'), link(x.pasta_url, '📁 Pasta'),
-          x.telefone ? h('a', { class: 'btn wa', href: whats(x.telefone, `Olá, ${primeiro(x.nome)}! Seu contrato de locação do ${x.unidade.replace('AP ', 'apartamento ')} está pronto. Vou te mandar o contrato e o laudo de vistoria para conferir e assinar.`), target: '_blank', rel: 'noopener noreferrer' }, 'Avisar no WhatsApp') : null)));
+          x.telefone ? h('a', { class: 'btn wa', href: whats(x.telefone, `Olá, ${primeiro(x.nome)}! Seu contrato de locação do ${x.unidade.replace('AP ', 'apartamento ')} está pronto. Vou te mandar o contrato e o laudo de vistoria para conferir e assinar.`), target: '_blank', rel: 'noopener noreferrer' }, 'Avisar no WhatsApp') : null),
+        x.id ? caixaEnviarVistoria({ id: x.id, unidade: x.unidade, nome: x.nome, telefone: x.telefone, email: x.email, pasta_url: x.pasta_url }) : null));
       saida.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     const lista = K().tabela(['Apartamento', 'Locatário', 'Prazo', 'Garantia', 'Documentos'], r.contratos, c => [
@@ -854,7 +859,9 @@
         c.pdf_url ? h('a', { class: 'fut-doc', href: c.pdf_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, c.tipo === 'distrato' ? '📄 distrato' : c.tipo === 'aditivo' ? '📄 aditivo' : '📄 contrato') : null,
         c.laudo_pdf ? h('a', { class: 'fut-doc', href: c.laudo_pdf, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📋 laudo') : null,
         c.pasta_url ? h('a', { class: 'fut-doc', href: c.pasta_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📁 pasta') : null,
-        /^(distrato|aditivo)$/.test(c.tipo) ? null : h('button', { type: 'button', class: 'link fut-doc', onclick: ev => { ev.stopPropagation(); ir('contratos', { renovar: c.id, ap: '' }); } }, '↻ renovar')))
+        /^(distrato|aditivo)$/.test(c.tipo) ? null : h('button', { type: 'button', class: 'link fut-doc', onclick: ev => { ev.stopPropagation(); ir('contratos', { renovar: c.id, ap: '' }); } }, '↻ renovar'),
+        c.laudo_pdf ? h('button', { type: 'button', class: 'link fut-doc', title: c.enviado_em ? 'enviado por e-mail em ' + dataBR(c.enviado_em.slice(0, 10)) : 'mandar contrato, laudo e vídeo', onclick: ev => { ev.stopPropagation();
+          saida.replaceChildren(h('section', { class: 'caixa' }, h('h2', {}, `Enviar a vistoria — ${c.unidade} · ${c.nome}`), caixaEnviarVistoria(c))); saida.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, c.enviado_em ? '✉ enviado' : '✉ enviar vistoria') : null))
     ], () => {}, 'Nenhum contrato gerado pelo painel ainda.');
     // ----- 8.8.0: contratos EM VIGOR com Termo aditivo e Distrato -----
     const vigentes = r.unidades.filter(u => /^(alugado|renovar)$/.test(u.situacao) && u.modalidade !== 'temporada');
@@ -870,6 +877,10 @@
       const hoje = hojeISO(), diasFalta = u.saida && u.saida > hoje ? Math.round((Date.parse(u.saida) - Date.parse(hoje)) / 86400000) : 0;
       const multaSug = diasFalta ? Math.round(u.aluguel / 30 * diasFalta * 0.4 * 100) / 100 : 0;
       const f = h('form', { class: 'campos fut-distrato', novalidate: true },
+        h('label', { class: 'marcar largo fut-manual' }, h('input', { type: 'checkbox', name: 'sem_documento', value: 'sim', onchange: ev => {
+          f.classList.toggle('so-liberar', ev.target.checked);
+          f.querySelector('button[type=submit]').textContent = ev.target.checked ? 'Liberar o apartamento (distrato já feito)' : 'Gerar o distrato e liberar o apartamento';
+        } }), ' Já fiz o distrato fora do painel — só tirar o(a) locatário(a) e deixar o apartamento disponível'),
         campo('data_encerramento', 'Encerra em', hoje, { tipo: 'date' }),
         campo('data_chaves', 'Entrega das chaves', hoje, { tipo: 'date' }),
         campo('motivo', 'Motivo', diasFalta > 0 ? 'acordo' : 'fim', { opcoes: [['fim', 'Fim do prazo do contrato'], ['acordo', 'Comum acordo'], ['locatario', 'Pedido do locatário antes do prazo'], ['locadora', 'Pedido da locadora']] }),
@@ -889,8 +900,9 @@
         u.caucao ? campo('lancar_caucao', 'Lançar a devolução da caução no caixa?', 'sim', { opcoes: [['sim', 'Sim'], ['nao', 'Não']] }) : null,
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Gerar o distrato e liberar o apartamento')), h('p', { class: 'erro largo' }));
       K().aoEnviar(f, async fd => {
-        if (!confirm(`Encerrar a locação do ${u.id} (${u.locatario})? O apartamento fica vago no painel.`)) return;
+        if (!confirm(`Encerrar a locação do ${u.id} (${u.locatario})? O apartamento fica vago (disponível) no painel.`)) return;
         const x = await api('future.contrato.distrato', { unidade: u.id, ...Object.fromEntries(fd.entries()) });
+        if (fd.get('sem_documento') === 'sim') { avisar(`${x.unidade}: ${x.nome} saiu. O apartamento está disponível.`); setTimeout(() => K().rota(), 600); return; }
         resultadoDoc(alvo, 'Distrato', x, `Olá, ${primeiro(x.nome)}! Segue o termo de distrato do ${x.unidade.replace('AP ', 'apartamento ')} para conferir e assinar. Obrigada por ter ficado com a gente!`);
       });
       return f;
@@ -940,6 +952,26 @@
       saida,
       h('section', { class: 'caixa' }, h('h2', {}, 'Histórico: contratos, aditivos e distratos'), lista));
     if (unSel) atualizar(base ? 'base' : 'troca'); else atualizar(false);
+  }
+
+  /** 8.11: manda o contrato, o laudo e o vídeo da vistoria por e-mail (Gmail, com PDFs anexos) ou WhatsApp (mensagem pronta;
+   *  os PDFs e o vídeo são anexados à mão — não deixamos arquivos públicos). */
+  function caixaEnviarVistoria(c) {
+    const { h, api, avisar } = K();
+    const f = h('form', { class: 'campos fut-enviar', novalidate: true },
+      K().campo('email', 'E-mail do(a) locatário(a)', c.email || '', { tipo: 'email', max: 120 }),
+      K().campo('video_url', 'Link do vídeo da vistoria no Drive', c.video_url || '', { largo: true, dica: 'suba o vídeo na pasta do morador e cole o link aqui (o vídeo fica compartilhado só com esse e-mail)' }),
+      h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, '✉ Enviar por e-mail'),
+        c.telefone ? h('a', { class: 'btn wa', target: '_blank', rel: 'noopener noreferrer', href: whats(c.telefone,
+          `Olá, ${primeiro(c.nome)}! Segue o contrato e o laudo de vistoria do ${String(c.unidade).replace('AP ', 'apartamento ')} do Edifício Future, com o vídeo da vistoria. ` +
+          `Confira tudo: se encontrar alguma divergência, avise por escrito em até 5 dias da entrega das chaves. A devolução do apartamento deve ser nas mesmas condições da vistoria, e a caução é a garantia da locação.`) }, 'Mandar no WhatsApp') : null,
+        c.pasta_url ? h('a', { class: 'btn sec', href: c.pasta_url, target: '_blank', rel: 'noopener noreferrer' }, '📁 Pasta (anexar no WhatsApp)') : null),
+      h('p', { class: 'erro largo' }));
+    K().aoEnviar(f, async fd => {
+      const x = await api('future.vistoria.enviar', { id: c.id, email: fd.get('email'), video_url: fd.get('video_url') });
+      avisar(`Enviado para ${x.email} (${x.anexos} PDF anexado${x.anexos === 1 ? '' : 's'}).`);
+    });
+    return h('div', { class: 'fut-enviar-box' }, h('h3', {}, 'Enviar a vistoria ao locatário'), h('p', { class: 'peq' }, 'Pelo e-mail vão o contrato e o laudo em PDF e o link do vídeo. Pelo WhatsApp vai a mensagem pronta: anexe os PDFs e o vídeo da pasta.'), f);
   }
 
   /* ---------- Configurações ---------- */
