@@ -1310,7 +1310,19 @@
 
     let blocoCliente;
     const idCliente = h('input', { type: 'hidden', name: 'cliente_id', value: opc.cliente ? opc.cliente.id : (opc.clienteInicial || '') });
-    if (opc.cliente) blocoCliente = idCliente;
+    // 8.11.2: prévia — o que vai entrar no documento e o que está faltando (em vermelho), antes de gerar
+    const previa = h('div', { class: 'previa-doc', 'aria-live': 'polite' });
+    const desenharPrevia = c => {
+      if (!c) { previa.replaceChildren(); return; }
+      const pj = c.tipo === 'PJ';
+      const itens = [[pj ? 'CNPJ' : 'CPF', c.cpf_cnpj], pj ? ['Representante', c.representante] : ['RG', c.rg], pj ? null : ['Estado civil', c.estado_civil], pj ? null : ['Profissão', c.profissao],
+        ['Endereço', [c.endereco, c.cidade && c.uf ? c.cidade + '/' + c.uf : c.cidade].filter(Boolean).join(', ')], ['Telefone', c.telefone]].filter(Boolean);
+      const faltam = itens.filter(x => !String(x[1] || '').trim()).map(x => x[0]);
+      previa.replaceChildren(h('div', { class: 'previa-cab' }, h('strong', {}, 'Vai no documento: '), c.nome),
+        h('div', { class: 'previa-itens' }, itens.map(([r, v]) => h('span', { class: v ? 'ok' : 'falta' }, r + ': ' + (v || 'FALTA')))),
+        faltam.length ? h('div', { class: 'previa-falta' }, `Falta ${faltam.join(', ')}. O documento sai com "[COMPLETAR]" nesses pontos — `, h('a', { href: '#/cliente/' + c.id }, 'completar o cadastro')) : h('div', { class: 'peq' }, '✓ Cadastro completo para a procuração e o contrato.'));
+    };
+    if (opc.cliente) blocoCliente = h('div', { class: 'largo' }, idCliente, previa);
     else {
       const rotulo = c => c.nome + (c.cpf_cnpj ? ' · ' + c.cpf_cnpj : '');
       const porRotulo = new Map(opc.clientes.map(c => [rotulo(c), c]));
@@ -1324,7 +1336,7 @@
         aviso.textContent = c ? (c.situacao !== 'completo' ? 'Cadastro a completar: confira CPF, RG, profissão e endereço antes de gerar.' : '✓ Cliente escolhido') : '';
       });
       blocoCliente = h('div', { class: 'largo' }, h('label', { for: 'f-cliente-busca' }, 'Cliente *'), busca,
-        h('datalist', { id: 'dl-clientes' }, opc.clientes.map(c => h('option', { value: rotulo(c) }))), idCliente, aviso);
+        h('datalist', { id: 'dl-clientes' }, opc.clientes.map(c => h('option', { value: rotulo(c) }))), idCliente, aviso, previa);
     }
 
     // nº do processo: opcional; obrigatório só para petições e substabelecimento
@@ -1337,9 +1349,10 @@
     const campoComarca = campo('comarca', 'Comarca (cidade/UF)', '', { max: 80, dica: 'Ex.: Tubarão/SC' });
     const carregarProcessos = async id => {
       dlProc.replaceChildren();
-      if (!id) return;
+      if (!id) { desenharPrevia(null); return; }
       try {
         const r = await api('clientes.obter', { id });
+        desenharPrevia(r.cliente);
         r.processos.forEach(p => { orgaos[p.numero] = p.orgao || ''; });
         dlProc.replaceChildren(...r.processos.filter(p => p.numero).map(p => h('option', { value: p.numero }, [p.area, p.orgao, p.parte_contraria].filter(Boolean).join(' · '))));
         avisoProc.textContent = r.processos.length ? `${r.processos.length} processo(s) deste cliente na lista.` : 'Este cliente não tem processo cadastrado; digite o número, se houver.';
@@ -1365,6 +1378,11 @@
         campoF('valor_mensal', 'Mensalidade (R$)', '', { modo: 'decimal', max: 20 }, ['mensal']),
         campoF('dia_vencimento', 'Dia do vencimento', '10', { modo: 'numeric', max: 2 }, ['mensal'])),
       h('p', { class: 'peq', 'data-formas': 'cadastrado' }, 'A cláusula usa o honorário ativo deste cliente na aba Financeiro.'),
+      // 8.11.2: formato do contrato — uma folha (compacto) ou o padrão do escritório (EB Garamond 12, entrelinha 1,5, recuo de 1 cm)
+      h('div', { class: 'formas formato-contrato' }, h('span', { class: 'peq' }, 'Formato do contrato: '),
+        [['umafolha', 'Uma folha (compacto)'], ['padrao', 'Padrão do escritório (entrelinha 1,5)']].map(([v, t]) => h('label', { class: 'opcao' },
+          h('input', { type: 'radio', name: 'formato_contrato', value: v, checked: (() => { try { return (localStorage.getItem('formato_contrato') || 'umafolha') === v; } catch (e) { return v === 'umafolha'; } })(),
+            onchange: () => { try { localStorage.setItem('formato_contrato', v); } catch (e) { /* ok */ } } }), h('span', {}, t)))),
       lancar);
     const prev = h('fieldset', { class: 'caixa-int' }, h('legend', {}, 'Honorários do contrato previdenciário (concessão)'),
       h('div', { class: 'formas' }, [['padrao', '2 benefícios ou 30% dos atrasados (o que for maior)'], ['duas_retro', '2 primeiras parcelas do benefício + retroativos'], ['duas', 'Apenas as 2 primeiras parcelas do benefício']]
@@ -1438,7 +1456,7 @@
           dia_vencimento: fd.get('dia_vencimento'), lancar: !!fd.get('lancar') },
         recibo: rec.hidden ? null : { valor: fd.get('recibo_valor'), referente: fd.get('recibo_referente') },
         prev: prev.hidden ? null : { forma: fd.get('prev_forma'), percentual: fd.get('prev_percentual') },
-        representacao: fd.get('representacao'),
+        representacao: fd.get('representacao'), formato_contrato: fd.get('formato_contrato') || 'umafolha',
         menores: menoresBox.hidden ? [] : fd.getAll('menor_nome').map((nome, i) => ({ nome: nome.trim(), cpf: fd.getAll('menor_cpf')[i], nascimento: fd.getAll('menor_nasc')[i], genero: fd.getAll('menor_sexo')[i] })).filter(m => m.nome)
       };
       const r = await api('documentos.gerar', dados);
@@ -1904,21 +1922,30 @@
 
   /** Processo "a ajuizar": 1) avisar o cliente no WhatsApp; 2) Conferido (quem fez a inicial e, se já tiver, o número). */
   function caixaPeticaoInicial(p, cliente) {
+    // 8.11.2 (pedido da usuária): primeiro a petição inicial vai para o CLIENTE ler e aprovar; depois de mandar no WhatsApp,
+    // o "✓ Conferido" aparece junto, no mesmo passo (quem fez a inicial e, se já protocolou, o número)
     const msgFeita = (() => {
-      let tel = telefoneWhats((cliente && cliente.telefone) || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      const tel = telefoneWhats(cliente && cliente.telefone); if (!tel) return null;
       const nome = nomeProprioJS(String(cliente.nome || '').split(' ')[0]);
-      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e está sendo protocolada na Justiça. Assim que sair o número do processo, enviamos para você. Você poderá acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e vou te enviar o arquivo logo abaixo para você ler com calma. ` +
+        `Veja se está tudo certo, se ficou alguma informação de fora ou se você quer mudar alguma coisa. Assim que você aprovar, damos entrada no processo e te mandamos o número para acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
     })();
-    const extra = campoNumeroInicial;
+    const conferido = botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, '✓ Conferido');
+    let enviado = false; try { enviado = sessionStorage.getItem('inicial_wa_' + p.id) === '1'; } catch (e) { /* segue */ }
+    const lugarConf = h('span', { class: 'inicial-conf' }, enviado || !msgFeita ? conferido : null);
+    const wa = msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => {
+      registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial para o cliente aprovar');
+      try { sessionStorage.setItem('inicial_wa_' + p.id, '1'); } catch (e) { /* segue */ }
+      setTimeout(() => { lugarConf.replaceChildren(conferido); lugarConf.classList.add('aparece'); }, 300);
+    } }, 'WhatsApp: mandar a inicial ao cliente') : h('span', { class: 'peq' }, 'Cliente sem telefone');
     return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
       h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
         h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Ninguém pegou ainda. Aperte "Eu faço" para ir para as suas Tarefas.')),
         h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''), botaoNaoFechou(p))),
       h('ol', { class: 'passos-inicial' },
-        h('li', {}, h('span', { class: 'passo-n' }, '1'), h('div', {}, h('strong', {}, 'Avise o cliente'), h('div', { class: 'peq' }, 'Mensagem pronta no WhatsApp.')),
-          msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial') }, 'WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone')),
-        h('li', {}, h('span', { class: 'passo-n' }, '2'), h('div', {}, h('strong', {}, 'Conferido'), h('div', { class: 'peq' }, 'Quem fez a inicial. O cliente vai para a próxima etapa e a administração dá o OK.')),
-          botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', extra))));
+        h('li', {}, h('span', { class: 'passo-n' }, '1'),
+          h('div', {}, h('strong', {}, 'Mande a inicial para o cliente aprovar'), h('div', { class: 'peq' }, 'A mensagem diz que a petição está pronta e pede para ver se está certa ou se quer mudar algo. Anexe o arquivo no WhatsApp. Depois de mandar, o "✓ Conferido" aparece aqui do lado.')),
+          h('div', { class: 'barra inicial-acoes' }, wa, lugarConf))));
   }
 
   /** 8.11: o código do Acompanhe gerado ao protocolar só existe nesta aba (o servidor guarda embaralhado). */
@@ -1950,7 +1977,9 @@
     const busca = params.get('busca') || '';
     const semCliente = params.get('semcliente') === '1';
     const area = params.get('area') || '';
-    const sit = params.get('sit') || 'todos';
+    // 8.11.2 (pedido da usuária: "tirar os que desistiram"): abre só com os processos EM ANDAMENTO; arquivados, "não fechou" e
+    // desistências ficam em Situação › Arquivados / Todos
+    const sit = params.get('sit') || 'ativo';
     const trib = params.get('trib') || '';
     const cli = params.get('cli') || '';
     const ato = params.get('ato') === '1';
@@ -1977,7 +2006,7 @@
     const ordemAreas = ['Trabalhista', 'Cível', 'Previdenciário', 'Federal', 'Empresarial', 'Família', 'Criminal', 'Consumidor', 'Cobrança de honorários'];
     const areas = Object.keys(porArea).sort((a, b) => ((ordemAreas.indexOf(a) + 1) || 99) - ((ordemAreas.indexOf(b) + 1) || 99));
     const ir = mud => {
-      const q = new URLSearchParams({ busca, area, fase, visao, sit: sit === 'todos' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
+      const q = new URLSearchParams({ busca, area, fase, visao, sit: sit === 'ativo' ? '' : sit, trib, cli, ato: ato ? '1' : '', semcliente: semCliente ? '1' : '', ...mud });
       [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); });
       location.hash = '#/processos' + (q.toString() ? '?' + q : '');
     };
@@ -2029,7 +2058,7 @@
       return sec;
     }));
     const filtrosProc = h('div', { class: 'filtros-proc' },
-        h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'todos' ? '' : e.target.value, area: '' }) },
+        h('label', {}, 'Situação', h('select', { onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value, area: '' }) },
           [['todos', `Todos (${todosSit.length})`], ['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`]].map(([v, t]) => h('option', { value: v, selected: sit === v }, t)))),
         h('label', {}, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
           h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, `${a} (${porArea[a]})`)))),
@@ -2526,7 +2555,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.11.1';
+  const VERSAO_PAINEL = '8.11.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3064,7 +3093,22 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Agenda'))),
       barra, filtros,
       dados.avisos.length ? h('div', { class: 'nota alerta' }, dados.avisos.join(' ')) : null,
+      conflitosAgenda(dados.eventos),
       corpo);
+  }
+
+  /** 8.11.2: dois compromissos com hora ao mesmo tempo (audiência × perícia × atendimento) → aviso no topo da Agenda. */
+  function conflitosAgenda(eventos) {
+    const comHora = (eventos || []).filter(e => !e.diaTodo && e.inicio && e.inicio.length > 10)
+      .map(e => ({ e, ini: e.inicio, fim: e.fim && e.fim > e.inicio ? e.fim : e.inicio.slice(0, 11) + String(Math.min(23, +e.inicio.slice(11, 13) + 1)).padStart(2, '0') + e.inicio.slice(13, 16) }))
+      .sort((a, b) => a.ini < b.ini ? -1 : 1);
+    const pares = [];
+    for (let i = 0; i < comHora.length; i++) for (let j = i + 1; j < comHora.length && comHora[j].ini.slice(0, 10) === comHora[i].ini.slice(0, 10); j++)
+      if (comHora[j].ini < comHora[i].fim) pares.push([comHora[i].e, comHora[j].e]);
+    if (!pares.length) return null;
+    return h('div', { class: 'nota alerta ag-conflitos' }, h('strong', {}, `⚠ ${pares.length} conflito(s) de horário: `),
+      h('ul', {}, pares.slice(0, 8).map(([a, b]) => h('li', {}, `${dataBR(a.inicio.slice(0, 10))} ${a.inicio.slice(11, 16)} — ${a.titulo} × ${b.inicio.slice(11, 16)} ${b.titulo}`))),
+      h('span', { class: 'peq' }, 'Remarque um deles no Google Agenda: o painel acompanha a mudança e atualiza o aviso ao cliente.'));
   }
 
   async function telaCompromisso(params) {
@@ -3333,7 +3377,7 @@
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
           aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'Próximos 30 dias', r.proximas.length),
-          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('antigos', '📥 Antigos para lançar', null)),
+          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('antigos', '📥 Do sistema antigo', null)),
         conteudo));
   }
 
@@ -3346,13 +3390,14 @@
       const exitoAtivos = pend.filter(x => x.ativo && x.fontes.some(f => f.percentual > 0));
       const resumoF = f => f.aba === 'Contrato' ? `Contrato: ${f.percentual ? f.percentual + '% de êxito' : ''}${f.valor ? ' ' + reais(f.valor) : ''}${f.parcelas ? ' em ' + f.parcelas + 'x' : ''}${!f.percentual && !f.valor ? (f.modalidade || 'condição a conferir') : ''}${/não verificada/i.test(f.assinatura || '') ? ' (assinatura não conferida)' : ''}`
         : f.aba === 'Mensalista' ? `Mensalista: ${reais(f.mensal)}/mês${f.parcelas ? ' · ' + f.parcelas + ' meses' : ''}`
-        : f.aba === 'Cobrança' ? `Cobrança: ${f.valor ? reais(f.valor) + ' · ' : ''}${f.situacao}`
+        : f.aba === 'Cobrança' ? `Cobrança do sistema antigo (nada em aberto no painel): ${f.valor ? reais(f.valor) + ' · ' : ''}${f.situacao}`
+        : f.aba === 'Agenda GEA' ? `Agenda do GEA (nada em aberto no painel): faltariam ${f.parcelas} × ${reais(f.valor)} — ${f.obs}`
         : `Promissórias: ${f.parcelas || '?'} × ${f.valor ? reais(f.valor) : '?'}${f.primeiro ? ' desde ' + dataBR(f.primeiro) : ''}`;
       const linkNovo = (x, f) => {
         const q = new URLSearchParams({ cliente: x.cliente_id });
         if (f.aba === 'Mensalista') { q.set('tipo', 'mensal'); q.set('mensal', String(f.mensal)); if (f.inicio) q.set('inicio', f.inicio); }
         else if (f.percentual && !f.valor) { q.set('tipo', 'exito'); q.set('pct', String(f.percentual)); }
-        else { q.set('tipo', 'parcelado'); const n = f.parcelas || 1; if (f.aba === 'Promissórias' && f.valor) q.set('valor', String(f.valor * n)); else if (f.valor) q.set('valor', String(f.valor)); q.set('parcelas', String(n)); if (f.primeiro) q.set('venc', f.primeiro); }
+        else { q.set('tipo', 'parcelado'); const n = f.parcelas || 1; if ((f.aba === 'Promissórias' || f.aba === 'Agenda GEA') && f.valor) q.set('valor', String(Math.round(f.valor * n * 100) / 100)); else if (f.valor) q.set('valor', String(f.valor)); q.set('parcelas', String(n)); if (f.primeiro) q.set('venc', f.primeiro); }
         q.set('obs', 'Do levantamento (' + f.aba + ')' + (f.link ? ': ' + f.link : ''));
         return '#/honorario/novo?' + q;
       };
@@ -3364,7 +3409,7 @@
           : botao('Não lançar', async ev => { ev.target.disabled = true; await api('fin.levantamento', { acao: 'ignorar', cliente_id: x.cliente_id }); ev.target.closest('li').remove(); }, 'mini sec')));
       const visiveis = mostrarTodos ? pend : pend.slice(0, 60);
       caixa.replaceChildren(
-        h('p', { class: 'peq fin-dica' }, `${pend.length} cliente(s) têm honorário nos contratos, promissórias ou no GEA e ainda não têm honorário no painel. Os dados vieram da leitura dos PDFs: confira antes de lançar. "Lançar" abre o honorário já preenchido.`),
+        h('p', { class: 'peq fin-dica' }, `${pend.length} cliente(s) têm honorário ou dívida nos contratos, promissórias, planilhas de cobrança ou agenda do GEA e isso não está no painel. Os dados vieram da leitura dos PDFs: confira antes de lançar. "Lançar" abre o honorário já preenchido.`),
         exitoAtivos.length ? h('div', { class: 'nota' }, `${exitoAtivos.length} são de êxito (percentual) com processo ativo. `,
           botao(`Lançar os ${exitoAtivos.length} de êxito (ficam "Importado — conferir")`, async ev => {
             if (!confirm(`Lançar ${exitoAtivos.length} honorários de êxito, cada um com o percentual do contrato, como "Importado — conferir"? Não cria parcelas.`)) return;
@@ -3475,6 +3520,28 @@
         h('button', { type: 'submit', class: 'btn sec' }, 'Acrescentar parcela'), h('p', { class: 'erro' }));
       aoEnviar(nova, async fd => { await api('fin.parcela.salvar', { parcela: { honorario_id: x.id, ...Object.fromEntries(fd.entries()) } }); avisar('Parcela acrescentada.'); recarregar(); });
       extras.push(h('h2', { class: 'mt' }, 'Parcelas'), tabelaParcelas(dados.parcelas.map(p => ({ ...p, telefone: x.telefone, cliente: x.cliente })), recarregar, 'Nenhuma parcela.', false), nova);
+      // 8.11.2: renegociar — o que falta pagar (abertas + resto das pagas em parte) vira novas parcelas
+      const emAberto = dados.parcelas.filter(p => !p.pago_em || (p.valor_pago && +p.valor_pago < +p.valor));
+      if (emAberto.length && !sessao.usuario.pode.ocultarValores) {
+        const saldo = emAberto.reduce((t, p) => t + (+p.valor || 0) - (p.pago_em ? (+p.valor_pago || 0) : 0), 0);
+        const reneg = h('form', { class: 'caixa', novalidate: true },
+          h('h3', {}, `Renegociar (em aberto: ${reais(saldo)} em ${emAberto.length} parcela${emAberto.length === 1 ? '' : 's'})`),
+          h('p', { class: 'peq' }, 'As parcelas em aberto saem e o saldo vira parcelas novas. Pagamento parcial: a parcela fica com o que foi pago e o resto entra na renegociação.'),
+          h('div', { class: 'campos' },
+            campo('parcelas', 'Em quantas parcelas', '1', { modo: 'numeric', max: 3 }),
+            campo('primeiro_vencimento', '1º vencimento', hojeISO(), { tipo: 'date' }),
+            campo('dia_demais', 'Demais: todo dia', '', { modo: 'numeric', max: 2, dica: 'vazio = mesmo dia' }),
+            campo('acrescimo', 'Juros/multa combinados (R$)', '', { modo: 'decimal' }),
+            campo('desconto', 'Desconto (R$)', '', { modo: 'decimal' }),
+            campo('motivo', 'Motivo / combinado', '', { largo: true, max: 200 })),
+          h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Renegociar')), h('p', { class: 'erro' }));
+        aoEnviar(reneg, async fd => {
+          if (!confirm(`Renegociar ${reais(saldo)} em ${fd.get('parcelas')} parcela(s)?`)) return;
+          const r = await api('fin.renegociar', { honorario_id: x.id, ...Object.fromEntries(fd.entries()) });
+          avisar(`Renegociado: ${reais(r.saldo)} em ${r.parcelas}x.`); recarregar();
+        });
+        extras.push(h('details', { class: 'reneg' }, h('summary', {}, '↻ Renegociar a dívida'), reneg));
+      }
       if (x.tipo === 'exito') {
         const alv = h('form', { class: 'caixa', novalidate: true },
           h('h3', {}, 'Lançar alvará ou depósito'),
@@ -3776,7 +3843,7 @@
         h('div', { class: 'ct-pe' }, sel,
           h('span', { class: 'ct-mover' },
             i > 0 && !/concluido/.test(x.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + r.etapas[i - 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i - 1].id, el); } }, '←') : null,
-            i < 2 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Passar para ' + r.etapas[i + 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i + 1].id, el); } }, '→') : null)),
+            i < idx('revisar') ? h('button', { type: 'button', class: 'btn mini sec', title: 'Passar para ' + r.etapas[i + 1].nome, onclick: ev => { ev.stopPropagation(); mover(x, r.etapas[i + 1].id, el); } }, '→') : null)),
         h('div', { class: 'ct-final', onclick: ev => ev.stopPropagation() }, acoesItem(x)));
       return el;
     };

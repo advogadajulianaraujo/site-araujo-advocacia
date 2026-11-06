@@ -1518,3 +1518,15 @@ body{background:var(--marfim)}
 .cli-parc{font-size:13px;color:#B42318;font-weight:600;margin-top:4px}
 .cli-parc.atrasado{background:#FDECEC;border-radius:6px;padding:2px 6px;display:inline-block}
 .notas-antigas{margin-top:12px}
+/* 8.11.2: petição inicial — WhatsApp e Conferido juntos */
+.inicial-acoes{align-items:center;gap:8px}
+.inicial-conf.aparece .btn{animation:pulsoConf 1.2s ease 2}
+@keyframes pulsoConf{0%,100%{box-shadow:none}50%{box-shadow:0 0 0 4px rgba(181,141,82,.35)}}
+/* 8.11.2: prévia do que vai no documento */
+.previa-doc{margin-top:8px;font-size:14px}
+.previa-cab{margin-bottom:4px}
+.previa-itens{display:flex;flex-wrap:wrap;gap:6px}
+.previa-itens span{padding:2px 8px;border-radius:999px;background:#F3F0EA}
+.previa-itens span.falta{background:#FDECEC;color:#B42318;font-weight:600}
+.previa-falta{color:#B42318;margin-top:4px}
+.ag-conflitos ul{margin:6px 0;padding-left:18px}

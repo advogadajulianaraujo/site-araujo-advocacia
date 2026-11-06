@@ -273,6 +273,27 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Parcelas que faltam pagar em VERMELHO (`parcelasAbertasCliente_` em clientes.obter → `seloParcelas` no topo da ficha; `parc_abertas`/
   `parc_atrasadas` em clientes.listar → etiqueta no cartão): ignora honorário cancelado/encerrado; RH vê só as contas, sem valores.
 
+- 8.11.2 (pedidos de 06/11/2026):
+  - Petição inicial: 1º manda a inicial ao CLIENTE aprovar (WhatsApp "veja se está tudo certo ou se quer mudar algo"); depois do clique no
+    WhatsApp o "✓ Conferido" aparece ao lado, no mesmo passo (`caixaPeticaoInicial`; sessionStorage `inicial_wa_<id>`).
+  - Processos abrem só com os EM ANDAMENTO (`sit` padrão = ativo); arquivados, "não fechou" e desistências em Situação › Arquivados/Todos.
+  - Edifício Future: arquivo "DISTRATO…"/"RESCISÃO…" na pasta do morador ATUAL → `futLiberarPorDistrato_` (na leitura diária das pastas)
+    deixa o apto vago, o locatário "saiu" e registra o distrato (é o caso do AP 103). `futAtualizarModelos811_` roda no robô de hora em hora.
+  - Levantamento: o robô lança UMA vez (aos poucos, 60 por rodada; Config LEVANT_AUTO_812) os êxitos com percentual de clientes com processo
+    ativo ("importado — conferir"). Financeiro › "📥 Do sistema antigo" agora também mostra as dívidas das planilhas "Planilha de cobranças" e
+    "Clientes devedores" (aba Cobranças do levantamento) e as parcelas anotadas só na AGENDA do GEA desde 2026 (aba Histórico GEA), para quem
+    NÃO tem parcela em aberto no painel. Em 06/11: as 254 parcelas do "GEA — financeiro" já estavam no painel; 21 devedores das planilhas sem
+    nada em aberto e 5 sem cadastro.
+  - Contrato de honorários: "Formato do contrato" no gerador — Uma folha (padrão) ou Padrão do escritório (`padraoContrato_`; lembra em
+    localStorage `formato_contrato`).
+  - Resumo das 7h: ninguém com e-mail em Usuários → vai para a conta dona do painel.
+  - Site: início reordenado — abertura → "Como podemos ajudar" (por problema) → Resolva pelo site → blog → Quem cuida → Estrutura →
+    calculadora → Acompanhe → Como funciona → Dúvidas → Blog → contato; saíram "O escritório" (números), "Direito Empresarial" e "Publicações"
+    (estão em /escritorio/ e /empresarial/).
+  - Tarefas: etapa "Aguardando cliente" (`aguardando`, entre Fazendo e Pronto para revisar). Agenda: aviso de conflito de horário
+    (`conflitosAgenda`). Modelos: prévia do que vai no documento e do que falta, em vermelho (`desenharPrevia`). Financeiro: "↻ Renegociar a
+    dívida" no honorário (rota `fin.renegociar`: abertas saem, parcial fica com o pago, saldo ± juros/desconto vira parcelas novas).
+
 ## Processos
 
 - Revisão geral (7.1.0, Usuários › "Revisão geral dos dados", rota `revisao.geral`, prévia e "Corrigir agora"): grava a etapa em
@@ -498,7 +519,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Gráficos redondos (`grafRosca` em painel.js, SVG próprio; legenda clicável que filtra): Início (prazos em aberto e processos
   por área), Processos (faixa acima da tabela: área, fase, tribunal), Financeiro (situação do mês e
   atrasos por tempo; escondido para o RH) e Relatórios (ativos e arquivados por área). Cores das fases em `CORES_FASE`.
-- Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (padrão sempre "Todos"); sem os botões de área.
+- Processos: filtro de Área em cima, junto com Situação, Tribunal e Cliente (Situação abre em "Em andamento" desde 8.11.2; os outros em "Todos"); sem os botões de área.
 - Tabelas de Processos e Intimações compactas: na coluna "Próximo ato" só o ato com a data completa ("Audiência 26/10/2026");
   o resumo da última movimentação aparece só ao abrir o processo.
 

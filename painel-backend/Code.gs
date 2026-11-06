@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.11.1';
+var VERSAO = '8.11.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -50,7 +50,7 @@ function valoresDoPerfil_(acao, res, perfil) {
   if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); return o; }
   return res;
 }
-var ROTAS_VALOR_BLOQUEADAS = { 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
+var ROTAS_VALOR_BLOQUEADAS = { 'fin.renegociar': 1, 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
 
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
@@ -388,6 +388,7 @@ var ROTAS = {
   'fin.honorarios': { permissao: 'financeiro', fn: listarHonorarios_ },
   'fin.honorario': { permissao: 'financeiro', fn: obterHonorario_ },
   'fin.honorario.salvar': { permissao: 'financeiro', fn: salvarHonorario_ },
+  'fin.renegociar': { permissao: 'financeiro', fn: renegociarHonorario_ },
   'fin.parcela.salvar': { permissao: 'financeiro', fn: salvarParcela_ },
   'fin.parcela.pagar': { permissao: 'financeiro', fn: pagarParcela_ },
   'fin.parcela.cobranca': { permissao: 'financeiro', fn: cobrancaParcela_ },
@@ -3543,6 +3544,37 @@ function salvarHonorario_(d, u) {
   });
 }
 
+/** 8.11.2: RENEGOCIAR — junta o que falta pagar do honorário (parcelas em aberto + o resto das pagas em parte) e divide em novas
+ *  parcelas. As abertas antigas saem; a paga em parte fica com o valor que foi pago. Pode somar juros/multa combinados (acrescimo). */
+function renegociarHonorario_(d, u) {
+  return comTrava_(function () {
+    var tabH = tabela_('Honorarios'), h = tabH.linhas.filter(function (x) { return x.id === d.honorario_id; })[0];
+    if (!h) throw falha_('Honorário não encontrado.');
+    var n = parseInt(d.parcelas, 10); if (!(n >= 1 && n <= 120)) throw falha_('Informe em quantas parcelas.');
+    var venc = /^\d{4}-\d{2}-\d{2}$/.test(d.primeiro_vencimento || '') ? d.primeiro_vencimento : '';
+    if (!venc) throw falha_('Informe o vencimento da 1ª parcela nova.');
+    var tabP = tabela_('Parcelas'), agora = new Date().toISOString(), saldo = 0, saem = [], parciais = 0;
+    tabP.linhas.filter(function (p) { return p.honorario_id === h.id; }).forEach(function (p) {
+      var v = dinheiro_(p.valor), pg = dinheiro_(p.valor_pago);
+      if (!p.pago_em) { saldo += v; saem.push(p); }
+      else if (pg && pg < v) { saldo += v - pg; parciais++; atualizarLinha_(tabP, p, { valor: txtDinheiro_(pg), observacoes: (p.observacoes ? p.observacoes + ' ' : '') + 'Resto (' + reaisTxt_(v - pg) + ') foi para a renegociação de ' + dataBR_(hojeSP_()) + '.', atualizado_em: agora, atualizado_por: u.usuario }); }
+    });
+    saldo = Math.round((saldo + (dinheiro_(d.acrescimo) || 0) - (dinheiro_(d.desconto) || 0)) * 100) / 100;
+    if (!(saldo > 0)) throw falha_('Não há valor em aberto para renegociar.');
+    saem.forEach(function (p) { apagarLinha_(tabP, p); });
+    var ult = tabP.linhas.filter(function (p) { return p.honorario_id === h.id; }).reduce(function (m, p) { return Math.max(m, parseInt(p.numero, 10) || 0); }, 0);
+    var base = Math.floor(saldo / n * 100) / 100, dia = Math.min(31, parseInt(d.dia_demais, 10) || +venc.slice(8, 10));
+    for (var i = 1; i <= n; i++) {
+      var valor = i === n ? Math.round((saldo - base * (n - 1)) * 100) / 100 : base;
+      var nova = novaParcela_(h, ult + i, venc, valor, u.usuario); nova.observacoes = 'Renegociação de ' + dataBR_(hojeSP_());
+      inserirLinha_(tabP, nova); venc = mesSeguinte_(venc, dia);
+    }
+    atualizarLinha_(tabH, h, { observacoes: (h.observacoes ? h.observacoes + ' | ' : '') + 'Renegociado em ' + dataBR_(hojeSP_()) + ' por ' + (u.nome || u.usuario) + ': ' + reaisTxt_(saldo) + ' em ' + n + 'x' + (d.motivo ? ' (' + String(d.motivo).slice(0, 200) + ')' : ''), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'honorário renegociado', h.id + ' ' + reaisTxt_(saldo) + ' em ' + n + 'x');
+    return { ok: true, saldo: saldo, parcelas: n, removidas: saem.length, parciais: parciais };
+  });
+}
+
 function parcelaPorId_(id) {
   var tab = tabela_('Parcelas');
   var p = tab.linhas.filter(function (r) { return r.id === id; })[0];
@@ -4600,13 +4632,32 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['emails', avisarMovimentoClientes_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
   if (feitas) registrar_('robô', 'robôs do escritório', JSON.stringify(r));
   if (erros.length) throw new Error(erros.join(' | '));
   return r;
+}
+
+/* 8.11.2 (pedido da usuária: "fazer isso"): UMA vez, lança sozinho os honorários de ÊXITO do levantamento (contrato com percentual) dos
+   clientes com processo ATIVO e sem honorário no painel — situação "importado — conferir", sem parcelas. Parcelados, promissórias e
+   cobranças continuam em Financeiro › "📥 Antigos para lançar" (datas e valores vieram da leitura dos PDFs). */
+function lancarExitosLevantamento_() {
+  if (config_('LEVANT_AUTO_812')) return 0;
+  var robo = { usuario: 'robô', nome: 'robô (levantamento)', perfil: 'administrador' };
+  var r = levantamentoHonorarios_({}, robo), itens = [];
+  r.lista.forEach(function (x) {
+    if (!x.ativo || x.ignorado) return;
+    var f = x.fontes.filter(function (y) { return y.aba === 'Contrato' && y.percentual > 0 && y.percentual <= 60; })[0];
+    if (f) itens.push({ cliente_id: x.cliente_id, processo_id: x.processo_id, percentual: f.percentual, fonte: f.link || '' });
+  });
+  // aos poucos (60 por rodada, para não estourar o tempo do robô); quem já ganhou honorário sai da lista na rodada seguinte
+  var res = itens.length ? levantamentoHonorarios_({ acao: 'lancar_exito', itens: itens.slice(0, 60) }, robo) : { feitos: 0 };
+  if (itens.length > 60 && res.feitos) return res.feitos;
+  setConfig_('LEVANT_AUTO_812', new Date().toISOString() + ' · ' + res.feitos + ' êxito(s) lançado(s)', 'Honorários de êxito do levantamento lançados pelo robô (uma vez)');
+  return res.feitos;
 }
 
 /* 8.9.2: política de privacidade do site — pedidos de retorno ("Prefere que a gente ligue?") guardam nome e telefone por 12 meses.
@@ -6053,6 +6104,21 @@ function montarPadraoVisual_(doc, linhas, compacto) {
   });
 }
 
+/** 8.11.2: contrato de honorários no PADRÃO do escritório (em vez de uma folha): EB Garamond 12, entrelinha 1,5, 8 pt depois,
+ *  recuo de 1 cm no texto corrido, margens normais e logo do tamanho normal. */
+function padraoContrato_(doc, corpo) {
+  var A = DocumentApp.HorizontalAlignment;
+  corpo.setMarginTop(42).setMarginBottom(42).setMarginLeft(85).setMarginRight(57);
+  corpo.getParagraphs().forEach(function (p) {
+    var pai = p.getParent(); if (pai && pai.getType() === DocumentApp.ElementType.TABLE_CELL) return;
+    var t = p.getText();
+    if (t.length) p.editAsText().setFontFamily('EB Garamond').setFontSize(12);
+    p.setLineSpacing(1.5).setSpacingAfter(t.trim() ? 8 : 0);
+    if (p.getAlignment() === A.JUSTIFY && t.length > 120) p.setIndentFirstLine(28.35);
+  });
+  try { var cab = doc.getHeader(); if (cab) cab.getImages().forEach(function (im) { im.setWidth(105).setHeight(83); }); } catch (e) { /* segue */ }
+}
+
 /** 8.11: PADRÃO DE PETIÇÕES do escritório (docs/PADRAO-PETICOES.md), aplicado na cópia gerada (o modelo editado pela equipe fica como está):
  *  EB Garamond 12, justificado, entrelinha 1,5, 8 pt depois do parágrafo, recuo de 1 cm na 1ª linha; títulos (parágrafo todo em negrito,
  *  alinhado à esquerda) em MAIÚSCULAS; artigo citado (parágrafo que começa com "Art." ou entre aspas) em fonte 10 com recuo de 6 cm. */
@@ -6111,13 +6177,16 @@ function levantamentoHonorarios_(d, u) {
   var clientes = tabela_('Clientes').linhas, porNome = {}, porPontas = {};
   clientes.forEach(function (c) { var k = semAc(c.nome); porNome[k] = c; var p = k.split(' '); if (p.length > 1) { var kk = p[0] + '|' + p[p.length - 1]; porPontas[kk] = porPontas[kk] === undefined ? c : null; } });
   var acha = function (n) { var k = semAc(n); if (porNome[k]) return porNome[k]; var p = k.split(' '); return p.length > 1 ? porPontas[p[0] + '|' + p[p.length - 1]] || null : null; };
-  var temHon = {}; tabela_('Honorarios').linhas.forEach(function (h) { if (h.situacao !== 'cancelado') temHon[h.cliente_id] = 1; });
+  var temHon = {}, canc = {}; tabela_('Honorarios').linhas.forEach(function (h) { if (h.situacao !== 'cancelado') temHon[h.cliente_id] = 1; else canc[h.id] = 1; });
+  // 8.11.2: dívida do sistema antigo (cobranças, agenda do GEA) vale para quem NÃO tem parcela em aberto no painel, mesmo com honorário
+  var temAberto = {}; tabela_('Parcelas').linhas.forEach(function (p) { if (!p.pago_em && !canc[p.honorario_id]) temAberto[p.cliente_id] = 1; });
   var procAtivo = {}; tabela_('Processos').linhas.forEach(function (p) { if (p.cliente_id && p.status !== 'arquivado' && p.numero) procAtivo[p.cliente_id] = procAtivo[p.cliente_id] || p.id; });
   var MES = { janeiro: '01', fevereiro: '02', marco: '03', abril: '04', maio: '05', junho: '06', julho: '07', agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12' };
   var dataExt = function (t) { var m = /(\d{1,2}) de ([a-zçã]+) de (\d{4})/i.exec(String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()); return m && MES[m[2]] ? m[3] + '-' + MES[m[2]] + '-' + ('0' + m[1]).slice(-2) : ''; };
   var por = {};
   var add = function (n, f) {
-    var c = acha(n); if (!c || temHon[c.id]) return;
+    var c = acha(n); if (!c) return;
+    if (/^(Cobrança|Agenda GEA)$/.test(f.aba) ? temAberto[c.id] : temHon[c.id]) return;
     var x = por[c.id] = por[c.id] || { cliente_id: c.id, nome: c.nome, telefone: c.telefone || '', processo_id: procAtivo[c.id] || '', ativo: !!procAtivo[c.id], ignorado: ign[c.id] || '', fontes: [] };
     if (x.fontes.length < 6) x.fontes.push(f);
   };
@@ -6133,11 +6202,26 @@ function levantamentoHonorarios_(d, u) {
       assinatura: String(r[5] || ''), trecho: String(r[6] || '').slice(0, 220), link: String(r[8] || '') });
   });
   aba('Mensalistas', /^Cliente/, function (r) { add(r[0], { aba: 'Mensalista', mensal: +r[1] || 0, parcelas: +r[2] || 0, inicio: r[3] instanceof Date ? Utilities.formatDate(r[3], 'America/Sao_Paulo', 'yyyy-MM-dd') : '', obs: String(r[5] || '').slice(0, 200), link: String(r[6] || '') }); });
-  aba('Cobranças', /^Cliente/, function (r) { add(r[0], { aba: 'Cobrança', situacao: String(r[1] || '') + ' · ' + String(r[3] || ''), valor: +r[2] || 0, obs: String(r[5] || '').slice(0, 200), link: /^https?:/.test(String(r[6] || '')) ? String(r[6]) : '' }); });
+  aba('Cobranças', /^Cliente/, function (r) { if (/quitad|parcela paga|pago/i.test(String(r[3] || ''))) return; add(r[0], { aba: 'Cobrança', situacao: String(r[1] || '') + ' · ' + String(r[3] || ''), valor: +r[2] || 0, obs: String(r[5] || '').slice(0, 200), link: /^https?:/.test(String(r[6] || '')) ? String(r[6]) : '' }); });
   aba('Promissórias', /^Emitente/, function (r) {
     var venc = String(r[3] || ''), n = venc ? venc.split('/').length : 0;
     add(r[0], { aba: 'Promissórias', valor: +String(r[2] || '').replace(/[^\d,.]/g, '').replace(',', '.') || 0, parcelas: n, primeiro: dataExt(venc), vencimentos: venc.slice(0, 160), link: String(r[5] || '') });
   });
+  // 8.11.2: parcelas que estavam só na AGENDA do GEA ("verificar pagamento R$ 400,00 referente parcela 3/5"), anotadas desde 2026
+  (function () {
+    var sh = ss.getSheetByName('Histórico GEA'); if (!sh) return;
+    var v = sh.getDataRange().getValues(), ult = {};
+    v.forEach(function (r) {
+      var t = String(r[4] || ''), m = /parcela[s]?\s*(?:n[°º]?\s*)?(\d+)\s*\/\s*(\d+)/i.exec(t), val = /R\$\s*([\d.]+,\d{2})/.exec(t);
+      if (!r[0] || !m || !val || !(r[1] instanceof Date)) return;
+      var dia = Utilities.formatDate(r[1], 'America/Sao_Paulo', 'yyyy-MM-dd'); if (dia < '2026-01-01') return;
+      var k = String(r[0]); if (!ult[k] || ult[k].dia < dia) ult[k] = { dia: dia, x: +m[1], y: +m[2], valor: dinheiro_(val[1]), texto: t.slice(0, 160), link: String(r[5] || '') };
+    });
+    Object.keys(ult).forEach(function (k) {
+      var u2 = ult[k], resta = Math.max(1, u2.y - u2.x + 1);
+      add(k, { aba: 'Agenda GEA', valor: u2.valor, parcelas: resta, primeiro: u2.dia, obs: 'parcela ' + u2.x + '/' + u2.y + ' anotada em ' + dataBR_(u2.dia) + ': ' + u2.texto, link: u2.link });
+    });
+  })();
   var lista = Object.keys(por).map(function (k) { return por[k]; })
     .sort(function (a, b) { return (b.ativo - a.ativo) || (!!a.ignorado - !!b.ignorado) || (a.nome < b.nome ? -1 : 1); });
   return { lista: lista, total: lista.length, ativos: lista.filter(function (x) { return x.ativo && !x.ignorado; }).length };
@@ -6780,6 +6864,7 @@ function gerarDocumentos_(d, u) {
     corpo.getParagraphs().forEach(function (pp) { if (pp.getText().indexOf(REMOVER) >= 0) { try { pp.removeFromParent(); } catch (e) { pp.setText(''); } } });
     if (k === 'procuracao_menor') negritar_(corpo, menores.map(function (m) { return m.nome.toUpperCase(); }));
     if (MODELOS[k].processo && k !== 'substabelecimento') padraoPeticao_(corpo);
+    if (d.formato_contrato === 'padrao' && MODELOS[k].umaFolha === 'mini') padraoContrato_(doc, corpo); // 8.11.2: contrato no padrão do escritório
     doc.saveAndClose();
     var pdf = dest.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
     gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl(), assinar: !!MODELOS[k].assinaCliente, _docId: copia.getId(), _ordem: Object.keys(MODELOS).indexOf(k) });
@@ -7074,8 +7159,8 @@ function apagado_(cab) {
 /* ---------- Tarefas da equipe (controladoria) ---------- */
 
 // Etapas do quadro. Para prazos processuais: "protocolado" marca o prazo como cumprido.
-var ETAPAS_TAREFA = ['afazer', 'fazendo', 'revisar', 'protocolado', 'concluido'];
-var NOMES_ETAPA = { afazer: 'A fazer', fazendo: 'Fazendo', revisar: 'Pronto para revisar', protocolado: 'Feito / protocolado', concluido: 'OK da administração' };
+var ETAPAS_TAREFA = ['afazer', 'fazendo', 'aguardando', 'revisar', 'protocolado', 'concluido']; // 8.11.2: "Aguardando cliente" (documento, assinatura, resposta)
+var NOMES_ETAPA = { afazer: 'A fazer', fazendo: 'Fazendo', aguardando: 'Aguardando cliente', revisar: 'Pronto para revisar', protocolado: 'Feito / protocolado', concluido: 'OK da administração' };
 var PESO_PRAZO = 3; // pontos de um prazo processual entregue no prazo (tarefa comum vale o peso dela, 1 por padrão)
 
 function etapaDoPrazo_(z) {
@@ -8491,6 +8576,13 @@ function resumoDiarioGatilho() {
     if (u.ativo !== 'sim' || !u.email || u.resumo_email === 'nao') return;
     try { if (enviarResumo_(u, base)) n++; } catch (e) { erros.push(u.usuario + ': ' + (e.message || e)); }
   });
+  // 8.11.2: ninguém com e-mail cadastrado → vai para a conta dona do painel (a administração), em nome do 1º administrador ativo
+  if (!n && !erros.length) {
+    try {
+      var dono = Session.getEffectiveUser().getEmail(), adm = usuarios_().filter(function (x) { return x.ativo === 'sim' && x.perfil === 'administrador'; })[0];
+      if (dono && adm && !usuarios_().some(function (x) { return x.ativo === 'sim' && x.email; })) { if (enviarResumo_(Object.assign({}, adm, { email: dono }), base)) n++; }
+    } catch (eD) { erros.push('conta dona: ' + (eD.message || eD)); }
+  }
   setConfig_('RESUMO_EMAIL_DIA', hoje, 'Último dia em que o resumo das 7h foi enviado');
   registrar_('sistema', 'resumo do dia por e-mail', n + ' enviado(s)' + (erros.length ? '; erros: ' + erros.join(' | ') : ''));
   return n + ' enviado(s)';
@@ -10676,8 +10768,12 @@ function futureSincronizarDrive_(forcar) {
     while (subs.hasNext()) {
       var f = subs.next(), bruto = String(f.getName() || '').trim();
       if (!bruto || /^(contratos?|documentos?|fotos?|vistoria)$/i.test(bruto)) continue;
-      var n = 0, contrato = '', fi = f.getFiles();
-      while (fi.hasNext() && n < 99) { var arq = fi.next(); n++; if (!contrato && /contrato|locac/i.test(normalizar_(arq.getName ? arq.getName() : ''))) contrato = arq.getUrl ? arq.getUrl() : ''; }
+      var n = 0, contrato = '', distrato = null, fi = f.getFiles();
+      while (fi.hasNext() && n < 99) {
+        var arq = fi.next(), nArq = normalizar_(arq.getName ? arq.getName() : ''); n++;
+        if (/distrato|rescis/i.test(nArq)) { var dt = arq.getDateCreated(); if (!distrato || dt > distrato.data) distrato = { data: dt, url: arq.getUrl() }; continue; }
+        if (!contrato && /contrato|locac/i.test(nArq)) contrato = arq.getUrl ? arq.getUrl() : '';
+      }
       if (/hercilio\s*luz/i.test(futNorm_(bruto))) { // a empresa que paga os apartamentos HC
         if (!x.pagador) atualizarLinha_(T.un, x, { pagador: 'Hercílio Luz (HC)' });
         continue;
@@ -10688,6 +10784,11 @@ function futureSincronizarDrive_(forcar) {
         || T.pe.linhas.filter(function (q) { return futMesmaPessoa_(q.nome, nome) && futNorm_(nome).split(' ').length >= 2; })[0];
       if (p) {
         if (p.pasta_url !== f.getUrl() || String(p.arquivos) !== String(n) || (contrato && p.contrato_url !== contrato)) atualizarLinha_(T.pe, p, { pasta_url: f.getUrl(), arquivos: String(n), contrato_url: contrato || p.contrato_url || '' });
+        // 8.11.2 (pedido do Luís): distrato feito à mão e salvo na pasta do morador ATUAL → o painel tira o locatário e deixa o apto disponível
+        if (distrato && p.situacao === 'atual' && /^(alugado|renovar)$/.test(x.situacao || '') && futMesmaPessoa_(x.locatario, p.nome)) {
+          var dDis = Utilities.formatDate(distrato.data, TZ, 'yyyy-MM-dd');
+          if (!p.entrada || dDis >= p.entrada) { futLiberarPorDistrato_(T, x, p, dDis, distrato.url, agora); r.liberados = (r.liberados || 0) + 1; }
+        }
       } else {
         inserirLinha_(T.pe, { id: novoId_('FP'), nome: nome, telefone: '', cpf: '', unidade: id, entrada: '', saida: '', garantia: '', caucao: '',
           situacao: futMesmaPessoa_(x.locatario, nome) ? 'atual' : 'saiu', obs: obs ? 'Estadia de ' + obs.toLowerCase() : '', origem: 'pasta do Drive',
@@ -10713,12 +10814,26 @@ function futureSincronizarDrive_(forcar) {
   return r;
 }
 
+/** 8.11.2: libera o apartamento quando o distrato foi feito fora do painel (arquivo "DISTRATO…" na pasta do morador). */
+function futLiberarPorDistrato_(T, un, pessoa, data, url, agora) {
+  var tc = tabela_('FutContratos');
+  if (tc.linhas.some(function (c) { return c.unidade === un.id && c.tipo === 'distrato' && (c.pessoa_id === pessoa.id || futMesmaPessoa_(c.nome, pessoa.nome)); })) return;
+  atualizarLinha_(T.un, un, { situacao: 'vago', locatario: '', telefone: '', saida: data, caucao: '', garantia: '', atualizado_em: agora, atualizado_por: 'robô (distrato no Drive)' });
+  atualizarLinha_(T.pe, pessoa, { situacao: 'saiu', saida: data });
+  tc.linhas.filter(function (c) { return c.unidade === un.id && c.situacao === 'gerado' && (c.tipo || 'mensal') === 'mensal'; }).forEach(function (c) { atualizarLinha_(tc, c, { situacao: 'encerrado' }); });
+  inserirLinha_(tc, { id: novoId_('FK'), criado_em: agora, criado_por: 'robô (distrato no Drive)', unidade: un.id, pessoa_id: pessoa.id, nome: pessoa.nome, cpf: pessoa.cpf || '', telefone: pessoa.telefone || '',
+    prazo_meses: '', inicio: pessoa.entrada || '', fim: data, aluguel: un.aluguel || '', garantia: '', caucao: '', doc_url: url, pdf_url: url, laudo_doc: '', laudo_pdf: '',
+    pasta_url: pessoa.pasta_url || '', situacao: 'distrato', tipo: 'distrato', dias: '', valor_total: '' });
+  registrar_('robô', 'future: distrato achado no Drive — apartamento liberado', un.id + ' ' + pessoa.nome + ' (' + dataBR_(data) + ')');
+}
+
 /** Robô (de hora em hora): cobranças do mês e, perto do fim do mês, as do mês seguinte. */
 function futureRobo_() {
   if (!config_('FUTURE_IMPORTADO')) return 0;
   try { futCorrigirNomePredio_(); } catch (eN) { /* segue */ }
   try { futureImportarPasta_(); } catch (eI) { /* tenta na próxima hora */ }
-  try { futureSincronizarDrive_(false); } catch (e) { /* tenta amanhã */ }
+  try { futureSincronizarDrive_(!config_('FUTURE_DISTRATO_812')); setConfig_('FUTURE_DISTRATO_812', hojeSP_(), 'Primeira leitura dos distratos no Drive (8.11.2)'); } catch (e) { /* tenta amanhã */ }
+  try { futAtualizarModelos811_(); } catch (eM) { /* tenta na próxima hora */ } // modelos de contrato/laudo prontos antes do 1º contrato
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));
   if (+hoje.slice(8, 10) >= 25) n += futureGerarCobrancas_(futCompMais_(futComp_(hoje), 1));
   return n;
