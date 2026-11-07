@@ -1,0 +1,4 @@
+/* Abre espaço para o assistente à direita, sem cobrir as conversas do WhatsApp. */
+html.araujo-aberto body { width: calc(100% - 340px) !important; min-width: 0 !important; }
+html.araujo-aberto #app { width: 100% !important; }
+.araujo-etq { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font: 600 10.5px/1.6 "Segoe UI", Roboto, Arial, sans-serif; color: #fff; background: #3a3a3a; white-space: nowrap; vertical-align: middle; flex: none; letter-spacing: .01em; }

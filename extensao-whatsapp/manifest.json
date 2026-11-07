@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Araújo Advocacia — Assistente do WhatsApp",
+  "short_name": "Assistente Araújo",
+  "version": "1.0.0",
+  "description": "Mostra ao lado de cada conversa do WhatsApp Web quem é a pessoa no painel do escritório (cliente, etapa do funil, processos) e ajuda a seguir o atendimento.",
+  "icons": { "16": "icones/a16.png", "32": "icones/a32.png", "48": "icones/a48.png", "128": "icones/a128.png" },
+  "permissions": ["storage"],
+  "host_permissions": ["https://web.whatsapp.com/*", "https://script.google.com/*", "https://script.googleusercontent.com/*"],
+  "background": { "service_worker": "bg.js" },
+  "content_scripts": [{ "matches": ["https://web.whatsapp.com/*"], "js": ["content.js"], "css": ["content.css"], "run_at": "document_idle" }],
+  "action": { "default_title": "Assistente Araújo Advocacia", "default_popup": "popup.html", "default_icon": { "16": "icones/a16.png", "32": "icones/a32.png" } }
+}

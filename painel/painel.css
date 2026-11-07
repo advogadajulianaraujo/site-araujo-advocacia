@@ -1806,3 +1806,9 @@ a.visao-bt{text-decoration:none}
 .nota-mais summary{cursor:pointer;font-size:12.5px;color:#7a5a1f}
 .nota-mais div{margin:3px 0;font-size:13.5px;line-height:1.5}
 .nota-mais .nota-rot{font-weight:600;margin-top:8px}
+/* 8.14 assistente do WhatsApp Web */
+.ext-passos{margin:8px 0 12px;padding-left:22px}.ext-passos li{margin:6px 0}
+.ext-passos code{background:#f1efe9;padding:1px 6px;border-radius:5px}
+.ext-cod{font-size:22px;letter-spacing:.25em;color:#7a5a1f;margin:0 6px}
+.ext-lista{list-style:none;padding:0;margin:6px 0}.ext-lista li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #eee9df}
+.ext-lista li .btn{margin-left:auto}

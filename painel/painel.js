@@ -1809,7 +1809,7 @@
   }
 
   /** 8.12.1: em que ponto do CRM / Funil o cliente está (clicar abre o funil já filtrado pelo nome). */
-  const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em contato', consulta: 'Consulta agendada', atendido: 'Atendido', proposta: 'Proposta enviada', negociacao: 'Negociação', ganho: 'Contrato fechado', perdido: 'Não fechou' };
+  const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Em atendimento', proposta: 'Procuração e contrato enviados', ganho: 'Contrato assinado', perdido: 'Não fechou' };
   function seloFunil(l, c) {
     if (!l) return null;
     return h('a', { class: 'selo-funil etapa-' + l.etapa, href: '#/crm?ver=lista&q=' + encodeURIComponent(c.nome), title: 'Abrir no CRM / Funil' },
@@ -1959,7 +1959,9 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : ''),
         seloParcelas(r.parcelas, c.id), seloFunil(r.lead, c)),
-        h('div', { class: 'barra' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
+        h('div', { class: 'barra' }, sessao.usuario.pode.usuarios && (incompleto || faltam.length) && window.GESTAO && window.GESTAO.mandarLinkCadastro
+            ? h('button', { type: 'button', class: 'btn sec', title: 'O cliente preenche o cadastro pelo celular', onclick: () => window.GESTAO.mandarLinkCadastro(r.lead ? { id: r.lead.id } : { cliente_id: c.id }, () => apiFresco('clientes.obter', { id: c.id }).catch(() => {})) }, '📝 Pedir o cadastro ao cliente') : null,
+          h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
           h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'))),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
         : faltam.length ? h('div', { class: 'nota' }, 'Falta no cadastro: ', h('strong', {}, faltam.join(', ')), '. Complete em "Editar cadastro" antes de gerar procuração ou contrato.') : null,
@@ -2265,6 +2267,32 @@
 
   const PERFIS = [['rh', 'RH (usa tudo, inclusive o financeiro; não vê Relatórios, Usuários nem os totais a receber)'], ['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
 
+  /** 8.14: assistente do WhatsApp Web (extensão do Chrome): baixar, instalar, ligar com código e desligar aparelhos. */
+  function caixaExtensao() {
+    const lista = h('div', {}, h('p', { class: 'peq' }, 'Carregando os computadores ligados…'));
+    const codigoBox = h('div', { class: 'ext-codigo', 'aria-live': 'polite' });
+    const desenharLista = r => {
+      lista.replaceChildren(r.itens.length ? h('ul', { class: 'ext-lista' }, r.itens.map(z => h('li', {},
+        h('strong', {}, z.nome || 'Computador'), h('span', { class: 'peq' }, ` · ${z.usuario || ''} · ligado em ${z.criado ? new Date(z.criado).toLocaleDateString('pt-BR') : '—'}` + (z.ultimo ? ` · último uso ${new Date(z.ultimo).toLocaleString('pt-BR')}` : '')),
+        botao('Desligar', async ev => { if (!confirm('Desligar o assistente neste computador? Ele para de funcionar na hora.')) return; ev.target.disabled = true; try { desenharLista(await api('ext.dispositivos', { revogar: z.id })); avisar('Computador desligado.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'mini sec'))))
+        : h('p', { class: 'peq' }, 'Nenhum computador ligado ainda.'));
+    };
+    api('ext.dispositivos', {}).then(desenharLista).catch(e => lista.replaceChildren(h('p', { class: 'peq erro' }, e.message.includes('não existe') || e.message.includes('desconhecida') ? 'Atualize o programa do Google (Code.gs) para usar o assistente.' : e.message)));
+    return h('section', { class: 'caixa ext-caixa' }, h('h2', {}, '🟢 Assistente do WhatsApp Web (extensão do Chrome)'),
+      h('p', {}, 'Ao lado de cada conversa do WhatsApp Web mostra quem é a pessoa no painel (cliente, processos, etapa do funil), põe no funil quem chega falando de um caso, prepara o link do cadastro e as mensagens e anda a etapa sozinho quando o link do cadastro ou a procuração e o contrato são mandados. Nunca envia nada sozinho: só coloca o texto na caixa.'),
+      h('ol', { class: 'ext-passos' },
+        h('li', {}, h('a', { class: 'btn mini', href: 'extensao-whatsapp.zip', download: 'extensao-whatsapp.zip' }, '⬇ Baixar a extensão'), ' e descompacte (botão direito › Extrair tudo).'),
+        h('li', {}, 'No Chrome, abra ', h('code', {}, 'chrome://extensions'), ', ligue o "Modo do desenvolvedor" (canto de cima, à direita) e clique em "Carregar sem compactação". Escolha a pasta extraída.'),
+        h('li', {}, 'Abra o WhatsApp Web: o painel do escritório aparece à direita. Clique em "Gerar código" aqui e digite o código lá.')),
+      h('div', { class: 'acoes' }, botao('Gerar código', async ev => {
+        ev.target.disabled = true;
+        try { const r = await api('ext.parear', {}); codigoBox.replaceChildren(h('p', {}, 'Digite no WhatsApp Web: ', h('strong', { class: 'ext-cod' }, r.codigo), h('span', { class: 'peq' }, ` (vale ${r.validade_min} minutos e uma vez só)`))); setTimeout(() => api('ext.dispositivos', {}).then(desenharLista).catch(() => {}), 60000); }
+        catch (e) { avisar(e.message, true); } finally { ev.target.disabled = false; }
+      }), botao('Atualizar a lista', async () => desenharLista(await api('ext.dispositivos', {})), 'sec')),
+      codigoBox, h('h3', {}, 'Computadores ligados'), lista,
+      h('p', { class: 'peq' }, 'A chave de cada computador fica guardada embaralhada no painel e só abre as funções do assistente. Perdeu o computador ou a pessoa saiu? Clique em Desligar.'));
+  }
+
   async function telaUsuarios() {
     carregando();
     const [lista, seg] = await Promise.all([api('usuarios.listar'), api('seguranca').catch(() => null)]);
@@ -2301,6 +2329,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Gerenciar acessos'), h('p', {}, 'Quem pode entrar no painel, o que cada perfil vê, senhas, bloqueios e a segurança dos dados.'))),
       caixaSeg,
+      caixaExtensao(),
       tabela(['Nome', 'Usuário', 'Perfil', 'Situação', 'Último acesso'], lista, u => [
         h('td', { 'data-r': 'Nome' }, u.nome),
         h('td', { 'data-r': 'Usuário' }, u.usuario, u.email ? h('div', { class: 'peq' }, u.email + (u.resumo_email === 'nao' ? ' (sem resumo)' : '')) : null),
@@ -2666,7 +2695,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.13.1';
+  const VERSAO_PAINEL = '8.14.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

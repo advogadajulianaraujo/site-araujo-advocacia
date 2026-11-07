@@ -802,3 +802,23 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   abrir ao passar o mouse). Marca do menu: "Araújo Advocacia" (não "Painel jurídico"). Transcrição com cliente escolhido vai para as
   OBSERVAÇÕES do cliente (`anotarCliente_`): "AUDIÊNCIA — título (data)" ou "ATENDIMENTO — …", depois Resumo, "Transcrição:" e as falas,
   separadas por " ⏎ " (a ficha mostra a 1ª linha e "ver o resumo e a transcrição", `corpoNota`; corta em 38 mil caracteres + link do Doc).
+
+## 8.14.0 Assistente do WhatsApp Web + funil automático + cadastro online (pedido da usuária)
+
+- Etapas do funil (`ETAPAS_CRM`/`ORDEM_CRM`, `etapaAFrente_` só anda para a frente): Novo contato → Em conversa → Cadastro enviado → Cadastro
+  preenchido → Em atendimento → Procuração e contrato enviados → Contrato assinado (ganho) / Não fechou. Antigas consulta→contato e
+  negociacao→proposta (migração uma vez, Config CRM_ETAPAS_814). Cliente novo do painel entra em "Cadastro preenchido"; proposta de honorários
+  leva a "Em atendimento"; Assinatura aguardando → "Procuração e contrato enviados"; assinado → ganho.
+- Cadastro online (/cadastro/?c=…, noindex, assets/cadastro.js): `crm.linkCadastro` (CRM, ficha "📝 Pedir o cadastro ao cliente" quando falta
+  algo, cartão 📝) gera link de 15 dias, uso único, guardado só o hash (Leads.cadastro_token/cadastro_ate/cadastro_em). `site.cadastroInfo` e
+  `site.cadastro` são públicas (trava por código e geral, campo-isca, CPF validado, ViaCEP no navegador); cria/atualiza o cliente, cartão →
+  "Cadastro preenchido" e tarefa "📝 Cadastro preenchido — …". Nada do cliente fica no navegador.
+- Extensão do Chrome (pasta extensao-whatsapp/, baixada em painel/extensao-whatsapp.zip — refazer o zip ao mudar a pasta; pasta interna
+  "assistente-whatsapp-araujo"): painel à direita do WhatsApp Web (Shadow DOM; `html.araujo-aberto` encolhe o WhatsApp), etiqueta da etapa na
+  lista de conversas, ficha do contato (etapa com botões, processos, parcelas, anotações, histórico), "Mandar o link do cadastro", "Sugerir uma
+  resposta" (Gemini, anonimizado), anotar. Sozinho: contato novo falando de caso entra no funil (IA `ext.analisar`, 1×/dia por conversa;
+  desliga no popup), mensagem enviada com o link /cadastro/ → "Cadastro enviado", PDF de procuração/contrato enviado → "Procuração e contrato
+  enviados" (`ext.evento`). NUNCA envia mensagem: só põe o texto na caixa. Nome do lead = nome da conversa (o da IA só quando o título é número).
+- Pareamento: Gerenciar acessos › "Assistente do WhatsApp Web" › Gerar código (`ext.parear`, 6 letras, 10 min, uso único) → digitado na
+  extensão (`ext.ativar`, público) → chave `ext_`+64 hex guardada só como hash em Properties EXT_DISPOSITIVOS; abre SÓ rotas `ext.*`
+  (`rotear_`); "Desligar" (`ext.dispositivos` revogar). Extensão nova = mudar `version` no manifest.json e refazer o zip.

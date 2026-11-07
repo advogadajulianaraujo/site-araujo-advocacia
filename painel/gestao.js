@@ -58,18 +58,22 @@
   /* ================================================================ */
   /* CRM / Funil                                                       */
   /* ================================================================ */
-  const COR_ETAPA = { novo: '#2f6fd0', contato: '#5b6ee1', consulta: '#7a4fc0', atendido: '#1d8a8a', proposta: '#c98a12', negociacao: '#d0602d', ganho: '#1f8a4c', perdido: '#9aa0aa' };
+  const COR_ETAPA = { novo: '#2f6fd0', contato: '#5b6ee1', cadastro: '#7a4fc0', cliente: '#a04fb0', atendido: '#1d8a8a', proposta: '#c98a12', ganho: '#1f8a4c', perdido: '#9aa0aa' };
+  const ETAPAS_ABERTAS = ['novo', 'contato', 'cadastro', 'cliente', 'atendido', 'proposta'];
   /** A política de segurança do painel bloqueia style="…" no HTML; a cor vai pela propriedade CSS (CSSOM), que é permitida. */
   const cor = (el, c) => { el.style.setProperty('--cor', c); return el; };
-  const PROX_ETAPA = { novo: 'contato', contato: 'consulta', consulta: 'atendido', atendido: 'proposta', proposta: 'negociacao', negociacao: 'ganho' };
+  const PROX_ETAPA = { novo: 'contato', contato: 'cadastro', cadastro: 'cliente', cliente: 'atendido', atendido: 'proposta', proposta: 'ganho' };
   const ESCRITORIO_LOCAL = 'no escritório (Rua Silvino Moreira Lima Sobrinho, 888, Sala 04, Humaitá, Tubarão/SC, em frente à nova rodoviária)';
   function msgLead(l) {
     const n = primeiro(l.nome), assunto = l.assunto ? ` sobre ${String(l.assunto).toLowerCase()}` : '';
     const quando = l.consulta_em ? `${dataBR(l.consulta_em.slice(0, 10))}${l.consulta_em.length > 10 ? ' às ' + l.consulta_em.slice(11, 16) : ''}` : '[data e hora]';
     switch (l.etapa) {
-      case 'consulta': return `Olá, ${n}! Confirmando a nossa conversa em ${quando}, ${ESCRITORIO_LOCAL} ou por vídeo, como combinamos. Se puder, traga um documento com foto e os documentos do caso. Qualquer imprevisto, me avise por aqui. Araújo Advocacia`;
-      case 'atendido': return `Olá, ${n}! Obrigada pela conversa. Como combinamos, vou te mandar a proposta para o seu caso. Se lembrar de algum documento ou detalhe, pode me mandar por aqui. Araújo Advocacia`;
-      case 'proposta': case 'negociacao': return `Olá, ${n}! Tudo bem? Conseguiu ver a proposta que enviamos? Se ficou alguma dúvida, estou à disposição para explicar. Araújo Advocacia`;
+      case 'lembrar': return `Olá, ${n}! Confirmando a nossa conversa em ${quando}, ${ESCRITORIO_LOCAL} ou por vídeo, como combinamos. Se puder, traga um documento com foto e os documentos do caso. Qualquer imprevisto, me avise por aqui. Araújo Advocacia`;
+      case 'cadastro': return `Olá, ${n}! Tudo bem? Conseguiu preencher o cadastro pelo link que mandei? Se tiver qualquer dificuldade, me avise que eu ajudo por aqui. Araújo Advocacia`;
+      case 'cliente': return `Olá, ${n}! Recebemos o seu cadastro, obrigada. Vamos marcar a nossa conversa sobre o seu caso: qual o melhor dia e horário para você? Pode ser no escritório ou por vídeo. Araújo Advocacia`;
+      case 'atendido': return `Olá, ${n}! Obrigada pela conversa. Como combinamos, vou te mandar a procuração e o contrato de honorários para você conferir e assinar. Se lembrar de algum documento ou detalhe, pode me mandar por aqui. Araújo Advocacia`;
+      case 'proposta': return `Olá, ${n}! Tudo bem? Conseguiu ver a procuração e o contrato que enviamos? Se ficou alguma dúvida, estou à disposição para explicar. Depois de assinar, é só me mandar por aqui. Araújo Advocacia`;
+      case 'propostaH': return `Olá, ${n}! Tudo bem? Conseguiu ver a proposta que enviamos? Se ficou alguma dúvida, estou à disposição para explicar. Araújo Advocacia`;
       case 'ganho': return `Olá, ${n}! Seja bem-vindo(a) ao escritório. Vou te mandar o contrato e a procuração para assinatura e um guia rápido de como trabalhamos. Qualquer dúvida, é só chamar. Araújo Advocacia`;
       default: return `Olá, ${n}! Aqui é do escritório Araújo Advocacia. Recebemos o seu contato${assunto}. Podemos conversar agora? Se preferir, me diga o melhor dia e horário.`;
     }
@@ -81,11 +85,28 @@
       ['Mensagem da etapa', msgLead(l)],
       ['Primeira resposta', `Olá, ${n}! Aqui é do escritório Araújo Advocacia, obrigada pelo contato. Para eu entender melhor, pode me contar em poucas palavras o que aconteceu e desde quando? Se preferir, podemos marcar uma conversa no escritório ou por vídeo.`],
       ['Pedir documentos', `Olá, ${n}! Para analisarmos o seu caso, pode me mandar por aqui (foto legível ou PDF) os documentos que tiver: documento com foto, comprovante de residência e o que tiver sobre o caso (contratos, mensagens, comprovantes). Obrigada!`],
-      ['Lembrar a consulta', msgLead(Object.assign({}, l, { etapa: 'consulta' }))],
+      ['Lembrar a consulta', msgLead(Object.assign({}, l, { etapa: 'lembrar' }))],
+      ['Lembrar o cadastro', msgLead(Object.assign({}, l, { etapa: 'cadastro' }))],
+      ['Mandei a procuração e o contrato', msgLead(Object.assign({}, l, { etapa: 'proposta' }))],
       ['Sem resposta (retomar)', `Olá, ${n}! Tudo bem? Estou retomando o seu contato com o escritório. Ainda precisa de ajuda com ${l.assunto ? String(l.assunto).toLowerCase() : 'o seu caso'}? Se preferir, me diga o melhor dia e horário para conversarmos.`],
-      ['Depois da proposta', msgLead(Object.assign({}, l, { etapa: 'proposta' }))],
+      ['Depois da proposta de honorários', msgLead(Object.assign({}, l, { etapa: 'propostaH' }))],
       ['Boas-vindas (fechou)', msgLead(Object.assign({}, l, { etapa: 'ganho' }))]
     ];
+  }
+  /** 8.14: gera o link do cadastro online (vale 15 dias, uso único) e abre o WhatsApp com a mensagem pronta. */
+  async function mandarLinkCadastro(alvo, depois) {
+    const { h, api, avisar } = K();
+    let r;
+    try { r = await api('crm.linkCadastro', alvo.id ? { id: alvo.id } : { cliente_id: alvo.cliente_id }); }
+    catch (e) { avisar(e.message, true); return; }
+    const copiar = h('button', { type: 'button', class: 'btn sec', onclick: async () => { try { await navigator.clipboard.writeText(r.mensagem); avisar('Mensagem copiada.'); } catch (e) { avisar('Não consegui copiar: selecione o texto.', true); } } }, 'Copiar a mensagem');
+    const d = dialogo('', h('h2', {}, '📝 Link do cadastro pronto'),
+      h('p', {}, 'Mande ao cliente. Quando ele preencher, o cadastro entra em Clientes sozinho e o cartão do funil passa para "Cadastro preenchido".'),
+      h('p', { class: 'crm-msg-prev' }, r.mensagem),
+      h('p', { class: 'peq' }, 'O link vale 15 dias e só uma vez. Gerar outro invalida o anterior.'),
+      h('div', { class: 'g-acoes' }, r.telefone ? h('a', { class: 'btn wa', href: zap(r.telefone, r.mensagem), target: '_blank', rel: 'noopener' }, 'Mandar no WhatsApp') : null, copiar));
+    // a tela só é redesenhada quando a janela fecha (redesenhar antes fecharia a janela com o link)
+    if (depois) d.addEventListener('close', () => depois());
   }
   function dialogoConsulta(l, depois) {
     const { h, api, avisar, campo } = K();
@@ -94,13 +115,13 @@
       campo('data', 'Dia', (l.consulta_em || '').slice(0, 10) || amanha, { tipo: 'date', obrigatorio: true }),
       campo('hora', 'Hora', (l.consulta_em || '').slice(11, 16) || '14:00', { tipo: 'time', obrigatorio: true }),
       campo('modo', 'Como', 'presencial', { opcoes: [['presencial', 'No escritório'], ['video', 'Por vídeo']] }),
-      h('p', { class: 'peq largo' }, 'Entra na agenda ATENDIMENTOS do Google, o cartão vai para "Consulta agendada" e a próxima ação vira "confirmar na véspera".'),
+      h('p', { class: 'peq largo' }, 'Entra na agenda ATENDIMENTOS do Google e a próxima ação do cartão vira "confirmar na véspera".'),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Agendar')), h('p', { class: 'erro largo' }));
     const d = dialogo('', form);
     K().aoEnviar(form, async f => {
       const r = await api('crm.consulta', { id: l.id, data: f.get('data'), hora: f.get('hora'), modo: f.get('modo') });
       d.close();
-      const l2 = Object.assign({}, l, { etapa: 'consulta', consulta_em: f.get('data') + 'T' + f.get('hora') });
+      const l2 = Object.assign({}, l, { etapa: 'lembrar', consulta_em: f.get('data') + 'T' + f.get('hora') });
       dialogo('', h('h2', {}, r.agenda ? '✓ Consulta agendada' : 'Consulta anotada'), r.agenda ? null : h('p', { class: 'nota alerta' }, 'Não consegui pôr no Google Agenda: ' + r.erro),
         h('p', {}, `${l.nome} · ${dataBR(f.get('data'))} às ${f.get('hora')} (${f.get('modo') === 'video' ? 'por vídeo' : 'no escritório'}).`),
         h('div', { class: 'g-acoes' }, l.telefone ? h('a', { class: 'btn wa', href: zap(l.telefone, msgLead(l2).replace(` ${ESCRITORIO_LOCAL} ou por vídeo, como combinamos`, f.get('modo') === 'video' ? ' por vídeo (mando o link pouco antes)' : ' ' + ESCRITORIO_LOCAL)), target: '_blank', rel: 'noopener' }, 'Confirmar no WhatsApp') : null));
@@ -136,7 +157,8 @@
           h('span', { class: 'peq' }, l.dias_parado >= 7 && !['ganho', 'perdido'].includes(l.etapa) ? `⏳ ${l.dias_parado} dias sem mexer` : (l.responsavel || '')),
           h('span', { class: 'crm-bts' },
             l.telefone ? h('a', { class: 'btn mini wa', href: zap(l.telefone, msgLead(l)), target: '_blank', rel: 'noopener', title: 'Mensagem pronta para esta etapa', onclick: ev => ev.stopPropagation() }, 'WhatsApp') : null,
-            ['novo', 'contato'].includes(l.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Agendar a consulta', 'aria-label': 'Agendar a consulta', onclick: ev => { ev.stopPropagation(); dialogoConsulta(l, recarregar); } }, '📅') : null,
+            ['novo', 'contato'].includes(l.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Mandar o link do cadastro', 'aria-label': 'Mandar o link do cadastro', onclick: ev => { ev.stopPropagation(); mandarLinkCadastro(l, recarregar); } }, '📝') : null,
+            ['novo', 'contato', 'cliente'].includes(l.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Agendar a consulta', 'aria-label': 'Agendar a consulta', onclick: ev => { ev.stopPropagation(); dialogoConsulta(l, recarregar); } }, '📅') : null,
             PROX_ETAPA[l.etapa] ? h('button', { type: 'button', class: 'btn mini sec', title: 'Passar para ' + nomeE[PROX_ETAPA[l.etapa]], onclick: ev => { ev.stopPropagation(); mover(l, PROX_ETAPA[l.etapa]); } }, '→') : null)));
       c.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', l.id); c.classList.add('arrastando'); });
       c.addEventListener('dragend', () => c.classList.remove('arrastando'));
@@ -169,10 +191,10 @@
       corpo = blocoMetricasCrm(r, nomeE);
     } else {
       const quadro = h('div', { class: 'crm-quadro' },
-        ['novo', 'contato', 'consulta', 'atendido', 'proposta', 'negociacao'].map(id => coluna(id, filtrados.filter(l => l.etapa === id).sort(ord))),
+        ETAPAS_ABERTAS.map(id => coluna(id, filtrados.filter(l => l.etapa === id).sort(ord))),
         coluna('ganho', filtrados.filter(l => l.etapa === 'ganho' && recente(l))),
         coluna('perdido', filtrados.filter(l => l.etapa === 'perdido' && recente(l))));
-      corpo = h('div', {}, h('p', { class: 'peq crm-dica' }, 'Arraste o cartão para mudar de etapa (ou use →). Clique para ver tudo, anotar, gerar a proposta ou transformar em cliente. "Contrato fechado" e "Não fechou" mostram os últimos 45 dias.'),
+      corpo = h('div', {}, h('p', { class: 'peq crm-dica' }, 'Arraste o cartão para mudar de etapa (ou use →). Clique para ver tudo, anotar, gerar a proposta ou transformar em cliente. "Contrato assinado" e "Não fechou" mostram os últimos 45 dias. O caminho anda sozinho: link do cadastro mandado → cadastro preenchido → procuração e contrato gerados → assinado.'),
         K().comSetas ? K().comSetas(quadro) : quadro);
     }
     const aba = (id, rot) => h('button', { type: 'button', role: 'tab', class: 'visao-bt' + (visao === id ? ' ativo' : ''), 'aria-selected': String(visao === id), onclick: () => ir({ ver: id }) }, rot);
@@ -200,7 +222,7 @@
   function blocoMetricasCrm(r, nomeE) {
     const { h, grafBarras } = K();
     const m = r.metricas;
-    const etapas = ['novo', 'contato', 'consulta', 'atendido', 'proposta', 'negociacao', 'ganho'];
+    const etapas = ETAPAS_ABERTAS.concat('ganho');
     const tot = etapas.map(e => m.porEtapa[e] ? m.porEtapa[e].n : 0);
     // funil acumulado: quantos chegaram pelo menos até cada etapa (ganhos contam em todas)
     const chegaram = etapas.map((e, i) => tot.slice(i).reduce((a, b) => a + b, 0));
@@ -272,6 +294,7 @@
         return h('div', { class: 'crm-msgs' }, h('label', {}, '💬 Mensagem pronta '), sel, ir, prev);
       })() : null,
       h('div', { class: 'crm-extra-acoes' },
+        ['novo', 'contato', 'cadastro'].includes(l.etapa) ? h('button', { type: 'button', class: 'btn dourado', onclick: () => { d.close(); mandarLinkCadastro(l, depois); } }, l.etapa === 'cadastro' ? '📝 Mandar o link do cadastro de novo' : '📝 Mandar link do cadastro') : null,
         h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); dialogoConsulta(l, depois); } }, l.consulta_em ? '📅 Remarcar a consulta' : '📅 Agendar consulta'),
         h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); dialogoProposta(l, depois); } }, l.proposta_url ? 'Gerar nova proposta' : '📄 Gerar proposta de honorários'),
         l.proposta_url ? h('a', { class: 'btn sec', href: l.proposta_url, target: '_blank', rel: 'noopener' }, 'Abrir a proposta') : null,
@@ -955,5 +978,5 @@
     });
   }
 
-  window.GESTAO = { telaConversas, telaCrm, telaCalculadoras, telaTranscricao, telaPadroes, blocoRecibos, blocoPainelFinanceiro, dialogoProposta };
+  window.GESTAO = { mandarLinkCadastro, telaConversas, telaCrm, telaCalculadoras, telaTranscricao, telaPadroes, blocoRecibos, blocoPainelFinanceiro, dialogoProposta };
 })();

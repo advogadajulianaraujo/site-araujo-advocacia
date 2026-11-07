@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.13.1';
+var VERSAO = '8.14.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -81,7 +81,7 @@ var ESQUEMA = {
   LogArquivo: ['quando', 'usuario', 'acao', 'detalhe'],
   Leads: ['id', 'criado_em', 'nome', 'telefone', 'email', 'area', 'assunto', 'canal', 'etapa', 'valor_estimado', 'responsavel', 'proxima_acao', 'proxima_data',
     'temperatura', 'consulta_em', 'indicado_por', 'observacoes', 'motivo_perda', 'cliente_id', 'contato_id', 'proposta_url', 'historico', 'primeiro_contato_em',
-    'ganho_em', 'perdido_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+    'ganho_em', 'perdido_em', 'criado_por', 'atualizado_em', 'atualizado_por', 'cadastro_token', 'cadastro_ate', 'cadastro_em'],
   Transcricoes: ['id', 'criado_em', 'criado_por', 'tipo', 'titulo', 'cliente_id', 'processo_id', 'data_ato', 'fonte', 'doc_url', 'resumo_cliente', 'resumo_equipe',
     'documentos', 'publicado', 'publicado_em'],
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
@@ -486,6 +486,21 @@ var ROTAS = {
   'crm.consulta': { permissao: 'usuarios', fn: crmAgendarConsulta_ },
   // 8.13: chatbot do WhatsApp (a ponte chama a rota pública com a chave secreta; o resto é só da administração)
   'whats.webhook': { publica: true, fn: whatsWebhook_ },
+  // 8.14: cadastro online (público, pelo link) e extensão do WhatsApp Web (chave própria do aparelho, só as rotas ext.*)
+  'crm.linkCadastro': { permissao: 'usuarios', fn: crmLinkCadastro_ },
+  'site.cadastroInfo': { publica: true, fn: cadastroInfo_ },
+  'site.cadastro': { publica: true, fn: cadastroEnviar_ },
+  'ext.parear': { permissao: 'usuarios', fn: extParear_ },
+  'ext.ativar': { publica: true, fn: extAtivar_ },
+  'ext.dispositivos': { permissao: 'usuarios', fn: extDispositivos_ },
+  'ext.contatos': { ext: true, permissao: 'usuarios', fn: extContatos_ },
+  'ext.contato': { ext: true, permissao: 'usuarios', fn: extContato_ },
+  'ext.adicionar': { ext: true, permissao: 'usuarios', fn: extAdicionar_ },
+  'ext.etapa': { ext: true, permissao: 'usuarios', fn: function (d, u) { if (d.etapa === 'perdido' && !d.motivo) d.motivo = 'Outro'; return crmEtapa_(d, u); } },
+  'ext.anotar': { ext: true, permissao: 'usuarios', fn: function (d, u) { return d.cliente_id && !d.id ? anotarCliente_({ id: d.cliente_id, texto: d.texto }, u) : crmAnotar_(d, u); } },
+  'ext.linkCadastro': { ext: true, permissao: 'usuarios', fn: crmLinkCadastro_ },
+  'ext.evento': { ext: true, permissao: 'usuarios', fn: extEvento_ },
+  'ext.analisar': { ext: true, permissao: 'usuarios', fn: extAnalisar_ },
   'whats.conversas': { permissao: 'usuarios', fn: whatsConversas_ },
   'whats.acao': { permissao: 'usuarios', fn: whatsAcao_ },
   'whats.config': { permissao: 'usuarios', fn: whatsConfig_ },
@@ -517,7 +532,8 @@ function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
   if (!rota) throw falha_('Ação desconhecida.');
   if (rota.publica) return rota.fn(dados, null);
-  var u = usuarioDaSessao_(token);
+  // a chave do aparelho da extensão (ext_…) só abre as rotas marcadas ext; o resto exige a sessão normal
+  var u = rota.ext && /^ext_/.test(String(token || '')) ? usuarioDoDispositivo_(token) : usuarioDaSessao_(token);
   if (rota.future && !podeFuture_(u)) { registrar_(u.usuario, 'acesso negado', acao); throw falha_('Você não tem acesso ao painel do Edifício Future.'); }
   if (rota.permissao && !PERFIS[u.perfil][rota.permissao]) {
     registrar_(u.usuario, 'acesso negado', acao);
@@ -11103,8 +11119,16 @@ function pdfDoDoc_(docId, pasta) {
 /* ================================================================== */
 /* CRM / Funil de atendimento                                          */
 /* ================================================================== */
-var ETAPAS_CRM = [['novo', 'Novo contato'], ['contato', 'Em contato'], ['consulta', 'Consulta agendada'], ['atendido', 'Atendido'],
-  ['proposta', 'Proposta enviada'], ['negociacao', 'Negociação'], ['ganho', 'Contrato fechado'], ['perdido', 'Não fechou']];
+// 8.14 (pedido da usuária): as etapas seguem o caminho do escritório — contato → conversa → cadastro enviado → cadastro preenchido (vira
+// cliente) → em atendimento → procuração e contrato enviados → contrato assinado. "consulta" e "negociação" saíram (migração em crmSincronizar_).
+var ETAPAS_CRM = [['novo', 'Novo contato'], ['contato', 'Em conversa'], ['cadastro', 'Cadastro enviado'], ['cliente', 'Cadastro preenchido'],
+  ['atendido', 'Em atendimento'], ['proposta', 'Procuração e contrato enviados'], ['ganho', 'Contrato assinado'], ['perdido', 'Não fechou']];
+var ORDEM_CRM = { novo: 1, contato: 2, cadastro: 3, cliente: 4, atendido: 5, proposta: 6, ganho: 7, perdido: 7 };
+/** Só anda para a frente (e nunca mexe em quem já fechou ou desistiu). */
+function etapaAFrente_(atual, nova) {
+  if (atual === 'ganho' || atual === 'perdido') return atual;
+  return (ORDEM_CRM[nova] || 0) > (ORDEM_CRM[atual] || 0) ? nova : atual;
+}
 var CANAIS_CRM = ['Site (formulário)', 'WhatsApp', 'Telefone', 'Indicação', 'Google Ads (anúncio)', 'Google (pesquisa ou mapa)', 'Instagram / Facebook', 'Presencial', 'Já era cliente', 'Outro'];
 var MOTIVOS_PERDA = ['Preço / honorários', 'Escolheu outro escritório', 'Não tinha direito / caso inviável', 'Desistiu / sem interesse', 'Não respondeu', 'Fora da área ou da região', 'Outro'];
 var CAMPOS_LEAD = ['nome', 'telefone', 'email', 'area', 'assunto', 'canal', 'valor_estimado', 'responsavel', 'proxima_acao', 'proxima_data', 'temperatura', 'consulta_em', 'indicado_por', 'observacoes'];
@@ -11115,6 +11139,11 @@ function linhaHist_(u, txt) { return Utilities.formatDate(new Date(), TZ, 'dd/MM
 
 /** Contatos do site que ainda não viraram lead e leads cujo contrato foi assinado (ou desistido) no painel. Só grava se mudou. */
 function crmSincronizar_() {
+  if (!config_('CRM_ETAPAS_814')) comTrava_(function () {
+    var tm = tabela_('Leads'); tm.adiar = true;
+    tm.linhas.forEach(function (l) { var n = { consulta: 'contato', negociacao: 'proposta' }[l.etapa]; if (n) atualizarLinha_(tm, l, { etapa: n }); });
+    regravarMudadas_(tm); setConfig_('CRM_ETAPAS_814', new Date().toISOString(), 'Etapas antigas do funil (consulta, negociação) passadas para as novas');
+  });
   var tabL = tabela_('Leads'), porContato = {}, mud = false;
   tabL.linhas.forEach(function (l) { if (l.contato_id) porContato[l.contato_id] = l; });
   var desde = new Date(Date.now() - 120 * 86400000).toISOString(), agora = new Date().toISOString();
@@ -11123,7 +11152,7 @@ function crmSincronizar_() {
   tabela_('Assinaturas').linhas.forEach(function (a) { if (a.cliente_id) assin[a.cliente_id] = a; });
   var fechar = tabL.linhas.filter(function (l) {
     var a = l.cliente_id && assin[l.cliente_id];
-    return a && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (a.situacao === 'assinado' || a.situacao === 'desistiu' || (a.situacao === 'aguardando' && ['novo', 'contato', 'consulta', 'atendido'].indexOf(l.etapa) >= 0));
+    return a && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (a.situacao === 'assinado' || a.situacao === 'desistiu' || (a.situacao === 'aguardando' && etapaAFrente_(l.etapa, 'proposta') !== l.etapa));
   });
   // 8.12.1 (pedido da usuária): todo cliente NOVO cadastrado pelo painel entra no funil (os importados do GEA, do histórico e da revisão, não)
   var dig8 = function (t) { var x = String(t || '').replace(/\D/g, ''); return x.length >= 8 ? x.slice(-8) : ''; };
@@ -11150,20 +11179,20 @@ function crmSincronizar_() {
     clientesNovos.forEach(function (c) {
       var k = dig8(c.telefone), l = k && porTel[k];
       if (l) { // o contato já estava no funil (ex.: veio pelo site): só liga ao cadastro
-        atualizarLinha_(t, l, { cliente_id: c.id, etapa: ['novo', 'contato', 'consulta'].indexOf(l.etapa) >= 0 ? 'atendido' : l.etapa, primeiro_contato_em: l.primeiro_contato_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'cadastro de cliente criado no painel'), atualizado_em: agora, atualizado_por: 'robô' });
+        atualizarLinha_(t, l, { cliente_id: c.id, etapa: etapaAFrente_(l.etapa, 'cliente'), primeiro_contato_em: l.primeiro_contato_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'cadastro de cliente criado no painel'), atualizado_em: agora, atualizado_por: 'robô' });
         delete porTel[k]; return;
       }
-      var a = assin[c.id], etapa = a && a.situacao === 'assinado' ? 'ganho' : a && a.situacao === 'desistiu' ? 'perdido' : a ? 'proposta' : 'atendido';
+      var a = assin[c.id], etapa = a && a.situacao === 'assinado' ? 'ganho' : a && a.situacao === 'desistiu' ? 'perdido' : a ? 'proposta' : 'cliente';
       inserirLinha_(t, { id: novoId_('L'), criado_em: c.criado_em || agora, nome: c.nome, telefone: c.telefone || '', email: c.email || '', area: c.area || areaMkt_(c.tipo_acao || '').replace('Geral', ''),
         assunto: String(c.tipo_acao || c.resumo_caso || '').slice(0, 200), canal: mapaCanal[c.como_conheceu] || c.como_conheceu || '', etapa: etapa, valor_estimado: '',
-        responsavel: c.atualizado_por || '', proxima_acao: etapa === 'atendido' ? 'Enviar a proposta / contrato' : '', proxima_data: etapa === 'atendido' ? somarDias_(hojeSP_(), 2) : '',
+        responsavel: c.atualizado_por || '', proxima_acao: etapa === 'cliente' ? 'Marcar o atendimento' : '', proxima_data: etapa === 'cliente' ? somarDias_(hojeSP_(), 2) : '',
         temperatura: 'morno', cliente_id: c.id, ganho_em: etapa === 'ganho' ? (a.assinado_em || agora) : '', perdido_em: etapa === 'perdido' ? agora : '', motivo_perda: etapa === 'perdido' ? 'Desistiu / sem interesse' : '',
         historico: linhaHist_(null, 'entrou no funil pelo cadastro de cliente no painel'), criado_por: 'painel', atualizado_em: agora, atualizado_por: 'robô' });
     });
     t.linhas.forEach(function (l) {
       var a = l.cliente_id && assin[l.cliente_id];
       if (!a || ['ganho', 'perdido'].indexOf(l.etapa) >= 0) return;
-      if (a.situacao === 'aguardando') { if (['novo', 'contato', 'consulta', 'atendido'].indexOf(l.etapa) >= 0) atualizarLinha_(t, l, { etapa: 'proposta', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato e procuração gerados: aguardando assinatura'), atualizado_em: agora, atualizado_por: 'robô' }); return; }
+      if (a.situacao === 'aguardando') { if (etapaAFrente_(l.etapa, 'proposta') !== l.etapa) atualizarLinha_(t, l, { etapa: 'proposta', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato e procuração gerados: aguardando assinatura'), atualizado_em: agora, atualizado_por: 'robô' }); return; }
       if (a.situacao === 'assinado') atualizarLinha_(t, l, { etapa: 'ganho', ganho_em: a.assinado_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato assinado (Clientes › Aguardando assinatura)'), atualizado_em: agora, atualizado_por: 'robô' });
       else if (a.situacao === 'desistiu') atualizarLinha_(t, l, { etapa: 'perdido', perdido_em: agora, motivo_perda: 'Desistiu / sem interesse', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'marcado "Não vai assinar"'), atualizado_em: agora, atualizado_por: 'robô' });
     });
@@ -11372,7 +11401,7 @@ function gerarProposta_(d, u) {
   if (l) comTrava_(function () {
     var t = tabela_('Leads'), x = t.linhas.filter(function (r) { return r.id === l.id; })[0];
     var vEst = dinheiro_((d.honorarios || {}).valor) || dinheiro_((d.honorarios || {}).mensal) * 12 || dinheiro_(x.valor_estimado);
-    atualizarLinha_(t, x, { etapa: ['ganho', 'perdido', 'negociacao'].indexOf(x.etapa) >= 0 ? x.etapa : 'proposta', proposta_url: g.url, valor_estimado: vEst ? txtDinheiro_(vEst) : x.valor_estimado,
+    atualizarLinha_(t, x, { etapa: etapaAFrente_(x.etapa, 'atendido'), proposta_url: g.url, valor_estimado: vEst ? txtDinheiro_(vEst) : x.valor_estimado,
       proxima_acao: 'Confirmar se recebeu e se ficou alguma dúvida sobre a proposta', proxima_data: somarDias_(hojeSP_(), 2),
       historico: (x.historico ? x.historico + '\n' : '') + linhaHist_(u, 'proposta gerada (vale ' + validade + ' dias)'), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario,
       primeiro_contato_em: x.primeiro_contato_em || new Date().toISOString() });
@@ -11718,7 +11747,7 @@ function crmAgendarConsulta_(d, u) {
     ev = criarCompromisso_({ agenda: 'ATENDIMENTOS', titulo: 'Consulta — ' + l.nome + (l.area ? ' (' + l.area + ')' : ''), data: d.data, inicio: d.hora, fim: d.fim || '',
       local: video ? 'Por vídeo' : 'Escritório', descricao: [l.assunto, l.telefone ? 'Telefone: ' + l.telefone : '', 'Veio por: ' + (l.canal || '—')].filter(Boolean).join('\n') }, u);
   } catch (e) { erroAg = String(e.message || e); }
-  crmEtapa_({ id: l.id, etapa: 'consulta', consulta_em: d.data + 'T' + d.hora, nota: (video ? 'por vídeo' : 'no escritório') + (erroAg ? ' (não entrou no Google Agenda: ' + erroAg + ')' : '') }, u);
+  crmEtapa_({ id: l.id, etapa: etapaAFrente_(l.etapa, 'contato'), consulta_em: d.data + 'T' + d.hora, nota: (video ? 'por vídeo' : 'no escritório') + (erroAg ? ' (não entrou no Google Agenda: ' + erroAg + ')' : '') }, u);
   comTrava_(function () {
     var t = tabela_('Leads'), x = t.linhas.filter(function (r) { return r.id === l.id; })[0];
     atualizarLinha_(t, x, { proxima_acao: 'Confirmar a consulta na véspera', proxima_data: somarDias_(d.data, -1) < hojeSP_() ? hojeSP_() : somarDias_(d.data, -1) });
@@ -12167,4 +12196,267 @@ function whatsSimular_(texto, u) {
   var pedido = 'BASE DO ESCRITÓRIO:\n' + baseConhecimentoWhats_() + '\n\nSITUAÇÃO: conversa NOVA. ' + (horarioEscritorio_() ? 'Horário de atendimento.' : 'FORA do horário de atendimento.') + '\n\nCONVERSA:\nCliente: ' + texto.slice(0, 2000);
   var o = jsonDaIA_(geminiTexto_([{ text: pedido }], { sistema: WHATS_SISTEMA, json: true, max: 1200, temp: 0.3 }).texto) || {};
   return { resposta: o.resposta || '(a IA não respondeu)', intencao: o.intencao || '', area: o.area || '', resumo: o.resumo || '' };
+}
+
+
+/* ================================================================== */
+/* 8.14 — Cadastro online (o cliente preenche pelo link) e extensão    */
+/* do WhatsApp Web (assistente ao lado das conversas)                  */
+/* ================================================================== */
+
+/* ---------- Link do cadastro ---------- */
+var SITE_URL = 'https://araujoadvocaciasc.com.br';
+function hashTxt_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(t), Utilities.Charset.UTF_8)).replace(/=+$/, ''); }
+/** Gera (ou renova) o link do cadastro de um contato do funil. Guarda só o "resumo" do código (hash): o link vale 15 dias e uma vez. */
+function crmLinkCadastro_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Leads'), l = d.id ? t.linhas.filter(function (r) { return r.id === d.id; })[0] : null, agora = new Date().toISOString();
+    if (!l && d.cliente_id) { // cliente sem cartão no funil (ex.: aberto pela ficha): cria o cartão
+      var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.cliente_id; })[0];
+      if (!c) throw falha_('Cliente não encontrado.');
+      l = { id: novoId_('L'), criado_em: agora, nome: c.nome, telefone: c.telefone || '', email: c.email || '', area: c.area || '', assunto: '', canal: c.como_conheceu || '', etapa: 'contato',
+        temperatura: 'morno', cliente_id: c.id, historico: linhaHist_(u, 'cartão criado para mandar o cadastro'), criado_por: u.usuario, atualizado_em: agora, atualizado_por: u.usuario, responsavel: u.usuario };
+      inserirLinha_(t, l);
+    }
+    if (!l) throw falha_('Contato não encontrado.');
+    var codigo = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+    var ate = new Date(Date.now() + 15 * 86400000).toISOString();
+    atualizarLinha_(t, l, { cadastro_token: hashTxt_(codigo), cadastro_ate: ate, etapa: etapaAFrente_(l.etapa, 'cadastro'), atualizado_em: agora, atualizado_por: u.usuario,
+      proxima_acao: 'Conferir se preencheu o cadastro', proxima_data: somarDias_(hojeSP_(), 2), primeiro_contato_em: l.primeiro_contato_em || agora,
+      historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(u, 'link do cadastro gerado (vale 15 dias)') });
+    registrar_(u.usuario, 'crm: link do cadastro', l.id);
+    var url = SITE_URL + '/cadastro/?c=' + codigo, n = primeiroNomeTxt_(l.nome);
+    return { lead_id: l.id, url: url, telefone: l.telefone || '', ate: ate,
+      mensagem: 'Olá' + (n ? ', ' + n : '') + '! Para darmos andamento ao seu atendimento, preencha o seu cadastro neste link (leva uns 3 minutos e é seguro):\n' + url +
+        '\n\nOs dados são usados só para o seu atendimento e para os documentos (LGPD). Qualquer dúvida, é só me chamar por aqui.' };
+  });
+}
+function leadDoCodigo_(codigo) {
+  codigo = String(codigo || '').replace(/[^a-f0-9]/gi, '');
+  if (codigo.length < 32) return null;
+  var h = hashTxt_(codigo);
+  return tabela_('Leads').linhas.filter(function (l) { return l.cadastro_token && iguais_(l.cadastro_token, h); })[0] || null;
+}
+function travaCadastro_(codigo) {
+  var cache = CacheService.getScriptCache(), k = 'cad_' + String(codigo).slice(0, 12), n = +(cache.get(k) || 0), g = +(cache.get('cad_total') || 0);
+  if (n >= 15 || g >= 120) throw falha_('Muitas tentativas agora. Tente de novo em alguns minutos ou fale com o escritório pelo WhatsApp.');
+  cache.put(k, String(n + 1), 3600); cache.put('cad_total', String(g + 1), 3600);
+}
+/** Público: o site pergunta se o link vale (e o primeiro nome, para cumprimentar). */
+function cadastroInfo_(d) {
+  travaCadastro_(d.c);
+  var l = leadDoCodigo_(d.c);
+  if (!l || !l.cadastro_ate || l.cadastro_ate < new Date().toISOString()) return { ok: false };
+  var cli = l.cliente_id ? tabela_('Clientes').linhas.filter(function (c) { return c.id === l.cliente_id; })[0] : null;
+  return { ok: true, nome: primeiroNomeTxt_(l.nome), telefone: String(l.telefone || '').replace(/\D/g, '').slice(-11), area: l.area || '', jaCliente: !!cli };
+}
+function cpfValido_(cpf) {
+  cpf = String(cpf || '').replace(/\D/g, '');
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  var dv = function (n) { var s = 0; for (var i = 0; i < n; i++) s += +cpf[i] * (n + 1 - i); var r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === +cpf[9] && dv(10) === +cpf[10];
+}
+var ESTADOS_CIVIS_CAD = ['solteiro(a)', 'casado(a)', 'união estável', 'divorciado(a)', 'separado(a)', 'viúvo(a)'];
+/** Público: o cliente mandou o cadastro. Cria (ou completa) o cadastro, liga ao funil e avisa a equipe. */
+function cadastroEnviar_(d) {
+  travaCadastro_(d.c);
+  if (d.empresa_site) return { ok: true }; // campo-isca contra robôs
+  var l = leadDoCodigo_(d.c);
+  if (!l || !l.cadastro_ate || l.cadastro_ate < new Date().toISOString()) throw falha_('Este link de cadastro expirou ou já foi usado. Peça um novo pelo WhatsApp do escritório.');
+  var x = d.dados || {}, limpa = function (v, n) { return String(v || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, n || 200); };
+  var nome = limpa(x.nome, 120), cpf = String(x.cpf || '').replace(/\D/g, ''), nasc = String(x.nascimento || ''), tel = String(x.telefone || '').replace(/\D/g, '');
+  var falta = [];
+  if (nome.split(' ').length < 2) falta.push('nome completo');
+  if (!cpfValido_(cpf)) falta.push('CPF válido');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nasc) || nasc > hojeSP_() || nasc < '1900-01-01') falta.push('data de nascimento');
+  if (tel.length < 10 || tel.length > 11) falta.push('telefone com DDD');
+  if (x.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x.email).trim())) falta.push('e-mail válido (ou deixe em branco)');
+  if (ESTADOS_CIVIS_CAD.indexOf(x.estado_civil) < 0) falta.push('estado civil');
+  if (!limpa(x.profissao)) falta.push('profissão');
+  if (String(x.cep || '').replace(/\D/g, '').length !== 8) falta.push('CEP');
+  if (!limpa(x.rua) || !limpa(x.numero, 20) || !limpa(x.bairro) || !limpa(x.cidade) || !/^[A-Za-z]{2}$/.test(String(x.uf || ''))) falta.push('endereço completo (rua, número, bairro, cidade e UF)');
+  if (!x.aceite) falta.push('a autorização de uso dos dados (LGPD)');
+  if (falta.length) throw falha_('Confira: ' + falta.join(', ') + '.');
+  var endereco = limpa(x.rua) + ', nº ' + limpa(x.numero, 20) + (limpa(x.complemento, 60) ? ', ' + limpa(x.complemento, 60) : '') + ', ' + limpa(x.bairro);
+  var fone = '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4);
+  var cpfFmt = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'), cepFmt = String(x.cep).replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2');
+  var agora = new Date().toISOString(), carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+  var res = comTrava_(function () {
+    var tc = tabela_('Clientes');
+    var c = (l.cliente_id && tc.linhas.filter(function (r) { return r.id === l.cliente_id; })[0]) || tc.linhas.filter(function (r) { return String(r.cpf_cnpj || '').replace(/\D/g, '') === cpf; })[0];
+    var dados = { tipo: 'PF', nome: nomeProprio_(nome), cpf_cnpj: cpfFmt, rg: limpa(x.rg, 30), nascimento: nasc, estado_civil: x.estado_civil, profissao: limpa(x.profissao, 80),
+      cep: cepFmt, endereco: endereco, cidade: limpa(x.cidade, 80), uf: String(x.uf).toUpperCase(), telefone: fone, email: limpa(x.email, 120), genero: /^(feminino|masculino)$/.test(x.genero) ? x.genero : '' };
+    var novo = !c;
+    if (c) { // já tinha cadastro: completa e atualiza o que veio (o cliente acabou de conferir os próprios dados)
+      var m = { atualizado_em: agora, atualizado_por: 'cadastro online' };
+      Object.keys(dados).forEach(function (k) { if (dados[k]) m[k] = dados[k]; });
+      m.observacoes = guardarObsCliente_(c, '[' + carimbo + ' — site] Cadastro conferido e atualizado pelo próprio cliente (link do WhatsApp).' + (c.observacoes ? '\n' + c.observacoes : ''));
+      if (c.situacao === 'importado — conferir') m.situacao = 'completo';
+      atualizarLinha_(tc, c, m);
+    } else {
+      c = Object.assign({ id: novoId_('C'), origem: 'cadastro online (CRM)', situacao: 'completo', area: l.area || '', como_conheceu: CANAIS_CONHECEU.indexOf(l.canal) >= 0 ? l.canal : (/WhatsApp/.test(l.canal) ? 'Outro' : (/Site/.test(l.canal || '') ? 'Site' : '')),
+        observacoes: '[' + carimbo + ' — site] Cadastro preenchido pelo próprio cliente pelo link (veio do funil' + (l.canal ? ', ' + l.canal : '') + ').' + (l.assunto ? ' Caso: ' + l.assunto : ''),
+        criado_em: agora, atualizado_em: agora, atualizado_por: 'cadastro online' }, dados);
+      inserirLinha_(tc, c);
+    }
+    var tl = tabela_('Leads'), ll = tl.linhas.filter(function (r) { return r.id === l.id; })[0];
+    atualizarLinha_(tl, ll, { cliente_id: c.id, nome: dados.nome, telefone: ll.telefone || fone, email: dados.email || ll.email, etapa: etapaAFrente_(ll.etapa, 'cliente'), cadastro_token: '', cadastro_em: agora,
+      proxima_acao: 'Conferir o cadastro e marcar o atendimento', proxima_data: hojeSP_(), atualizado_em: agora, atualizado_por: 'cadastro online',
+      historico: (ll.historico ? ll.historico + '\n' : '') + linhaHist_(null, 'cadastro preenchido pelo cliente' + (novo ? ' (cliente novo)' : ' (cadastro atualizado)')) });
+    inserirLinha_(tabela_('Tarefas'), { id: novoId_('T'), titulo: '📝 Cadastro preenchido — ' + dados.nome + ': conferir e marcar o atendimento', descricao: 'O cliente preencheu o cadastro pelo link.\nAbrir: Clientes › ' + dados.nome,
+      responsavel: ll.responsavel || config_('WHATS_RESP') || config_('RESP_SITE') || '', processo_id: '', numero: '', cliente_id: c.id, vence_em: hojeSP_(), etapa: 'afazer', peso: '1', situacao: 'ativa',
+      concluida_por: '', concluida_em: '', historico: carimbo + ' cadastro online', criado_em: agora, criado_por: 'site', atualizado_em: agora, atualizado_por: 'site', prioridade: 'alta' });
+    return { novo: novo, id: c.id };
+  });
+  registrar_('site', 'cadastro online', res.id + (res.novo ? ' (novo)' : ' (atualizado)'));
+  return { ok: true };
+}
+
+/* ---------- Extensão do WhatsApp Web: pareamento seguro ---------- */
+/* A extensão não usa a senha: a administração gera no painel um código de 6 letras (vale 10 min); a extensão troca o código por uma
+   chave própria do aparelho (guardada aqui só como hash), que só abre as rotas ext.* e pode ser desligada em Gerenciar acessos. */
+function dispositivos_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('EXT_DISPOSITIVOS') || '[]'); } catch (e) { return []; } }
+function gravarDispositivos_(l) { PropertiesService.getScriptProperties().setProperty('EXT_DISPOSITIVOS', JSON.stringify(l.slice(-20))); }
+function extParear_(d, u) {
+  var letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', cod = '';
+  for (var i = 0; i < 6; i++) cod += letras.charAt(Math.floor(Math.random() * letras.length));
+  CacheService.getScriptCache().put('extpar_' + cod, u.id, 600);
+  registrar_(u.usuario, 'extensão: código de pareamento', '');
+  return { codigo: cod, validade_min: 10 };
+}
+function extAtivar_(d) {
+  var cache = CacheService.getScriptCache(), cod = String(d.codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  var tent = +(cache.get('extpar_tent') || 0); if (tent >= 30) throw falha_('Muitas tentativas. Gere outro código daqui a 15 minutos.');
+  var uid = cod.length === 6 ? cache.get('extpar_' + cod) : null;
+  if (!uid) { cache.put('extpar_tent', String(tent + 1), 900); throw falha_('Código inválido ou vencido. Gere outro no painel (Gerenciar acessos › Extensão do WhatsApp Web).'); }
+  cache.remove('extpar_' + cod);
+  var u = tabela_('Usuarios').linhas.filter(function (r) { return r.id === uid; })[0];
+  if (!u || u.ativo !== 'sim') throw falha_('Usuário desativado.');
+  var token = 'ext_' + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  var lista = dispositivos_();
+  lista.push({ id: novoId_('X'), hash: hashTxt_(token), u: uid, nome: String(d.nome || 'Chrome').slice(0, 60), criado: new Date().toISOString(), ultimo: new Date().toISOString() });
+  gravarDispositivos_(lista);
+  registrar_(u.usuario, 'extensão: aparelho ligado', String(d.nome || ''));
+  return { token: token, usuario: u.nome || u.usuario };
+}
+function usuarioDoDispositivo_(token) {
+  if (!/^ext_[0-9a-f]{64}$/.test(String(token || ''))) throw falha_('A extensão precisa ser ligada de novo (código no painel).', true);
+  var h = hashTxt_(token), lista = dispositivos_(), x = lista.filter(function (z) { return iguais_(z.hash, h); })[0];
+  if (!x) throw falha_('Este aparelho foi desligado. Gere um código novo no painel.', true);
+  var u = tabela_('Usuarios').linhas.filter(function (r) { return r.id === x.u; })[0];
+  if (!u || u.ativo !== 'sim' || !PERFIS[u.perfil]) throw falha_('Acesso desativado.', true);
+  var cache = CacheService.getScriptCache(); if (!cache.get('extuso_' + x.id)) { cache.put('extuso_' + x.id, '1', 3600); x.ultimo = new Date().toISOString(); gravarDispositivos_(lista); }
+  return u;
+}
+function extDispositivos_(d, u) {
+  var lista = dispositivos_();
+  if (d.revogar) { lista = lista.filter(function (z) { return z.id !== d.revogar; }); gravarDispositivos_(lista); registrar_(u.usuario, 'extensão: aparelho desligado', d.revogar); }
+  var nomes = {}; tabela_('Usuarios').linhas.forEach(function (r) { nomes[r.id] = r.nome || r.usuario; });
+  return { itens: lista.map(function (z) { return { id: z.id, nome: z.nome, usuario: nomes[z.u] || '', criado: z.criado, ultimo: z.ultimo }; }) };
+}
+
+/* ---------- Extensão: quem é esta conversa ---------- */
+function digitosTel_(t) { var d = String(t || '').replace(/\D/g, ''); if (d.length > 11 && d.indexOf('55') === 0) d = d.slice(2); return d; }
+function mapaContatos_() {
+  var porTel = {}, porNome = {};
+  var junta = function (k, obj) { if (k && !porTel[k]) porTel[k] = obj; };
+  tabela_('Clientes').linhas.forEach(function (c) {
+    String(c.telefone || '').split(/[\/;,|]|\bou\b/).forEach(function (t) { var d = digitosTel_(t); if (d.length >= 10) junta(d.slice(-8), { tipo: 'cliente', id: c.id, nome: c.nome }); });
+    var n = normalizar_(c.nome); if (n && !porNome[n]) porNome[n] = { tipo: 'cliente', id: c.id, nome: c.nome };
+  });
+  var ultimoDoCliente = {};
+  tabela_('Leads').linhas.forEach(function (l) {
+    if (l.cliente_id) ultimoDoCliente[l.cliente_id] = { id: l.id, etapa: l.etapa };
+    var d = digitosTel_(l.telefone), k = d.length >= 10 ? d.slice(-8) : '';
+    var o = { tipo: 'lead', id: l.id, nome: l.nome, etapa: l.etapa, cliente_id: l.cliente_id };
+    if (k) { var atual = porTel[k]; if (!atual) porTel[k] = o; else if (atual.tipo === 'cliente' && (!atual.lead || ['ganho', 'perdido'].indexOf(l.etapa) < 0)) atual.lead = o; }
+    var n = normalizar_(l.nome); if (n) { var a2 = porNome[n]; if (!a2) porNome[n] = o; else if (a2.tipo === 'cliente' && !a2.lead) a2.lead = o; }
+  });
+  // cliente com cartão no funil: a etiqueta mostra a etapa do cartão
+  [porTel, porNome].forEach(function (m) { Object.keys(m).forEach(function (k) { var o = m[k]; if (o.tipo === 'cliente' && ultimoDoCliente[o.id]) o.lead = ultimoDoCliente[o.id]; }); });
+  return { porTel: porTel, porNome: porNome };
+}
+function acharContato_(mapa, titulo, telefone) {
+  var d = digitosTel_(telefone || (/^\+?[\d\s()\-]{10,}$/.test(String(titulo || '')) ? titulo : ''));
+  if (d.length >= 10 && mapa.porTel[d.slice(-8)]) return mapa.porTel[d.slice(-8)];
+  var n = normalizar_(String(titulo || '').replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' '));
+  return (n && mapa.porNome[n]) || null;
+}
+/** Etiquetas da lista de conversas: para cada título visível, se é cliente/contato e a etapa. */
+function extContatos_(d) {
+  var mapa = mapaContatos_(), r = {};
+  (d.itens || []).slice(0, 80).forEach(function (it) {
+    var o = acharContato_(mapa, it.titulo, it.telefone); if (!o) return;
+    r[it.chave || it.titulo] = { tipo: o.tipo, etapa: o.tipo === 'lead' ? o.etapa : (o.lead ? o.lead.etapa : 'cliente_antigo') };
+  });
+  return { itens: r, etapas: ETAPAS_CRM };
+}
+/** Painel ao lado da conversa aberta. */
+function extContato_(d, u) {
+  var mapa = mapaContatos_(), o = acharContato_(mapa, d.titulo, d.telefone);
+  if (!o) return { achou: false, etapas: ETAPAS_CRM };
+  var r = { achou: true, etapas: ETAPAS_CRM, tipo: o.tipo };
+  var leadId = o.tipo === 'lead' ? o.id : (o.lead && o.lead.id);
+  var cliId = o.tipo === 'cliente' ? o.id : o.cliente_id;
+  if (leadId) {
+    var l = tabela_('Leads').linhas.filter(function (x) { return x.id === leadId; })[0];
+    if (l) r.lead = { id: l.id, nome: l.nome, etapa: l.etapa, area: l.area, assunto: l.assunto, canal: l.canal, proxima_acao: l.proxima_acao, proxima_data: l.proxima_data,
+      consulta_em: l.consulta_em, cadastro_pendente: !!l.cadastro_token && l.cadastro_ate > new Date().toISOString(), historico: String(l.historico || '').split('\n').slice(-5).reverse() };
+    if (!cliId && l) cliId = l.cliente_id;
+  }
+  if (cliId) {
+    var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === cliId; })[0];
+    if (c) {
+      var faltam = []; if (!c.cpf_cnpj) faltam.push('CPF'); if (!c.endereco) faltam.push('endereço'); if (!c.estado_civil) faltam.push('estado civil'); if (!c.profissao) faltam.push('profissão');
+      r.cliente = { id: c.id, nome: c.nome, telefone: c.telefone, faltam: faltam,
+        observacoes: String(c.observacoes || '').split('\n').filter(Boolean).slice(0, 3).map(function (x) { return x.replace(/\s*⏎.*$/, '').slice(0, 220); }),
+        processos: tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === c.id && p.status !== 'arquivado'; }).slice(0, 5).map(function (p) { return { numero: p.numero || 'a ajuizar', area: p.area, fase: FASES[faseDe_(p)] || '', proximo: p.proximo_ato ? p.proximo_ato + (p.proximo_ato_data ? ' ' + dataBR_(p.proximo_ato_data) : '') : '' }; }),
+        parcelas: parcelasAbertasCliente_(c.id),
+        assinatura: (tabela_('Assinaturas').linhas.filter(function (a) { return a.cliente_id === c.id; }).pop() || {}).situacao || '' };
+      if (PERFIS[u.perfil] && PERFIS[u.perfil].ocultarValores && r.cliente.parcelas) { r.cliente.parcelas.valor_atrasado = null; r.cliente.parcelas.valor_aberto = null; }
+    }
+  }
+  return r;
+}
+function extAdicionar_(d, u) {
+  var tel = digitosTel_(d.telefone || d.titulo);
+  var tituloEhTel = /\d{8}/.test(String(d.titulo || '').replace(/\D/g, ''));
+  var nome = String((tituloEhTel ? d.nome : d.titulo) || d.nome || '').replace(/[^\p{L}\s'.-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  var ja = acharContato_(mapaContatos_(), d.titulo, d.telefone);
+  if (ja && (ja.tipo === 'lead' || ja.lead)) return { id: ja.tipo === 'lead' ? ja.id : ja.lead.id, ja: true };
+  var r = crmSalvar_({ lead: { nome: nomeProprio_(nome || 'WhatsApp ' + tel.slice(-4)), telefone: tel.length >= 10 ? '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4) : '',
+    canal: 'WhatsApp', area: d.area || '', assunto: String(d.resumo || '').slice(0, 300), etapa: d.etapa === 'novo' ? 'novo' : 'contato', proxima_acao: d.proxima_acao || 'Responder e entender o caso', proxima_data: hojeSP_(), temperatura: 'morno' }, mesmoAssim: true }, u);
+  if (ja && ja.tipo === 'cliente') comTrava_(function () { var t = tabela_('Leads'), l = t.linhas.filter(function (x) { return x.id === r.id; })[0]; if (l) atualizarLinha_(t, l, { cliente_id: ja.id, etapa: 'cliente' }); });
+  return { id: r.id };
+}
+/** O que a extensão viu acontecer na conversa (link do cadastro mandado, procuração/contrato enviados). */
+function extEvento_(d, u) {
+  var mapa = mapaContatos_(), o = acharContato_(mapa, d.titulo, d.telefone);
+  var leadId = o ? (o.tipo === 'lead' ? o.id : (o.lead && o.lead.id)) : '';
+  if (!leadId) return { ok: false };
+  var alvo = { link_cadastro: 'cadastro', documentos: 'proposta' }[d.tipo];
+  if (!alvo) return { ok: false };
+  return comTrava_(function () {
+    var t = tabela_('Leads'), l = t.linhas.filter(function (x) { return x.id === leadId; })[0];
+    var nova = etapaAFrente_(l.etapa, alvo);
+    if (nova === l.etapa) return { ok: true, igual: true };
+    atualizarLinha_(t, l, { etapa: nova, atualizado_em: new Date().toISOString(), atualizado_por: u.usuario,
+      historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(u, d.tipo === 'documentos' ? 'WhatsApp: enviou ' + String(d.arquivo || 'procuração/contrato').slice(0, 80) : 'WhatsApp: mandou o link do cadastro') });
+    return { ok: true, etapa: nova };
+  });
+}
+/** IA olhando a conversa aberta: é cliente novo? qual a área? e uma sugestão de resposta em tom humano (a equipe confere e manda). */
+function extAnalisar_(d, u) {
+  var msgs = (d.mensagens || []).slice(-20).map(function (m) { return (m.dir === 'out' ? 'Escritório' : 'Pessoa') + ': ' + String(m.texto || '').slice(0, 600); }).join('\n');
+  if (msgs.length < 10) throw falha_('Abra uma conversa com mensagens.');
+  var pedido = 'Abaixo está o fim de uma conversa de WhatsApp entre um escritório de advocacia (Araújo Advocacia, Tubarão/SC) e uma pessoa. Responda SOMENTE em JSON: ' +
+    '{"novo_cliente": true se a pessoa está procurando o escritório por um problema jurídico próprio (quer orientação, consulta, contratar) e false se é conversa pessoal, fornecedor, propaganda, ou já é assunto resolvido, ' +
+    '"area": "Trabalhista"|"Previdenciário"|"Família"|"Cível"|"Criminal"|"Empresarial"|"", "resumo": o caso em até 2 frases (só o que a pessoa contou), "nome": o nome da pessoa se aparecer, ' +
+    '"proximo_passo": o que a equipe deve fazer agora (curto), "sugestao": uma resposta para a equipe mandar, escrita como uma pessoa da equipe escreveria no WhatsApp: natural, gentil, curta (até 3 frases), ' +
+    'em português do Brasil, sem parecer robô, sem dizer que é IA, sem dar parecer jurídico, sem prometer resultado e sem falar valores}.' + (d.objetivo ? ' Objetivo da resposta: ' + String(d.objetivo).slice(0, 200) + '.' : '') +
+    '\n\nBASE DO ESCRITÓRIO (use só isto para informações):\n' + baseConhecimentoWhats_().slice(0, 4000) + '\n\nCONVERSA:\n' + anonimizar_(msgs, []);
+  var o = jsonDaIA_(geminiTexto_([{ text: pedido }], { json: true, max: 900, temp: 0.4 }).texto) || {};
+  var sug = String(o.sugestao || '');
+  if (/R\$\s?\d|\b\d+\s?%|\bvoc[eê] (tem|ter[aá]) direito\b|\bvai ganhar\b/i.test(sug)) sug = '';
+  return { novo_cliente: !!o.novo_cliente, area: o.area || '', resumo: o.resumo || '', nome: o.nome || '', proximo_passo: o.proximo_passo || '', sugestao: sug };
 }

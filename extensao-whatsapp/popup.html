@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Assistente Araújo</title>
+<style>
+body{margin:0;width:300px;font:13.5px "Segoe UI",Roboto,Arial,sans-serif;color:#2e2f33;background:#fbfaf7}
+.topo{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#1c1a17;color:#f1e9da}
+.marca{width:26px;height:26px;border-radius:7px;background:#b58d52;color:#1c1a17;display:grid;place-items:center;font:700 15px Georgia,serif}
+main{padding:12px}
+p{margin:6px 0}.peq{font-size:12px;color:#6f6f76}
+label{display:flex;gap:8px;align-items:flex-start;margin:10px 0;cursor:pointer}
+input[type=text]{width:100%;box-sizing:border-box;border:1px solid #d7d3ca;border-radius:8px;padding:9px;font-size:16px;letter-spacing:.2em;text-transform:uppercase;text-align:center}
+button{display:block;width:100%;margin:8px 0 0;padding:9px;border-radius:9px;border:1px solid #1c1a17;background:#1c1a17;color:#fff;font-size:13px;cursor:pointer}
+button.ouro{background:#b58d52;border-color:#b58d52;color:#1c1a17;font-weight:600}
+button.sec{background:#fff;color:#a3221a;border-color:#e3c7c3}
+.erro{color:#a3221a}.ok{color:#1d6b3a;font-weight:600}
+[hidden]{display:none!important}
+</style></head>
+<body>
+<div class="topo"><span class="marca">A</span><b>Araújo Advocacia</b></div>
+<main>
+  <section id="desligado" hidden>
+    <p>No painel: menu do seu nome › <b>Gerenciar acessos</b> › "Extensão do WhatsApp Web" › <b>Gerar código</b>. Digite aqui:</p>
+    <input id="codigo" type="text" maxlength="6" placeholder="ABC234" aria-label="Código do painel">
+    <button id="ligar" class="ouro">Ligar este computador</button>
+    <p id="erro" class="erro"></p>
+  </section>
+  <section id="ligado" hidden>
+    <p class="ok">✓ Ligado ao painel</p>
+    <p class="peq" id="quem"></p>
+    <label><input type="checkbox" id="auto"> <span>Pôr no funil sozinho quem chega falando de um caso</span></label>
+    <label><input type="checkbox" id="etiquetas"> <span>Mostrar a etapa na lista de conversas</span></label>
+    <button id="abrirWa">Abrir o WhatsApp Web</button>
+    <button id="sair" class="sec">Desligar este computador</button>
+  </section>
+  <p class="peq">O assistente nunca envia mensagens sozinho: ele só prepara o texto na caixa e quem aperta Enviar é você.</p>
+</main>
+<script src="popup.js"></script>
+</body></html>
