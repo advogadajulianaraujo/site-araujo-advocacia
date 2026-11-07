@@ -579,7 +579,7 @@
       return c;
     };
     inCli.addEventListener('change', achar); inCli.addEventListener('input', () => { if (clientes.some(x => x.nome === inCli.value.trim())) achar(); });
-    return { el: h('div', { class: 'form-grade largo' }, h('div', {}, h('label', {}, 'Cliente (opcional)'), inCli, lista), h('div', {}, h('label', {}, 'Processo'), selProc)),
+    return { el: h('div', { class: 'form-grade largo' }, h('div', {}, h('label', {}, 'Cliente (opcional — a transcrição vai para as observações dele)'), inCli, lista), h('div', {}, h('label', {}, 'Processo'), selProc)),
       valor: () => { const c = clientes.find(x => x.nome === inCli.value.trim()); return { cliente_id: c ? c.id : '', processo_id: selProc.value }; }, inCli, selProc, achar };
   }
   function mostrarResumo(x, alvo) {

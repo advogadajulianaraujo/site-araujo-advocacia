@@ -797,3 +797,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Painel: Relacionamento › "Conversas do WhatsApp" (#/conversas, só administração; `whats.conversas`/`whats.acao`/`whats.config`): lista +
   conversa estilo WhatsApp, responder (só dentro das 24 h), Assumir/Devolver ao robô, ditado, "🧪 Testar o robô" (simulação sem enviar),
   "⚙ Ligar / configurar" com os passos e as chaves para copiar. Início da administração: faixa "💬 WhatsApp: N conversas esperando a equipe".
+- 8.13.1 (pedidos da usuária): "Gerenciar acessos" saiu dos tópicos do menu e fica no menu do NOME (clicar no usuário, embaixo; só
+  administração). Menu da esquerda NÃO abre/fecha sozinho: só o botão ☰ do topo (escolha guardada em localStorage `menu_recolhido`; sem
+  abrir ao passar o mouse). Marca do menu: "Araújo Advocacia" (não "Painel jurídico"). Transcrição com cliente escolhido vai para as
+  OBSERVAÇÕES do cliente (`anotarCliente_`): "AUDIÊNCIA — título (data)" ou "ATENDIMENTO — …", depois Resumo, "Transcrição:" e as falas,
+  separadas por " ⏎ " (a ficha mostra a 1ª linha e "ver o resumo e a transcrição", `corpoNota`; corta em 38 mil caracteres + link do Doc).

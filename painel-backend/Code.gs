@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.13.0';
+var VERSAO = '8.13.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -11622,6 +11622,15 @@ function transcricaoResumo_(d, u) {
       resumo_equipe: String(o.equipe || '').slice(0, 45000), documentos: docs.join('\n').slice(0, 3000), publicado: '', publicado_em: '' });
   });
   if (d.id) apagarTemporarios_(d.id);
+  // 8.13.1 (pedido da usuária): com cliente escolhido, vai para as OBSERVAÇÕES do cliente: "AUDIÊNCIA"/"ATENDIMENTO" e a transcrição embaixo
+  if (cli) {
+    try {
+      var linhasTr = texto.replace(/\r/g, '').split('\n').map(function (x) { return x.trim(); }).filter(Boolean), corpoTr = linhasTr.join(' ⏎ ');
+      if (corpoTr.length > 38000) corpoTr = corpoTr.slice(0, 38000) + ' ⏎ (a transcrição continua no documento completo)';
+      anotarCliente_({ id: cli.id, texto: (tipo === 'audiencia' ? 'AUDIÊNCIA' : 'ATENDIMENTO') + ' — ' + titulo + ' (' + dataBR_(d.data_ato || hojeSP_()) + ')' + (p ? ' · processo ' + p.numero : '') +
+        (o.cliente ? ' ⏎ Resumo: ' + String(o.cliente).replace(/\s+/g, ' ').slice(0, 1500) : '') + ' ⏎ Transcrição: ⏎ ' + corpoTr + ' ⏎ Documento completo: ' + g.url }, u);
+    } catch (eObs) { registrar_(u.usuario, 'erro', 'transcrição nas observações: ' + (eObs.message || eObs)); }
+  }
   registrar_(u.usuario, 'resumo de ' + tipo, (cli ? cli.id + ' ' : '') + titulo);
   return { id: id, doc: g.url, cliente: o.cliente || '', equipe: o.equipe || '', documentos: docs, telefone: cli ? cli.telefone : '', nome: cli ? cli.nome : '', titulo: titulo };
 }

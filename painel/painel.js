@@ -653,8 +653,8 @@
     ['calculadoras', 'Calculadoras', 'Documentos'],
     ['transcricao', 'Transcrição e resumos', 'Inteligência'],
     ['financeiro', 'Painel financeiro', 'Gestão', 'financeiro'],
-    ['relatorios', 'Relatórios', 'Gestão', 'usuarios'],
-    ['usuarios', 'Gerenciar acessos', 'Gestão', 'usuarios']
+    ['relatorios', 'Relatórios', 'Gestão', 'usuarios']
+    // 8.13.1 (pedido da usuária): "Gerenciar acessos" fica no menu do nome (clicar no usuário, embaixo), não nos tópicos
   ];
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
@@ -684,7 +684,7 @@
     const fut = !!pode.future && modoFuture();
     montarTopo.modo = fut;
     document.body.classList.toggle('modo-future', fut);
-    const marca = document.querySelector('.lateral .marca span'); if (marca) marca.textContent = fut ? 'Edifício Future' : 'Painel jurídico';
+    const marca = document.querySelector('.lateral .marca span'); if (marca) marca.textContent = fut ? 'Edifício Future' : 'Araújo Advocacia';
     if (fut) ABAS_FUTURE.forEach(([id, nome, g, ic]) => {
       if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
       itens.push(h('a', { href: '#/' + id, 'data-aba': id, onclick: () => abrirLateral(false) }, icone(ic), h('span', {}, nome)));
@@ -701,7 +701,7 @@
     document.getElementById('quem-nome').textContent = nome;
     document.getElementById('quem-perfil').textContent = sessao.usuario.perfilNome;
     document.getElementById('quem-avatar').textContent = String(nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
-    document.getElementById('menu-usuarios').hidden = true;
+    const mUs = document.getElementById('menu-usuarios'); mUs.textContent = 'Gerenciar acessos'; mUs.hidden = !pode.usuarios;
     document.getElementById('menu-relatorios').hidden = true;
     document.body.classList.remove('sem-sessao');
     abasEl.hidden = false;
@@ -1162,6 +1162,13 @@
     ];
   }
   /** 8.6.0 (pedido da usuária): as observações do cliente aparecem onde se olha o cliente (processo, prazo, tarefa). */
+  /** 8.13.1: anotação com várias linhas (ex.: transcrição de audiência/atendimento, separadas por " ⏎ "): 1ª linha à vista, o resto em "ver tudo". */
+  function corpoNota(corpo) {
+    const partes = String(corpo || '').split(/\s*⏎\s*/).filter((x, i) => x || i === 0);
+    if (partes.length < 2) return corpo;
+    return [h('div', { class: 'nota-l1' }, partes[0]), h('details', { class: 'nota-mais' }, h('summary', {}, /transcri/i.test(corpo) ? 'ver o resumo e a transcrição' : 'ver tudo'),
+      partes.slice(1).map(p => h('div', { class: /^Transcrição:/.test(p) ? 'nota-rot' : '' }, p)))];
+  }
   function notasDoCliente(clienteId) {
     const el = h('div');
     if (!clienteId) return el;
@@ -1170,7 +1177,7 @@
       if (!obs.length) return;
       el.replaceChildren(h('section', { class: 'caixa notas-cli' },
         h('div', { class: 'bloco-cab' }, h('h2', {}, '📝 Observações do cliente — ' + r.cliente.nome), h('a', { href: '#/cliente/' + clienteId }, 'abrir ficha')),
-        h('ul', {}, obs.slice(0, 4).map(o => { const m = /^\[([^\]]+)\]\s*(.*)$/.exec(o); return h('li', {}, m ? [h('span', { class: 'peq' }, m[1] + ' '), m[2]] : o); })),
+        h('ul', {}, obs.slice(0, 4).map(o => { const m = /^\[([^\]]+)\]\s*(.*)$/.exec(o); const t = (m ? m[2] : o).split(/\s*⏎\s*/)[0]; return h('li', {}, m ? [h('span', { class: 'peq' }, m[1] + ' '), t] : t); })),
         obs.length > 4 ? h('a', { class: 'peq', href: '#/cliente/' + clienteId }, `+ ${obs.length - 4} anotação(ões) na ficha`) : null));
     }).catch(() => {});
     return el;
@@ -1878,7 +1885,7 @@
           const li = h('li', m ? {} : { class: 'antiga' },
             h('div', { class: 'nota-cab' }, m ? [h('strong', {}, m[2]), ' · ', m[1]] : 'registro antigo',
               h('button', { type: 'button', class: 'link nota-editar', title: 'Corrigir ou apagar esta observação', onclick: () => editar(li, x, corpo.replace(/\s*\(editado em [^)]*\)\s*$/, '')) }, '✎ editar')),
-            h('div', { class: 'nota-texto' }, corpo));
+            h('div', { class: 'nota-texto' }, corpoNota(corpo)));
           return li;
         }) : [h('li', { class: 'vazia' }, 'Nenhuma observação ainda.')]));
       };
@@ -2659,7 +2666,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.13.0';
+  const VERSAO_PAINEL = '8.13.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4810,16 +4817,15 @@ function main() {
 
   /* 8.12.2 (pedido da usuária): ao entrar numa aba o menu da esquerda recolhe (só os ícones) e a tela fica maior.
      Passar o mouse no menu abre por cima; o botão ☰ do topo do menu fixa aberto/fechado. */
-  function recolherMenu(sim) { if (window.innerWidth > 900) document.body.classList.toggle('menu-recolhido', !!sim); }
-  document.addEventListener('click', ev => {
-    const a = ev.target.closest && ev.target.closest('#abas a[href^="#/"]');
-    if (a) recolherMenu(true);
-  });
+  // 8.13.1 (pedido da usuária: "não quero que abra e feche sozinho"): só o botão ☰ do topo abre/fecha; a escolha fica no computador
   (() => {
     const lat = document.getElementById('lateral'); if (!lat) return;
-    const bt = h('button', { type: 'button', class: 'menu-alternar', 'aria-label': 'Abrir ou fechar o menu', title: 'Abrir / fechar o menu', onclick: () => document.body.classList.toggle('menu-recolhido') }, h('span'), h('span'), h('span'));
+    let rec = false; try { rec = localStorage.getItem('menu_recolhido') === '1'; } catch (e) { /* ok */ }
+    document.body.classList.toggle('menu-recolhido', rec);
+    const bt = h('button', { type: 'button', class: 'menu-alternar', 'aria-label': 'Abrir ou fechar o menu', title: 'Abrir / fechar o menu', onclick: () => {
+      const r = document.body.classList.toggle('menu-recolhido'); try { localStorage.setItem('menu_recolhido', r ? '1' : '0'); } catch (e) { /* ok */ }
+    } }, h('span'), h('span'), h('span'));
     lat.prepend(bt);
-    if (location.hash && !/^#\/?(inicio)?$/.test(location.hash)) recolherMenu(true);
   })();
 
   /* 8.12: telas de gestão (gestao.js). Sem o arquivo (cache velho), pede para atualizar. */

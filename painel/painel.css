@@ -1732,16 +1732,6 @@ a.visao-bt{text-decoration:none}
   body.menu-recolhido .abas-grupo{font-size:0;padding:8px 0 4px;margin:0 10px;border-top:1px solid #2a2c31}
   body.menu-recolhido .lateral .abas a{justify-content:center;padding:9px 0}
   body.menu-recolhido .lateral .quem-btn{justify-content:center;padding:6px 0}
-  /* passar o mouse abre o menu por cima da tela (sem empurrar o conteúdo) */
-  body.menu-recolhido .lateral:hover,body.menu-recolhido .lateral:focus-within{width:var(--larg-lateral);box-shadow:12px 0 40px -12px rgba(0,0,0,.55);overflow:visible}
-  body.menu-recolhido .lateral:hover .marca span,body.menu-recolhido .lateral:focus-within .marca span,
-  body.menu-recolhido .lateral:hover .abas a span,body.menu-recolhido .lateral:focus-within .abas a span,
-  body.menu-recolhido .lateral:hover .quem-txt,body.menu-recolhido .lateral:focus-within .quem-txt{display:inline}
-  body.menu-recolhido .lateral:hover .quem-txt,body.menu-recolhido .lateral:focus-within .quem-txt{display:flex}
-  body.menu-recolhido .lateral:hover .abas-grupo,body.menu-recolhido .lateral:focus-within .abas-grupo{font-size:10px;padding:11px 12px 4px;margin:0;border:0}
-  body.menu-recolhido .lateral:hover .abas a,body.menu-recolhido .lateral:focus-within .abas a{justify-content:flex-start;padding:7px 12px}
-  body.menu-recolhido .lateral:hover .marca img,body.menu-recolhido .lateral:focus-within .marca img{height:38px}
-  body.menu-recolhido .lateral:hover .menu-alternar{margin:-6px 0 6px auto}
 }
 @media (min-width:901px) and (prefers-reduced-motion:reduce){.lateral,.app{transition:none}}
 /* Início: guia discreto e faixa do funil */
@@ -1810,3 +1800,9 @@ a.visao-bt{text-decoration:none}
 .wz-copia code{background:#f3f0e8;padding:4px 8px;border-radius:6px;font-size:12px;word-break:break-all;flex:1;min-width:200px}
 .ini-wz{background:#e9f7ee;border-color:#cde6d6;color:#1f5a35}
 @media (max-width:900px){.wz{grid-template-columns:1fr}.wz-lado{border-right:0;border-bottom:1px solid var(--linha)}.wz-lista{max-height:260px}.wz-msg{max-width:88%}}
+
+/* 8.13.1: anotação longa (transcrição) recolhida na ficha */
+.nota-mais{margin-top:4px}
+.nota-mais summary{cursor:pointer;font-size:12.5px;color:#7a5a1f}
+.nota-mais div{margin:3px 0;font-size:13.5px;line-height:1.5}
+.nota-mais .nota-rot{font-weight:600;margin-top:8px}
