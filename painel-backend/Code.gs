@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.12.0';
+var VERSAO = '8.12.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -865,7 +865,9 @@ function obterCliente_(d) {
   try { // 8.11.1: observações antigas que passaram do tamanho da célula (a mais nova primeiro)
     cli.obs_antigas = tabela_('ObsArquivo').linhas.filter(function (x) { return x.cliente_id === c.id; }).map(function (x) { return x.texto; }).reverse().join('\n');
   } catch (e) { cli.obs_antigas = ''; }
-  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id) };
+  var lead = null;
+  try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
+  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id), lead: lead };
 }
 
 /** 8.11.1 (pedido da usuária): quantas parcelas o cliente ainda deve (em vermelho na ficha e no cartão). Ignora honorário cancelado/encerrado. */
@@ -932,10 +934,11 @@ function salvarCliente_(d, u) {
     dados.criado_em = agora;
     inserirLinha_(tab, dados);
     registrar_(u.usuario, 'cliente criado', dados.id + ' ' + nome);
-    return { id: dados.id, novo: true };
+    return { id: dados.id, novo: true, _crm: true };
   });
   // 8.5.0 (pedido da usuária): a pasta nova só nasce quando algum documento é gerado.
   // No cadastro, só liga à pasta que já existe no Drive com o mesmo nome.
+  if (resultado._crm) { delete resultado._crm; try { crmSincronizar_(); } catch (eC) { /* entra no funil na próxima rodada do robô */ } }
   if (resultado.novo) {
     try { resultado.pasta = criarPastaCliente_({ id: resultado.id, soVincular: true }, u); }
     catch (e) { /* sem pasta por enquanto: será criada ao gerar documento */ }
@@ -11113,25 +11116,52 @@ function crmSincronizar_() {
   tabela_('Assinaturas').linhas.forEach(function (a) { if (a.cliente_id) assin[a.cliente_id] = a; });
   var fechar = tabL.linhas.filter(function (l) {
     var a = l.cliente_id && assin[l.cliente_id];
-    return a && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (a.situacao === 'assinado' || a.situacao === 'desistiu');
+    return a && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (a.situacao === 'assinado' || a.situacao === 'desistiu' || (a.situacao === 'aguardando' && ['novo', 'contato', 'consulta', 'atendido'].indexOf(l.etapa) >= 0));
   });
-  if (!novos.length && !fechar.length) return 0;
+  // 8.12.1 (pedido da usuária): todo cliente NOVO cadastrado pelo painel entra no funil (os importados do GEA, do histórico e da revisão, não)
+  var dig8 = function (t) { var x = String(t || '').replace(/\D/g, ''); return x.length >= 8 ? x.slice(-8) : ''; };
+  var porCli = {}, porTel = {};
+  tabL.linhas.forEach(function (l) { if (l.cliente_id) porCli[l.cliente_id] = l; var k = dig8(l.telefone); if (k && !l.cliente_id) porTel[k] = l; });
+  var desdeCli = config_('CRM_CLIENTES_DESDE');
+  if (!desdeCli) { desdeCli = new Date(Date.now() - 60 * 86400000).toISOString(); setConfig_('CRM_CLIENTES_DESDE', desdeCli, 'Clientes cadastrados pelo painel a partir desta data entram sozinhos no CRM / Funil'); }
+  var importado = /hist|GEA|carga|levantamento|planilha|importa|processo|revis|organizar|rob[oô]|funil|djen|gmail/i;
+  var clientesNovos = tabela_('Clientes').linhas.filter(function (c) {
+    return c.nome && c.criado_em >= desdeCli && !porCli[c.id] && !importado.test(c.origem || '') && !/importa/i.test(c.atualizado_por || '') && c.situacao !== 'importado — conferir';
+  });
+  if (!novos.length && !fechar.length && !clientesNovos.length) return 0;
   comTrava_(function () {
     var t = tabela_('Leads');
     novos.forEach(function (c) {
-      inserirLinha_(t, { id: novoId_('L'), criado_em: c.criado_em || agora, nome: c.nome, telefone: c.telefone, email: '', area: areaMkt_(c.assunto + ' ' + c.pagina) === 'Geral' ? '' : areaMkt_(c.assunto + ' ' + c.pagina),
+      var nl = { id: novoId_('L'), criado_em: c.criado_em || agora, nome: c.nome, telefone: c.telefone, email: '', area: areaMkt_(c.assunto + ' ' + c.pagina) === 'Geral' ? '' : areaMkt_(c.assunto + ' ' + c.pagina),
         assunto: c.assunto, canal: canalDoContato_(c.origem), etapa: c.situacao && c.situacao !== 'novo' ? 'contato' : 'novo', valor_estimado: '', responsavel: config_('RESP_SITE') || '',
         proxima_acao: 'Ligar / chamar no WhatsApp (pediu retorno pelo site · ' + (c.horario || 'qualquer horário') + ')', proxima_data: String(c.criado_em || agora).slice(0, 10),
-        temperatura: 'morno', contato_id: c.id, historico: linhaHist_(null, 'pedido de retorno pelo site (' + (c.pagina || '') + ')'), criado_por: 'site', atualizado_em: agora, atualizado_por: 'site' });
+        temperatura: 'morno', contato_id: c.id, historico: linhaHist_(null, 'pedido de retorno pelo site (' + (c.pagina || '') + ')'), criado_por: 'site', atualizado_em: agora, atualizado_por: 'site' };
+      inserirLinha_(t, nl);
+      var kn = dig8(nl.telefone); if (kn && !porTel[kn]) porTel[kn] = nl; // o cliente cadastrado com o mesmo telefone liga a este cartão
+    });
+    var mapaCanal = { 'Site': 'Site (formulário)' };
+    clientesNovos.forEach(function (c) {
+      var k = dig8(c.telefone), l = k && porTel[k];
+      if (l) { // o contato já estava no funil (ex.: veio pelo site): só liga ao cadastro
+        atualizarLinha_(t, l, { cliente_id: c.id, etapa: ['novo', 'contato', 'consulta'].indexOf(l.etapa) >= 0 ? 'atendido' : l.etapa, primeiro_contato_em: l.primeiro_contato_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'cadastro de cliente criado no painel'), atualizado_em: agora, atualizado_por: 'robô' });
+        delete porTel[k]; return;
+      }
+      var a = assin[c.id], etapa = a && a.situacao === 'assinado' ? 'ganho' : a && a.situacao === 'desistiu' ? 'perdido' : a ? 'proposta' : 'atendido';
+      inserirLinha_(t, { id: novoId_('L'), criado_em: c.criado_em || agora, nome: c.nome, telefone: c.telefone || '', email: c.email || '', area: c.area || areaMkt_(c.tipo_acao || '').replace('Geral', ''),
+        assunto: String(c.tipo_acao || c.resumo_caso || '').slice(0, 200), canal: mapaCanal[c.como_conheceu] || c.como_conheceu || '', etapa: etapa, valor_estimado: '',
+        responsavel: c.atualizado_por || '', proxima_acao: etapa === 'atendido' ? 'Enviar a proposta / contrato' : '', proxima_data: etapa === 'atendido' ? somarDias_(hojeSP_(), 2) : '',
+        temperatura: 'morno', cliente_id: c.id, ganho_em: etapa === 'ganho' ? (a.assinado_em || agora) : '', perdido_em: etapa === 'perdido' ? agora : '', motivo_perda: etapa === 'perdido' ? 'Desistiu / sem interesse' : '',
+        historico: linhaHist_(null, 'entrou no funil pelo cadastro de cliente no painel'), criado_por: 'painel', atualizado_em: agora, atualizado_por: 'robô' });
     });
     t.linhas.forEach(function (l) {
       var a = l.cliente_id && assin[l.cliente_id];
       if (!a || ['ganho', 'perdido'].indexOf(l.etapa) >= 0) return;
+      if (a.situacao === 'aguardando') { if (['novo', 'contato', 'consulta', 'atendido'].indexOf(l.etapa) >= 0) atualizarLinha_(t, l, { etapa: 'proposta', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato e procuração gerados: aguardando assinatura'), atualizado_em: agora, atualizado_por: 'robô' }); return; }
       if (a.situacao === 'assinado') atualizarLinha_(t, l, { etapa: 'ganho', ganho_em: a.assinado_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato assinado (Clientes › Aguardando assinatura)'), atualizado_em: agora, atualizado_por: 'robô' });
       else if (a.situacao === 'desistiu') atualizarLinha_(t, l, { etapa: 'perdido', perdido_em: agora, motivo_perda: 'Desistiu / sem interesse', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'marcado "Não vai assinar"'), atualizado_em: agora, atualizado_por: 'robô' });
     });
   });
-  return novos.length + fechar.length;
+  return novos.length + fechar.length + clientesNovos.length;
 }
 
 function crmListar_(d, u) {

@@ -1709,3 +1709,8 @@ a.visao-bt{text-decoration:none}
 .g-corpo>.visoes,.g-padroes~.visoes,section>.visoes{max-width:100%;overflow-x:auto;scrollbar-width:none}
 @media (max-width:760px){.g-corpo>.visoes{display:flex;flex-wrap:wrap}.g-corpo>.visoes .visao-bt{padding:8px 10px;font-size:13px}}
 .lateral .abas{flex-wrap:nowrap}.lateral .abas>*{flex-shrink:0}
+.selo-funil{display:inline-flex;flex-wrap:wrap;gap:2px;margin:6px 0 0 8px;padding:5px 12px;border-radius:999px;background:#eef2f8;color:#2b4a7a;font-size:13px;text-decoration:none;border:1px solid #d6e0ef}
+.selo-funil:hover{border-color:#2f6fd0}
+.selo-funil.etapa-ganho{background:#e8f4ec;color:#1f6b3f;border-color:#cde6d6}
+.selo-funil.etapa-perdido{background:#f1efe9;color:#6f6f76;border-color:#e3dfd6}
+.crm-tags .tag.ok{background:#e8f4ec;color:#1f6b3f}

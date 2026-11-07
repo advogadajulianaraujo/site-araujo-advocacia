@@ -1727,6 +1727,13 @@
   }
 
   /** 8.11.1 (pedido da usuária): quantas parcelas faltam pagar — em vermelho na ficha (e no cartão da lista). */
+  /** 8.12.1: em que ponto do CRM / Funil o cliente está (clicar abre o funil já filtrado pelo nome). */
+  const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em contato', consulta: 'Consulta agendada', atendido: 'Atendido', proposta: 'Proposta enviada', negociacao: 'Negociação', ganho: 'Contrato fechado', perdido: 'Não fechou' };
+  function seloFunil(l, c) {
+    if (!l) return null;
+    return h('a', { class: 'selo-funil etapa-' + l.etapa, href: '#/crm?ver=lista&q=' + encodeURIComponent(c.nome), title: 'Abrir no CRM / Funil' },
+      h('strong', {}, '📈 Funil: ' + (NOME_ETAPA_CRM[l.etapa] || l.etapa)), l.canal ? h('span', {}, ' · veio por ' + l.canal) : null);
+  }
   function seloParcelas(p, cid) {
     if (!p || !p.abertas) return null;
     const rh = sessao.usuario.pode.ocultarValores;
@@ -1870,7 +1877,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : ''),
-        seloParcelas(r.parcelas, c.id)),
+        seloParcelas(r.parcelas, c.id), seloFunil(r.lead, c)),
         h('div', { class: 'barra' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
           h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'))),
       incompleto ? h('div', { class: 'nota alerta' }, 'Cadastro incompleto: confira CPF, RG, profissão e endereço antes de gerar procuração ou contrato. Ao terminar, mude "Cadastro" para Completo.')
@@ -2578,7 +2585,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.12.0';
+  const VERSAO_PAINEL = '8.12.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

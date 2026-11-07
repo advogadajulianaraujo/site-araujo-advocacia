@@ -96,7 +96,7 @@
       const c = h('article', { class: 'crm-card temp-' + (l.temperatura || 'morno') + (l.atrasado ? ' atrasado' : ''), draggable: 'true', tabindex: 0,
         onclick: () => dialogoLead(l, r, equipe, recarregar), onkeydown: ev => { if (ev.key === 'Enter') dialogoLead(l, r, equipe, recarregar); } },
         h('div', { class: 'crm-card-topo' }, h('strong', {}, l.nome), l.valor_estimado && !rh ? h('span', { class: 'crm-valor' }, din(l.valor_estimado)) : null),
-        h('div', { class: 'crm-tags' }, l.area ? h('span', { class: 'tag' }, l.area) : null, l.canal ? h('span', { class: 'tag sec' }, l.canal.replace(/ \(.*\)$/, '')) : null),
+        h('div', { class: 'crm-tags' }, l.cliente_id ? h('span', { class: 'tag ok', title: 'Já tem cadastro de cliente' }, '✓ cliente') : null, l.area ? h('span', { class: 'tag' }, l.area) : null, l.canal ? h('span', { class: 'tag sec' }, l.canal.replace(/ \(.*\)$/, '')) : null),
         l.assunto ? h('p', { class: 'crm-assunto' }, String(l.assunto).slice(0, 90)) : null,
         l.proxima_acao ? h('p', { class: 'crm-prox' + (l.atrasado ? ' atrasado' : '') }, '→ ', l.proxima_acao.slice(0, 80), l.proxima_data ? h('span', {}, ' · ' + dataBR(l.proxima_data)) : null) : null,
         h('div', { class: 'crm-card-pe' },

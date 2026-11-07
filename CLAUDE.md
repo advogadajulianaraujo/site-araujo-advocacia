@@ -754,3 +754,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (`contarTempoRobo_`, limite de 90 min do Google; alerta em 70) e alerta de robô parado há 3 h no vigia; aquecedor só no horário do
   escritório; Log com mais de 4.000 linhas passa o que tem mais de 180 dias para LogArquivo (`arquivarLog_`).
 - Site: aviso de cookies compacto (não cobre a abertura), rodapé com alvos de toque de 40 px e mais contraste, abertura mais objetiva.
+- 8.12.1 (pedido da usuária: "todo cliente novo aparece no CRM"): `crmSincronizar_` também põe no funil todo cliente cadastrado PELO PAINEL
+  a partir de Config CRM_CLIENTES_DESDE (criada com 60 dias para trás na 1ª vez); importados (GEA, histórico, revisão, organizar, robô,
+  "importado — conferir") ficam de fora. Mesmo telefone de um cartão sem cliente (ex.: pedido do site) → só liga ao cadastro e passa para
+  "Atendido"; senão cria o cartão em Atendido (Proposta enviada se há assinatura aguardando; Contrato fechado/Não fechou conforme a
+  Assinatura). Roda na hora ao salvar cliente novo (`salvarCliente_`), ao abrir o CRM e nos robôs. Assinatura "aguardando" leva o cartão
+  para "Proposta enviada". Ficha do cliente: selo "📈 Funil: etapa · veio por canal" (`seloFunil`, `lead` em clientes.obter); cartão do
+  funil com "✓ cliente" quando já tem cadastro.
