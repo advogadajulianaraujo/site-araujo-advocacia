@@ -676,3 +676,8 @@ footer.site{color:#b3aea5}
 .foot ul a,.footer-nav a,.footer-nav button{display:inline-block;padding:8px 0;min-height:40px;line-height:24px}
 .foot ul{gap:2px}
 .footer-nav{row-gap:4px}
+.acomp-resumo{margin:14px 0 4px;padding:14px 16px;background:#faf6ee;border-left:3px solid var(--gold,#b58d52);border-radius:6px}
+.acomp-resumo.solto{background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--gold,#b58d52);margin:0 0 18px}
+.acomp-resumo span{display:block;font:500 11px/1.4 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.acomp-resumo strong{display:block;margin:4px 0 6px;font-weight:600}
+.acomp-resumo p{margin:0 0 6px;line-height:1.6}

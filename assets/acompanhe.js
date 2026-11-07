@@ -52,6 +52,14 @@
     return ol;
   }
 
+  /* 8.12: resumo de audiência ou atendimento que o escritório publicou para o cliente */
+  function resumoEl(x, solto) {
+    var b = el('div', 'acomp-resumo' + (solto ? ' solto' : ''));
+    b.appendChild(el('span', '', 'Mensagem do escritório · ' + dataBR(x.data)));
+    if (x.titulo) b.appendChild(el('strong', '', x.titulo));
+    String(x.texto || '').split(/\n+/).forEach(function (t) { if (t.trim()) b.appendChild(el('p', '', t.trim())); });
+    return b;
+  }
   function mostrar(r) {
     saida.textContent = '';
     var cab = el('div', 'acomp-cab');
@@ -65,6 +73,7 @@
     sair.addEventListener('click', function () { saida.textContent = ''; grade.hidden = false; cpf.value = ''; cod.value = ''; cpf.focus(); });
     cab.appendChild(sair);
     saida.appendChild(cab);
+    (r.comunicados || []).forEach(function (x) { saida.appendChild(resumoEl(x, true)); });
     r.processos.forEach(function (p) {
       var card = el('article', 'acomp-card' + (p.situacao === 'Arquivado / baixado' ? ' arquivado' : ''));
       var topo = el('div', 'acomp-topo');
@@ -95,6 +104,7 @@
         if (andam === p.andamentos || p.andamentos.length) det.open = false;
         card.appendChild(det);
       }
+      (p.resumos || []).slice().reverse().forEach(function (x) { card.appendChild(resumoEl(x)); });
       var fala = el('a', 'acomp-fala', 'Dúvida sobre este processo? Fale com o escritório');
       fala.href = WHATS + encodeURIComponent('Olá! Sou ' + r.nome + ' e tenho uma dúvida sobre o meu processo' + (p.numero ? ' nº ' + p.numero : '') + '.');
       fala.target = '_blank'; fala.rel = 'noopener noreferrer'; fala.setAttribute('data-contact', 'acompanhe-duvida');
