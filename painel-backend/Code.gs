@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.11.2';
+var VERSAO = '8.12.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -46,7 +46,7 @@ function semValores_(x) {
 /** O que o RH não vê: só os totais a receber. Cada parcela, honorário, PIX e despesa continua visível para ele trabalhar. */
 function valoresDoPerfil_(acao, res, perfil) {
   if (!PERFIS[perfil] || !PERFIS[perfil].ocultarValores || !res || typeof res !== 'object') return res;
-  if (acao === 'fin.areceber') return semValores_(res);
+  if (acao === 'fin.areceber' || acao === 'fin.painel') return semValores_(res);
   if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); return o; }
   return res;
 }
@@ -72,13 +72,20 @@ var ESQUEMA = {
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
-    'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por'],
+    'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo_url'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
   LogArquivo: ['quando', 'usuario', 'acao', 'detalhe'],
+  Leads: ['id', 'criado_em', 'nome', 'telefone', 'email', 'area', 'assunto', 'canal', 'etapa', 'valor_estimado', 'responsavel', 'proxima_acao', 'proxima_data',
+    'temperatura', 'consulta_em', 'indicado_por', 'observacoes', 'motivo_perda', 'cliente_id', 'contato_id', 'proposta_url', 'historico', 'primeiro_contato_em',
+    'ganho_em', 'perdido_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+  Transcricoes: ['id', 'criado_em', 'criado_por', 'tipo', 'titulo', 'cliente_id', 'processo_id', 'data_ato', 'fonte', 'doc_url', 'resumo_cliente', 'resumo_equipe',
+    'documentos', 'publicado', 'publicado_em'],
+  Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
+  Prompts: ['id', 'titulo', 'categoria', 'texto', 'criado_por', 'criado_em', 'atualizado_em'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
@@ -285,7 +292,9 @@ function doGet() {
 function doPost(e) {
   var req;
   var bruto = (e && e.postData && e.postData.contents) || '{}';
-  if (bruto.length > PEDIDO_MAX) return json_({ ok: false, erro: 'Pedido grande demais.' });
+  // 8.12: pedaços de áudio da transcrição (3 MB em base64) podem ser maiores; o resto continua limitado
+  var limite = bruto.slice(0, 40).indexOf('"acao":"ia.audioParte"') >= 0 ? 4400000 : PEDIDO_MAX;
+  if (bruto.length > limite) return json_({ ok: false, erro: 'Pedido grande demais.' });
   try {
     req = JSON.parse(bruto);
     if (!req || typeof req !== 'object' || typeof req.acao !== 'string') throw new Error('formato');
@@ -465,12 +474,37 @@ var ROTAS = {
   'resumo.email.testar': { fn: testarResumoEmail_ },
   'ia.config': { permissao: 'usuarios', fn: configIA_ },
   'ia.resumirPrazo': { fn: resumirPrazoIA_ },
-  'processos.andamentos': { fn: andamentosProcesso_ }
+  'processos.andamentos': { fn: andamentosProcesso_ },
+  // 8.12: gestão
+  'crm.listar': { fn: crmListar_ },
+  'crm.salvar': { fn: crmSalvar_ },
+  'crm.etapa': { fn: crmEtapa_ },
+  'crm.anotar': { fn: crmAnotar_ },
+  'crm.converter': { fn: crmConverter_ },
+  'crm.proposta': { fn: gerarProposta_ },
+  'padroes.listar': { fn: padroesListar_ },
+  'padroes.salvar': { fn: padroesSalvar_ },
+  'padroes.guia': { fn: padroesGuia_ },
+  'prompts.listar': { fn: promptsListar_ },
+  'prompts.salvar': { fn: promptsSalvar_ },
+  'ia.audioInicio': { fn: audioInicio_ },
+  'ia.audioParte': { fn: audioParte_ },
+  'ia.transcrever': { fn: transcrever_ },
+  'ia.transcricaoResumo': { fn: transcricaoResumo_ },
+  'ia.transcricoes': { fn: transcricoesListar_ },
+  'ia.transcricaoPublicar': { fn: transcricaoPublicar_ },
+  'ia.peca': { fn: pecaIA_ },
+  'ia.pecaDoc': { fn: pecaDoc_ },
+  'fin.painel': { permissao: 'financeiro', fn: painelFinanceiro_ },
+  'fin.recibos': { permissao: 'financeiro', fn: recibosListar_ },
+  'fin.recibo.gerar': { permissao: 'financeiro', fn: reciboGerar_ },
+  'calc.prazo': { fn: calcPrazo_ },
+  'calc.indices': { fn: calcIndices_ }
 };
 
 var MEMO_LEITURA = null;
 var LEITURAS_RAPIDAS = { 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
-  'feriados.listar': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
+  'feriados.listar': 1, 'ia.transcricoes': 1, 'prompts.listar': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
@@ -1294,7 +1328,13 @@ function consultaCliente_(d) {
     return c.acesso_hash && String(c.cpf_cnpj || '').replace(/\D/g, '') === cpf && iguais_(hashSenha_(codigo, 'acesso|' + c.id), c.acesso_hash);
   })[0];
   if (!cli) falhou();
-  var hoje = hojeSP_();
+  var hoje = hojeSP_(), publicados = {}, gerais = [];
+  try {
+    tabela_('Transcricoes').linhas.filter(function (x) { return x.publicado === 'sim' && x.resumo_cliente && (x.cliente_id === cli.id || x.processo_id); }).forEach(function (x) {
+      var item = { data: x.data_ato || String(x.publicado_em).slice(0, 10), titulo: String(x.titulo || '').slice(0, 120), texto: String(x.resumo_cliente).slice(0, 2500) };
+      if (x.processo_id) (publicados[x.processo_id] = publicados[x.processo_id] || []).push(item); else if (x.cliente_id === cli.id) gerais.push(item);
+    });
+  } catch (e) { /* aba nova */ }
   var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === cli.id && (p.numero || faseDe_(p) === 'contratado'); }).map(function (p) {
     var ato = p.proximo_ato_data && p.proximo_ato_data >= hoje ? { ato: String(p.proximo_ato || '').slice(0, 120), data: p.proximo_ato_data } : null;
     var fase = faseDe_(p), andam = [];
@@ -1304,7 +1344,8 @@ function consultaCliente_(d) {
       situacao: p.status === 'arquivado' || fase === 'extinto' ? 'Arquivado / baixado' : !p.numero ? 'Em preparação' : 'Em andamento', proximo: ato,
       fase: fase, fase_nome: FASES[fase], andamentos: andam,
       movimentacao: p.ultimo_movimento_em ? String(p.ultimo_movimento_em).slice(0, 10) : '',
-      ultimo: String(p.ultimo_movimento || '').replace(/\s+/g, ' ').slice(0, 160)
+      ultimo: String(p.ultimo_movimento || '').replace(/\s+/g, ' ').slice(0, 160),
+      resumos: publicados[p.id] || []
     };
   }).sort(function (a, b) {
     if (a.situacao !== b.situacao) return a.situacao === 'Arquivado / baixado' ? 1 : b.situacao === 'Arquivado / baixado' ? -1 : 0;
@@ -1312,7 +1353,7 @@ function consultaCliente_(d) {
   });
   cache.remove(kCpf);
   registrar_('site', 'consulta do cliente', cli.id + ' (' + procs.length + ' processo(s))');
-  return { nome: nomeProprio_(String(cli.nome || '').split(' ')[0]), processos: procs, atualizado: config_('ROBO_ULTIMA_EXECUCAO') || '' };
+  return { nome: nomeProprio_(String(cli.nome || '').split(' ')[0]), processos: procs, comunicados: gerais.slice(-5).reverse(), atualizado: config_('ROBO_ULTIMA_EXECUCAO') || '' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -3622,7 +3663,7 @@ function pagarParcela_(d, u) {
   var res = registrarPagamento_(d, u);
   // recibo automático (fora da trava, porque gera documento no Drive)
   if (!d.estornar && d.recibo !== false) {
-    try { res.recibo = reciboDaParcela_(res, u); } catch (e) { res.recibo_erro = String(e.message || e); }
+    try { res.recibo = reciboDaParcela_(res, u); guardarRecibo_(d.id, res.recibo.pdf || res.recibo.doc); } catch (e) { res.recibo_erro = String(e.message || e); }
   }
   return res;
 }
@@ -4640,7 +4681,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -10896,4 +10937,842 @@ function futureRobo_() {
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));
   if (+hoje.slice(8, 10) >= 25) n += futureGerarCobrancas_(futCompMais_(futComp_(hoje), 1));
   return n;
+}
+
+
+/* ================================================================== */
+/* 8.12 — Gestão: CRM (funil), propostas, transcrição, peças com IA,   */
+/* padrões operacionais, recibos, painel financeiro e calculadoras     */
+/* ================================================================== */
+
+/* ---------- Pastas do Drive para o que o painel gera fora da pasta do cliente ---------- */
+function pastaPainel_(chave, nome) {
+  var id = config_(chave);
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* apagada: cria de novo */ } }
+  var mae;
+  try { var it = pastaClientes_().getParents(); mae = it.hasNext() ? it.next() : DriveApp.getRootFolder(); } catch (e2) { mae = DriveApp.getRootFolder(); }
+  var f = mae.createFolder(nome);
+  setConfig_(chave, f.getId(), 'Pasta do Drive: ' + nome);
+  return f;
+}
+function pastaDoClienteOu_(cliId, chave, nome) {
+  if (cliId) {
+    var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === cliId; })[0];
+    if (c && c.pasta_id) { try { return DriveApp.getFolderById(c.pasta_id); } catch (e) { /* segue */ } }
+  }
+  return pastaPainel_(chave, nome);
+}
+
+/* ---------- Gemini para textos longos e áudio (o chamarGemini_ antigo corta em 12 mil caracteres) ---------- */
+function geminiTexto_(parts, opc) {
+  opc = opc || {};
+  var chave = chaveIA_();
+  if (!chave) throw falha_('A IA não está ligada. A administração cadastra a chave do Gemini em Usuários › Resumo por IA.');
+  var principal = modeloIA_(), modelo = opc.modelo || principal;
+  var corpo = { contents: [{ role: 'user', parts: parts }], generationConfig: { temperature: opc.temp === undefined ? 0.2 : opc.temp, maxOutputTokens: opc.max || 8192 } };
+  if (opc.sistema) corpo.systemInstruction = { parts: [{ text: opc.sistema }] };
+  if (opc.json) corpo.generationConfig.responseMimeType = 'application/json';
+  var pedir = function (m) {
+    return UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent',
+      { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': chave }, payload: JSON.stringify(corpo) });
+  };
+  var resp = pedir(modelo);
+  if ((resp.getResponseCode() === 404 || resp.getResponseCode() === 400) && /not found|not supported|no longer/i.test(resp.getContentText())) {
+    if (modelo !== principal) { modelo = principal; resp = pedir(modelo); }
+    else { var novo = modeloSugerido_(resp); if (novo) { modelo = novo; resp = pedir(modelo); } }
+  }
+  var ocupado = function (r) { var c = r.getResponseCode(); return c === 503 || c === 429 || c === 500; };
+  for (var t = 1; t <= 3 && ocupado(resp); t++) { Utilities.sleep(3000 * t); resp = pedir(modelo); }
+  if (ocupado(resp)) {
+    var reserva = /lite/.test(modelo) ? modelo.replace(/-lite$/, '') : modelo + '-lite';
+    var r2 = pedir(reserva); if (r2.getResponseCode() === 200) resp = r2;
+  }
+  var code = resp.getResponseCode(), j = {};
+  try { j = JSON.parse(resp.getContentText()); } catch (e) { /* segue */ }
+  if (code !== 200) {
+    var msg = j.error && j.error.message ? String(j.error.message).slice(0, 180) : '';
+    if (code === 429) throw falha_('O Google está limitando a IA agora (muitos pedidos). Tente de novo em alguns minutos.');
+    if (code === 413 || /too large|exceeds/i.test(msg)) throw falha_('O material é grande demais para a IA de uma vez. Divida em partes.');
+    throw falha_('A IA não respondeu agora (código ' + code + (msg ? ': ' + msg : '') + '). Tente de novo.');
+  }
+  var c0 = (j.candidates || [])[0] || {};
+  if (!c0.content && c0.finishReason) throw falha_('A IA recusou o pedido (' + c0.finishReason + '). Reescreva o pedido ou tire trechos sensíveis.');
+  var txt = ((c0.content || {}).parts || []).map(function (p) { return p.text || ''; }).join('');
+  return { texto: String(txt).trim(), cortado: c0.finishReason === 'MAX_TOKENS', modelo: modelo };
+}
+function jsonDaIA_(txt) {
+  var b = String(txt || '').replace(/^```(json)?/i, '').replace(/```\s*$/, '').trim();
+  try { return JSON.parse(b); } catch (e) { var m = b.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* segue */ } } }
+  return null;
+}
+
+/** Regra do escritório para a IA (as palavras da Dra. Júlian: "a IA está aqui para nos auxiliar, nunca para nos substituir"). */
+var IA_SISTEMA_JURIDICO = 'Você é um assistente jurídico de um escritório de advocacia brasileiro (Tubarão/SC). Você AUXILIA a advogada: ajuda a organizar, ' +
+  'enxergar pontos e escrever melhor, mas a decisão e a revisão são sempre dela. Regras: 1) Nunca invente fatos, provas, nomes, datas, valores, artigos de lei, ' +
+  'súmulas ou julgados. 2) Use SOMENTE o material fornecido; quando faltar informação, escreva "[NÃO CONSTA NO MATERIAL — conferir]". 3) Pode citar artigos de lei ' +
+  'que tenha certeza (CPC, CLT, CC, CF, CDC, Lei 8.213/91 etc.), sempre com "[conferir]" ao lado; NÃO cite números de processos/julgados. 4) Prazos processuais: ' +
+  'nunca afirme datas fatais; diga "conferir no sistema do tribunal". 5) Nomes foram trocados por [PARTE] e dados pessoais por marcas; mantenha as marcas. ' +
+  '6) Escreva em português do Brasil, linguagem técnica e clara, organizada em Markdown (## títulos, listas com "-", tabelas com "|" quando pedido). ' +
+  '7) Sem promessas de resultado. 8) Termine com a seção "## Pontos para a advogada conferir".';
+
+/* ---------- Documento Google com o padrão visual do escritório a partir de Markdown ---------- */
+function docMarkdown_(titulo, md, pasta, subtitulo) {
+  var doc = DocumentApp.create(String(titulo).slice(0, 180));
+  montarPadraoVisual_(doc, [['t', String(titulo).toUpperCase()]].concat(subtitulo ? [['c', subtitulo]] : []));
+  var corpo = doc.getBody(), A = DocumentApp.HorizontalAlignment;
+  var fonte = function (el, tam) { var t = el.editAsText(); if (t.getText().length) t.setFontFamily('EB Garamond').setFontSize(tam || 12); return el; };
+  var negrito = function (el, txt) {
+    var t = trechosNegrito_(String(txt).replace(/__([^_]+)__/g, '**$1**'));
+    el.setText(t.texto); var ed = el.editAsText();
+    t.negritos.forEach(function (r) { if (r[1] >= r[0]) ed.setBold(r[0], r[1], true); });
+    return el;
+  };
+  var linhas = String(md || '').replace(/\r/g, '').split('\n'), i = 0;
+  while (i < linhas.length) {
+    var l = linhas[i], s = l.trim();
+    if (!s) { i++; continue; }
+    if (/^\|/.test(s)) { // tabela
+      var rows = [];
+      while (i < linhas.length && /^\s*\|/.test(linhas[i])) {
+        var cel = linhas[i].trim().replace(/^\||\|$/g, '').split('|').map(function (x) { return x.trim().replace(/\*\*/g, ''); });
+        if (!cel.every(function (x) { return /^:?-{2,}:?$/.test(x) || !x; })) rows.push(cel);
+        i++;
+      }
+      if (rows.length) {
+        var n = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+        rows = rows.map(function (r) { while (r.length < n) r.push(''); return r; });
+        var tab = corpo.appendTable(rows);
+        tab.setBorderColor('#B58D52');
+        for (var a = 0; a < tab.getNumRows(); a++) {
+          var row = tab.getRow(a);
+          for (var b = 0; b < row.getNumCells(); b++) {
+            var cell = row.getCell(b); cell.setPaddingTop(3).setPaddingBottom(3).setPaddingLeft(4).setPaddingRight(4);
+            cell.editAsText().setFontFamily('EB Garamond').setFontSize(10);
+            if (a === 0) { cell.setBackgroundColor('#F3EDE2'); cell.editAsText().setBold(true); }
+          }
+        }
+        corpo.appendParagraph('');
+      }
+      continue;
+    }
+    var m;
+    if ((m = /^(#{1,4})\s+(.*)$/.exec(s))) {
+      var p = corpo.appendParagraph('');
+      negrito(p, '**' + m[2].replace(/\*\*/g, '') + '**');
+      p.setAlignment(A.LEFT).setSpacingBefore(m[1].length <= 2 ? 12 : 8).setSpacingAfter(4).setLineSpacing(1.15);
+      fonte(p, m[1].length <= 2 ? 13 : 12);
+      if (m[1].length <= 2) p.editAsText().setForegroundColor('#3A2F22');
+    } else if ((m = /^[-*•]\s+(.*)$/.exec(s))) {
+      var li = corpo.appendListItem(''); negrito(li, m[1]);
+      li.setGlyphType(DocumentApp.GlyphType.BULLET).setSpacingAfter(3).setLineSpacing(1.15); fonte(li, 12);
+    } else if ((m = /^\d+[.)]\s+(.*)$/.exec(s))) {
+      var ln = corpo.appendListItem(''); negrito(ln, m[1]);
+      ln.setGlyphType(DocumentApp.GlyphType.NUMBER).setSpacingAfter(3).setLineSpacing(1.15); fonte(ln, 12);
+    } else if ((m = /^>\s?(.*)$/.exec(s))) {
+      var q = corpo.appendParagraph(''); negrito(q, m[1]);
+      q.setIndentStart(36).setAlignment(A.JUSTIFY).setSpacingAfter(6); fonte(q, 11); q.editAsText().setItalic(true);
+    } else if (/^---+$/.test(s)) {
+      corpo.appendHorizontalRule();
+    } else {
+      var pp = corpo.appendParagraph(''); negrito(pp, s);
+      pp.setAlignment(A.JUSTIFY).setSpacingAfter(8).setLineSpacing(1.5); fonte(pp, 12);
+    }
+    i++;
+  }
+  doc.saveAndClose();
+  var arq = DriveApp.getFileById(doc.getId());
+  if (pasta) arq.moveTo(pasta);
+  return { id: doc.getId(), url: doc.getUrl() };
+}
+function pdfDoDoc_(docId, pasta) {
+  var pdf = DriveApp.getFileById(docId).getAs('application/pdf');
+  var f = (pasta || DriveApp.getRootFolder()).createFile(pdf);
+  return f.getUrl();
+}
+
+/* ================================================================== */
+/* CRM / Funil de atendimento                                          */
+/* ================================================================== */
+var ETAPAS_CRM = [['novo', 'Novo contato'], ['contato', 'Em contato'], ['consulta', 'Consulta agendada'], ['atendido', 'Atendido'],
+  ['proposta', 'Proposta enviada'], ['negociacao', 'Negociação'], ['ganho', 'Contrato fechado'], ['perdido', 'Não fechou']];
+var CANAIS_CRM = ['Site (formulário)', 'WhatsApp', 'Telefone', 'Indicação', 'Google Ads (anúncio)', 'Google (pesquisa ou mapa)', 'Instagram / Facebook', 'Presencial', 'Já era cliente', 'Outro'];
+var MOTIVOS_PERDA = ['Preço / honorários', 'Escolheu outro escritório', 'Não tinha direito / caso inviável', 'Desistiu / sem interesse', 'Não respondeu', 'Fora da área ou da região', 'Outro'];
+var CAMPOS_LEAD = ['nome', 'telefone', 'email', 'area', 'assunto', 'canal', 'valor_estimado', 'responsavel', 'proxima_acao', 'proxima_data', 'temperatura', 'consulta_em', 'indicado_por', 'observacoes'];
+
+function etapaCrmOk_(e) { return ETAPAS_CRM.some(function (x) { return x[0] === e; }); }
+function canalDoContato_(o) { return { ads: 'Google Ads (anúncio)', organico: 'Google (pesquisa ou mapa)', google: 'Google (pesquisa ou mapa)', social: 'Instagram / Facebook' }[o] || 'Site (formulário)'; }
+function linhaHist_(u, txt) { return Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + ' · ' + (u ? (u.nome || u.usuario) : 'sistema') + ': ' + txt; }
+
+/** Contatos do site que ainda não viraram lead e leads cujo contrato foi assinado (ou desistido) no painel. Só grava se mudou. */
+function crmSincronizar_() {
+  var tabL = tabela_('Leads'), porContato = {}, mud = false;
+  tabL.linhas.forEach(function (l) { if (l.contato_id) porContato[l.contato_id] = l; });
+  var desde = new Date(Date.now() - 120 * 86400000).toISOString(), agora = new Date().toISOString();
+  var novos = tabela_('Contatos').linhas.filter(function (c) { return c.nome && c.criado_em >= desde && !porContato[c.id]; });
+  var assin = {};
+  tabela_('Assinaturas').linhas.forEach(function (a) { if (a.cliente_id) assin[a.cliente_id] = a; });
+  var fechar = tabL.linhas.filter(function (l) {
+    var a = l.cliente_id && assin[l.cliente_id];
+    return a && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (a.situacao === 'assinado' || a.situacao === 'desistiu');
+  });
+  if (!novos.length && !fechar.length) return 0;
+  comTrava_(function () {
+    var t = tabela_('Leads');
+    novos.forEach(function (c) {
+      inserirLinha_(t, { id: novoId_('L'), criado_em: c.criado_em || agora, nome: c.nome, telefone: c.telefone, email: '', area: areaMkt_(c.assunto + ' ' + c.pagina) === 'Geral' ? '' : areaMkt_(c.assunto + ' ' + c.pagina),
+        assunto: c.assunto, canal: canalDoContato_(c.origem), etapa: c.situacao && c.situacao !== 'novo' ? 'contato' : 'novo', valor_estimado: '', responsavel: config_('RESP_SITE') || '',
+        proxima_acao: 'Ligar / chamar no WhatsApp (pediu retorno pelo site · ' + (c.horario || 'qualquer horário') + ')', proxima_data: String(c.criado_em || agora).slice(0, 10),
+        temperatura: 'morno', contato_id: c.id, historico: linhaHist_(null, 'pedido de retorno pelo site (' + (c.pagina || '') + ')'), criado_por: 'site', atualizado_em: agora, atualizado_por: 'site' });
+    });
+    t.linhas.forEach(function (l) {
+      var a = l.cliente_id && assin[l.cliente_id];
+      if (!a || ['ganho', 'perdido'].indexOf(l.etapa) >= 0) return;
+      if (a.situacao === 'assinado') atualizarLinha_(t, l, { etapa: 'ganho', ganho_em: a.assinado_em || agora, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'contrato assinado (Clientes › Aguardando assinatura)'), atualizado_em: agora, atualizado_por: 'robô' });
+      else if (a.situacao === 'desistiu') atualizarLinha_(t, l, { etapa: 'perdido', perdido_em: agora, motivo_perda: 'Desistiu / sem interesse', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'marcado "Não vai assinar"'), atualizado_em: agora, atualizado_por: 'robô' });
+    });
+  });
+  return novos.length + fechar.length;
+}
+
+function crmListar_(d, u) {
+  try { crmSincronizar_(); } catch (e) { /* a lista abre mesmo assim */ }
+  var hoje = hojeSP_(), agora = Date.now();
+  var leads = tabela_('Leads').linhas.map(function (l) {
+    var o = limpar_(l);
+    o.dias_parado = Math.floor((agora - Date.parse(l.atualizado_em || l.criado_em || new Date().toISOString())) / 86400000);
+    o.atrasado = !!(l.proxima_data && l.proxima_data < hoje && ['ganho', 'perdido'].indexOf(l.etapa) < 0);
+    return o;
+  }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; });
+  var dentro = function (iso, dias) { return iso && agora - Date.parse(iso) <= dias * 86400000; };
+  var abertos = leads.filter(function (l) { return ['ganho', 'perdido'].indexOf(l.etapa) < 0; });
+  var porEtapa = {}; ETAPAS_CRM.forEach(function (e) { porEtapa[e[0]] = { n: 0, valor: 0 }; });
+  leads.forEach(function (l) { var p = porEtapa[l.etapa] || porEtapa.novo; p.n++; p.valor += dinheiro_(l.valor_estimado); });
+  var recentes = leads.filter(function (l) { return dentro(l.criado_em, 180); });
+  var fechados = recentes.filter(function (l) { return l.etapa === 'ganho' || l.etapa === 'perdido'; });
+  var ganhos = recentes.filter(function (l) { return l.etapa === 'ganho'; });
+  var porCanal = {};
+  recentes.forEach(function (l) { var k = l.canal || 'Não informado'; var c = porCanal[k] = porCanal[k] || { canal: k, leads: 0, ganhos: 0, perdidos: 0 }; c.leads++; if (l.etapa === 'ganho') c.ganhos++; if (l.etapa === 'perdido') c.perdidos++; });
+  var motivos = {};
+  recentes.forEach(function (l) { if (l.etapa === 'perdido') motivos[l.motivo_perda || 'Não informado'] = (motivos[l.motivo_perda || 'Não informado'] || 0) + 1; });
+  var tempos = ganhos.filter(function (l) { return l.ganho_em; }).map(function (l) { return (Date.parse(l.ganho_em) - Date.parse(l.criado_em)) / 86400000; });
+  var resp = recentes.filter(function (l) { return l.primeiro_contato_em; }).map(function (l) { return (Date.parse(l.primeiro_contato_em) - Date.parse(l.criado_em)) / 3600000; }).sort(function (a, b) { return a - b; });
+  var mes = hoje.slice(0, 7);
+  return {
+    etapas: ETAPAS_CRM, canais: CANAIS_CRM, motivos: MOTIVOS_PERDA, areas: AREAS_MKT, leads: leads,
+    metricas: {
+      abertos: abertos.length, valorAberto: Math.round(abertos.reduce(function (t, l) { return t + dinheiro_(l.valor_estimado); }, 0) * 100) / 100,
+      novosMes: leads.filter(function (l) { return String(l.criado_em).slice(0, 7) === mes; }).length,
+      ganhosMes: leads.filter(function (l) { return l.etapa === 'ganho' && String(l.ganho_em).slice(0, 7) === mes; }).length,
+      conversao: fechados.length ? Math.round(ganhos.length / fechados.length * 100) : null,
+      diasParaFechar: tempos.length ? Math.round(tempos.reduce(function (a, b) { return a + b; }, 0) / tempos.length) : null,
+      respostaHoras: resp.length ? Math.round(resp[Math.floor(resp.length / 2)] * 10) / 10 : null,
+      atrasados: abertos.filter(function (l) { return l.atrasado; }).length,
+      parados: abertos.filter(function (l) { return l.dias_parado >= 7; }).length,
+      porEtapa: porEtapa,
+      porCanal: Object.keys(porCanal).map(function (k) { var c = porCanal[k]; c.taxa = c.ganhos + c.perdidos ? Math.round(c.ganhos / (c.ganhos + c.perdidos) * 100) : null; return c; }).sort(function (a, b) { return b.leads - a.leads; }),
+      motivos: Object.keys(motivos).map(function (k) { return { motivo: k, n: motivos[k] }; }).sort(function (a, b) { return b.n - a.n; })
+    }
+  };
+}
+
+function crmSalvar_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Leads'), x = d.lead || {}, agora = new Date().toISOString(), dados = {};
+    CAMPOS_LEAD.forEach(function (k) { if (x[k] !== undefined) dados[k] = String(x[k] || '').trim().slice(0, k === 'observacoes' ? 20000 : 300); });
+    if (dados.telefone) dados.telefone = dados.telefone.replace(/[^\d()+\s\-\/]/g, '');
+    if (dados.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados.email)) throw falha_('E-mail inválido.');
+    if (dados.valor_estimado) dados.valor_estimado = txtDinheiro_(dinheiro_(dados.valor_estimado));
+    dados.atualizado_em = agora; dados.atualizado_por = u.usuario;
+    if (x.id) {
+      var l = t.linhas.filter(function (r) { return r.id === x.id; })[0];
+      if (!l) throw falha_('Contato não encontrado.');
+      atualizarLinha_(t, l, dados);
+      registrar_(u.usuario, 'crm: contato alterado', l.id + ' ' + (dados.nome || l.nome));
+      return { id: l.id };
+    }
+    if (!dados.nome) throw falha_('Informe o nome.');
+    if (!dados.telefone && !dados.email) throw falha_('Informe o telefone ou o e-mail.');
+    var dig = String(dados.telefone || '').replace(/\D/g, '').slice(-8);
+    var rep = dig.length === 8 && t.linhas.filter(function (r) { return String(r.telefone || '').replace(/\D/g, '').slice(-8) === dig && ['ganho', 'perdido'].indexOf(r.etapa) < 0; })[0];
+    if (rep && !d.mesmoAssim) throw falha_('Já existe um contato em aberto com esse telefone: ' + rep.nome + '. Abra o cartão dele no funil.');
+    var etapa = etapaCrmOk_(x.etapa) ? x.etapa : 'novo';
+    var novo = Object.assign({ id: novoId_('L'), criado_em: agora, etapa: etapa, criado_por: u.usuario, temperatura: dados.temperatura || 'morno',
+      historico: linhaHist_(u, 'contato cadastrado' + (dados.canal ? ' (' + dados.canal + ')' : '')) }, dados);
+    if (etapa !== 'novo') novo.primeiro_contato_em = agora;
+    if (!novo.responsavel) novo.responsavel = u.usuario;
+    inserirLinha_(t, novo);
+    registrar_(u.usuario, 'crm: contato novo', novo.id + ' ' + novo.nome);
+    return { id: novo.id };
+  });
+}
+
+function crmEtapa_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Leads'), l = t.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!l) throw falha_('Contato não encontrado.');
+    if (!etapaCrmOk_(d.etapa)) throw falha_('Etapa inválida.');
+    if (d.etapa === 'perdido' && !d.motivo) throw falha_('Diga o motivo de não ter fechado (é o que mostra onde melhorar).');
+    var agora = new Date().toISOString(), nomeE = {};
+    ETAPAS_CRM.forEach(function (e) { nomeE[e[0]] = e[1]; });
+    var m = { etapa: d.etapa, atualizado_em: agora, atualizado_por: u.usuario,
+      historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(u, (nomeE[l.etapa] || l.etapa) + ' → ' + nomeE[d.etapa] + (d.motivo ? ' (' + d.motivo + ')' : '') + (d.nota ? ' · ' + String(d.nota).slice(0, 300) : '')) };
+    if (l.etapa === 'novo' && d.etapa !== 'novo' && !l.primeiro_contato_em) m.primeiro_contato_em = agora;
+    if (d.etapa === 'ganho') m.ganho_em = agora;
+    if (d.etapa === 'perdido') { m.perdido_em = agora; m.motivo_perda = String(d.motivo).slice(0, 80); }
+    if (d.etapa !== 'perdido' && l.etapa === 'perdido') { m.perdido_em = ''; m.motivo_perda = ''; }
+    if (d.consulta_em) m.consulta_em = String(d.consulta_em).slice(0, 16);
+    atualizarLinha_(t, l, m);
+    registrar_(u.usuario, 'crm: etapa', l.id + ' ' + l.nome + ' → ' + d.etapa);
+    return { ok: true };
+  });
+}
+
+function crmAnotar_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Leads'), l = t.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!l) throw falha_('Contato não encontrado.');
+    var txt = String(d.texto || '').trim(); if (!txt) throw falha_('Escreva a anotação.');
+    var m = { historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(u, txt.slice(0, 2000)), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario };
+    if (l.etapa === 'novo' && d.contato && !l.primeiro_contato_em) { m.primeiro_contato_em = m.atualizado_em; m.etapa = 'contato'; }
+    if (d.proxima_acao !== undefined) m.proxima_acao = String(d.proxima_acao).slice(0, 300);
+    if (d.proxima_data !== undefined) m.proxima_data = String(d.proxima_data).slice(0, 10);
+    atualizarLinha_(t, l, m);
+    return { ok: true };
+  });
+}
+
+/** "Virou cliente": cria o cadastro (só com o que o funil tem; a ficha mostra o que falta) e liga ao contato. */
+function crmConverter_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Leads'), l = t.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!l) throw falha_('Contato não encontrado.');
+    if (l.cliente_id) return { cliente_id: l.cliente_id, existente: true };
+    var tc = tabela_('Clientes'), dig = String(l.telefone || '').replace(/\D/g, '').slice(-8);
+    var ja = tc.linhas.filter(function (c) { return (dig.length === 8 && String(c.telefone || '').replace(/\D/g, '').indexOf(dig) >= 0) || normalizar_(c.nome) === normalizar_(l.nome); })[0];
+    var agora = new Date().toISOString(), cid;
+    if (ja && !d.novo) cid = ja.id;
+    else {
+      cid = novoId_('C');
+      inserirLinha_(tc, { id: cid, tipo: 'PF', nome: nomeProprio_(l.nome), telefone: l.telefone, email: l.email, area: l.area, origem: 'funil (CRM)', situacao: 'completo',
+        observacoes: Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + ' — ' + (u.nome || u.usuario) + ': veio do funil (' + (l.canal || 'canal não informado') + '). ' + (l.assunto || ''),
+        como_conheceu: CANAIS_CONHECEU.indexOf(l.canal) >= 0 ? l.canal : (/Site/.test(l.canal) ? 'Site' : /Indica/.test(l.canal) ? 'Indicação' : 'Outro'),
+        criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario });
+    }
+    atualizarLinha_(t, l, { cliente_id: cid, historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(u, ja && !d.novo ? 'ligado ao cadastro já existente de ' + ja.nome : 'cadastro de cliente criado'), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'crm: virou cliente', l.id + ' → ' + cid);
+    return { cliente_id: cid, existente: !!(ja && !d.novo), nome_existente: ja && !d.novo ? ja.nome : '' };
+  });
+}
+
+/* ---------- Proposta de honorários (Google Docs + PDF no padrão do escritório) ---------- */
+var INCLUI_AREA = {
+  'Trabalhista': ['Análise dos documentos e do contrato de trabalho, com cálculo estimado dos direitos', 'Petição inicial (ou defesa) e todas as manifestações em primeiro grau', 'Audiências de conciliação e de instrução', 'Recurso Ordinário ao TRT, se necessário', 'Cálculos e execução até o levantamento dos valores (alvará)'],
+  'Previdenciário': ['Análise do CNIS, carteira de trabalho e documentos médicos', 'Pedido administrativo no INSS e acompanhamento', 'Ação judicial na Justiça Federal, se o INSS negar', 'Perícias e audiências', 'Acompanhamento até a implantação do benefício e o pagamento dos atrasados'],
+  'Família': ['Orientação sobre direitos e caminhos possíveis (acordo ou ação)', 'Petição inicial ou defesa e manifestações em primeiro grau', 'Audiências de conciliação/mediação e de instrução', 'Acompanhamento até a sentença ou homologação do acordo'],
+  'Cível': ['Análise de contratos, provas e documentos', 'Notificação extrajudicial, quando for o caso', 'Petição inicial ou defesa e manifestações em primeiro grau', 'Audiências e acompanhamento até a sentença'],
+  'Criminal': ['Análise do inquérito ou do processo', 'Defesa técnica em primeiro grau (resposta à acusação, audiências, alegações finais)', 'Pedidos de liberdade, quando cabíveis', 'Acompanhamento até a sentença'],
+  'Empresarial': ['Análise da demanda e dos documentos da empresa', 'Pareceres e orientações por escrito', 'Elaboração e revisão de contratos', 'Atuação em processos judiciais e administrativos conforme o escopo combinado']
+};
+function textoHonorariosProposta_(h) {
+  h = h || {};
+  var v = dinheiro_(h.valor), n = parseInt(h.parcelas, 10) || 1, pct = String(h.percentual || '').replace(',', '.'), ent = dinheiro_(h.entrada), men = dinheiro_(h.mensal);
+  var linhas = [];
+  if (h.forma === 'exito' || h.forma === 'misto') linhas.push('**' + pct + '%** (' + pct + ' por cento) sobre o proveito econômico obtido pelo(a) cliente (valores recebidos por acordo ou condenação), pagos somente quando houver recebimento.');
+  if (h.forma === 'fixo' || h.forma === 'misto') {
+    if (v) linhas.push('**' + valorComExtenso_(v) + '**' + (n > 1 ? (ent ? ', sendo entrada de ' + valorComExtenso_(ent) + ' e o saldo em ' + (n - 1) + ' parcela(s) mensais de ' + valorComExtenso_((v - ent) / Math.max(1, n - 1)) : ', em ' + n + ' parcelas mensais de ' + valorComExtenso_(v / n)) : ', à vista') + '.');
+  }
+  if (h.forma === 'mensal' && men) linhas.push('**' + valorComExtenso_(men) + ' por mês**, com vencimento todo dia ' + (h.dia || '10') + ', pelo prazo combinado no contrato.');
+  if (!linhas.length) linhas.push('[COMPLETAR: forma e valor dos honorários]');
+  return linhas;
+}
+function gerarProposta_(d, u) {
+  var l = d.lead_id ? tabela_('Leads').linhas.filter(function (r) { return r.id === d.lead_id; })[0] : null;
+  var nome = String((l && l.nome) || d.nome || '').trim();
+  if (!nome) throw falha_('Informe para quem é a proposta.');
+  var area = d.area || (l && l.area) || '', esc = escritorio_();
+  var adv = advogados_().filter(function (a) { return a.padrao === 'sim'; })[0] || advogados_()[0];
+  var validade = Math.max(3, Math.min(60, parseInt(d.validade, 10) || 15));
+  var inclui = String(d.inclui || '').trim() ? String(d.inclui).split('\n').map(function (x) { return x.replace(/^[-•*]\s*/, '').trim(); }).filter(Boolean) : (INCLUI_AREA[area] || INCLUI_AREA['Cível']);
+  var md = [];
+  md.push('Tubarão/SC, ' + porExtensoData_(hojeSP_()) + '.');
+  md.push('À/Ao **' + nomeProprio_(nome) + '**');
+  md.push('Agradecemos a confiança em nos procurar. Conforme conversamos, apresentamos a proposta de honorários para o seu caso. Ela resume o que faremos, o que está incluído e as condições de pagamento.');
+  md.push('## 1. Objeto');
+  md.push(String(d.objeto || (l && l.assunto) || '[COMPLETAR: descrever o serviço]').trim());
+  md.push('## 2. O que está incluído');
+  inclui.forEach(function (x) { md.push('- ' + x); });
+  md.push('## 3. O que não está incluído');
+  ['Recursos aos tribunais superiores (STJ, STF, TST, TNU) e sustentação oral, que serão combinados à parte, se necessários', 'Custas, perícias, taxas e diligências fora da comarca (deslocamento acima de 100 km), que ficam por conta do(a) cliente', 'Outras ações ou procedimentos diferentes do objeto acima'].forEach(function (x) { md.push('- ' + x); });
+  md.push('## 4. Honorários');
+  textoHonorariosProposta_(d.honorarios).forEach(function (x) { md.push(x); });
+  md.push('Os honorários de sucumbência, se houver, pertencem ao escritório (art. 23 da Lei 8.906/94). Os valores observam a Tabela de Honorários da OAB/SC.');
+  md.push('## 5. Forma de pagamento');
+  md.push('PIX ou transferência para a conta do escritório (' + esc.pix + '). Enviamos o recibo de cada pagamento.');
+  md.push('## 6. Como trabalhamos');
+  ['O seu caso é conduzido pessoalmente pela Dra. ' + (adv.nome || 'Júlian Marcelino Araújo') + ' (' + oabTexto_(adv) + ').', 'Antes de protocolar a ação, você recebe a petição para conferir e aprovar.',
+    'Você acompanha o processo pelo nosso site (araujoadvocaciasc.com.br/acompanhe), com CPF e código de acesso, e recebe avisos pelo WhatsApp a cada etapa importante.',
+    'Avisamos as audiências e perícias com uma semana de antecedência e no próprio dia.', 'Atendimento de segunda a sexta, das 8h às 12h e das 13h30 às 18h, presencial ou por vídeo.'].forEach(function (x) { md.push('- ' + x); });
+  md.push('## 7. Importante');
+  md.push('A advocacia é uma atividade de meio: trabalhamos com dedicação e técnica, mas nenhum resultado pode ser garantido, porque a decisão é do Judiciário. O tempo do processo também depende do Judiciário.');
+  if (String(d.obs || '').trim()) { md.push('## 8. Observações'); md.push(String(d.obs).trim()); }
+  md.push('## ' + (String(d.obs || '').trim() ? '9' : '8') + '. Validade e próximos passos');
+  md.push('Esta proposta vale por **' + validade + ' dias**. Se estiver de acordo, basta responder pelo WhatsApp: preparamos o contrato de honorários e a procuração para assinatura e informamos os documentos necessários.');
+  md.push('Ficamos à disposição para qualquer dúvida.');
+  md.push('');
+  md.push('**' + nomeAssinatura_(adv.nome || 'Júlian Marcelino Araújo') + '**');
+  md.push(oabTexto_(adv));
+  var pasta = pastaDoClienteOu_(l && l.cliente_id, 'PASTA_PROPOSTAS_ID', 'PAINEL — PROPOSTAS DE HONORÁRIOS');
+  var titulo = 'Proposta de honorários — ' + nomeProprio_(nome) + ' — ' + Utilities.formatDate(new Date(), TZ, 'dd-MM-yyyy');
+  var g = docMarkdown_('Proposta de honorários advocatícios', md.join('\n'), pasta);
+  DriveApp.getFileById(g.id).setName(titulo);
+  // as duas últimas linhas (assinatura) ficam centralizadas
+  try {
+    var doc = DocumentApp.openById(g.id), ps = doc.getBody().getParagraphs();
+    for (var k = ps.length - 1, c = 0; k >= 0 && c < 2; k--) { if (ps[k].getText().trim()) { ps[k].setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(0); c++; } }
+    doc.saveAndClose();
+  } catch (e) { /* segue */ }
+  var pdf = pdfDoDoc_(g.id, pasta);
+  if (l) comTrava_(function () {
+    var t = tabela_('Leads'), x = t.linhas.filter(function (r) { return r.id === l.id; })[0];
+    var vEst = dinheiro_((d.honorarios || {}).valor) || dinheiro_((d.honorarios || {}).mensal) * 12 || dinheiro_(x.valor_estimado);
+    atualizarLinha_(t, x, { etapa: ['ganho', 'perdido', 'negociacao'].indexOf(x.etapa) >= 0 ? x.etapa : 'proposta', proposta_url: g.url, valor_estimado: vEst ? txtDinheiro_(vEst) : x.valor_estimado,
+      proxima_acao: 'Confirmar se recebeu e se ficou alguma dúvida sobre a proposta', proxima_data: somarDias_(hojeSP_(), 2),
+      historico: (x.historico ? x.historico + '\n' : '') + linhaHist_(u, 'proposta gerada (vale ' + validade + ' dias)'), atualizado_em: new Date().toISOString(), atualizado_por: u.usuario,
+      primeiro_contato_em: x.primeiro_contato_em || new Date().toISOString() });
+  });
+  registrar_(u.usuario, 'proposta gerada', (l ? l.id + ' ' : '') + nome);
+  var tel = l ? l.telefone : '';
+  return { doc: g.url, pdf: pdf, nome: nomeProprio_(nome), telefone: tel,
+    mensagem: 'Olá, ' + primeiroNomeTxt_(nome) + '! Tudo bem? Conforme conversamos, segue a proposta de honorários para o seu caso. Ela explica o que está incluído, os valores e como trabalhamos. Qualquer dúvida, é só me chamar por aqui. Dra. Júlian — Araújo Advocacia' };
+}
+function primeiroNomeTxt_(n) { return nomeProprio_(String(n || '').trim().split(/\s+/)[0] || ''); }
+
+/* ================================================================== */
+/* Padrões operacionais (guia do cliente e procedimentos da equipe)    */
+/* ================================================================== */
+var PADROES_INICIAIS = [
+  ['cliente', 'Bem-vindo(a) ao escritório', 'Obrigado pela confiança. Este guia explica, de forma simples, como trabalhamos e o que esperar em cada etapa do seu caso. Guarde-o: ele responde às dúvidas mais comuns.'],
+  ['cliente', 'Quem cuida do seu caso', 'O seu caso é conduzido pessoalmente pela Dra. Júlian Marcelino Araújo (OAB/SC 54.832), doutora em Direito, com o apoio de Luís Fernando, do escritório. Você fala direto com quem conhece o seu processo.'],
+  ['cliente', 'Horário e canais de atendimento', '- Segunda a sexta, das 8h às 12h e das 13h30 às 18h.\n- WhatsApp: (48) 99612-6491 · Telefone: (48) 3626-2556.\n- Endereço: Rua Silvino Moreira Lima Sobrinho, nº 888, Sala 04, Humaitá, Tubarão/SC (em frente à nova rodoviária).\n- Atendimento presencial ou por vídeo, sempre com horário marcado.\n- Mensagens fora do horário são respondidas no próximo dia útil.'],
+  ['cliente', 'As etapas do seu caso', '1. Conversa inicial e análise dos documentos.\n2. Proposta de honorários, contrato e procuração para assinatura.\n3. Envio dos documentos que faltarem.\n4. Preparação da petição: antes de protocolar, você recebe o texto para conferir e aprovar.\n5. Protocolo da ação: você recebe o número do processo e o código para acompanhar pelo site.\n6. Andamento: citação, defesa da outra parte, audiências e perícias, quando houver.\n7. Sentença e, se for o caso, recursos.\n8. Recebimento dos valores (alvará, RPV ou precatório) e prestação de contas.\n9. Encerramento do caso.'],
+  ['cliente', 'Acompanhe pelo site', 'Em araujoadvocaciasc.com.br/acompanhe você vê a etapa do seu processo e as últimas movimentações, com o seu CPF e o código de 8 caracteres que enviamos. Também avisamos pelo WhatsApp a cada novidade importante.'],
+  ['cliente', 'Audiências e perícias', 'Avisamos com uma semana de antecedência e de novo no dia. A sua presença é obrigatória: faltar sem justificativa pode prejudicar o processo. Chegue com 15 minutos de antecedência, leve documento com foto e, na perícia médica, todos os exames e laudos.'],
+  ['cliente', 'Honorários e pagamentos', 'Os valores e as datas seguem o contrato. O pagamento é por PIX na conta do escritório, e enviamos o recibo de cada parcela. Se tiver dificuldade para pagar, fale conosco antes do vencimento: sempre buscamos uma solução.'],
+  ['cliente', 'O tempo da Justiça', 'O tempo do processo depende do Judiciário, não do escritório. Há fases em que o processo fica parado aguardando o juiz ou a outra parte: isso é normal. A advocacia é uma atividade de meio: trabalhamos com dedicação, mas nenhum resultado pode ser garantido.'],
+  ['cliente', 'O que pedimos a você', '- Conte tudo, inclusive o que parecer desfavorável: é assim que conseguimos defender bem.\n- Avise se mudar de telefone ou de endereço.\n- Responda às nossas mensagens e mande os documentos pedidos.\n- Não faça acordo nem converse sobre o processo com a outra parte sem falar conosco antes.'],
+  ['cliente', 'Sigilo e proteção de dados', 'Tudo o que você nos conta é protegido pelo sigilo profissional. Os seus dados são usados só para o seu caso, conforme a Lei Geral de Proteção de Dados (LGPD).'],
+  ['equipe', 'POP 1 · Primeiro contato (funil)', '- Todo contato novo (WhatsApp, telefone, site, indicação) entra em Relacionamento › CRM / Funil no mesmo dia.\n- Responder em até 15 minutos no horário de atendimento. Quem demora perde o cliente.\n- Registrar área, assunto e canal. Definir a próxima ação com data.\n- Pedido de retorno pelo site já entra sozinho no funil.'],
+  ['equipe', 'POP 2 · Atendimento inicial', '- Agendar a consulta e mover o cartão para "Consulta agendada".\n- Na conversa: pedir autorização para gravar e usar "Transcrição e resumos" (atendimento).\n- Ao final: resumo para o cliente e lista de documentos pelo WhatsApp.\n- Mover para "Atendido" e anotar a avaliação do caso.'],
+  ['equipe', 'POP 3 · Proposta e fechamento', '- Gerar a proposta pelo cartão do funil ("Gerar proposta"). O cartão vai para "Proposta enviada".\n- Retorno em 2 dias úteis. Negociação: anotar cada conversa.\n- Aceitou: "Virou cliente" → completar o cadastro → Documentos e propostas (contrato e procuração).\n- Não fechou: marcar o motivo. É o que mostra onde melhorar.'],
+  ['equipe', 'POP 4 · Petição inicial', '- Fazer a inicial no prazo da tarefa.\n- Mandar ao cliente pelo WhatsApp para aprovar.\n- Aprovada e protocolada: "Conferido" com o número.\n- O painel gera o código do Acompanhe: enviar a mensagem pronta ao cliente.'],
+  ['equipe', 'POP 5 · Intimações e prazos', '- Olhar a fila "Conferir no tribunal" todos os dias, começando pelos provisórios e pelos avisos da IA.\n- Confirmar a data fatal com a fonte. Fazer até 2 dias úteis antes do fatal.\n- "Conferido" ao cumprir. A administração dá o OK.\n- Na dúvida entre dois prazos, sempre o mais curto.'],
+  ['equipe', 'POP 6 · Audiências', '- Confirmar o horário e o local (ou o link) e avisar o cliente uma semana antes e no dia.\n- Uma semana antes: gerar o Dossiê da audiência (mapa da prova e roteiro de perguntas) e revisar.\n- Preparar o cliente e as testemunhas.\n- Depois: transcrição ou ata, resumo para o cliente e próximos passos no painel.'],
+  ['equipe', 'POP 7 · Financeiro', '- Honorário só entra no Financeiro depois do contrato assinado.\n- Conferir os PIX todos os dias.\n- Parcela paga: o recibo sai sozinho; mandar pelo WhatsApp.\n- Lembrar antes do vencimento e cobrar com educação depois. Dificuldade: renegociar pelo painel.'],
+  ['equipe', 'POP 8 · Encerramento', '- Valor liberado: levantar o alvará, fazer a prestação de contas e o repasse.\n- Processo encerrado: avisar o cliente e pedir a avaliação no Google (só depois do processo pronto).\n- Arquivar no painel.'],
+  ['equipe', 'POP 9 · Uso de IA no escritório', 'A IA está aqui para nos auxiliar, nunca para nos substituir: ela aprimora a escrita e ajuda a enxergar o que às vezes não vemos no processo. Ela faz os bons profissionais parecerem melhores, e os descuidados, piores.\n- Tudo o que a IA escreve é RASCUNHO: conferir fatos, artigos e datas no processo.\n- Nunca usar julgado citado pela IA sem achar o inteiro teor.\n- Não colar CPF, endereço ou dados de saúde sem necessidade (o painel já tira os dados pessoais).\n- Gravar conversa só com autorização das pessoas.']
+];
+function padroesListar_() {
+  var t = tabela_('Padroes');
+  if (!t.linhas.length && !config_('PADROES_SEMEADOS')) {
+    comTrava_(function () {
+      var tt = tabela_('Padroes'), agora = new Date().toISOString();
+      if (tt.linhas.length) return;
+      PADROES_INICIAIS.forEach(function (p, i) { inserirLinha_(tt, { id: novoId_('S'), grupo: p[0], titulo: p[1], texto: p[2], ordem: String(i + 1), atualizado_em: agora, atualizado_por: 'painel' }); });
+      setConfig_('PADROES_SEMEADOS', agora, 'Padrões operacionais iniciais já criados');
+    });
+    t = tabela_('Padroes');
+  }
+  return { itens: t.linhas.map(limpar_).sort(function (a, b) { return (+a.ordem || 0) - (+b.ordem || 0); }) };
+}
+function podeEditarPadroes_(u) { return u.perfil === 'administrador' || u.perfil === 'advogada'; }
+function padroesSalvar_(d, u) {
+  if (!podeEditarPadroes_(u)) throw falha_('Só a administração e a advogada editam os padrões.');
+  return comTrava_(function () {
+    var t = tabela_('Padroes'), agora = new Date().toISOString(), x = d.item || {};
+    if (d.apagar) { var a = t.linhas.filter(function (r) { return r.id === d.apagar; })[0]; if (a) apagarLinha_(t, a); return { ok: true }; }
+    var grupo = x.grupo === 'equipe' ? 'equipe' : 'cliente';
+    var titulo = String(x.titulo || '').trim().slice(0, 120), texto = String(x.texto || '').trim().slice(0, 20000);
+    if (!titulo || !texto) throw falha_('Preencha o título e o texto.');
+    if (x.id) {
+      var l = t.linhas.filter(function (r) { return r.id === x.id; })[0];
+      if (!l) throw falha_('Item não encontrado.');
+      atualizarLinha_(t, l, { grupo: grupo, titulo: titulo, texto: texto, ordem: x.ordem !== undefined ? String(x.ordem) : l.ordem, atualizado_em: agora, atualizado_por: u.usuario });
+      return { id: l.id };
+    }
+    var max = t.linhas.reduce(function (m, r) { return Math.max(m, +r.ordem || 0); }, 0);
+    var id = novoId_('S');
+    inserirLinha_(t, { id: id, grupo: grupo, titulo: titulo, texto: texto, ordem: String(max + 1), atualizado_em: agora, atualizado_por: u.usuario });
+    return { id: id };
+  });
+}
+/** Guia do cliente em PDF (Google Docs no padrão do escritório) para mandar a quem acabou de contratar. */
+function padroesGuia_(d, u) {
+  var itens = padroesListar_().itens.filter(function (x) { return x.grupo === (d.grupo === 'equipe' ? 'equipe' : 'cliente'); });
+  var md = [];
+  itens.forEach(function (x) { md.push('## ' + x.titulo); md.push(x.texto); });
+  var titulo = d.grupo === 'equipe' ? 'Padrões operacionais do escritório' : 'Como funciona o escritório — guia do cliente';
+  var pasta = pastaPainel_('PASTA_GUIAS_ID', 'PAINEL — GUIAS E PADRÕES');
+  var g = docMarkdown_(titulo, md.join('\n'), pasta, 'Atualizado em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'));
+  var pdf = pdfDoDoc_(g.id, pasta);
+  registrar_(u.usuario, 'guia gerado', titulo);
+  return { doc: g.url, pdf: pdf };
+}
+
+/* ================================================================== */
+/* Transcrição de audiências e atendimentos (Gemini)                   */
+/* ================================================================== */
+/* O navegador manda o áudio em pedaços de 3 MB (múltiplos de 3 e de 256 KiB: o texto em base64 de cada pedaço emenda sem quebra e
+   o envio ao Google pode ser feito pedaço a pedaço). Os pedaços ficam numa pasta temporária do Drive e são apagados no fim. */
+var AUDIO_MAX_MB = 45;
+function audioInicio_(d, u) {
+  var mb = (+d.tamanho || 0) / 1048576;
+  if (!(mb > 0)) throw falha_('Arquivo vazio.');
+  if (mb > AUDIO_MAX_MB) throw falha_('O arquivo tem ' + Math.round(mb) + ' MB. O limite é ' + AUDIO_MAX_MB + ' MB: grave só o áudio (o painel grava em formato leve) ou divida a gravação.');
+  var mime = String(d.mime || '').toLowerCase();
+  if (!/^(audio|video)\//.test(mime)) throw falha_('Envie um arquivo de áudio ou vídeo.');
+  if (!chaveIA_()) throw falha_('A IA não está ligada. A administração cadastra a chave do Gemini em Usuários › Resumo por IA.');
+  var id = novoId_('A');
+  CacheService.getScriptCache().put('aud_' + id, JSON.stringify({ u: u.id, partes: +d.partes || 1, mime: mime.replace(/;.*$/, ''), tamanho: +d.tamanho, nome: String(d.nome || '').slice(0, 100) }), 21600);
+  return { id: id };
+}
+function audioMeta_(id, u) {
+  if (!/^A[0-9a-f]{10}$/.test(String(id || ''))) throw falha_('Envio inválido.');
+  var m = CacheService.getScriptCache().get('aud_' + id);
+  if (!m) throw falha_('O envio expirou. Mande o arquivo de novo.');
+  m = JSON.parse(m);
+  if (m.u !== u.id) throw falha_('Envio de outra pessoa.');
+  return m;
+}
+function audioParte_(d, u) {
+  var m = audioMeta_(d.id, u), n = parseInt(d.n, 10);
+  if (!(n >= 0 && n < m.partes)) throw falha_('Pedaço inválido.');
+  var b64 = String(d.b64 || '');
+  if (!/^[A-Za-z0-9+\/=]+$/.test(b64)) throw falha_('Pedaço corrompido. Tente de novo.');
+  var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)');
+  var nome = d.id + '_' + ('00' + n).slice(-3);
+  var ja = pasta.getFilesByName(nome); while (ja.hasNext()) ja.next().setTrashed(true);
+  pasta.createFile(nome, b64, MimeType.PLAIN_TEXT);
+  return { ok: true, n: n };
+}
+function audioPartes_(id, m) {
+  var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)'), arqs = [];
+  for (var i = 0; i < m.partes; i++) {
+    var it = pasta.getFilesByName(id + '_' + ('00' + i).slice(-3));
+    if (!it.hasNext()) throw falha_('Faltou o pedaço ' + (i + 1) + ' de ' + m.partes + ' do áudio. Mande o arquivo de novo.');
+    arqs.push(it.next());
+  }
+  return arqs;
+}
+function apagarTemporarios_(id) {
+  try {
+    var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)'), it = pasta.getFiles(), velho = Date.now() - 2 * 86400000;
+    while (it.hasNext()) { var f = it.next(); if ((id && f.getName().indexOf(id) === 0) || f.getDateCreated().getTime() < velho) f.setTrashed(true); }
+  } catch (e) { /* segue */ }
+}
+/** Sobe o áudio para a API de arquivos do Gemini em pedaços (upload "resumable") e espera ficar pronto. */
+function subirAudioGemini_(arqs, m) {
+  var chave = chaveIA_();
+  var ini = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/upload/v1beta/files', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': chave, 'X-Goog-Upload-Protocol': 'resumable', 'X-Goog-Upload-Command': 'start', 'X-Goog-Upload-Header-Content-Length': String(m.tamanho), 'X-Goog-Upload-Header-Content-Type': m.mime },
+    payload: JSON.stringify({ file: { display_name: 'painel-' + Date.now() } }) });
+  var hd = ini.getAllHeaders(), url = hd['x-goog-upload-url'] || hd['X-Goog-Upload-URL'] || hd['X-Goog-Upload-Url'];
+  if (ini.getResponseCode() !== 200 || !url) throw falha_('O Google não aceitou o envio do áudio (código ' + ini.getResponseCode() + ').');
+  var off = 0, resp;
+  for (var i = 0; i < arqs.length; i++) {
+    var bytes = Utilities.base64Decode(arqs[i].getBlob().getDataAsString());
+    var ult = i === arqs.length - 1;
+    resp = UrlFetchApp.fetch(url, { method: 'post', muteHttpExceptions: true, contentType: m.mime,
+      headers: { 'X-Goog-Upload-Offset': String(off), 'X-Goog-Upload-Command': ult ? 'upload, finalize' : 'upload' }, payload: bytes });
+    if (resp.getResponseCode() !== 200) throw falha_('O envio do áudio ao Google parou no pedaço ' + (i + 1) + ' (código ' + resp.getResponseCode() + '). Tente de novo.');
+    off += bytes.length;
+  }
+  var f = (JSON.parse(resp.getContentText()) || {}).file || {};
+  for (var t = 0; t < 40 && f.state && f.state !== 'ACTIVE'; t++) {
+    if (f.state === 'FAILED') throw falha_('O Google não conseguiu ler esse arquivo de áudio. Tente outro formato (mp3, m4a, ogg, webm).');
+    Utilities.sleep(3000);
+    var g = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/' + f.name, { muteHttpExceptions: true, headers: { 'x-goog-api-key': chave } });
+    if (g.getResponseCode() === 200) f = JSON.parse(g.getContentText());
+  }
+  if (f.state && f.state !== 'ACTIVE') throw falha_('O Google ainda está processando o áudio. Tente "Transcrever" de novo em 1 minuto.');
+  return f;
+}
+function apagarArquivoGemini_(nome) {
+  try { UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/' + nome, { method: 'delete', muteHttpExceptions: true, headers: { 'x-goog-api-key': chaveIA_() } }); } catch (e) { /* o Google apaga sozinho em 48 h */ }
+}
+function promptTranscricao_(tipo, contexto) {
+  var quem = tipo === 'audiencia'
+    ? 'Juiz(a), Advogado(a) da parte autora, Advogado(a) da parte ré, Autor(a), Réu/Preposto, Testemunha 1, Testemunha 2, Perito(a)'
+    : 'Advogado(a), Cliente, Acompanhante';
+  return 'Transcreva INTEGRALMENTE, em português do Brasil, esta gravação de ' + (tipo === 'audiencia' ? 'uma audiência judicial' : 'um atendimento de escritório de advocacia') + '. ' +
+    'Identifique quem fala pelo papel (' + quem + '); use o nome informado no contexto só quando tiver certeza de quem é. ' +
+    'Cada fala começa numa nova linha, no formato "[mm:ss] Papel: texto". Não resuma, não corrija o conteúdo, não invente; trecho que não dá para entender = [inaudível]. ' +
+    'Mantenha números, datas e valores exatamente como ditos.' + (contexto ? '\n\nCONTEXTO INFORMADO PELA EQUIPE (nomes e papéis): ' + String(contexto).slice(0, 1500) : '');
+}
+function transcrever_(d, u) {
+  var m = audioMeta_(d.id, u);
+  var arqs = audioPartes_(d.id, m);
+  var f = subirAudioGemini_(arqs, m);
+  var tipo = d.tipo === 'audiencia' ? 'audiencia' : 'atendimento';
+  var r;
+  try {
+    var modelo = config_('TRANSCRICAO_MODELO') || modeloIA_().replace(/-lite$/, '');
+    r = geminiTexto_([{ file_data: { mime_type: f.mimeType || m.mime, file_uri: f.uri } }, { text: promptTranscricao_(tipo, d.contexto) }], { modelo: modelo, max: 65000, temp: 0 });
+  } finally { apagarArquivoGemini_(f.name); }
+  if (!r.texto) throw falha_('A IA não devolveu texto. O áudio tem fala? Tente de novo.');
+  var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)');
+  pasta.createFile(d.id + '_texto', r.texto, MimeType.PLAIN_TEXT);
+  arqs.forEach(function (a) { a.setTrashed(true); });
+  registrar_(u.usuario, 'transcrição', tipo + ' · ' + Math.round(m.tamanho / 1048576) + ' MB');
+  return { id: d.id, texto: r.texto, cortado: r.cortado };
+}
+function contextoProcesso_(p, u, limite) {
+  var cli = p.cliente_id ? (tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}) : {};
+  var nomes = [cli.nome, p.cliente_nome, p.parte_contraria].concat(String(p.parte_contraria || '').split(';')).filter(Boolean);
+  var lt = [];
+  try { lt = linhaDoTempo_({ id: p.id }, u).itens.slice(0, limite || 60).reverse(); } catch (e) { lt = []; }
+  var intims = tabela_('Intimacoes').linhas.filter(function (i) { return i.numero === p.numero && String(i.texto || '').length > 80; })
+    .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, 8).reverse();
+  var tr = tabela_('Transcricoes').linhas.filter(function (x) { return x.processo_id === p.id && x.resumo_equipe; }).slice(-3);
+  var partes = [
+    'PROCESSO: ' + [p.classe, p.area, p.orgao, p.tribunal].filter(Boolean).join(' · ') + ' · etapa no painel: ' + (FASES[faseDe_(p)] || faseDe_(p)) + ' · nosso cliente é ' + (p.polo || 'parte (polo não informado)'),
+    p.proximo_ato ? 'PRÓXIMO ATO: ' + p.proximo_ato + (p.proximo_ato_data ? ' em ' + dataBR_(p.proximo_ato_data) : '') : '',
+    cli.resumo_caso ? 'RESUMO DO CASO (ficha do cliente): ' + String(cli.resumo_caso).slice(0, 3000) : '',
+    lt.length ? 'HISTÓRICO (mais antigo primeiro):\n' + lt.map(function (x) { return String(x.quando).slice(0, 10) + ' — ' + x.tipo + ': ' + x.titulo + (x.detalhe ? ' (' + String(x.detalhe).slice(0, 200) + ')' : ''); }).join('\n') : '',
+    intims.length ? 'TEXTOS DAS INTIMAÇÕES/PUBLICAÇÕES:\n' + intims.map(function (i) { return '[' + String(i.recebido_em).slice(0, 10) + '] ' + String(i.movimento || '') + '\n' + String(i.texto).slice(0, 2500); }).join('\n\n') : '',
+    tr.length ? 'RESUMOS DE AUDIÊNCIAS/ATENDIMENTOS JÁ FEITOS:\n' + tr.map(function (x) { return '[' + x.data_ato + '] ' + x.titulo + '\n' + String(x.resumo_equipe).slice(0, 4000); }).join('\n\n') : ''
+  ].filter(Boolean).join('\n\n');
+  return { texto: anonimizar_(partes, nomes), nomes: nomes, cliente: cli };
+}
+function transcricaoResumo_(d, u) {
+  var tipo = d.tipo === 'audiencia' ? 'audiencia' : 'atendimento';
+  var texto = String(d.texto || '');
+  if (!texto && d.id) {
+    var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)'), it = pasta.getFilesByName(String(d.id) + '_texto');
+    if (it.hasNext()) texto = it.next().getBlob().getDataAsString();
+  }
+  texto = texto.trim();
+  if (texto.length < 80) throw falha_('A transcrição está vazia ou curta demais para resumir.');
+  var p = d.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === d.processo_id; })[0] : null;
+  var cli = d.cliente_id ? tabela_('Clientes').linhas.filter(function (x) { return x.id === d.cliente_id; })[0] : (p && p.cliente_id ? tabela_('Clientes').linhas.filter(function (x) { return x.id === p.cliente_id; })[0] : null);
+  var nomes = [cli && cli.nome, p && p.cliente_nome, p && p.parte_contraria].filter(Boolean);
+  var ctx = p ? contextoProcesso_(p, u, 30).texto : '';
+  var pedido = tipo === 'audiencia'
+    ? 'Esta é a transcrição de uma AUDIÊNCIA. Responda SOMENTE em JSON com as chaves: "titulo" (curto), "cliente" (texto para o CLIENTE, em português bem simples, ' +
+      'até 180 palavras: o que aconteceu na audiência, sem termos técnicos, sem prometer resultado, sem prazos internos; trate o cliente por "você"), ' +
+      '"equipe" (Markdown para a advogada com: ## Síntese; ## Depoimentos (um ### por depoente, com os pontos principais e o minuto [mm:ss]); ' +
+      '## Pontos favoráveis; ## Pontos desfavoráveis e contradições; ## Fatos confessados ou incontroversos; ## Provas pendentes / determinações do juiz; ' +
+      '## Próximos passos sugeridos (sem datas fatais: "conferir no tribunal"); ## Pontos para a advogada conferir).'
+    : 'Esta é a transcrição de um ATENDIMENTO a cliente. Responda SOMENTE em JSON com as chaves: "titulo" (curto), "cliente" (texto para o CLIENTE, em português bem simples, ' +
+      'até 180 palavras: o que conversamos, os próximos passos e os documentos que ele precisa mandar; sem prometer resultado; trate por "você"), ' +
+      '"equipe" (Markdown para a advogada com: ## Relato do cliente (fatos em ordem cronológica, com datas e valores citados); ## Pedidos e direitos possíveis (com [conferir]); ' +
+      '## Provas e documentos (os que o cliente tem e os que faltam); ## Testemunhas citadas; ## Riscos e pontos fracos; ## Prescrição e prazos a verificar; ' +
+      '## Perguntas que ficaram sem resposta; ## Próximos passos; ## Pontos para a advogada conferir), "documentos" (lista de documentos para pedir ao cliente).';
+  var r = geminiTexto_([{ text: pedido + (ctx ? '\n\nCONTEXTO DO PROCESSO:\n' + ctx : '') + '\n\nTRANSCRIÇÃO:\n' + anonimizar_(texto, nomes).slice(0, 400000) }],
+    { sistema: IA_SISTEMA_JURIDICO + ' Os nomes do cliente e da outra parte aparecem como [PARTE]: no texto para o cliente, chame-o de "você" e a outra parte de "a outra parte".', max: 12000, json: true, temp: 0.2 });
+  var o = jsonDaIA_(r.texto) || { cliente: '', equipe: r.texto };
+  var titulo = String(d.titulo || o.titulo || (tipo === 'audiencia' ? 'Audiência' : 'Atendimento')).slice(0, 140);
+  var docs = Array.isArray(o.documentos) ? o.documentos.map(String) : [];
+  var md = ['**Tipo:** ' + (tipo === 'audiencia' ? 'audiência' : 'atendimento') + ' · **Data:** ' + dataBR_(d.data_ato || hojeSP_()) + (p ? ' · **Processo:** ' + p.numero : '') + (cli ? ' · **Cliente:** ' + cli.nome : ''),
+    '> Rascunho feito com IA a partir da gravação. Conferir com a gravação/ata oficial antes de usar.',
+    '## Resumo para o cliente', String(o.cliente || ''), docs.length ? '## Documentos para pedir\n' + docs.map(function (x) { return '- ' + x; }).join('\n') : '',
+    '---', '# Análise para a equipe', String(o.equipe || ''), '---', '# Transcrição completa', texto].filter(Boolean).join('\n\n');
+  var pastaDoc = pastaDoClienteOu_(cli && cli.id, 'PASTA_IA_ID', 'PAINEL — DOCUMENTOS DA IA');
+  var g = docMarkdown_((tipo === 'audiencia' ? 'Audiência — ' : 'Atendimento — ') + titulo, md, pastaDoc, Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'));
+  var id = novoId_('R'), agora = new Date().toISOString();
+  comTrava_(function () {
+    inserirLinha_(tabela_('Transcricoes'), { id: id, criado_em: agora, criado_por: u.usuario, tipo: tipo, titulo: titulo, cliente_id: cli ? cli.id : '', processo_id: p ? p.id : '',
+      data_ato: d.data_ato || hojeSP_(), fonte: d.id ? 'áudio' : 'ao vivo', doc_url: g.url, resumo_cliente: String(o.cliente || '').slice(0, 8000),
+      resumo_equipe: String(o.equipe || '').slice(0, 45000), documentos: docs.join('\n').slice(0, 3000), publicado: '', publicado_em: '' });
+  });
+  if (d.id) apagarTemporarios_(d.id);
+  registrar_(u.usuario, 'resumo de ' + tipo, (cli ? cli.id + ' ' : '') + titulo);
+  return { id: id, doc: g.url, cliente: o.cliente || '', equipe: o.equipe || '', documentos: docs, telefone: cli ? cli.telefone : '', nome: cli ? cli.nome : '', titulo: titulo };
+}
+function transcricoesListar_(d) {
+  var cli = {}; tabela_('Clientes').linhas.forEach(function (c) { cli[c.id] = c.nome; });
+  var proc = {}; tabela_('Processos').linhas.forEach(function (p) { proc[p.id] = p.numero; });
+  return { itens: tabela_('Transcricoes').linhas.filter(function (x) { return (!d.cliente_id || x.cliente_id === d.cliente_id) && (!d.processo_id || x.processo_id === d.processo_id); })
+    .map(function (x) { var o = limpar_(x); o.cliente = cli[x.cliente_id] || ''; o.numero = proc[x.processo_id] || ''; delete o.resumo_equipe; return o; })
+    .sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 200) };
+}
+/** Publicar (ou tirar) o resumo no Acompanhe do cliente. O texto pode ser corrigido antes. */
+function transcricaoPublicar_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Transcricoes'), x = t.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!x) throw falha_('Resumo não encontrado.');
+    if (!x.cliente_id && !x.processo_id) throw falha_('Ligue o resumo a um cliente ou processo antes de publicar.');
+    var m = {};
+    if (d.texto !== undefined) m.resumo_cliente = String(d.texto).trim().slice(0, 8000);
+    if (d.publicar !== undefined) { m.publicado = d.publicar ? 'sim' : ''; m.publicado_em = d.publicar ? new Date().toISOString() : ''; }
+    atualizarLinha_(t, x, m);
+    registrar_(u.usuario, d.publicar ? 'resumo publicado no Acompanhe' : 'resumo alterado', x.id);
+    return { ok: true };
+  });
+}
+
+/* ================================================================== */
+/* Peças com IA: análise processual, dossiê da audiência, mapa da prova */
+/* ================================================================== */
+var PECAS_IA = {
+  analise: { nome: 'Análise processual completa', tarefa: 'Faça uma ANÁLISE PROCESSUAL completa com: ## Síntese do caso; ## Linha do tempo dos fatos e atos (tabela | Data | Fato/ato | Fonte |); ## Pedidos e defesas; ## Pontos controvertidos; ## Provas já produzidas e pendentes; ## Pontos fortes; ## Pontos fracos e riscos (classifique: alto/médio/baixo); ## Situação atual e próximos atos; ## Estratégia sugerida (opções, com prós e contras); ## Pontos para a advogada conferir.' },
+  dossie: { nome: 'Dossiê estratégico da audiência de instrução', tarefa: 'Monte o DOSSIÊ ESTRATÉGICO para a AUDIÊNCIA DE INSTRUÇÃO com: ## 1. Síntese do caso em 10 linhas; ## 2. Tese do nosso cliente (o que precisamos provar) e tese contrária; ## 3. Pontos controvertidos (numerados); ## 4. Mapa da prova (tabela | Fato a provar | Ônus da prova (art. 373 CPC / art. 818 CLT [conferir]) | Prova que já temos | Prova a produzir na audiência | Quem pode provar | Situação (provado/parcial/sem prova) |); ## 5. Estratégia para a audiência (ordem, o que priorizar, o que evitar); ## 6. Roteiro de perguntas — depoimento pessoal da parte contrária (perguntas fechadas e objetivas, ligadas a cada ponto controvertido); ## 7. Roteiro de perguntas — nossas testemunhas; ## 8. Roteiro de perguntas — testemunhas da outra parte (incluindo hipóteses de contradita, art. 457 CPC / art. 829 CLT [conferir]); ## 9. Possíveis requerimentos e protestos na audiência; ## 10. Proposta de acordo: faixa de valores a avaliar e pontos de negociação (sem números inventados); ## 11. Preparação do cliente (checklist e o que ele deve e não deve dizer — sempre a verdade); ## 12. Checklist do dia (documentos, link/sala, horário, testemunhas, intimações); ## Pontos para a advogada conferir.' },
+  mapa: { nome: 'Mapa da prova', tarefa: 'Monte o MAPA DA PROVA: ## Pontos controvertidos; ## Mapa (tabela | Nº | Fato a provar | Quem tem o ônus [conferir] | Documento/prova existente (com folha/evento se o material indicar) | Prova a produzir | Testemunha que sabe | Força (forte/média/fraca) |); ## Lacunas de prova e como cobrir; ## Documentos a pedir ao cliente; ## Pontos para a advogada conferir.' },
+  roteiro: { nome: 'Roteiro de perguntas (depoimentos e testemunhas)', tarefa: 'Monte o ROTEIRO DE PERGUNTAS para a audiência: ## Objetivo de cada oitiva; ## Depoimento pessoal da parte contrária (perguntas curtas e fechadas, agrupadas por ponto controvertido, indicando o que queremos que fique registrado); ## Nossas testemunhas (perguntas abertas para o relato + perguntas de reforço; o que NÃO perguntar); ## Testemunhas da outra parte (perguntas para testar conhecimento direto dos fatos, tempo de convivência, interesse no resultado; hipóteses de contradita); ## Perguntas que o juiz provavelmente fará; ## Pontos para a advogada conferir.' },
+  cliente: { nome: 'Preparação do cliente para a audiência', tarefa: 'Escreva um GUIA DE PREPARAÇÃO para o CLIENTE, em linguagem simples, com: ## Como vai ser a audiência (quem estará, ordem, duração aproximada); ## O que levar; ## Como se comportar; ## Perguntas que podem ser feitas a você (com orientação de responder sempre a verdade, com calma e só o que sabe); ## O que evitar; ## Depois da audiência. Não oriente a mentir nem a omitir.' },
+  recurso: { nome: 'Análise de decisão para recurso', tarefa: 'Analise a DECISÃO/SENTENÇA do material: ## Dispositivo (o que foi decidido, item a item); ## Fundamentos usados pelo juiz; ## Pontos em que perdemos (total/parcial); ## Possíveis erros (de fato, de direito, omissão, contradição, obscuridade); ## Cabimento: embargos de declaração, recurso ordinário/apelação/inominado [conferir prazo e preparo no tribunal]; ## Teses recursais sugeridas, com força de cada uma; ## Riscos de recorrer; ## Pontos para a advogada conferir.' },
+  peticao: { nome: 'Revisão de petição', tarefa: 'REVISE a petição do material: ## Avaliação geral; ## Estrutura e lógica (fatos → fundamentos → pedidos); ## Pedidos (estão certos, líquidos, coerentes com os fatos?); ## Provas citadas e as que faltam; ## Linguagem (clareza, frases longas, repetições) com sugestões de reescrita dos trechos (cite o trecho original e a sugestão); ## Padrão do escritório (títulos em maiúsculas, artigos citados, endereçamento); ## Pontos para a advogada conferir. Não reescreva a peça inteira.' },
+  livre: { nome: 'Pedido livre', tarefa: '' }
+};
+function pecaIA_(d, u) {
+  var tipo = PECAS_IA[d.tipo] ? d.tipo : 'livre';
+  var p = d.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === d.processo_id; })[0] : null;
+  var ctx = p ? contextoProcesso_(p, u, 80) : { texto: '', nomes: [] };
+  var material = String(d.material || '').slice(0, 300000);
+  var instr = String(d.instrucao || '').slice(0, 20000);
+  if (!p && material.length < 200 && !instr) throw falha_('Escolha um processo ou cole o material (petição, contestação, ata, documentos) para a IA analisar.');
+  var tarefa = tipo === 'livre' ? (instr || 'Analise o material.') : PECAS_IA[tipo].tarefa + (instr ? '\n\nINSTRUÇÕES DA ADVOGADA: ' + instr : '');
+  var nomesExtras = String(d.nomes || '').split(/[;\n]/).map(function (x) { return x.trim(); }).filter(Boolean);
+  var corpo = 'TAREFA:\n' + tarefa + (ctx.texto ? '\n\nDADOS DO PAINEL:\n' + ctx.texto : '') + (material ? '\n\nMATERIAL COLADO PELA EQUIPE:\n' + anonimizar_(material, ctx.nomes.concat(nomesExtras)) : '');
+  var r = geminiTexto_([{ text: corpo }], { sistema: IA_SISTEMA_JURIDICO, max: 16000, temp: 0.25 });
+  if (!r.texto) throw falha_('A IA não devolveu texto. Tente de novo.');
+  registrar_(u.usuario, 'peça com IA', (PECAS_IA[tipo].nome || tipo) + (p ? ' · ' + p.numero : ''));
+  return { texto: r.texto + (r.cortado ? '\n\n> (A resposta da IA ficou incompleta por ser longa. Peça de novo só a parte que faltou.)' : ''), titulo: PECAS_IA[tipo].nome || 'Análise', processo: p ? p.numero : '', cliente_id: p ? p.cliente_id : (d.cliente_id || '') };
+}
+function pecaDoc_(d, u) {
+  var texto = String(d.texto || '').trim();
+  if (texto.length < 40) throw falha_('Não há texto para salvar.');
+  var p = d.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === d.processo_id; })[0] : null;
+  var cliId = d.cliente_id || (p && p.cliente_id) || '';
+  var pasta = pastaDoClienteOu_(cliId, 'PASTA_IA_ID', 'PAINEL — DOCUMENTOS DA IA');
+  var titulo = String(d.titulo || 'Análise').slice(0, 120);
+  var g = docMarkdown_(titulo, '> RASCUNHO feito com apoio de IA — revisar antes de usar. A IA auxilia, não substitui a análise da advogada.\n\n' + texto, pasta,
+    (p ? 'Processo ' + p.numero + ' · ' : '') + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'));
+  DriveApp.getFileById(g.id).setName(titulo + (p ? ' — ' + p.numero : '') + ' — ' + Utilities.formatDate(new Date(), TZ, 'dd-MM-yyyy'));
+  registrar_(u.usuario, 'documento da IA salvo', titulo + (cliId ? ' ' + cliId : ''));
+  return { doc: g.url };
+}
+
+/* ---------- Biblioteca de prompts da equipe (os prontos ficam no painel; aqui só os criados pelo escritório) ---------- */
+function promptsListar_() { return { itens: tabela_('Prompts').linhas.map(limpar_).sort(function (a, b) { return a.titulo < b.titulo ? -1 : 1; }) }; }
+function promptsSalvar_(d, u) {
+  return comTrava_(function () {
+    var t = tabela_('Prompts'), x = d.item || {}, agora = new Date().toISOString();
+    if (d.apagar) {
+      var a = t.linhas.filter(function (r) { return r.id === d.apagar; })[0];
+      if (a && (a.criado_por === u.usuario || u.perfil === 'administrador')) apagarLinha_(t, a);
+      return { ok: true };
+    }
+    var titulo = String(x.titulo || '').trim().slice(0, 120), texto = String(x.texto || '').trim().slice(0, 20000);
+    if (!titulo || texto.length < 20) throw falha_('Preencha o título e o texto do prompt.');
+    if (x.id) {
+      var l = t.linhas.filter(function (r) { return r.id === x.id; })[0];
+      if (!l) throw falha_('Prompt não encontrado.');
+      atualizarLinha_(t, l, { titulo: titulo, categoria: String(x.categoria || 'Do escritório').slice(0, 60), texto: texto, atualizado_em: agora });
+      return { id: l.id };
+    }
+    var id = novoId_('Q');
+    inserirLinha_(t, { id: id, titulo: titulo, categoria: String(x.categoria || 'Do escritório').slice(0, 60), texto: texto, criado_por: u.usuario, criado_em: agora, atualizado_em: agora });
+    return { id: id };
+  });
+}
+
+/* ================================================================== */
+/* Recibos e painel financeiro                                         */
+/* ================================================================== */
+function recibosListar_(d) {
+  var cli = mapaClientes_(), hons = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var busca = normalizar_(d.busca || ''), mes = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : '';
+  var itens = tabela_('Parcelas').linhas.filter(function (p) { return p.pago_em && (!mes || p.pago_em.slice(0, 7) === mes); }).map(function (p) {
+    var c = cli[p.cliente_id] || {};
+    return { id: p.id, cliente_id: p.cliente_id, cliente: c.nome || '', telefone: c.telefone || '', numero: p.numero, pago_em: p.pago_em.slice(0, 10),
+      valor: dinheiro_(p.valor_pago) || dinheiro_(p.valor), forma: p.forma || '', honorario: (hons[p.honorario_id] || {}).descricao || '', recibo_url: p.recibo_url || '' };
+  }).filter(function (x) { return !busca || normalizar_(x.cliente + ' ' + x.honorario).indexOf(busca) >= 0; })
+    .sort(function (a, b) { return a.pago_em < b.pago_em ? 1 : -1; });
+  return { itens: itens.slice(0, 400), total: itens.length, soma: Math.round(itens.reduce(function (t, x) { return t + x.valor; }, 0) * 100) / 100 };
+}
+function reciboGerar_(d, u) {
+  var tab = tabela_('Parcelas'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!p || !p.pago_em) throw falha_('Parcela paga não encontrada.');
+  var r = reciboDaParcela_({ honorario_id: p.honorario_id, cliente_id: p.cliente_id, numero: p.numero, data: p.pago_em.slice(0, 10), forma: p.forma, valor: dinheiro_(p.valor_pago) || dinheiro_(p.valor) }, u);
+  guardarRecibo_(p.id, r.pdf || r.doc);
+  return r;
+}
+function guardarRecibo_(parcelaId, url) {
+  if (!url) return;
+  try { comTrava_(function () { var t = tabela_('Parcelas'), x = t.linhas.filter(function (r) { return r.id === parcelaId; })[0]; if (x) atualizarLinha_(t, x, { recibo_url: url }); }); } catch (e) { /* segue */ }
+}
+function painelFinanceiro_(d) {
+  var hoje = hojeSP_(), mes = hoje.slice(0, 7), meses = mesesAtras_(hoje, 12);
+  var fluxo = fluxoMensal_(meses), r2 = function (v) { return Math.round(v * 100) / 100; };
+  var hons = {}, procs = {}, clis = mapaClientes_();
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  var porArea = {}, venc90 = 0, pago90 = 0, devedores = {}, aberto = 0, previsto = {};
+  var em90 = somarDias_(hoje, -90), fut = mesesAFrente_(hoje, 3);
+  fut.forEach(function (m) { previsto[m] = 0; });
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var h = hons[p.honorario_id] || {};
+    if (['cancelado'].indexOf(h.situacao) >= 0) return;
+    var v = dinheiro_(p.valor), pg = dinheiro_(p.valor_pago);
+    if (p.pago_em && p.pago_em.slice(0, 10) >= somarDias_(hoje, -365)) {
+      var area = (procs[h.processo_id] || {}).area || (clis[p.cliente_id] || {}).area || 'Sem área';
+      porArea[area] = r2((porArea[area] || 0) + (pg || v));
+    }
+    if (p.vencimento >= em90 && p.vencimento < hoje) { venc90 += v; if (p.pago_em) pago90 += Math.min(v, pg || v); }
+    if (!p.pago_em && ['encerrado', 'quitado'].indexOf(h.situacao) < 0) {
+      var saldo = v - pg; aberto += saldo;
+      if (p.vencimento < hoje) { var dv = devedores[p.cliente_id] = devedores[p.cliente_id] || { cliente_id: p.cliente_id, cliente: (clis[p.cliente_id] || {}).nome || '', valor: 0, parcelas: 0, desde: p.vencimento }; dv.valor = r2(dv.valor + saldo); dv.parcelas++; if (p.vencimento < dv.desde) dv.desde = p.vencimento; }
+      var k = (p.vencimento || '').slice(0, 7); if (previsto[k] !== undefined) previsto[k] = r2(previsto[k] + saldo);
+    }
+  });
+  var atual = fluxo.filter(function (f) { return f.mes === mes; })[0] || { entradas: 0, saidas: 0 };
+  var anterior = fluxo[fluxo.length - 2] || { entradas: 0 };
+  var ult3 = fluxo.slice(-4, -1), media3 = ult3.length ? r2(ult3.reduce(function (t, f) { return t + f.entradas; }, 0) / ult3.length) : 0;
+  var resumo = resumoFinanceiro_();
+  var contratosMes = tabela_('Assinaturas').linhas.filter(function (a) { return a.situacao === 'assinado' && String(a.assinado_em).slice(0, 7) === mes; }).length;
+  var exitos = tabela_('Honorarios').linhas.filter(function (h) { return h.tipo === 'exito' && ['cancelado', 'encerrado', 'quitado'].indexOf(h.situacao) < 0; }).length;
+  return {
+    hoje: hoje, mes: mes, fluxo: fluxo,
+    kpis: { recebidoMes: atual.entradas, recebidoAnterior: anterior.entradas, media3: media3, despesasMes: atual.saidas, saldoMes: r2(atual.entradas - atual.saidas),
+      aReceber30: resumo.totais.aReceber30, atrasado: resumo.totais.atrasado, clientesAtrasados: resumo.totais.clientesAtrasados, totalAberto: r2(aberto),
+      inadimplencia: venc90 ? Math.max(0, Math.min(100, Math.round((1 - pago90 / venc90) * 100))) : 0, contratosMes: contratosMes, exitosAbertos: exitos },
+    previsao: fut.map(function (m) { return { mes: m, valor: previsto[m] }; }),
+    porArea: Object.keys(porArea).map(function (k) { return { area: k, valor: porArea[k] }; }).sort(function (a, b) { return b.valor - a.valor; }),
+    devedores: Object.keys(devedores).map(function (k) { return devedores[k]; }).sort(function (a, b) { return b.valor - a.valor; }).slice(0, 8),
+    faixas: resumo.faixas
+  };
+}
+
+/* ================================================================== */
+/* Calculadoras (servidor: prazo com feriados e índices do Banco Central) */
+/* ================================================================== */
+function calcPrazo_(d) {
+  var ini = String(d.inicio || ''), dias = parseInt(d.dias, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !(dias > 0 && dias <= 3650)) throw falha_('Informe a data da intimação/ciência e o número de dias.');
+  var fer = mapaFeriados_(), trib = String(d.tribunal || '');
+  var fatal = calcularFatal_(ini, dias, d.contagem === 'corridos' ? 'corridos' : 'uteis', trib, fer);
+  var pulados = [], dia = ini;
+  while (dia < fatal && pulados.length < 60) { dia = somarDias_(dia, 1); if (!ehUtil_(dia, trib, fer, d.contagem === 'corridos')) pulados.push(dia); }
+  var nomes = {};
+  try { tabela_('Feriados').linhas.forEach(function (f) { nomes[f.data] = f.descricao; }); } catch (e) { /* segue */ }
+  FERIADOS_BASE.forEach(function (f) { nomes[f[0]] = nomes[f[0]] || f[1]; });
+  return { fatal: fatal, pulados: pulados.map(function (x) { var w = new Date(x + 'T12:00:00Z').getUTCDay(); return { data: x, motivo: nomes[x] || (w === 0 ? 'domingo' : w === 6 ? 'sábado' : (x.slice(5) >= '12-20' || x.slice(5) <= '01-20' ? 'recesso forense (20/12 a 20/01)' : 'sem expediente')) }; }) };
+}
+var SERIES_BCB = { ipca: 433, inpc: 188, ipcae: 10764, selic: 4390, igpm: 189 };
+function calcIndices_(d) {
+  var serie = SERIES_BCB[d.serie];
+  if (!serie) throw falha_('Índice inválido.');
+  var de = String(d.de || ''), ate = String(d.ate || '');
+  if (!/^\d{4}-\d{2}$/.test(de) || !/^\d{4}-\d{2}$/.test(ate) || de > ate) throw falha_('Informe o mês inicial e o final.');
+  var k = 'bcb_' + serie + '_' + de + '_' + ate, cache = CacheService.getScriptCache(), c = cache.get(k);
+  if (c) return JSON.parse(c);
+  var url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.' + serie + '/dados?formato=json&dataInicial=01/' + de.slice(5) + '/' + de.slice(0, 4) + '&dataFinal=28/' + ate.slice(5) + '/' + ate.slice(0, 4);
+  var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { Accept: 'application/json' } });
+  if (r.getResponseCode() !== 200) throw falha_('O Banco Central não respondeu agora (código ' + r.getResponseCode() + '). Tente de novo em alguns minutos.');
+  var lista = [];
+  try { lista = JSON.parse(r.getContentText()).map(function (x) { var p = String(x.data).split('/'); return { mes: p[2] + '-' + p[1], valor: parseFloat(String(x.valor).replace(',', '.')) }; }); } catch (e) { throw falha_('Resposta estranha do Banco Central.'); }
+  var res = { serie: d.serie, itens: lista };
+  try { cache.put(k, JSON.stringify(res), 21600); } catch (e2) { /* segue */ }
+  return res;
 }

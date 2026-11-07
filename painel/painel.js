@@ -48,7 +48,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -325,7 +325,7 @@
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
-  const EM_LOTE = new Set(['fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+  const EM_LOTE = new Set(['ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
@@ -595,17 +595,34 @@
     usuarios: 'M12 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5'
   };
   const CANAIS_CONHECEU = ['Google Ads (anúncio)', 'Google (pesquisa ou mapa)', 'Site', 'Instagram / Facebook', 'Indicação', 'Já era cliente', 'Outro'];
+  // 8.12 (pedido da usuária): Relacionamento (CRM e Marketing), Documentos (com calculadoras e padrões), Inteligência (IA) e Gestão
+  Object.assign(ICONES, {
+    crm: 'M3.5 5h17l-6.5 7.5V18l-4 2.5v-8z',
+    calculadoras: 'M6 3.5h12v17H6zM8.5 6.5h7v3h-7zM8.5 13h2M13.5 13h2M8.5 16.5h2M13.5 16.5h2',
+    padroes: 'M12 3.5l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9v-5zM9 12l2 2 4-4',
+    transcricao: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3ZM6 11.5a6 6 0 0 0 12 0M12 17.5v3M9 20.5h6',
+    pecas: 'M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8zM18 15l.9 2.1 2.1.9-2.1.9L18 21l-.9-2.1-2.1-.9 2.1-.9z',
+    prompts: 'M4 5.5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5.5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z',
+    recibos: 'M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 11.5h6M9 15h3'
+  });
   const ABAS = [
     ['inicio', 'Início', 'Escritório'],
     ['clientes', 'Clientes e processos', 'Escritório'],
     ['prazos', 'Intimações e prazos', 'Escritório'],
     ['tarefas', 'Tarefas', 'Escritório'],
     ['agenda', 'Agenda', 'Escritório'],
-    ['modelos', 'Modelos', 'Documentos'],
-    ['financeiro', 'Financeiro', 'Gestão', 'financeiro'],
+    ['crm', 'CRM / Funil', 'Relacionamento'],
+    ['marketing', 'Marketing', 'Relacionamento', 'usuarios'],
+    ['modelos', 'Documentos e propostas', 'Documentos'],
+    ['calculadoras', 'Calculadoras', 'Documentos'],
+    ['padroes', 'Padrões operacionais', 'Documentos'],
+    ['transcricao', 'Transcrição e resumos', 'Inteligência'],
+    ['pecas', 'Peças com IA', 'Inteligência'],
+    ['prompts', 'Biblioteca de prompts', 'Inteligência'],
+    ['financeiro', 'Painel financeiro', 'Gestão', 'financeiro'],
+    ['recibos', 'Recibos', 'Gestão', 'financeiro'],
     ['relatorios', 'Relatórios', 'Gestão', 'usuarios'],
-    ['marketing', 'Marketing (site e Google)', 'Gestão', 'usuarios'],
-    ['usuarios', 'Usuários', 'Gestão', 'usuarios']
+    ['usuarios', 'Gerenciar acessos', 'Gestão', 'usuarios']
   ];
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
@@ -2194,7 +2211,7 @@
         h('li', { class: seg.falhasRecentes ? 'alerta' : 'ok' }, h('strong', {}, 'Tentativas de entrada erradas (7 dias): '), String(seg.falhasRecentes)),
         h('li', { class: 'ok' }, h('strong', {}, 'Registro: '), 'todo login, alteração e acesso negado fica na aba Log da planilha'))) : null;
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Usuários'), h('p', {}, 'Quem pode entrar no painel e o que cada um vê.'))),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Gerenciar acessos'), h('p', {}, 'Quem pode entrar no painel, o que cada perfil vê, senhas, bloqueios e a segurança dos dados.'))),
       caixaSeg,
       tabela(['Nome', 'Usuário', 'Perfil', 'Situação', 'Último acesso'], lista, u => [
         h('td', { 'data-r': 'Nome' }, u.nome),
@@ -2561,7 +2578,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.11.2';
+  const VERSAO_PAINEL = '8.12.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3369,12 +3386,12 @@
         ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
     mostrar(
       h('header', { class: 'carteira-topo' },
-        h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Honorários e caixa'), h('h1', {}, 'Financeiro'),
+        h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Gestão'), h('h1', {}, 'Painel financeiro'),
           h('p', {}, rh ? 'Você lança, dá baixa e cobra; só os totais a receber ficam com a administração.' : 'Tudo o que entra: parcelas, cobranças e PIX do Inter.')),
         h('div', { class: 'carteira-acoes' },
           h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
           rh ? null : h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
-          h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'))),
+          h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'), h('a', { class: 'btn sec', href: '#/recibos' }, 'Recibos'))),
       h('section', { class: 'fin-nums' },
         num('verde', rh ? '—' : reais(t.recebidoMes), 'Recebido no mês', rh ? 'total só para a administração' : 'parcelas pagas neste mês'),
         num('dourado', rh ? '—' : reais(t.aReceber30), 'A receber', rh ? 'total só para a administração' : 'nos próximos 30 dias'),
@@ -3388,6 +3405,14 @@
           aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'Próximos 30 dias', r.proximas.length),
           aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('antigos', '📥 Do sistema antigo', null)),
         conteudo));
+    // 8.12 (pedido da usuária): o painel de como estão as finanças, logo abaixo dos números (some para o RH, que não vê totais)
+    if (!rh && window.GESTAO) {
+      let aberto = true; try { aberto = localStorage.getItem('fin_painel') !== 'fechado'; } catch (e) { /* ok */ }
+      const det = h('details', { class: 'caixa secao pf-secao', open: aberto }, h('summary', {}, '📊 Como estão as finanças'), h('p', { class: 'peq' }, 'Montando o painel…'));
+      det.addEventListener('toggle', () => { try { localStorage.setItem('fin_painel', det.open ? 'aberto' : 'fechado'); } catch (e) { /* ok */ } });
+      const ref = app.querySelector('.fin-corpo'); if (ref) ref.before(det);
+      window.GESTAO.blocoPainelFinanceiro().then(el => { if (el) det.lastChild.replaceWith(el); else det.remove(); }).catch(() => det.remove());
+    }
   }
 
   /** 8.11: honorários que estão nos contratos/promissórias/GEA (planilha do levantamento) e ainda não estão no painel. Nada é lançado sozinho. */
@@ -3611,9 +3636,9 @@
     const assinTopo = h('div');
     // 8.6.0 (pedido da usuária): "Aguardando assinatura" fica só em Clientes; em Modelos não aparece mais
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Modelos'),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Documentos e propostas'),
         h('p', {}, 'Escolha o cliente, o(a) advogado(a), o tipo de ação e os documentos. O painel preenche com o cadastro e salva na pasta do cliente em PDF e Google Docs.')),
-        h('div', { class: 'barra' }, botao('📋 Copiar o padrão de petições (para IA)', async ev => {
+        h('div', { class: 'barra' }, botao('📄 Proposta de honorários', () => G().dialogoProposta(null, null), 'dourado'), h('a', { class: 'btn sec', href: '#/calculadoras' }, 'Calculadoras'), botao('📋 Copiar o padrão de petições (para IA)', async ev => {
           // 8.11: o comando do escritório para qualquer IA (formatação, estrutura, artigos, jurisprudência, cálculos, pedidos)
           try {
             const t = await (await fetch('/painel/padrao-peticoes.md?v=' + VERSAO_PAINEL, { cache: 'no-cache' })).text();
@@ -4520,7 +4545,12 @@ function main() {
       } catch (e) { avisar(e.message, true); ev.target.textContent = '✨ Resumir o processo com IA'; }
       ev.target.disabled = false;
     }, 'sec');
-    return h('section', { class: 'caixa' }, h('div', { class: 'bloco-cab' }, h('h2', {}, 'Como está o processo?'), bt), corpo);
+    const atalhos = h('div', { class: 'ia-atalhos' },
+      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=dossie&processo=' + p.id }, '🎯 Dossiê da audiência'),
+      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=mapa&processo=' + p.id }, 'Mapa da prova'),
+      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=analise&processo=' + p.id }, 'Análise completa'),
+      h('a', { class: 'btn mini sec', href: '#/transcricao?tipo=audiencia&processo=' + p.id }, '🎙 Transcrever audiência'));
+    return h('section', { class: 'caixa' }, h('div', { class: 'bloco-cab' }, h('h2', {}, 'Como está o processo?'), bt), atalhos, corpo);
   }
   /** 8.7.0: linha do tempo — andamentos, intimações, prazos, audiências, tarefas e documentos numa lista só. */
   function blocoLinhaTempo(p) {
@@ -4631,6 +4661,7 @@ function main() {
     if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['inicio', 'clientes', 'prazos', 'tarefas'].forEach(preBuscar), 1200); }
     sujo = false;
     const detAg = document.getElementById('ag-detalhe'); if (detAg) detAg.hidden = true;
+    document.querySelectorAll('dialog.g-dialogo[open]').forEach(d => d.close()); // 8.12: janela aberta não fica por cima da tela nova
     window.scrollTo(0, 0);
     const n = ++rotaN;
     vezAtual = n;
@@ -4653,6 +4684,13 @@ function main() {
         case 'relatorios': await telaRelatorios(params); break;
         case 'marketing': await telaMarketing(params); break;
         case 'organizar': await telaOrganizar(params); break;
+        case 'crm': await G().telaCrm(params); break;
+        case 'calculadoras': await G().telaCalculadoras(params); break;
+        case 'transcricao': await G().telaTranscricao(params); break;
+        case 'pecas': await G().telaPecas(params); break;
+        case 'prompts': await G().telaPrompts(params); break;
+        case 'padroes': await G().telaPadroes(params); break;
+        case 'recibos': await G().telaRecibos(params); break;
         case 'honorario': await telaHonorario(id, params); break;
         case 'future':
           if (!sessao.usuario.pode.future) { mostrar(h('div', { class: 'nota alerta' }, 'Você não tem acesso ao painel do Edifício Future.')); break; }
@@ -4666,8 +4704,10 @@ function main() {
     }
   }
 
-  /* Ferramentas do painel para o módulo do Edifício Future (future.js) */
-  window.PAINEL_KIT = { h, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao,
+  /* 8.12: telas de gestão (gestao.js). Sem o arquivo (cache velho), pede para atualizar. */
+  function G() { if (!window.GESTAO) throw new Error('Atualize a página (F5) para abrir esta tela.'); return window.GESTAO; }
+  /* Ferramentas do painel para o módulo do Edifício Future (future.js) e as telas de gestão (gestao.js) */
+  window.PAINEL_KIT = { h, s, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao, telefoneWhats, grafRosca, grafBarras, comSetas,
     nomeProprioJS, primeiroNome, icone, get sessao() { return sessao; }, rota: () => rota() };
 
   window.addEventListener('hashchange', rota);

@@ -720,3 +720,37 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   no `configurar`; se atrasar mais de 7,5 dias, a cópia diária das 3h faz a da semana. Status no quadro "Segurança dos dados".
 - Abas da planilha protegidas com aviso contra edição manual. Pedidos acima de 200 mil caracteres são recusados.
 - Nunca colocar senha, CPF ou dado de cliente no repositório (é público).
+
+## 8.12.0 (nov/2026: conferência geral + gestão, pedidos da usuária)
+
+- Menu novo (`ABAS`): Escritório · Relacionamento (CRM / Funil, Marketing) · Documentos (Documentos e propostas = antiga Modelos, Calculadoras,
+  Padrões operacionais) · Inteligência (Transcrição e resumos, Peças com IA, Biblioteca de prompts) · Gestão (Painel financeiro, Recibos,
+  Relatórios, Gerenciar acessos = antiga Usuários). Telas novas em painel/gestao.js (`window.GESTAO`, carrega ANTES do painel.js, usa
+  `PAINEL_KIT`). CSP do painel: nunca `style="…"` no HTML (é bloqueado); cor por `el.style.setProperty` (CSSOM).
+- CRM (aba Leads; rotas `crm.*`): etapas novo → contato → consulta → atendido → proposta → negociação → ganho/perdido (motivo obrigatório).
+  Pedido de retorno do site vira lead sozinho (`crmSincronizar_`, também nos robôs do escritório); lead ligado a cliente com Assinatura
+  "assinado" vira ganho, "desistiu" vira perdido. "Virou cliente" (`crm.converter`) cria cadastro mínimo (origem "funil (CRM)") ou liga ao
+  existente. Métricas: conversão 180 dias, tempo de 1ª resposta (mediana), por canal, motivos de perda, funil acumulado.
+- Proposta de honorários (`crm.proposta`, `gerarProposta_`): Doc + PDF no padrão do escritório (pasta do cliente ou "PAINEL — PROPOSTAS DE
+  HONORÁRIOS"), inclui/não inclui por área, honorários fixo/êxito/misto/mensal, "como trabalhamos", obrigação de meio, validade. Botão no
+  funil e em Documentos e propostas. `docMarkdown_` = Markdown → Google Docs com o padrão visual (títulos, listas, tabelas).
+- Calculadoras do painel: rescisão (mesma regra do site + médias), prescrição trabalhista, prazo processual (`calc.prazo` = mesmo cálculo
+  do robô), correção e juros (`calc.indices`: BCB SGS IPCA 433, INPC 188, IPCA-E 10764, Selic 4390, IGP-M 189; taxa legal = Selic − IPCA),
+  honorários/parcelas e entre datas. Tudo "estimativa: conferir".
+- Transcrição (aba Transcricoes): gravar no navegador (Web Speech ao vivo + MediaRecorder 24 kbps), enviar áudio (até 45 MB, pedaços de 3 MB
+  → `ia.audioParte`, pedido de até 4,4 MB só nessa rota; pasta temporária apagada em 2 dias) ou colar texto. Gemini Files API (upload
+  resumable) transcreve com "[mm:ss] Papel:"; `ia.transcricaoResumo` faz resumo para o cliente + análise da equipe + Doc. Consentimento
+  obrigatório para gravar. "Publicar no Acompanhe" (`ia.transcricaoPublicar`) mostra o resumo ao cliente em /acompanhe/ (`resumos`/`comunicados`).
+- Peças com IA (`ia.peca`/`ia.pecaDoc`, `PECAS_IA`): dossiê da audiência de instrução, mapa da prova, roteiro de perguntas, análise
+  completa, preparação do cliente, análise para recurso, revisão de petição, livre. Junta histórico, intimações, resumo do caso e
+  transcrições do processo, tudo anonimizado. `IA_SISTEMA_JURIDICO`: nunca inventar, "[NÃO CONSTA — conferir]", sem julgados, sem datas fatais.
+  Princípio da usuária em todas as telas de IA: "a IA está aqui para nos auxiliar, nunca para nos substituir".
+- Biblioteca de prompts: prontos em gestao.js (`PROMPTS`) + os do escritório (aba Prompts). Padrões operacionais (aba Padroes, semeada com
+  `PADROES_INICIAIS`: guia do cliente e POPs da equipe; edita só administração/advogada; "Gerar o guia em PDF" `padroes.guia`).
+- Painel financeiro (`fin.painel`, escondido do RH): KPIs, 12 meses entradas × saídas, previsão 3 meses, recebido por área, maiores atrasos.
+  Recibos (`fin.recibos`, `fin.recibo.gerar`; coluna nova `recibo_url` em Parcelas, gravada ao pagar).
+- Conferência (segurança/velocidade/dados): senha nova com 8+ caracteres, letras e números, sem o usuário; robô solta a trava antes do
+  Future e do PIX; painel repete sozinho a gravação quando o robô está gravando ("sistema ocupado"); tempo de robô do dia
+  (`contarTempoRobo_`, limite de 90 min do Google; alerta em 70) e alerta de robô parado há 3 h no vigia; aquecedor só no horário do
+  escritório; Log com mais de 4.000 linhas passa o que tem mais de 180 dias para LogArquivo (`arquivarLog_`).
+- Site: aviso de cookies compacto (não cobre a abertura), rodapé com alvos de toque de 40 px e mais contraste, abertura mais objetiva.

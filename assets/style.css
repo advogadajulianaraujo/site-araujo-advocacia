@@ -660,3 +660,19 @@ h1 em,h2 em{color:var(--gold-d)}
 .util-entrar:hover{color:#fff}
 .nav > a.nav-entrar{display:none}
 @media (max-width:920px){.nav > a.nav-entrar{display:block;order:99;color:#8f897e;font-size:11px}}
+
+/* 2026.3 (revisão geral): aviso de cookies discreto (não cobre mais a abertura), rodapé com alvos de toque maiores e mais contraste */
+.measurement-banner{left:20px;bottom:20px;max-width:380px;padding:16px 18px;font-size:13px;line-height:1.5;border:1px solid rgba(0,0,0,.12);border-radius:14px;box-shadow:0 16px 40px -12px rgba(0,0,0,.35)}
+.measurement-banner strong{font:600 13px/1.3 var(--sans);letter-spacing:.02em;margin-bottom:4px}
+.measurement-banner p{margin:0 0 12px;font-size:13px}
+.measurement-actions button{padding:10px 14px;border-radius:999px;font-size:10.5px}
+@media (max-width:920px){
+  .measurement-banner{left:10px;right:10px;max-width:none;bottom:calc(70px + env(safe-area-inset-bottom));padding:12px 14px;border-radius:12px}
+  .measurement-banner p{font-size:12.5px;margin-bottom:10px}
+  .measurement-actions{flex-wrap:nowrap}
+  .measurement-actions button{flex:1;padding:10px 8px;letter-spacing:.06em}
+}
+footer.site{color:#b3aea5}
+.foot ul a,.footer-nav a,.footer-nav button{display:inline-block;padding:8px 0;min-height:40px;line-height:24px}
+.foot ul{gap:2px}
+.footer-nav{row-gap:4px}
