@@ -74,6 +74,39 @@
       default: return `Olá, ${n}! Aqui é do escritório Araújo Advocacia. Recebemos o seu contato${assunto}. Podemos conversar agora? Se preferir, me diga o melhor dia e horário.`;
     }
   }
+  /** 8.12.2: mensagens prontas para cada situação do atendimento (escolher no cartão). */
+  function mensagensLead(l) {
+    const n = primeiro(l.nome);
+    return [
+      ['Mensagem da etapa', msgLead(l)],
+      ['Primeira resposta', `Olá, ${n}! Aqui é do escritório Araújo Advocacia, obrigada pelo contato. Para eu entender melhor, pode me contar em poucas palavras o que aconteceu e desde quando? Se preferir, podemos marcar uma conversa no escritório ou por vídeo.`],
+      ['Pedir documentos', `Olá, ${n}! Para analisarmos o seu caso, pode me mandar por aqui (foto legível ou PDF) os documentos que tiver: documento com foto, comprovante de residência e o que tiver sobre o caso (contratos, mensagens, comprovantes). Obrigada!`],
+      ['Lembrar a consulta', msgLead(Object.assign({}, l, { etapa: 'consulta' }))],
+      ['Sem resposta (retomar)', `Olá, ${n}! Tudo bem? Estou retomando o seu contato com o escritório. Ainda precisa de ajuda com ${l.assunto ? String(l.assunto).toLowerCase() : 'o seu caso'}? Se preferir, me diga o melhor dia e horário para conversarmos.`],
+      ['Depois da proposta', msgLead(Object.assign({}, l, { etapa: 'proposta' }))],
+      ['Boas-vindas (fechou)', msgLead(Object.assign({}, l, { etapa: 'ganho' }))]
+    ];
+  }
+  function dialogoConsulta(l, depois) {
+    const { h, api, avisar, campo } = K();
+    const amanha = new Date(Date.now() + 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const form = h('form', { class: 'g-form form-grade' }, h('h2', { class: 'largo' }, '📅 Agendar consulta — ' + l.nome),
+      campo('data', 'Dia', (l.consulta_em || '').slice(0, 10) || amanha, { tipo: 'date', obrigatorio: true }),
+      campo('hora', 'Hora', (l.consulta_em || '').slice(11, 16) || '14:00', { tipo: 'time', obrigatorio: true }),
+      campo('modo', 'Como', 'presencial', { opcoes: [['presencial', 'No escritório'], ['video', 'Por vídeo']] }),
+      h('p', { class: 'peq largo' }, 'Entra na agenda ATENDIMENTOS do Google, o cartão vai para "Consulta agendada" e a próxima ação vira "confirmar na véspera".'),
+      h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Agendar')), h('p', { class: 'erro largo' }));
+    const d = dialogo('', form);
+    K().aoEnviar(form, async f => {
+      const r = await api('crm.consulta', { id: l.id, data: f.get('data'), hora: f.get('hora'), modo: f.get('modo') });
+      d.close();
+      const l2 = Object.assign({}, l, { etapa: 'consulta', consulta_em: f.get('data') + 'T' + f.get('hora') });
+      dialogo('', h('h2', {}, r.agenda ? '✓ Consulta agendada' : 'Consulta anotada'), r.agenda ? null : h('p', { class: 'nota alerta' }, 'Não consegui pôr no Google Agenda: ' + r.erro),
+        h('p', {}, `${l.nome} · ${dataBR(f.get('data'))} às ${f.get('hora')} (${f.get('modo') === 'video' ? 'por vídeo' : 'no escritório'}).`),
+        h('div', { class: 'g-acoes' }, l.telefone ? h('a', { class: 'btn wa', href: zap(l.telefone, msgLead(l2).replace(` ${ESCRITORIO_LOCAL} ou por vídeo, como combinamos`, f.get('modo') === 'video' ? ' por vídeo (mando o link pouco antes)' : ' ' + ESCRITORIO_LOCAL)), target: '_blank', rel: 'noopener' }, 'Confirmar no WhatsApp') : null));
+      if (depois) depois();
+    });
+  }
   async function telaCrm(params) {
     const { h, api, apiFresco, mostrar, carregando, avisar, botao, sessao, rota } = K();
     carregando();
@@ -103,6 +136,7 @@
           h('span', { class: 'peq' }, l.dias_parado >= 7 && !['ganho', 'perdido'].includes(l.etapa) ? `⏳ ${l.dias_parado} dias sem mexer` : (l.responsavel || '')),
           h('span', { class: 'crm-bts' },
             l.telefone ? h('a', { class: 'btn mini wa', href: zap(l.telefone, msgLead(l)), target: '_blank', rel: 'noopener', title: 'Mensagem pronta para esta etapa', onclick: ev => ev.stopPropagation() }, 'WhatsApp') : null,
+            ['novo', 'contato'].includes(l.etapa) ? h('button', { type: 'button', class: 'btn mini sec', title: 'Agendar a consulta', 'aria-label': 'Agendar a consulta', onclick: ev => { ev.stopPropagation(); dialogoConsulta(l, recarregar); } }, '📅') : null,
             PROX_ETAPA[l.etapa] ? h('button', { type: 'button', class: 'btn mini sec', title: 'Passar para ' + nomeE[PROX_ETAPA[l.etapa]], onclick: ev => { ev.stopPropagation(); mover(l, PROX_ETAPA[l.etapa]); } }, '→') : null)));
       c.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', l.id); c.classList.add('arrastando'); });
       c.addEventListener('dragend', () => c.classList.remove('arrastando'));
@@ -230,7 +264,15 @@
         !novo && l.telefone ? h('a', { class: 'btn sec wa', href: zap(l.telefone, msgLead(l)), target: '_blank', rel: 'noopener' }, 'WhatsApp (mensagem da etapa)') : null),
       h('p', { class: 'erro largo' }));
     const extras = novo ? null : h('div', { class: 'crm-extra' },
+      l.telefone ? (() => {
+        const ms = mensagensLead(l), sel = h('select', { 'aria-label': 'Mensagem pronta' }, ms.map(([t], i) => h('option', { value: i }, t)));
+        const prev = h('p', { class: 'crm-msg-prev' }, ms[0][1]);
+        const ir = h('a', { class: 'btn mini wa', href: zap(l.telefone, ms[0][1]), target: '_blank', rel: 'noopener' }, 'Abrir no WhatsApp');
+        sel.addEventListener('change', () => { const m = ms[+sel.value][1]; prev.textContent = m; ir.href = zap(l.telefone, m); });
+        return h('div', { class: 'crm-msgs' }, h('label', {}, '💬 Mensagem pronta '), sel, ir, prev);
+      })() : null,
       h('div', { class: 'crm-extra-acoes' },
+        h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); dialogoConsulta(l, depois); } }, l.consulta_em ? '📅 Remarcar a consulta' : '📅 Agendar consulta'),
         h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); dialogoProposta(l, depois); } }, l.proposta_url ? 'Gerar nova proposta' : '📄 Gerar proposta de honorários'),
         l.proposta_url ? h('a', { class: 'btn sec', href: l.proposta_url, target: '_blank', rel: 'noopener' }, 'Abrir a proposta') : null,
         l.cliente_id ? h('a', { class: 'btn sec', href: '#/cliente/' + l.cliente_id, onclick: () => d.close() }, 'Abrir a ficha do cliente')
@@ -546,15 +588,25 @@
     const wa = () => zap(x.telefone, `Olá, ${primeiro(x.nome) || ''}! Segue o resumo da nossa ${/udi/i.test(x.titulo) ? 'audiência' : 'conversa'}:\n\n${txt.value}\n\nQualquer dúvida, estou à disposição. Araújo Advocacia`);
     const a = h('a', { class: 'btn wa', href: wa(), target: '_blank', rel: 'noopener', onclick: () => { a.href = wa(); } }, 'Mandar no WhatsApp');
     alvo.replaceChildren(h('div', { class: 'caixa g-resultado' },
-      h('h2', {}, '✓ Resumo pronto: ' + x.titulo),
+      h('h2', {}, (x.criado_em ? '' : '✓ Resumo pronto: ') + x.titulo + (x.criado_em ? ' · ' + dataBR(x.data_ato) : '')),
+      x.nome || x.numero ? h('p', { class: 'peq' }, [x.nome, x.numero].filter(Boolean).join(' · ')) : null,
       h('div', { class: 'g-acoes' }, h('a', { class: 'btn', href: x.doc, target: '_blank', rel: 'noopener' }, 'Abrir o documento completo (Google Docs)')),
       h('h3', {}, 'Para o cliente (pode editar antes de mandar)'), txt,
-      x.documentos && x.documentos.length ? h('div', {}, h('h4', {}, 'Documentos para pedir'), h('ul', {}, x.documentos.map(d => h('li', {}, d)))) : null,
+      x.documentos && x.documentos.length ? h('div', { class: 'g-docs' }, h('h4', {}, 'Documentos para pedir'), h('ul', {}, x.documentos.map(d => h('li', {}, d))),
+        h('a', { class: 'btn mini sec wa', target: '_blank', rel: 'noopener', href: zap(x.telefone, `Olá, ${primeiro(x.nome) || ''}! Para darmos andamento, pode me mandar por aqui (foto legível ou PDF):\n\n${x.documentos.map(d => '• ' + d).join('\n')}\n\nSe faltar algum, me avise. Obrigada! Araújo Advocacia`) }, 'Pedir os documentos no WhatsApp')) : null,
       h('div', { class: 'g-acoes' }, a, h('button', { type: 'button', class: 'btn sec', onclick: () => copiar(txt.value, 'Texto copiado.') }, 'Copiar'),
-        h('button', { type: 'button', class: 'btn sec', onclick: async ev => {
+        x.publicado === 'sim' ? h('button', { type: 'button', class: 'btn sec', onclick: async ev => {
+          ev.target.disabled = true;
+          try { await api('ia.transcricaoPublicar', { id: x.id, publicar: false }); avisar('Tirado do Acompanhe.'); ev.target.textContent = 'Fora do Acompanhe'; }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; } } }, 'Tirar do Acompanhe')
+        : h('button', { type: 'button', class: 'btn sec', onclick: async ev => {
           ev.target.disabled = true;
           try { await api('ia.transcricaoPublicar', { id: x.id, texto: txt.value, publicar: true }); avisar('Publicado no Acompanhe do cliente (aparece quando ele entra com CPF e código).'); ev.target.textContent = '✓ No Acompanhe'; }
-          catch (e) { avisar(e.message, true); ev.target.disabled = false; } } }, 'Publicar no Acompanhe (site)')),
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; } } }, 'Publicar no Acompanhe (site)'),
+        h('button', { type: 'button', class: 'btn sec', title: 'Tarefa para você com os documentos a pedir e os próximos passos (com checklist)', onclick: async ev => {
+          ev.target.disabled = true;
+          try { await api('ia.transcricaoTarefa', { id: x.id }); avisar('Tarefa criada em Tarefas, com checklist.'); ev.target.textContent = '✓ Tarefa criada'; }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; } } }, '＋ Tarefa com os próximos passos')),
       h('details', { class: 'g-equipe', open: true }, h('summary', {}, 'Análise para a equipe'), mdParaDom(x.equipe))));
     alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -579,7 +631,7 @@
     const resumir = async (dados, botaoEl) => {
       estado.textContent = 'A IA está lendo e montando os resumos (até 2 minutos)…';
       if (botaoEl) botaoEl.disabled = true;
-      try { const x = await api('ia.transcricaoResumo', dados); estado.textContent = ''; mostrarResumo(x, saida); }
+      try { const x = await api('ia.transcricaoResumo', dados); estado.textContent = ''; mostrarResumo(x, saida); try { localStorage.removeItem('transcricao_rascunho'); } catch (e) { /* ok */ } }
       catch (e) { estado.textContent = ''; avisar(e.message, true); }
       finally { if (botaoEl) botaoEl.disabled = false; }
     };
@@ -593,9 +645,23 @@
       const btGravar = h('button', { type: 'button', class: 'btn g-gravar' }, '● Começar a gravar');
       const btIA = h('button', { type: 'button', class: 'btn sec', hidden: true }, 'Transcrever o áudio com a IA (identifica quem fala)');
       const btResumo = h('button', { type: 'button', class: 'btn', hidden: true }, 'Fazer os resumos com a transcrição ao vivo');
-      let rec = null, mr = null, pedacos = [], ligado = false, inicio = 0, relogio = null, audioBlob = null;
+      let rec = null, mr = null, pedacos = [], ligado = false, inicio = 0, relogio = null, audioBlob = null, pausado = false, pausaEm = 0;
+      // 8.12.2: o texto ao vivo fica salvo neste computador a cada 10 s (fechou a aba sem querer? volta aqui)
+      const CH = 'transcricao_rascunho';
+      try { const r0 = localStorage.getItem(CH); if (r0) { const o = JSON.parse(r0); if (o.texto && Date.now() - o.t < 3 * 86400000) textoAoVivo.value = o.texto; } } catch (e) { /* ok */ }
+      const salvarRasc = () => { try { if (textoAoVivo.value.trim()) localStorage.setItem(CH, JSON.stringify({ t: Date.now(), texto: textoAoVivo.value.slice(-300000) })); } catch (e) { /* ok */ } };
+      const ivR = setInterval(() => { if (!textoAoVivo.isConnected) { clearInterval(ivR); return; } salvarRasc(); }, 10000); textoAoVivo.addEventListener('change', salvarRasc);
+      const btPausa = h('button', { type: 'button', class: 'btn sec', hidden: true }, '❚❚ Pausar');
+      btPausa.addEventListener('click', () => {
+        if (!ligado) return;
+        pausado = !pausado;
+        if (pausado) { pausaEm = Date.now(); try { mr && mr.state === 'recording' && mr.pause(); } catch (e) { /* ok */ } try { rec && rec.stop(); } catch (e) { /* ok */ } btPausa.textContent = '▶ Continuar'; tempo.classList.add('pausado'); }
+        else { inicio += Date.now() - pausaEm; try { mr && mr.state === 'paused' && mr.resume(); } catch (e) { /* ok */ } try { rec && rec.start(); } catch (e) { /* ok */ } btPausa.textContent = '❚❚ Pausar'; tempo.classList.remove('pausado'); }
+      });
+      const btLimpar = h('button', { type: 'button', class: 'btn mini sec' }, 'Limpar o texto');
+      btLimpar.addEventListener('click', () => { if (ligado || !textoAoVivo.value.trim() || !confirm('Apagar o texto da transcrição?')) return; textoAoVivo.value = ''; try { localStorage.removeItem(CH); } catch (e) { /* ok */ } btResumo.hidden = true; });
       const parar = () => {
-        ligado = false; clearInterval(relogio);
+        ligado = false; pausado = false; clearInterval(relogio); btPausa.hidden = true; tempo.classList.remove('pausado'); salvarRasc();
         try { rec && rec.stop(); } catch (e) { /* ok */ }
         try { mr && mr.state !== 'inactive' && mr.stop(); } catch (e) { /* ok */ }
         btGravar.textContent = '● Gravar de novo'; btGravar.classList.remove('gravando'); btResumo.hidden = !textoAoVivo.value.trim();
@@ -626,12 +692,12 @@
             prov.textContent = parcial;
           };
           rec.onerror = ev => { if (ev.error === 'not-allowed') { avisar('Microfone bloqueado para a transcrição ao vivo.', true); parar(); } };
-          rec.onend = () => { if (ligado) { try { rec.start(); } catch (e) { /* reinicia na próxima */ } } };
+          rec.onend = () => { if (ligado && !pausado) { try { rec.start(); } catch (e) { /* reinicia na próxima */ } } };
           try { rec.start(); } catch (e) { /* segue só gravando */ }
         }
         ligado = true; inicio = Date.now();
-        relogio = setInterval(() => { const s = Math.floor((Date.now() - inicio) / 1000); tempo.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 1000);
-        btGravar.textContent = '■ Parar'; btGravar.classList.add('gravando'); btResumo.hidden = true; btIA.hidden = true;
+        relogio = setInterval(() => { if (pausado) return; const s = Math.floor((Date.now() - inicio) / 1000); tempo.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 1000);
+        btGravar.textContent = '■ Parar'; btGravar.classList.add('gravando'); btResumo.hidden = true; btIA.hidden = true; btPausa.hidden = false;
       });
       btResumo.addEventListener('click', () => resumir({ ...lerComum(), texto: textoAoVivo.value }, btResumo));
       btIA.addEventListener('click', async () => {
@@ -648,8 +714,8 @@
       });
       painelModo = h('div', { class: 'g-gravador' },
         Rec ? null : h('p', { class: 'nota' }, 'Este navegador não faz a transcrição ao vivo (use o Google Chrome). A gravação funciona: ao parar, use "Transcrever o áudio com a IA".'),
-        consent, h('div', { class: 'g-gravador-linha' }, btGravar, tempo, h('span', { class: 'peq' }, 'Grava o áudio leve (≈ 11 MB por hora) e escreve ao vivo.')),
-        textoAoVivo, prov, h('div', { class: 'g-acoes' }, btResumo, btIA));
+        consent, h('div', { class: 'g-gravador-linha' }, btGravar, btPausa, tempo, h('span', { class: 'peq' }, 'Grava o áudio leve (≈ 11 MB por hora) e escreve ao vivo. O texto fica salvo neste computador enquanto você grava.')),
+        textoAoVivo, prov, h('div', { class: 'g-acoes' }, btResumo, btIA, btLimpar));
     } else if (modo === 'arquivo') {
       const inArq = h('input', { type: 'file', accept: 'audio/*,video/mp4,video/webm,.m4a,.mp3,.ogg,.opus,.wav,.webm,.mp4', 'aria-label': 'Arquivo de áudio' });
       const bt = h('button', { type: 'button', class: 'btn' }, 'Transcrever e resumir');
@@ -680,132 +746,17 @@
         h('td', {}, dataBR(x.data_ato)), h('td', {}, x.tipo === 'audiencia' ? 'Audiência' : 'Atendimento'), h('td', {}, h('strong', {}, x.titulo)),
         h('td', {}, x.cliente || '—', x.numero ? h('div', { class: 'peq' }, x.numero) : null),
         h('td', {}, x.publicado === 'sim' ? h('span', { class: 'tag ok' }, 'publicado') : '—'),
-        h('td', {}, h('a', { class: 'btn mini sec', href: x.doc_url, target: '_blank', rel: 'noopener', onclick: ev => ev.stopPropagation() }, 'Abrir'))
-      ], x => window.open(x.doc_url, '_blank', 'noopener'), 'Nenhum resumo feito ainda.');
+        h('td', {}, h('span', { class: 'btn mini' }, 'Ver'), ' ', h('a', { class: 'btn mini sec', href: x.doc_url, target: '_blank', rel: 'noopener', onclick: ev => ev.stopPropagation() }, 'Docs'))
+      ], async x => { try { mostrarResumo(await api('ia.transcricao', { id: x.id }), saida); } catch (e) { avisar(e.message, true); } }, 'Nenhum resumo feito ainda.');
     }
     const aba = (id, rot) => h('a', { class: 'visao-bt' + (modo === id ? ' ativo' : ''), href: '#/transcricao?modo=' + id, role: 'tab', 'aria-selected': String(modo === id) }, rot);
-    mostrar(topo('Inteligência', 'Transcrição e resumos', 'Grave o atendimento ou envie o áudio da audiência: a IA escreve tudo, separa quem falou e prepara o resumo para o cliente e a análise para a equipe.',
-      h('a', { class: 'btn sec', href: '#/pecas' }, 'Peças com IA'), h('a', { class: 'btn sec', href: '#/prompts' }, 'Biblioteca de prompts')),
+    mostrar(topo('Inteligência', 'Transcrição e resumos', 'Grave o atendimento ou envie o áudio da audiência: a IA escreve tudo, separa quem falou e prepara o resumo para o cliente e a análise para a equipe.'),
       iaFaixa(),
       h('section', { class: 'caixa g-corpo' }, h('div', { class: 'visoes', role: 'tablist' }, aba('gravar', '🎙 Gravar agora'), aba('arquivo', '⬆ Enviar áudio'), aba('colar', '📋 Colar texto'), aba('feitos', `Resumos feitos (${feitos.itens.length})`)),
         modo === 'feitos' ? null : comum, painelModo, estado),
       saida);
     const pc = params.get('processo');
     if (pc) { const p = processos.find(x => x.id === pc); const c = p && clientes.find(x => x.id === p.cliente_id); if (c) { sel.inCli.value = c.nome; sel.achar(); sel.selProc.value = pc; } }
-  }
-
-  /* ================================================================ */
-  /* Peças com IA (análise, dossiê, mapa da prova, roteiro)            */
-  /* ================================================================ */
-  const PECAS = [
-    ['dossie', 'Dossiê da audiência de instrução', 'Síntese, teses, pontos controvertidos, mapa da prova, estratégia, roteiros de perguntas, acordo e checklist do dia.'],
-    ['mapa', 'Mapa da prova', 'Fato a provar × ônus × prova que temos × prova a produzir × testemunha × força.'],
-    ['roteiro', 'Roteiro de perguntas', 'Depoimento pessoal da outra parte, nossas testemunhas e as da outra parte (com contradita).'],
-    ['analise', 'Análise processual completa', 'Linha do tempo, pedidos e defesas, provas, riscos, estratégia e próximos atos.'],
-    ['cliente', 'Preparação do cliente', 'Guia em linguagem simples para o cliente chegar seguro à audiência.'],
-    ['recurso', 'Análise de decisão para recurso', 'O que foi decidido, possíveis erros, recursos cabíveis e teses.'],
-    ['peticao', 'Revisão de petição', 'Estrutura, pedidos, provas e sugestões de reescrita.'],
-    ['livre', 'Pedido livre', 'Escreva o que precisa; a IA usa os dados do processo e o material colado.']
-  ];
-  async function telaPecas(params) {
-    const { h, api, mostrar, carregando, avisar } = K();
-    carregando();
-    const [clientes, processos] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => [])]);
-    const tipo = PECAS.some(p => p[0] === params.get('tipo')) ? params.get('tipo') : 'dossie';
-    const sel = seletorCasos(clientes, processos);
-    const saida = h('div', { class: 'g-saida' }), estado = h('p', { class: 'g-estado', 'aria-live': 'polite' });
-    const instr = h('textarea', { rows: 3, placeholder: tipo === 'livre' ? 'Descreva o que você quer (ex.: "liste as contradições entre a contestação e os documentos")' : 'Instruções extras (opcional): foco, teses, o que já sabemos…' }, params.get('instrucao') || '');
-    const material = h('textarea', { rows: 10, placeholder: 'Cole aqui as peças e documentos principais: petição inicial, contestação, réplica, ata, laudo, documentos. Quanto mais material, melhor a análise.' });
-    const nomes = h('input', { placeholder: 'Nomes a esconder da IA além das partes (testemunhas, filhos…), separados por ;', maxlength: 1000 });
-    const bt = h('button', { type: 'button', class: 'btn' }, 'Gerar com a IA');
-    bt.addEventListener('click', async () => {
-      const v = sel.valor();
-      bt.disabled = true; estado.textContent = 'A IA está lendo o processo e o material (até 2 minutos)…';
-      try {
-        const x = await api('ia.peca', { tipo, processo_id: v.processo_id, cliente_id: v.cliente_id, material: material.value, instrucao: instr.value, nomes: nomes.value });
-        estado.textContent = '';
-        const btDoc = h('button', { type: 'button', class: 'btn' }, 'Salvar como documento (pasta do cliente)');
-        btDoc.addEventListener('click', async () => { btDoc.disabled = true; try { const d = await api('ia.pecaDoc', { titulo: x.titulo, texto: x.texto, processo_id: v.processo_id, cliente_id: v.cliente_id }); window.open(d.doc, '_blank', 'noopener'); avisar('Documento salvo no Drive.'); } catch (e) { avisar(e.message, true); btDoc.disabled = false; } });
-        saida.replaceChildren(h('div', { class: 'caixa g-resultado' }, h('h2', {}, x.titulo + (x.processo ? ' · ' + x.processo : '')),
-          h('p', { class: 'nota' }, 'Rascunho da IA: confira cada fato, artigo e data no processo antes de usar.'),
-          h('div', { class: 'g-acoes' }, btDoc, h('button', { type: 'button', class: 'btn sec', onclick: () => copiar(x.texto, 'Texto copiado.') }, 'Copiar o texto')), mdParaDom(x.texto)));
-        saida.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } catch (e) { estado.textContent = ''; avisar(e.message, true); }
-      finally { bt.disabled = false; }
-    });
-    mostrar(topo('Inteligência', 'Peças com IA', 'Análise processual, dossiê estratégico, mapa da prova e roteiro de audiência, com os dados do processo que já estão no painel.',
-      h('a', { class: 'btn sec', href: '#/transcricao' }, 'Transcrição e resumos'), h('a', { class: 'btn sec', href: '#/prompts' }, 'Biblioteca de prompts')),
-      iaFaixa(),
-      h('div', { class: 'g-pecas' }, PECAS.map(([id, nome, desc]) => h('a', { class: 'g-peca' + (id === tipo ? ' ativa' : ''), href: '#/pecas?tipo=' + id }, h('strong', {}, nome), h('span', {}, desc)))),
-      h('section', { class: 'caixa g-corpo g-form' }, h('h2', {}, PECAS.find(p => p[0] === tipo)[1]),
-        sel.el, h('label', {}, tipo === 'livre' ? 'O que a IA deve fazer' : 'Instruções extras'), instr,
-        h('label', {}, 'Material (peças e documentos)'), material, nomes,
-        h('p', { class: 'peq' }, 'O painel junta sozinho: histórico do processo, textos das intimações, resumo do caso da ficha e resumos de audiências já feitos. Nomes das partes, CPF, telefones e endereços são trocados por marcas antes de ir para a IA.'),
-        h('div', { class: 'g-acoes' }, bt), estado),
-      saida);
-    const pc = params.get('processo');
-    if (pc) { const p = processos.find(x => x.id === pc); const c = p && clientes.find(x => x.id === p.cliente_id); if (c) { sel.inCli.value = c.nome; sel.achar(); sel.selProc.value = pc; } }
-  }
-
-  /* ================================================================ */
-  /* Biblioteca de prompts                                             */
-  /* ================================================================ */
-  const P_REGRAS = 'Regras: use só o material que eu colar; não invente fatos, provas, datas, artigos ou julgados; quando faltar informação, escreva [NÃO CONSTA — conferir]; cite artigos de lei só se tiver certeza e marque [conferir]; não cite números de processos ou julgados; escreva em português do Brasil, de forma clara e organizada, com títulos e listas.';
-  const PROMPTS = [
-    { cat: 'Audiência de instrução', titulo: 'Dossiê estratégico da audiência', texto: `Você é assistente de uma advogada que vai fazer uma audiência de instrução. Com base no material abaixo, monte um DOSSIÊ ESTRATÉGICO com:\n1. Síntese do caso (até 10 linhas).\n2. Tese do nosso cliente e tese da outra parte.\n3. Pontos controvertidos, numerados.\n4. Mapa da prova em tabela: Fato a provar | Quem tem o ônus | Prova que já temos | Prova a produzir na audiência | Quem pode provar | Situação.\n5. Estratégia para a audiência: o que priorizar e o que evitar.\n6. Roteiro de perguntas para o depoimento pessoal da outra parte (perguntas fechadas, ligadas a cada ponto controvertido).\n7. Roteiro para as nossas testemunhas e para as da outra parte (com hipóteses de contradita).\n8. Requerimentos que podem ser feitos na audiência.\n9. Pontos para negociar um acordo.\n10. Checklist do dia.\n11. Pontos que eu (advogada) preciso conferir.\n\n${P_REGRAS}\n\nPROCESSO (área, vara, nosso cliente é autor ou réu):\n[COLE AQUI]\n\nMATERIAL (inicial, contestação, réplica, documentos, decisões):\n[COLE AQUI]` },
-    { cat: 'Audiência de instrução', titulo: 'Mapa da prova', texto: `Monte o MAPA DA PROVA deste processo.\n- Primeiro, liste os pontos controvertidos.\n- Depois, uma tabela: Nº | Fato a provar | Quem tem o ônus | Prova existente (documento/folha) | Prova a produzir | Testemunha que sabe | Força da prova (forte/média/fraca).\n- Por fim: lacunas de prova e como cobri-las, e documentos a pedir ao cliente.\n\n${P_REGRAS}\n\nMATERIAL:\n[COLE AQUI]` },
-    { cat: 'Audiência de instrução', titulo: 'Roteiro de perguntas para testemunhas', texto: `Prepare o ROTEIRO DE PERGUNTAS para a audiência de instrução.\n- Para cada testemunha (nossas e da outra parte) diga o objetivo da oitiva.\n- Perguntas curtas e objetivas, agrupadas por ponto controvertido.\n- Para as testemunhas da outra parte: perguntas para testar se viu os fatos diretamente, desde quando conhece as partes, interesse no resultado e hipóteses de contradita.\n- Indique o que NÃO perguntar (perguntas que podem nos prejudicar).\n\n${P_REGRAS}\n\nPONTOS CONTROVERTIDOS E QUEM SÃO AS TESTEMUNHAS:\n[COLE AQUI]\n\nMATERIAL:\n[COLE AQUI]` },
-    { cat: 'Audiência de instrução', titulo: 'Perguntas para o depoimento pessoal da outra parte', texto: `Elabore perguntas para o DEPOIMENTO PESSOAL da parte contrária, buscando confissão sobre os pontos controvertidos. Perguntas fechadas (sim/não ou dado objetivo), em ordem lógica, com o objetivo de cada bloco. Aponte as perguntas que podem ser indeferidas pelo juiz e como reformular.\n\n${P_REGRAS}\n\nMATERIAL:\n[COLE AQUI]` },
-    { cat: 'Audiência de instrução', titulo: 'Preparar o cliente para a audiência', texto: `Escreva um guia, em linguagem bem simples, para preparar meu cliente para a audiência: como vai ser, quem estará presente, o que levar, como se comportar, perguntas que podem ser feitas a ele (sempre orientando a responder a verdade, com calma, só o que sabe) e o que evitar. Não oriente a mentir nem a omitir.\n\nTIPO DE AUDIÊNCIA E RESUMO DO CASO:\n[COLE AQUI]` },
-    { cat: 'Audiência de instrução', titulo: 'Razões finais a partir da ata', texto: `Com base na ata/transcrição da audiência e nas peças, faça o roteiro das RAZÕES FINAIS: o que cada prova oral confirmou ou contrariou (com o trecho/minuto), confissões, contradições da outra parte, e os pontos a destacar para cada pedido. Não invente trechos.\n\n${P_REGRAS}\n\nATA / TRANSCRIÇÃO:\n[COLE AQUI]\n\nPEÇAS:\n[COLE AQUI]` },
-    { cat: 'Análise processual', titulo: 'Análise processual completa', texto: `Faça uma ANÁLISE PROCESSUAL completa: síntese; linha do tempo em tabela (Data | Fato/ato | Fonte); pedidos e defesas; pontos controvertidos; provas produzidas e pendentes; pontos fortes; pontos fracos e riscos (alto/médio/baixo); situação atual; estratégia sugerida com prós e contras; pontos para conferir.\n\n${P_REGRAS}\n\nMATERIAL:\n[COLE AQUI]` },
-    { cat: 'Análise processual', titulo: 'Linha do tempo dos fatos', texto: `Organize os FATOS em ordem cronológica, em tabela: Data | Fato | Quem | Prova/documento que mostra | Observação. Marque as datas incertas com [aproximada]. Ao final, aponte lacunas e contradições entre as versões.\n\n${P_REGRAS}\n\nMATERIAL:\n[COLE AQUI]` },
-    { cat: 'Análise processual', titulo: 'Análise de sentença para recurso', texto: `Analise a SENTENÇA/DECISÃO: o que foi decidido item a item; fundamentos; onde perdemos; possíveis erros (de fato, de direito, omissão, contradição, obscuridade); recursos cabíveis (sem afirmar prazo: indique "conferir prazo e preparo"); teses recursais com a força de cada uma; riscos de recorrer.\n\n${P_REGRAS}\n\nDECISÃO:\n[COLE AQUI]\n\nPEÇAS PRINCIPAIS:\n[COLE AQUI]` },
-    { cat: 'Análise processual', titulo: 'Contestação: pontos a rebater (réplica)', texto: `Leia a CONTESTAÇÃO e liste, em tabela: Argumento da defesa | Documento que ela juntou | Como rebater | Prova que temos | Risco. Depois, aponte preliminares e prejudiciais levantadas (prescrição, incompetência, ilegitimidade etc.) e o que responder em cada uma.\n\n${P_REGRAS}\n\nPETIÇÃO INICIAL:\n[COLE AQUI]\n\nCONTESTAÇÃO:\n[COLE AQUI]` },
-    { cat: 'Atendimento', titulo: 'Triagem do primeiro atendimento', texto: `Sou advogada e vou atender um cliente na área [ÁREA]. Monte um ROTEIRO DE ENTREVISTA para o primeiro atendimento: perguntas essenciais em ordem (fatos, datas, valores, provas, testemunhas), sinais de prescrição/decadência a verificar, documentos a pedir e alertas de risco. Formato: lista de perguntas agrupadas.\n\nRESUMO DO QUE O CLIENTE CONTOU NO WHATSAPP:\n[COLE AQUI]` },
-    { cat: 'Atendimento', titulo: 'Lista de documentos para o cliente', texto: `Faça a LISTA DE DOCUMENTOS que o cliente precisa reunir para uma ação de [TIPO DE AÇÃO], em linguagem simples, separando: obrigatórios, se tiver, e como conseguir cada um (site, órgão, empresa). Termine com uma mensagem curta e gentil para mandar no WhatsApp.` },
-    { cat: 'Atendimento', titulo: 'Resumo do atendimento para o cliente', texto: `Transforme as anotações do atendimento num RESUMO PARA O CLIENTE, em português simples, até 180 palavras: o que conversamos, o que vamos fazer, o que ele precisa mandar e os próximos passos. Sem prometer resultado e sem termos técnicos.\n\nANOTAÇÕES:\n[COLE AQUI]` },
-    { cat: 'Escrita', titulo: 'Revisar petição (clareza e padrão)', texto: `Revise a petição abaixo sem reescrevê-la inteira: avalie estrutura (fatos → fundamentos → pedidos), coerência dos pedidos com os fatos, provas citadas, clareza (frases longas, repetições, termos vagos) e padrão do escritório (títulos em maiúsculas, citações de artigos destacadas). Para cada problema, mostre o trecho original e a sugestão.\n\n${P_REGRAS}\n\nPETIÇÃO:\n[COLE AQUI]` },
-    { cat: 'Escrita', titulo: 'Melhorar um parágrafo', texto: `Reescreva o parágrafo abaixo em linguagem jurídica clara, objetiva e elegante, sem mudar o sentido nem acrescentar fatos. Dê 2 versões: uma mais técnica e uma mais direta.\n\nPARÁGRAFO:\n[COLE AQUI]` },
-    { cat: 'Escrita', titulo: 'Síntese de decisão (ementa)', texto: `Faça uma síntese em formato de ementa da decisão abaixo (tema em maiúsculas, palavras-chave separadas por ponto, e 3 a 5 itens com o que foi decidido). Só com o que está no texto.\n\nDECISÃO:\n[COLE AQUI]` },
-    { cat: 'Relacionamento com o cliente', titulo: 'Explicar uma decisão ao cliente', texto: `Explique ao cliente, em português bem simples, até 120 palavras, o que significa a decisão abaixo e qual é o próximo passo. Sem termos técnicos, sem prometer resultado e sem prazos internos. Tom acolhedor. Em formato de mensagem de WhatsApp.\n\nDECISÃO:\n[COLE AQUI]` },
-    { cat: 'Relacionamento com o cliente', titulo: 'Responder dúvida do cliente', texto: `Responda à dúvida do cliente abaixo em mensagem de WhatsApp: educada, curta (até 100 palavras), clara, sem prometer resultado e sem dar parecer definitivo sem análise. Se faltar informação, peça o que for necessário.\n\nDÚVIDA:\n[COLE AQUI]\n\nCONTEXTO DO CASO:\n[COLE AQUI]` },
-    { cat: 'Marketing (Provimento 205)', titulo: 'Texto informativo para o blog/Instagram', texto: `Escreva um texto INFORMATIVO (não publicitário) sobre [TEMA], para o público leigo, com até 300 palavras: o que é, quem tem direito, o que fazer. Siga o Provimento 205/2021 da OAB: sem promessa de resultado, sem preços, sem captação de clientela, sem sensacionalismo. Termine com uma frase neutra como "Em caso de dúvida, procure orientação jurídica".` }
-  ];
-  async function telaPrompts(params) {
-    const { h, api, apiFresco, mostrar, carregando, avisar, sessao, rota } = K();
-    carregando();
-    const proprios = await api('prompts.listar', {}).catch(() => ({ itens: [] }));
-    const busca = (params.get('q') || '').toLowerCase();
-    const todos = PROMPTS.map((p, i) => ({ ...p, id: 'p' + i })).concat(proprios.itens.map(p => ({ cat: p.categoria || 'Do escritório', titulo: p.titulo, texto: p.texto, id: p.id, meu: true, criado_por: p.criado_por })));
-    const lista = todos.filter(p => !busca || (p.titulo + ' ' + p.texto + ' ' + p.cat).toLowerCase().includes(busca));
-    const cats = [...new Set(lista.map(p => p.cat))];
-    const usarNoPainel = p => { const tipo = /Dossi/.test(p.titulo) ? 'dossie' : /Mapa da prova/.test(p.titulo) ? 'mapa' : /Roteiro|depoimento/i.test(p.titulo) ? 'roteiro' : /Preparar o cliente/.test(p.titulo) ? 'cliente' : /sentença|recurso/i.test(p.titulo) ? 'recurso' : /Revisar petição/.test(p.titulo) ? 'peticao' : /Análise processual/.test(p.titulo) ? 'analise' : 'livre';
-      location.hash = '#/pecas?tipo=' + tipo + (tipo === 'livre' ? '&instrucao=' + encodeURIComponent(p.texto.replace(/\n*(MATERIAL|PROCESSO|DECISÃO|PETIÇÃO|ATA|ANOTAÇÕES|DÚVIDA|CONTEXTO|PARÁGRAFO|CONTESTAÇÃO|PEÇAS|RESUMO|PONTOS)[^\n]*:\n\[COLE AQUI\]/g, '').slice(0, 3000)) : ''); };
-    const cartao = p => h('article', { class: 'g-prompt' },
-      h('header', {}, h('strong', {}, p.titulo), p.meu ? h('span', { class: 'tag sec' }, 'do escritório') : null),
-      h('pre', { class: 'g-prompt-txt' }, p.texto),
-      h('div', { class: 'g-acoes' },
-        h('button', { type: 'button', class: 'btn mini', onclick: () => copiar(p.texto, 'Prompt copiado. Cole na IA e troque os [COLE AQUI].') }, 'Copiar'),
-        h('button', { type: 'button', class: 'btn mini sec', onclick: () => usarNoPainel(p) }, 'Usar no painel (Gemini)'),
-        p.meu && (p.criado_por === sessao.usuario.usuario || sessao.usuario.pode.usuarios) ? h('button', { type: 'button', class: 'btn mini sec', onclick: () => editar(p) }, 'Editar') : null));
-    const editar = p => {
-      const form = h('form', { class: 'g-form' }, h('h2', {}, p ? 'Editar prompt' : 'Novo prompt do escritório'),
-        h('label', {}, 'Título'), h('input', { name: 'titulo', required: true, value: p ? p.titulo : '', maxlength: 120 }),
-        h('label', {}, 'Categoria'), h('input', { name: 'categoria', value: p ? p.cat : 'Do escritório', list: 'g-cats', maxlength: 60 }), h('datalist', { id: 'g-cats' }, [...new Set(todos.map(x => x.cat))].map(c => h('option', { value: c }))),
-        h('label', {}, 'Texto (use [COLE AQUI] onde vai o material)'), h('textarea', { name: 'texto', rows: 12, required: true }, p ? p.texto : ''),
-        h('div', { class: 'g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'), p ? h('button', { type: 'button', class: 'btn sec', onclick: async () => { if (!confirm('Apagar este prompt?')) return; await api('prompts.salvar', { apagar: p.id }); d.close(); await apiFresco('prompts.listar', {}); rota(); } }, 'Apagar') : null),
-        h('p', { class: 'erro' }));
-      const d = dialogo('', form);
-      K().aoEnviar(form, async f => { await api('prompts.salvar', { item: { id: p ? p.id : undefined, titulo: f.get('titulo'), categoria: f.get('categoria'), texto: f.get('texto') } }); d.close(); avisar('Prompt salvo.'); await apiFresco('prompts.listar', {}); rota(); });
-    };
-    const fBusca = h('form', { class: 'busca-grande', role: 'search' }, h('span', { class: 'busca-ico', 'aria-hidden': 'true' }, '⌕'), h('input', { type: 'search', name: 'q', value: busca, placeholder: 'Buscar prompt (ex.: testemunha, sentença, documentos)' }), h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
-    fBusca.addEventListener('submit', ev => { ev.preventDefault(); location.hash = '#/prompts' + (fBusca.q.value.trim() ? '?q=' + encodeURIComponent(fBusca.q.value.trim()) : ''); });
-    mostrar(topo('Inteligência', 'Biblioteca de prompts', 'Pedidos prontos e testados para a IA. Copie para o Gemini, ChatGPT ou Claude, ou use direto no painel com os dados do processo.',
-      K().botao('+ Novo prompt do escritório', () => editar(null), 'dourado'), h('a', { class: 'btn sec', href: '#/pecas' }, 'Peças com IA')),
-      iaFaixa(), fBusca,
-      h('nav', { class: 'g-cats' }, cats.map(c => h('a', { href: '#prompt-' + encodeURIComponent(c), onclick: ev => { ev.preventDefault(); const el = document.getElementById('prompt-' + c); if (el) el.scrollIntoView({ behavior: 'smooth' }); } }, c))),
-      h('div', {}, cats.length ? cats.map(c => h('section', { class: 'g-cat', id: 'prompt-' + c }, h('h2', {}, c), h('div', { class: 'g-prompts' }, lista.filter(p => p.cat === c).map(cartao)))) : h('p', { class: 'peq' }, 'Nenhum prompt com essa busca.')));
   }
 
   /* ================================================================ */
@@ -854,12 +805,11 @@
   /* ================================================================ */
   /* Recibos                                                           */
   /* ================================================================ */
-  async function telaRecibos(params) {
-    const { h, api, mostrar, carregando, avisar } = K();
-    carregando();
+  async function blocoRecibos(params) {
+    const { h, api, avisar } = K();
     const mes = params.get('mes') || '', busca = params.get('q') || '';
     const r = await api('fin.recibos', { mes, busca });
-    const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => v ? q.set(k, v) : q.delete(k)); location.hash = '#/recibos' + (q.toString() ? '?' + q : ''); };
+    const ir = mud => { const q = new URLSearchParams(params); q.set('ver', 'recibos'); Object.entries(mud).forEach(([k, v]) => v ? q.set(k, v) : q.delete(k)); location.hash = '#/financeiro?' + q; };
     const form = h('form', { class: 'crm-filtros', role: 'search' }, h('input', { type: 'search', name: 'q', value: busca, placeholder: 'Buscar cliente' }),
       h('input', { type: 'month', name: 'mes', value: mes, 'aria-label': 'Mês', onchange: ev => ir({ mes: ev.target.value }) }), h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ q: form.q.value.trim() }); });
@@ -874,56 +824,29 @@
       return [h('td', { 'data-r': 'Pago em' }, dataBR(x.pago_em)), h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente || '—'), x.honorario ? h('div', { class: 'peq' }, x.honorario) : null),
         h('td', { 'data-r': 'Parcela' }, x.numero ? x.numero + 'ª' : '—'), h('td', { class: 'num', 'data-r': 'Valor' }, din(x.valor)), h('td', { 'data-r': 'Forma' }, x.forma || '—'), cel];
     };
-    mostrar(topo('Gestão', 'Recibos', 'Todo pagamento recebido, com o recibo em PDF na pasta do cliente. Recibo que faltou? "Gerar recibo".',
-      h('a', { class: 'btn sec', href: '#/financeiro' }, 'Painel financeiro')),
-      h('section', { class: 'caixa' }, form, h('p', { class: 'peq' }, `${r.total} pagamento(s)` + (r.soma !== null ? ` · ${din(r.soma)}` : '') + (r.total > r.itens.length ? ` · mostrando os ${r.itens.length} mais recentes` : '')),
-        K().tabela(['Pago em', 'Cliente', 'Parcela', 'Valor', 'Forma', 'Recibo'], r.itens, linha, x => { location.hash = '#/cliente/' + x.cliente_id; }, 'Nenhum pagamento encontrado.')));
+    return h('div', {}, h('p', { class: 'peq fin-dica' }, 'Todo pagamento recebido, com o recibo em PDF na pasta do cliente. Recibo que faltou? "Gerar recibo".'),
+      form, h('p', { class: 'peq' }, `${r.total} pagamento(s)` + (r.soma !== null ? ` · ${din(r.soma)}` : '') + (r.total > r.itens.length ? ` · mostrando os ${r.itens.length} mais recentes` : '')),
+      K().tabela(['Pago em', 'Cliente', 'Parcela', 'Valor', 'Forma', 'Recibo'], r.itens, linha, x => { location.hash = '#/cliente/' + x.cliente_id; }, 'Nenhum pagamento encontrado.'));
   }
 
   /* ================================================================ */
   /* Painel financeiro (topo do Financeiro)                            */
   /* ================================================================ */
-  function graficoMeses(fluxo) {
-    const { s, h } = K();
-    const W = 640, H = 220, pad = 34, max = Math.max(1, ...fluxo.map(f => Math.max(f.entradas, f.saidas)));
-    const bw = (W - pad * 2) / fluxo.length;
-    const y = v => H - 26 - (v / max) * (H - 50);
-    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pf-graf', role: 'img', 'aria-label': 'Entradas e saídas dos últimos 12 meses' },
-      [0.25, 0.5, 0.75, 1].map(f => s('line', { x1: pad, x2: W - pad / 2, y1: y(max * f), y2: y(max * f), class: 'pf-grade' })),
-      fluxo.map((f, i) => {
-        const x = pad + i * bw;
-        return s('g', {},
-          s('rect', { x: x + bw * 0.14, y: y(f.entradas), width: bw * 0.34, height: Math.max(0, H - 26 - y(f.entradas)), class: 'pf-ent', rx: 3 }, s('title', {}, `${mesBR(f.mes)} · entradas ${din(f.entradas)}`)),
-          s('rect', { x: x + bw * 0.52, y: y(f.saidas), width: bw * 0.34, height: Math.max(0, H - 26 - y(f.saidas)), class: 'pf-sai', rx: 3 }, s('title', {}, `${mesBR(f.mes)} · saídas ${din(f.saidas)}`)),
-          s('text', { x: x + bw / 2, y: H - 8, class: 'pf-rot', 'text-anchor': 'middle' }, mesBR(f.mes)));
-      }));
-    return h('div', { class: 'pf-graf-box' }, svg, h('div', { class: 'pf-legenda' }, h('span', { class: 'pf-l-ent' }, 'Entradas (recebido)'), h('span', { class: 'pf-l-sai' }, 'Saídas (despesas pagas)')));
-  }
+  /* 8.12.2 (pedido da usuária: "o gráfico está muito grande"): só entradas e saídas do mês, sem gráficos */
   async function blocoPainelFinanceiro() {
-    const { h, api, grafRosca, grafBarras } = K();
+    const { h, api } = K();
     let r;
     try { r = await api('fin.painel', {}); } catch (e) { return null; }
     if (!r || !r.kpis || r.kpis.recebidoMes === null) return null; // RH: o servidor não manda os totais
     const k = r.kpis;
     const varia = k.recebidoAnterior ? Math.round((k.recebidoMes / k.recebidoAnterior - 1) * 100) : null;
-    return h('section', { class: 'pf' },
-      h('div', { class: 'pf-nums' },
-        numero('verde', din(k.recebidoMes), 'Recebido no mês', varia === null ? 'parcelas pagas' : `${varia >= 0 ? '▲' : '▼'} ${Math.abs(varia)}% sobre o mês passado`),
-        numero('azul', din(k.media3), 'Média dos 3 meses', 'recebido por mês'),
-        numero('vermelho', din(k.despesasMes), 'Despesas pagas no mês', ''),
-        numero(k.saldoMes >= 0 ? 'verde' : 'vermelho', din(k.saldoMes), 'Resultado do mês', 'recebido − despesas'),
-        numero('dourado', din(k.totalAberto), 'Carteira a receber', 'todas as parcelas em aberto'),
-        numero(k.inadimplencia > 20 ? 'vermelho' : 'azul', k.inadimplencia + '%', 'Inadimplência', 'do que venceu nos últimos 90 dias'),
-        numero('azul', String(k.contratosMes), 'Contratos fechados', 'assinados neste mês'),
-        numero('dourado', String(k.exitosAbertos), 'Êxitos em andamento', 'honorários de êxito ativos')),
-      h('div', { class: 'pf-grid' },
-        h('div', { class: 'caixa' }, h('h3', {}, 'Entradas e saídas · 12 meses'), graficoMeses(r.fluxo)),
-        h('div', { class: 'caixa' }, h('h3', {}, 'Previsão de recebimento'), grafBarras(r.previsao.map(p => ({ nome: mesBR(p.mes), valor: p.valor, cor: 'verde' })), { dinheiro: true }),
-          h('h3', {}, 'Recebido por área · 12 meses'), r.porArea.length ? grafRosca(r.porArea.slice(0, 6).map(a => ({ nome: a.area, valor: a.valor })), { dinheiro: true }) : h('p', { class: 'peq' }, 'Sem recebimentos.'))),
-      r.devedores.length ? h('div', { class: 'caixa' }, h('h3', {}, 'Maiores atrasos'), K().tabela(['Cliente', 'Parcelas', 'Desde', 'Em atraso'], r.devedores, d => [
-        h('td', {}, h('strong', {}, d.cliente)), h('td', { class: 'num' }, String(d.parcelas)), h('td', {}, dataBR(d.desde)), h('td', { class: 'num' }, h('span', { class: 'tag urgente' }, din(d.valor)))
-      ], d => { location.hash = '#/cliente/' + d.cliente_id; }, '')) : null);
+    const ant = (r.fluxo || [])[(r.fluxo || []).length - 2] || { entradas: 0, saidas: 0 };
+    return h('div', { class: 'pf-nums pf-enxuto' },
+      numero('verde', din(k.recebidoMes), 'Entradas do mês', varia === null ? 'parcelas recebidas' : `${varia >= 0 ? '▲' : '▼'} ${Math.abs(varia)}% sobre o mês passado (${din(ant.entradas)})`),
+      numero('vermelho', din(k.despesasMes), 'Saídas do mês', `despesas pagas · mês passado: ${din(ant.saidas)}`),
+      numero(k.saldoMes >= 0 ? 'verde' : 'vermelho', din(k.saldoMes), 'Resultado do mês', 'entradas − saídas'),
+      numero(k.inadimplencia > 20 ? 'vermelho' : 'azul', k.inadimplencia + '%', 'Inadimplência', 'do que venceu nos últimos 90 dias'));
   }
 
-  window.GESTAO = { telaCrm, telaCalculadoras, telaTranscricao, telaPecas, telaPrompts, telaPadroes, telaRecibos, blocoPainelFinanceiro, dialogoProposta };
+  window.GESTAO = { telaCrm, telaCalculadoras, telaTranscricao, telaPadroes, blocoRecibos, blocoPainelFinanceiro, dialogoProposta };
 })();

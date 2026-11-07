@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.12.1';
+var VERSAO = '8.12.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -85,7 +85,6 @@ var ESQUEMA = {
   Transcricoes: ['id', 'criado_em', 'criado_por', 'tipo', 'titulo', 'cliente_id', 'processo_id', 'data_ato', 'fonte', 'doc_url', 'resumo_cliente', 'resumo_equipe',
     'documentos', 'publicado', 'publicado_em'],
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
-  Prompts: ['id', 'titulo', 'categoria', 'texto', 'criado_por', 'criado_em', 'atualizado_em'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
@@ -476,25 +475,25 @@ var ROTAS = {
   'ia.resumirPrazo': { fn: resumirPrazoIA_ },
   'processos.andamentos': { fn: andamentosProcesso_ },
   // 8.12: gestão
-  'crm.listar': { fn: crmListar_ },
-  'crm.salvar': { fn: crmSalvar_ },
-  'crm.etapa': { fn: crmEtapa_ },
-  'crm.anotar': { fn: crmAnotar_ },
-  'crm.converter': { fn: crmConverter_ },
+  // 8.12.2 (pedido da usuária): CRM / Funil só para a administração
+  'crm.listar': { permissao: 'usuarios', fn: crmListar_ },
+  'crm.salvar': { permissao: 'usuarios', fn: crmSalvar_ },
+  'crm.etapa': { permissao: 'usuarios', fn: crmEtapa_ },
+  'crm.anotar': { permissao: 'usuarios', fn: crmAnotar_ },
+  'crm.converter': { permissao: 'usuarios', fn: crmConverter_ },
+  'crm.consulta': { permissao: 'usuarios', fn: crmAgendarConsulta_ },
   'crm.proposta': { fn: gerarProposta_ },
   'padroes.listar': { fn: padroesListar_ },
   'padroes.salvar': { fn: padroesSalvar_ },
   'padroes.guia': { fn: padroesGuia_ },
-  'prompts.listar': { fn: promptsListar_ },
-  'prompts.salvar': { fn: promptsSalvar_ },
   'ia.audioInicio': { fn: audioInicio_ },
   'ia.audioParte': { fn: audioParte_ },
   'ia.transcrever': { fn: transcrever_ },
   'ia.transcricaoResumo': { fn: transcricaoResumo_ },
   'ia.transcricoes': { fn: transcricoesListar_ },
   'ia.transcricaoPublicar': { fn: transcricaoPublicar_ },
-  'ia.peca': { fn: pecaIA_ },
-  'ia.pecaDoc': { fn: pecaDoc_ },
+  'ia.transcricao': { fn: transcricaoObter_ },
+  'ia.transcricaoTarefa': { fn: transcricaoTarefa_ },
   'fin.painel': { permissao: 'financeiro', fn: painelFinanceiro_ },
   'fin.recibos': { permissao: 'financeiro', fn: recibosListar_ },
   'fin.recibo.gerar': { permissao: 'financeiro', fn: reciboGerar_ },
@@ -504,7 +503,7 @@ var ROTAS = {
 
 var MEMO_LEITURA = null;
 var LEITURAS_RAPIDAS = { 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
-  'feriados.listar': 1, 'ia.transcricoes': 1, 'prompts.listar': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
+  'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
   var rota = ROTAS[acao];
@@ -857,7 +856,7 @@ function listarClientes_(d) {
     .sort(function (a, b) { return normalizar_(a.nome) < normalizar_(b.nome) ? -1 : 1; });
 }
 
-function obterCliente_(d) {
+function obterCliente_(d, u) {
   var c = tabela_('Clientes').linhas.filter(function (r) { return r.id === d.id; })[0];
   if (!c) throw falha_('Cliente não encontrado.');
   var procs = tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === c.id; });
@@ -866,7 +865,7 @@ function obterCliente_(d) {
     cli.obs_antigas = tabela_('ObsArquivo').linhas.filter(function (x) { return x.cliente_id === c.id; }).map(function (x) { return x.texto; }).reverse().join('\n');
   } catch (e) { cli.obs_antigas = ''; }
   var lead = null;
-  try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
+  if (u && PERFIS[u.perfil] && PERFIS[u.perfil].usuarios) try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
   return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id), lead: lead };
 }
 
@@ -11640,70 +11639,57 @@ function transcricaoPublicar_(d, u) {
   });
 }
 
-/* ================================================================== */
-/* Peças com IA: análise processual, dossiê da audiência, mapa da prova */
-/* ================================================================== */
-var PECAS_IA = {
-  analise: { nome: 'Análise processual completa', tarefa: 'Faça uma ANÁLISE PROCESSUAL completa com: ## Síntese do caso; ## Linha do tempo dos fatos e atos (tabela | Data | Fato/ato | Fonte |); ## Pedidos e defesas; ## Pontos controvertidos; ## Provas já produzidas e pendentes; ## Pontos fortes; ## Pontos fracos e riscos (classifique: alto/médio/baixo); ## Situação atual e próximos atos; ## Estratégia sugerida (opções, com prós e contras); ## Pontos para a advogada conferir.' },
-  dossie: { nome: 'Dossiê estratégico da audiência de instrução', tarefa: 'Monte o DOSSIÊ ESTRATÉGICO para a AUDIÊNCIA DE INSTRUÇÃO com: ## 1. Síntese do caso em 10 linhas; ## 2. Tese do nosso cliente (o que precisamos provar) e tese contrária; ## 3. Pontos controvertidos (numerados); ## 4. Mapa da prova (tabela | Fato a provar | Ônus da prova (art. 373 CPC / art. 818 CLT [conferir]) | Prova que já temos | Prova a produzir na audiência | Quem pode provar | Situação (provado/parcial/sem prova) |); ## 5. Estratégia para a audiência (ordem, o que priorizar, o que evitar); ## 6. Roteiro de perguntas — depoimento pessoal da parte contrária (perguntas fechadas e objetivas, ligadas a cada ponto controvertido); ## 7. Roteiro de perguntas — nossas testemunhas; ## 8. Roteiro de perguntas — testemunhas da outra parte (incluindo hipóteses de contradita, art. 457 CPC / art. 829 CLT [conferir]); ## 9. Possíveis requerimentos e protestos na audiência; ## 10. Proposta de acordo: faixa de valores a avaliar e pontos de negociação (sem números inventados); ## 11. Preparação do cliente (checklist e o que ele deve e não deve dizer — sempre a verdade); ## 12. Checklist do dia (documentos, link/sala, horário, testemunhas, intimações); ## Pontos para a advogada conferir.' },
-  mapa: { nome: 'Mapa da prova', tarefa: 'Monte o MAPA DA PROVA: ## Pontos controvertidos; ## Mapa (tabela | Nº | Fato a provar | Quem tem o ônus [conferir] | Documento/prova existente (com folha/evento se o material indicar) | Prova a produzir | Testemunha que sabe | Força (forte/média/fraca) |); ## Lacunas de prova e como cobrir; ## Documentos a pedir ao cliente; ## Pontos para a advogada conferir.' },
-  roteiro: { nome: 'Roteiro de perguntas (depoimentos e testemunhas)', tarefa: 'Monte o ROTEIRO DE PERGUNTAS para a audiência: ## Objetivo de cada oitiva; ## Depoimento pessoal da parte contrária (perguntas curtas e fechadas, agrupadas por ponto controvertido, indicando o que queremos que fique registrado); ## Nossas testemunhas (perguntas abertas para o relato + perguntas de reforço; o que NÃO perguntar); ## Testemunhas da outra parte (perguntas para testar conhecimento direto dos fatos, tempo de convivência, interesse no resultado; hipóteses de contradita); ## Perguntas que o juiz provavelmente fará; ## Pontos para a advogada conferir.' },
-  cliente: { nome: 'Preparação do cliente para a audiência', tarefa: 'Escreva um GUIA DE PREPARAÇÃO para o CLIENTE, em linguagem simples, com: ## Como vai ser a audiência (quem estará, ordem, duração aproximada); ## O que levar; ## Como se comportar; ## Perguntas que podem ser feitas a você (com orientação de responder sempre a verdade, com calma e só o que sabe); ## O que evitar; ## Depois da audiência. Não oriente a mentir nem a omitir.' },
-  recurso: { nome: 'Análise de decisão para recurso', tarefa: 'Analise a DECISÃO/SENTENÇA do material: ## Dispositivo (o que foi decidido, item a item); ## Fundamentos usados pelo juiz; ## Pontos em que perdemos (total/parcial); ## Possíveis erros (de fato, de direito, omissão, contradição, obscuridade); ## Cabimento: embargos de declaração, recurso ordinário/apelação/inominado [conferir prazo e preparo no tribunal]; ## Teses recursais sugeridas, com força de cada uma; ## Riscos de recorrer; ## Pontos para a advogada conferir.' },
-  peticao: { nome: 'Revisão de petição', tarefa: 'REVISE a petição do material: ## Avaliação geral; ## Estrutura e lógica (fatos → fundamentos → pedidos); ## Pedidos (estão certos, líquidos, coerentes com os fatos?); ## Provas citadas e as que faltam; ## Linguagem (clareza, frases longas, repetições) com sugestões de reescrita dos trechos (cite o trecho original e a sugestão); ## Padrão do escritório (títulos em maiúsculas, artigos citados, endereçamento); ## Pontos para a advogada conferir. Não reescreva a peça inteira.' },
-  livre: { nome: 'Pedido livre', tarefa: '' }
-};
-function pecaIA_(d, u) {
-  var tipo = PECAS_IA[d.tipo] ? d.tipo : 'livre';
-  var p = d.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === d.processo_id; })[0] : null;
-  var ctx = p ? contextoProcesso_(p, u, 80) : { texto: '', nomes: [] };
-  var material = String(d.material || '').slice(0, 300000);
-  var instr = String(d.instrucao || '').slice(0, 20000);
-  if (!p && material.length < 200 && !instr) throw falha_('Escolha um processo ou cole o material (petição, contestação, ata, documentos) para a IA analisar.');
-  var tarefa = tipo === 'livre' ? (instr || 'Analise o material.') : PECAS_IA[tipo].tarefa + (instr ? '\n\nINSTRUÇÕES DA ADVOGADA: ' + instr : '');
-  var nomesExtras = String(d.nomes || '').split(/[;\n]/).map(function (x) { return x.trim(); }).filter(Boolean);
-  var corpo = 'TAREFA:\n' + tarefa + (ctx.texto ? '\n\nDADOS DO PAINEL:\n' + ctx.texto : '') + (material ? '\n\nMATERIAL COLADO PELA EQUIPE:\n' + anonimizar_(material, ctx.nomes.concat(nomesExtras)) : '');
-  var r = geminiTexto_([{ text: corpo }], { sistema: IA_SISTEMA_JURIDICO, max: 16000, temp: 0.25 });
-  if (!r.texto) throw falha_('A IA não devolveu texto. Tente de novo.');
-  registrar_(u.usuario, 'peça com IA', (PECAS_IA[tipo].nome || tipo) + (p ? ' · ' + p.numero : ''));
-  return { texto: r.texto + (r.cortado ? '\n\n> (A resposta da IA ficou incompleta por ser longa. Peça de novo só a parte que faltou.)' : ''), titulo: PECAS_IA[tipo].nome || 'Análise', processo: p ? p.numero : '', cliente_id: p ? p.cliente_id : (d.cliente_id || '') };
+/* 8.12.2: "Peças com IA" e "Biblioteca de prompts" saíram a pedido da usuária (ficou só Transcrição e resumos). */
+
+/** Um resumo inteiro (com a análise da equipe) para abrir no painel. */
+function transcricaoObter_(d, u) {
+  var x = tabela_('Transcricoes').linhas.filter(function (r) { return r.id === d.id; })[0];
+  if (!x) throw falha_('Resumo não encontrado.');
+  var o = limpar_(x), c = x.cliente_id ? tabela_('Clientes').linhas.filter(function (r) { return r.id === x.cliente_id; })[0] : null;
+  var p = x.processo_id ? tabela_('Processos').linhas.filter(function (r) { return r.id === x.processo_id; })[0] : null;
+  if (!c && p && p.cliente_id) c = tabela_('Clientes').linhas.filter(function (r) { return r.id === p.cliente_id; })[0];
+  o.nome = c ? c.nome : ''; o.telefone = c ? c.telefone : ''; o.numero = p ? p.numero : '';
+  o.documentos = String(x.documentos || '').split('\n').filter(Boolean);
+  o.cliente = o.resumo_cliente; o.equipe = o.resumo_equipe; o.doc = o.doc_url;
+  return o;
 }
-function pecaDoc_(d, u) {
-  var texto = String(d.texto || '').trim();
-  if (texto.length < 40) throw falha_('Não há texto para salvar.');
-  var p = d.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === d.processo_id; })[0] : null;
-  var cliId = d.cliente_id || (p && p.cliente_id) || '';
-  var pasta = pastaDoClienteOu_(cliId, 'PASTA_IA_ID', 'PAINEL — DOCUMENTOS DA IA');
-  var titulo = String(d.titulo || 'Análise').slice(0, 120);
-  var g = docMarkdown_(titulo, '> RASCUNHO feito com apoio de IA — revisar antes de usar. A IA auxilia, não substitui a análise da advogada.\n\n' + texto, pasta,
-    (p ? 'Processo ' + p.numero + ' · ' : '') + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'));
-  DriveApp.getFileById(g.id).setName(titulo + (p ? ' — ' + p.numero : '') + ' — ' + Utilities.formatDate(new Date(), TZ, 'dd-MM-yyyy'));
-  registrar_(u.usuario, 'documento da IA salvo', titulo + (cliId ? ' ' + cliId : ''));
-  return { doc: g.url };
+/** "Criar tarefa com os próximos passos": vira tarefa de quem pediu (pedir documentos, próximos passos do resumo). */
+function transcricaoTarefa_(d, u) {
+  var x = transcricaoObter_({ id: d.id }, u);
+  var passos = String(x.resumo_equipe || '').split('\n'), dentro = false, lista = [];
+  passos.forEach(function (l) { if (/^##\s/.test(l)) dentro = /pr[oó]ximos passos|provid[eê]ncias|provas pendentes/i.test(l); else if (dentro && /^\s*([-*•]|\d+[.)])\s+/.test(l)) lista.push(l.replace(/^\s*([-*•]|\d+[.)])\s+/, '').replace(/\*\*/g, '')); });
+  var docs = x.documentos || [];
+  var desc = (docs.length ? 'Documentos para pedir ao cliente:\n' + docs.map(function (z) { return '- ' + z; }).join('\n') + '\n\n' : '') +
+    (lista.length ? 'Próximos passos (do resumo):\n' + lista.slice(0, 12).map(function (z) { return '- ' + z; }).join('\n') + '\n\n' : '') + 'Resumo completo: ' + (x.doc_url || '');
+  var agora = new Date().toISOString(), id = novoId_('T');
+  comTrava_(function () {
+    inserirLinha_(tabela_('Tarefas'), { id: id, titulo: (x.tipo === 'audiencia' ? 'Depois da audiência — ' : 'Depois do atendimento — ') + (x.nome || x.titulo), descricao: desc.slice(0, 20000),
+      responsavel: d.responsavel || u.usuario, processo_id: x.processo_id || '', numero: x.numero || '', cliente_id: x.cliente_id || '', vence_em: somarDias_(hojeSP_(), 2), etapa: 'afazer',
+      peso: '2', situacao: 'ativa', concluida_por: '', concluida_em: '', historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' ' + (u.nome || u.usuario) + ': criada pelo resumo',
+      criado_em: agora, criado_por: u.usuario, atualizado_em: agora, atualizado_por: u.usuario, prioridade: 'alta',
+      checklist: JSON.stringify(docs.slice(0, 15).map(function (z) { return { t: 'Pedir: ' + z, ok: false }; }).concat(lista.slice(0, 10).map(function (z) { return { t: z, ok: false }; }))) });
+  });
+  registrar_(u.usuario, 'tarefa do resumo', x.id);
+  return { id: id };
 }
 
-/* ---------- Biblioteca de prompts da equipe (os prontos ficam no painel; aqui só os criados pelo escritório) ---------- */
-function promptsListar_() { return { itens: tabela_('Prompts').linhas.map(limpar_).sort(function (a, b) { return a.titulo < b.titulo ? -1 : 1; }) }; }
-function promptsSalvar_(d, u) {
-  return comTrava_(function () {
-    var t = tabela_('Prompts'), x = d.item || {}, agora = new Date().toISOString();
-    if (d.apagar) {
-      var a = t.linhas.filter(function (r) { return r.id === d.apagar; })[0];
-      if (a && (a.criado_por === u.usuario || u.perfil === 'administrador')) apagarLinha_(t, a);
-      return { ok: true };
-    }
-    var titulo = String(x.titulo || '').trim().slice(0, 120), texto = String(x.texto || '').trim().slice(0, 20000);
-    if (!titulo || texto.length < 20) throw falha_('Preencha o título e o texto do prompt.');
-    if (x.id) {
-      var l = t.linhas.filter(function (r) { return r.id === x.id; })[0];
-      if (!l) throw falha_('Prompt não encontrado.');
-      atualizarLinha_(t, l, { titulo: titulo, categoria: String(x.categoria || 'Do escritório').slice(0, 60), texto: texto, atualizado_em: agora });
-      return { id: l.id };
-    }
-    var id = novoId_('Q');
-    inserirLinha_(t, { id: id, titulo: titulo, categoria: String(x.categoria || 'Do escritório').slice(0, 60), texto: texto, criado_por: u.usuario, criado_em: agora, atualizado_em: agora });
-    return { id: id };
+/** CRM: "Agendar consulta" marca na agenda ATENDIMENTOS do Google e passa o cartão para "Consulta agendada". */
+function crmAgendarConsulta_(d, u) {
+  var l = tabela_('Leads').linhas.filter(function (r) { return r.id === d.id; })[0];
+  if (!l) throw falha_('Contato não encontrado.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.data || '') || !/^\d{2}:\d{2}$/.test(d.hora || '')) throw falha_('Informe o dia e a hora da consulta.');
+  var video = d.modo === 'video';
+  var ev = null, erroAg = '';
+  try {
+    ev = criarCompromisso_({ agenda: 'ATENDIMENTOS', titulo: 'Consulta — ' + l.nome + (l.area ? ' (' + l.area + ')' : ''), data: d.data, inicio: d.hora, fim: d.fim || '',
+      local: video ? 'Por vídeo' : 'Escritório', descricao: [l.assunto, l.telefone ? 'Telefone: ' + l.telefone : '', 'Veio por: ' + (l.canal || '—')].filter(Boolean).join('\n') }, u);
+  } catch (e) { erroAg = String(e.message || e); }
+  crmEtapa_({ id: l.id, etapa: 'consulta', consulta_em: d.data + 'T' + d.hora, nota: (video ? 'por vídeo' : 'no escritório') + (erroAg ? ' (não entrou no Google Agenda: ' + erroAg + ')' : '') }, u);
+  comTrava_(function () {
+    var t = tabela_('Leads'), x = t.linhas.filter(function (r) { return r.id === l.id; })[0];
+    atualizarLinha_(t, x, { proxima_acao: 'Confirmar a consulta na véspera', proxima_data: somarDias_(d.data, -1) < hojeSP_() ? hojeSP_() : somarDias_(d.data, -1) });
   });
+  return { ok: true, agenda: !!ev, erro: erroAg };
 }
 
 /* ================================================================== */

@@ -611,16 +611,14 @@
     ['prazos', 'Intimações e prazos', 'Escritório'],
     ['tarefas', 'Tarefas', 'Escritório'],
     ['agenda', 'Agenda', 'Escritório'],
-    ['crm', 'CRM / Funil', 'Relacionamento'],
+    // 8.12.2 (pedido da usuária): CRM e Marketing só a administração; Padrões operacionais saem do menu (botão discreto no Início);
+    // Peças com IA e Biblioteca de prompts saíram; Recibos virou uma aba do Painel financeiro
+    ['crm', 'CRM / Funil', 'Relacionamento', 'usuarios'],
     ['marketing', 'Marketing', 'Relacionamento', 'usuarios'],
     ['modelos', 'Documentos e propostas', 'Documentos'],
     ['calculadoras', 'Calculadoras', 'Documentos'],
-    ['padroes', 'Padrões operacionais', 'Documentos'],
     ['transcricao', 'Transcrição e resumos', 'Inteligência'],
-    ['pecas', 'Peças com IA', 'Inteligência'],
-    ['prompts', 'Biblioteca de prompts', 'Inteligência'],
     ['financeiro', 'Painel financeiro', 'Gestão', 'financeiro'],
-    ['recibos', 'Recibos', 'Gestão', 'financeiro'],
     ['relatorios', 'Relatórios', 'Gestão', 'usuarios'],
     ['usuarios', 'Gerenciar acessos', 'Gestão', 'usuarios']
   ];
@@ -2229,8 +2227,8 @@
       ], u => editarUsuario(u), 'Nenhum usuário.'),
       h('div', { id: 'editar-usuario' }),
       h('section', { class: 'caixa' }, h('h2', {}, 'Quem pode ver o quê'),
-        h('table', { class: 'mini-tab permissoes' }, h('thead', {}, h('tr', {}, ['Perfil', 'Clientes, processos, intimações, agenda e modelos', 'Conferir prazos', 'Financeiro e contratos', 'Usuários'].map(x => h('th', {}, x)))),
-          h('tbody', {}, [['Administrador', '✓', '✓', '✓', '✓'], ['Advogada', '✓', '✓', '—', '—'], ['RH', '✓', '—', '✓ (sem valores)', '—'], ['Secretário', '✓', '—', '—', '—'], ['Estagiário', '✓', '—', '—', '—']]
+        h('table', { class: 'mini-tab permissoes' }, h('thead', {}, h('tr', {}, ['Perfil', 'Clientes, processos, intimações, agenda, documentos, calculadoras e transcrição', 'Tarefas', 'Conferir prazos', 'Painel financeiro', 'CRM, Marketing, Relatórios e acessos'].map(x => h('th', {}, x)))),
+          h('tbody', {}, [['Administrador', '✓', 'todas', '✓', '✓', '✓'], ['Advogada', '✓', 'só as dela', '✓', '—', '—'], ['RH', '✓', 'só as dela', '—', '✓ (sem totais)', '—'], ['Secretário', '✓', 'só as dele', '—', '—', '—'], ['Estagiário', '✓', 'só as dele', '—', '—', '—']]
             .map(l => h('tr', {}, l.map((x, i) => h(i ? 'td' : 'th', { scope: i ? null : 'row' }, x))))))),
       caixaRevisao(),
       form,
@@ -2585,7 +2583,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.12.1';
+  const VERSAO_PAINEL = '8.12.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3372,6 +3370,7 @@
       : ver === 'proximas' ? tabelaParcelas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.', true)
       : ver === 'pix' ? blocoPix()
       : ver === 'antigos' ? blocoLevantamento()
+      : ver === 'recibos' ? (() => { const box = h('div', {}, h('p', { class: 'peq' }, 'Carregando os recibos…')); G().blocoRecibos(params).then(el => box.replaceChildren(el)).catch(e => box.replaceChildren(h('p', { class: 'erro' }, e.message))); return box; })()
       : ver === 'levantar' ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'O robô acha alvará, RPV e precatório nas intimações e cria a tarefa para quem cuida do processo. Depois de levantar, abra o honorário e use "Lançar alvará ou depósito": a tarefa fecha sozinha.'),
         tabela(['Cliente', 'Processo', 'Tipo', 'Valor citado', 'Honorário previsto', 'Com quem', ''], lev, x => [
           h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente || '—')),
@@ -3398,7 +3397,7 @@
         h('div', { class: 'carteira-acoes' },
           h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
           rh ? null : h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
-          h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'), h('a', { class: 'btn sec', href: '#/recibos' }, 'Recibos'))),
+          h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'))),
       h('section', { class: 'fin-nums' },
         num('verde', rh ? '—' : reais(t.recebidoMes), 'Recebido no mês', rh ? 'total só para a administração' : 'parcelas pagas neste mês'),
         num('dourado', rh ? '—' : reais(t.aReceber30), 'A receber', rh ? 'total só para a administração' : 'nos próximos 30 dias'),
@@ -3410,12 +3409,12 @@
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
           aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'Próximos 30 dias', r.proximas.length),
-          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('antigos', '📥 Do sistema antigo', null)),
+          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('recibos', '🧾 Recibos', null), aba('antigos', '📥 Do sistema antigo', null)),
         conteudo));
     // 8.12 (pedido da usuária): o painel de como estão as finanças, logo abaixo dos números (some para o RH, que não vê totais)
     if (!rh && window.GESTAO) {
       let aberto = true; try { aberto = localStorage.getItem('fin_painel') !== 'fechado'; } catch (e) { /* ok */ }
-      const det = h('details', { class: 'caixa secao pf-secao', open: aberto }, h('summary', {}, '📊 Como estão as finanças'), h('p', { class: 'peq' }, 'Montando o painel…'));
+      const det = h('details', { class: 'caixa secao pf-secao', open: aberto }, h('summary', {}, '📊 Entradas e saídas do mês'), h('p', { class: 'peq' }, 'Montando o painel…'));
       det.addEventListener('toggle', () => { try { localStorage.setItem('fin_painel', det.open ? 'aberto' : 'fechado'); } catch (e) { /* ok */ } });
       const ref = app.querySelector('.fin-corpo'); if (ref) ref.before(det);
       window.GESTAO.blocoPainelFinanceiro().then(el => { if (el) det.lastChild.replaceWith(el); else det.remove(); }).catch(() => det.remove());
@@ -4553,10 +4552,7 @@ function main() {
       ev.target.disabled = false;
     }, 'sec');
     const atalhos = h('div', { class: 'ia-atalhos' },
-      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=dossie&processo=' + p.id }, '🎯 Dossiê da audiência'),
-      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=mapa&processo=' + p.id }, 'Mapa da prova'),
-      h('a', { class: 'btn mini sec', href: '#/pecas?tipo=analise&processo=' + p.id }, 'Análise completa'),
-      h('a', { class: 'btn mini sec', href: '#/transcricao?tipo=audiencia&processo=' + p.id }, '🎙 Transcrever audiência'));
+      h('a', { class: 'btn mini sec', href: '#/transcricao?tipo=audiencia&processo=' + p.id }, '🎙 Transcrever / resumir audiência'));
     return h('section', { class: 'caixa' }, h('div', { class: 'bloco-cab' }, h('h2', {}, 'Como está o processo?'), bt), atalhos, corpo);
   }
   /** 8.7.0: linha do tempo — andamentos, intimações, prazos, audiências, tarefas e documentos numa lista só. */
@@ -4691,25 +4687,55 @@ function main() {
         case 'relatorios': await telaRelatorios(params); break;
         case 'marketing': await telaMarketing(params); break;
         case 'organizar': await telaOrganizar(params); break;
-        case 'crm': await G().telaCrm(params); break;
+        case 'crm': if (!sessao.usuario.pode.usuarios) { mostrar(h('div', { class: 'nota alerta' }, 'O CRM / Funil é só da administração.')); break; } await G().telaCrm(params); break;
         case 'calculadoras': await G().telaCalculadoras(params); break;
         case 'transcricao': await G().telaTranscricao(params); break;
-        case 'pecas': await G().telaPecas(params); break;
-        case 'prompts': await G().telaPrompts(params); break;
         case 'padroes': await G().telaPadroes(params); break;
-        case 'recibos': await G().telaRecibos(params); break;
+        case 'recibos': location.replace('#/financeiro?ver=recibos'); return;
+        case 'pecas': case 'prompts': location.replace('#/transcricao'); return;
         case 'honorario': await telaHonorario(id, params); break;
         case 'future':
           if (!sessao.usuario.pode.future) { mostrar(h('div', { class: 'nota alerta' }, 'Você não tem acesso ao painel do Edifício Future.')); break; }
           if (!window.FUTURE) { mostrar(h('div', { class: 'nota alerta' }, 'Atualize a página (F5) para abrir o painel do Edifício Future.')); break; }
           await window.FUTURE.tela(caminho.split('/').slice(1).map(decodeURIComponent), params); break;
-        default: await telaInicio();
+        default: await telaInicio(); extrasDoInicio(n);
       }
     } catch (e) {
       if (e && e.obsoleto) return;
       if (sessao) mostrar(h('div', { class: 'nota alerta' }, h('p', {}, e.message), botao('Tentar de novo', () => rota())));
     }
   }
+
+  /* 8.12.2: depois do Início: aviso do funil (só administração) e, bem discreto no fim, o guia para quem chegou agora. */
+  function extrasDoInicio(n) {
+    if (n !== rotaN || !sessao) return;
+    const fim = h('p', { class: 'ini-guia' }, h('a', { href: '#/padroes' }, '📘 Chegou agora no escritório? Veja os padrões operacionais (como trabalhamos)'));
+    app.append(fim);
+    if (sessao.usuario.pode.usuarios && window.GESTAO) api('crm.listar', {}).then(r => {
+      if (n !== rotaN) return;
+      const hoje = hojeISO();
+      const abertos = r.leads.filter(l => !['ganho', 'perdido'].includes(l.etapa));
+      const responder = abertos.filter(l => l.etapa === 'novo' || (l.proxima_data && l.proxima_data <= hoje));
+      if (!responder.length) return;
+      const faixa = h('a', { class: 'ini-crm', href: '#/crm' }, h('strong', {}, `📈 Funil: ${responder.length} contato${responder.length === 1 ? '' : 's'} para responder hoje`),
+        h('span', {}, ' · ' + responder.slice(0, 3).map(l => l.nome.split(' ')[0]).join(', ') + (responder.length > 3 ? '…' : '') + ' — abrir o CRM'));
+      const topo = app.querySelector('.ini-topo'); if (topo) topo.after(faixa); else app.prepend(faixa);
+    }).catch(() => {});
+  }
+
+  /* 8.12.2 (pedido da usuária): ao entrar numa aba o menu da esquerda recolhe (só os ícones) e a tela fica maior.
+     Passar o mouse no menu abre por cima; o botão ☰ do topo do menu fixa aberto/fechado. */
+  function recolherMenu(sim) { if (window.innerWidth > 900) document.body.classList.toggle('menu-recolhido', !!sim); }
+  document.addEventListener('click', ev => {
+    const a = ev.target.closest && ev.target.closest('#abas a[href^="#/"]');
+    if (a) recolherMenu(true);
+  });
+  (() => {
+    const lat = document.getElementById('lateral'); if (!lat) return;
+    const bt = h('button', { type: 'button', class: 'menu-alternar', 'aria-label': 'Abrir ou fechar o menu', title: 'Abrir / fechar o menu', onclick: () => document.body.classList.toggle('menu-recolhido') }, h('span'), h('span'), h('span'));
+    lat.prepend(bt);
+    if (location.hash && !/^#\/?(inicio)?$/.test(location.hash)) recolherMenu(true);
+  })();
 
   /* 8.12: telas de gestão (gestao.js). Sem o arquivo (cache velho), pede para atualizar. */
   function G() { if (!window.GESTAO) throw new Error('Atualize a página (F5) para abrir esta tela.'); return window.GESTAO; }

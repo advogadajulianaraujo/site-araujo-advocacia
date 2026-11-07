@@ -761,3 +761,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Assinatura). Roda na hora ao salvar cliente novo (`salvarCliente_`), ao abrir o CRM e nos robôs. Assinatura "aguardando" leva o cartão
   para "Proposta enviada". Ficha do cliente: selo "📈 Funil: etapa · veio por canal" (`seloFunil`, `lead` em clientes.obter); cartão do
   funil com "✓ cliente" quando já tem cadastro.
+- 8.12.2 (pedido da usuária: "gerencie o que as pessoas podem ver"): CRM / Funil e Marketing SÓ administração (menu, rotas `crm.*` com
+  permissão `usuarios`; `crm.proposta` continua aberta para Documentos e propostas; selo do funil na ficha só para a administração).
+  Todos: Início, Clientes e processos, Intimações, Tarefas (cada um vê só as suas; a administração vê todas), Agenda, Documentos e propostas,
+  Calculadoras, Transcrição e resumos. Padrões operacionais SAÍRAM do menu: link discreto no fim de todo Início ("📘 Chegou agora no
+  escritório?…", `extrasDoInicio`). SAÍRAM "Peças com IA" e "Biblioteca de prompts" (rotas e telas; #/pecas e #/prompts levam à Transcrição).
+  Recibos virou a aba "🧾 Recibos" do Painel financeiro (#/recibos → #/financeiro?ver=recibos); painel financeiro SEM gráficos: só Entradas,
+  Saídas, Resultado do mês e Inadimplência (`blocoPainelFinanceiro`). Menu da esquerda RECOLHE (só ícones, 68 px) ao clicar numa aba
+  (`menu-recolhido`; passar o mouse abre por cima; botão ☰ no topo do menu alterna; só no computador). Início da administração: faixa
+  "📈 Funil: N contatos para responder hoje". CRM: "📅 Agendar consulta" (`crm.consulta` → agenda ATENDIMENTOS do Google + etapa Consulta
+  agendada + "confirmar na véspera") e "💬 Mensagem pronta" com 7 modelos (`mensagensLead`). Transcrição: "Resumos feitos" abrem no painel
+  (`ia.transcricao`), "Pedir os documentos no WhatsApp", "＋ Tarefa com os próximos passos" (`ia.transcricaoTarefa`, checklist),
+  "Tirar do Acompanhe", gravação com Pausar/Continuar e rascunho salvo no computador a cada 10 s (localStorage `transcricao_rascunho`).
