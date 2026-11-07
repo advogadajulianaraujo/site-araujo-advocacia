@@ -78,6 +78,7 @@ var ESQUEMA = {
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
+  LogArquivo: ['quando', 'usuario', 'acao', 'detalhe'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
@@ -536,9 +537,14 @@ function comMemoria_(acao, u, dados, fn) {
 /* Login, senhas e sessões                                             */
 /* ------------------------------------------------------------------ */
 
-function validarSenha_(senha) {
+/** Senha nova (cadastro e troca): 8 caracteres ou mais, com letra e número, diferente do usuário. O login aceita as antigas. */
+function validarSenha_(senha, usuario) {
   senha = String(senha || '');
   if (!senha.trim()) throw falha_('Informe uma senha.');
+  if (senha.length < 8) throw falha_('A senha precisa ter pelo menos 8 caracteres.');
+  if (!/[A-Za-zÀ-ÿ]/.test(senha) || !/\d/.test(senha)) throw falha_('A senha precisa ter letras e números.');
+  if (usuario && senha.toLowerCase().indexOf(String(usuario).toLowerCase()) >= 0) throw falha_('A senha não pode conter o nome de usuário.');
+  if (/^(12345678|password|senha123|abc12345|araujo123)/i.test(senha)) throw falha_('Essa senha é fácil demais. Escolha outra.');
   return senha;
 }
 
@@ -2456,7 +2462,7 @@ function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 function rodarRobo_(quem) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw falha_('O robô já está rodando. Tente de novo em 1 minuto.');
-  var ctx, erros = [], novas = 0, prazosNovos = 0;
+  var ctx, erros = [], novas = 0, prazosNovos = 0, solta = false, t0Robo = Date.now();
   TRAVA_NIVEL_ = 1; // o robô já segura a trava: o que ele chama (baixa do PIX, recibo) não trava de novo
   try {
     ctx = contextoRobo_();
@@ -2470,15 +2476,17 @@ function rodarRobo_(quem) {
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
     try { robosEscritorio_(ctx); } catch (eR) { erros.push('Robôs do escritório: ' + (eR.message || eR)); }
-    try { futureRobo_(); } catch (eF) { erros.push('Edifício Future: ' + (eF.message || eF)); }
     try { sincronizarAgenda_(ctx, 45000); } catch (eS) { erros.push('Agenda do Google: ' + (eS.message || eS)); }
-    try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
-    try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 220000) { reprocessarPixPendentes_(30000); lerPixSaida_(30000); } } catch (eX2) { erros.push('Robô do PIX (despesas): ' + (eX2.message || eX2)); }
     definirPendentes_(ctx);
     recalcularPrazosAbertos_(ctx);
     try { ctx.intim.adiar = true; arquivarMovimentos_(ctx.intim, ctx.prazos, true); regravarMudadas_(ctx.intim); } catch (eM) { ctx.intim.adiar = false; }
     try { ctx.prazos.adiar = true; atribuirResponsaveis_(ctx.prazos, ctx.procs); regravarMudadas_(ctx.prazos); } catch (e3) { ctx.prazos.adiar = false; }
     [ctx.procs, ctx.intim, ctx.prazos].forEach(gravarLote_);
+    // 8.12: as partes que não usam as listas lidas acima (prédio e PIX) rodam em trava própria; entre uma e outra a equipe consegue salvar
+    TRAVA_NIVEL_ = 0; lock.releaseLock(); solta = true;
+    try { comTrava_(function () { futureRobo_(); }); } catch (eF) { erros.push('Edifício Future: ' + (eF.message || eF)); }
+    try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 200000) comTrava_(function () { lerPix_(Math.min(90000, 260000 - (Date.now() - ctx.inicio))); }); } catch (eX) { erros.push('Robô do PIX: ' + (eX.message || eX)); }
+    try { if (!ctx.gmailParcial && Date.now() - ctx.inicio < 220000) comTrava_(function () { reprocessarPixPendentes_(30000); lerPixSaida_(30000); }); } catch (eX2) { erros.push('Robô do PIX (despesas): ' + (eX2.message || eX2)); }
     if (ctx.gmailParcial) erros.push('Gmail: leitura parcial por causa do limite de tempo do Google; o resto vem na próxima rodada (ou clique em Atualizar agora).');
     var agora = new Date();
     var resumo = 'Robô em ' + Utilities.formatDate(agora, TZ, 'dd/MM/yyyy HH:mm') + ': ' + novas +
@@ -2488,8 +2496,8 @@ function rodarRobo_(quem) {
     registrar_(quem || 'robô', 'robô', resumo);
     return { resumo: resumo, intimacoes: novas, prazos: prazosNovos, erros: erros };
   } finally {
-    TRAVA_NIVEL_ = 0;
-    lock.releaseLock();
+    if (!solta) { TRAVA_NIVEL_ = 0; lock.releaseLock(); }
+    contarTempoRobo_(Date.now() - t0Robo);
   }
 }
 
@@ -4632,7 +4640,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -8036,7 +8044,50 @@ function aquecerMemoria_() {
   });
   return n;
 }
-function aquecerGatilho() { try { aquecerMemoria_(); } catch (e) { /* segue */ } }
+/** 8.12: só no horário do escritório (seg–sex 7h–19h, sáb 8h–13h): fora dele ninguém abre o painel e o Google conta cada minuto de robô. */
+function aquecerGatilho() {
+  var agora = new Date(), hora = +Utilities.formatDate(agora, TZ, 'H'), dsem = +Utilities.formatDate(agora, TZ, 'u'); // 1 = segunda … 7 = domingo
+  var util = (dsem <= 5 && hora >= 7 && hora < 19) || (dsem === 6 && hora >= 8 && hora < 13);
+  if (!util) return;
+  var t0 = Date.now();
+  try { aquecerMemoria_(); } catch (e) { /* segue */ }
+  contarTempoRobo_(Date.now() - t0);
+}
+
+/* 8.12: conta quanto tempo os robôs usaram hoje. Conta gratuita do Google: 90 min por dia de gatilhos; passou disso, o Google
+   para os robôs até o dia seguinte sem avisar. O vigia e o cartão do robô mostram quando passar de 70 min. */
+function contarTempoRobo_(ms) {
+  try {
+    var pr = PropertiesService.getScriptProperties(), hoje = hojeSP_(), j = {};
+    try { j = JSON.parse(pr.getProperty('TEMPO_ROBO') || '{}'); } catch (e) { j = {}; }
+    if (j.dia !== hoje) j = { dia: hoje, ms: 0, n: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null };
+    j.ms += Math.max(0, ms || 0); j.n++;
+    pr.setProperty('TEMPO_ROBO', JSON.stringify(j));
+  } catch (e) { /* nunca derruba o robô */ }
+}
+function tempoRoboHoje_() {
+  try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
+  catch (e) { return { min: 0, vezes: 0 }; }
+}
+
+/* 8.12: a aba Log guarda os últimos 180 dias; o resto vai para LogArquivo (nada se perde; a linha do tempo do processo lê as duas).
+   Uma vez por dia, só quando o Log passa de 4.000 linhas. Assim os Relatórios não ficam lentos com o tempo. */
+function arquivarLog_() {
+  var hoje = hojeSP_(); if (config_('LOG_ARQUIVADO_DIA') === hoje) return 0;
+  setConfig_('LOG_ARQUIVADO_DIA', hoje, 'Último dia em que o robô passou o Log antigo (mais de 180 dias) para LogArquivo');
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('Log');
+  if (!sh || sh.getLastRow() < 4000) return 0;
+  var limite = new Date(Date.now() - 180 * 86400000).toISOString();
+  var vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getDisplayValues();
+  var n = 0; while (n < vals.length && String(vals[n][0]) < limite) n++;
+  if (!n) return 0;
+  tabela_('LogArquivo'); // cria a aba se faltar
+  var arq = ss.getSheetByName('LogArquivo');
+  arq.getRange(arq.getLastRow() + 1, 1, n, 4).setNumberFormat('@').setValues(vals.slice(0, n));
+  sh.deleteRows(2, n);
+  marcarMudanca_();
+  return n;
+}
 
 /* ---------- Início: audiências para avisar, aniversariantes e cobranças do dia ---------- */
 
@@ -8353,7 +8404,7 @@ function linhaDoTempo_(d, u) {
     if (t.processo_id !== p.id) return;
     add(t.concluida_em || t.criado_em, 'tarefa', t.titulo, t.concluida_em ? 'feita' + (t.concluida_por ? ' por ' + t.concluida_por : '') : 'em aberto', '#/tarefas');
   });
-  if (p.cliente_id) tabela_('Log').linhas.forEach(function (l) {
+  if (p.cliente_id) tabela_('Log').linhas.concat(tabela_('LogArquivo').linhas).forEach(function (l) {
     if (/documentos gerados|documentos assinados|whatsapp ao cliente/.test(l.acao) && String(l.detalhe || '').indexOf(p.cliente_id) >= 0) add(l.quando, 'documento', l.acao, String(l.detalhe || '').replace(p.cliente_id, '').trim(), '');
   });
   itens.sort(function (a, b) { return a.quando < b.quando ? 1 : -1; });
@@ -9026,7 +9077,9 @@ function atualizarAndamentos_(limiteMs, maximo) {
 }
 
 function andamentosGatilho() {
+  var t0 = Date.now();
   try { atualizarAndamentos_(270000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+  contarTempoRobo_(Date.now() - t0);
 }
 
 /** Andamentos de um processo (e, se pedido, consulta o DataJud agora). */
@@ -9049,7 +9102,7 @@ function andamentosProcesso_(d, u) {
 }
 
 function estadoExtras_() {
-  return { alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
+  return { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
     ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO, agenda: config_('AGENDA_SINC') || '' };
 }
@@ -9271,11 +9324,17 @@ function vigiaRobo_(avisar) {
     });
   } catch (e) { /* segue */ }
   if (pend) alertas.push(pend + ' prazo(s) aberto(s) sem data fatal. Abra Intimações › "A definir".');
+  var ultRobo = config_('ROBO_ULTIMA_EXECUCAO');
+  if (ultRobo && agora - Date.parse(ultRobo) > 3 * 3600000) alertas.push('O robô não roda desde ' + Utilities.formatDate(new Date(ultRobo), TZ, 'dd/MM HH:mm') + ' (deveria rodar de hora em hora). O Google pode ter parado os robôs pelo limite diário: abra script.google.com › Execuções. Enquanto isso, confira as intimações direto no eproc e no PJe.');
+  var tr = tempoRoboHoje_();
+  if (tr.min >= 70) alertas.push('Os robôs já usaram ' + tr.min + ' min hoje (o Google para tudo em 90 min por dia na conta gratuita). Se continuar assim, avise para espaçar os robôs.');
   if (diverg.length) alertas.push('A IA encontrou prazo diferente do calculado em ' + diverg.length + ' processo(s): ' + diverg.slice(0, 8).join(', ') + '. Confira no sistema do tribunal.');
   if (avisar && alertas.length) {
     var ult = config_('ALERTA_ROBO_EM');
     if (!ult || agora - Date.parse(ult) > 12 * 3600000) {
-      usuarios_().filter(function (u) { return u.ativo === 'sim' && u.email && (u.perfil === 'administrador' || u.perfil === 'advogada'); }).forEach(function (u) {
+      var dest = usuarios_().filter(function (u) { return u.ativo === 'sim' && u.email && (u.perfil === 'administrador' || u.perfil === 'advogada'); });
+      if (!dest.length) { try { var dono = Session.getEffectiveUser().getEmail(); if (dono) dest = [{ email: dono }]; } catch (eD) { /* sem e-mail */ } }
+      dest.forEach(function (u) {
         try { GmailApp.sendEmail(u.email, '⚠ Painel: atenção com os prazos', 'O painel encontrou situações que podem fazer perder prazo:\n\n- ' + alertas.join('\n- ') + '\n\nhttps://araujoadvocaciasc.com.br/painel/', { name: 'Painel Araújo Advocacia' }); } catch (e) { /* segue */ }
       });
       setConfig_('ALERTA_ROBO_EM', new Date().toISOString(), 'Último alerta do vigia do robô');

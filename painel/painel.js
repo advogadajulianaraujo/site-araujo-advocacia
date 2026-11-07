@@ -364,7 +364,7 @@
     const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null;
     try { return await fetch(url, Object.assign({}, op, ctl ? { signal: ctl.signal } : {})); } finally { if (timer) clearTimeout(timer); }
   }
-  async function chamarUm(acao, dados) {
+  async function chamarUm(acao, dados, tentativa) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
     let resp;
     try {
@@ -376,6 +376,12 @@
     }
     let j;
     try { j = await resp.json(); } catch (e) { throw new Error('Resposta inesperada do servidor.'); }
+    if (!j.ok && /sistema está ocupado/i.test(j.erro || '') && !LEITURAS.has(acao) && (tentativa || 0) < 18) {
+      // 8.12: o robô está gravando; o pedido nem começou no servidor. Espera e manda de novo (até ~3 min), sem a pessoa perder o que digitou.
+      if (!tentativa) avisar('O robô está gravando na planilha agora. Seu pedido será salvo em instantes, não feche esta tela…');
+      await new Promise(r => setTimeout(r, 8000));
+      return chamarUm(acao, dados, (tentativa || 0) + 1);
+    }
     if (!j.ok) {
       if (j.sessao) { sair(true); }
       if (j.erro === 'Ação desconhecida.') throw new Error('Esta parte precisa da atualização do programa do Google (etapa 2): cole o Code.gs novo no Apps Script e implante uma nova versão.');
@@ -726,7 +732,7 @@
       h('div', { class: 'campo' }, campo('codigo', 'Código de primeiro acesso', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('nome', 'Seu nome', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('usuario', 'Usuário (sem espaços)', '', { obrigatorio: true, auto: 'username' })),
-      h('div', { class: 'campo' }, campo('senha', 'Senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
+      h('div', { class: 'campo' }, campo('senha', 'Senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' , dica: 'mínimo 8, com letras e números' })),
       h('div', { class: 'campo' }, campo('senha2', 'Repita a senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Criar administrador'),
       h('p', { class: 'erro' }),
@@ -2164,7 +2170,7 @@
         campo('nome', 'Nome da pessoa', '', { obrigatorio: true }),
         campo('usuario', 'Usuário (ex.: Estagiario)', '', { obrigatorio: true }),
         campo('perfil', 'Perfil', 'secretario', { opcoes: PERFIS }),
-        campo('senha', 'Senha inicial', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' }),
+        campo('senha', 'Senha inicial', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 8, com letras e números' }),
         campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', '', { tipo: 'email', auto: 'off' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Criar usuário')),
       h('p', { class: 'erro' }));
@@ -2280,7 +2286,7 @@
         campo('ativo', 'Situação', u.ativo, { opcoes: [['sim', 'Ativo'], ['nao', 'Desativado']] }),
         campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', u.email, { tipo: 'email', auto: 'off' }),
         campo('resumo_email', 'Resumo das 7h por e-mail', u.resumo_email === 'nao' ? 'nao' : 'sim', { opcoes: [['sim', 'Receber'], ['nao', 'Não receber']] }),
-        campo('senha', 'Nova senha (deixe em branco para manter)', '', { tipo: 'password', auto: 'new-password' })),
+        campo('senha', 'Nova senha (deixe em branco para manter; mínimo 8, com letras e números)', '', { tipo: 'password', auto: 'new-password' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
         botao('Desconectar agora', async ev => {
           ev.target.disabled = true;
@@ -2307,7 +2313,7 @@
     const form = h('form', { class: 'entrar' },
       h('h1', {}, 'Trocar senha'),
       h('div', { class: 'campo' }, campo('atual', 'Senha atual', '', { tipo: 'password', obrigatorio: true, auto: 'current-password' })),
-      h('div', { class: 'campo' }, campo('nova', 'Nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
+      h('div', { class: 'campo' }, campo('nova', 'Nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 8, com letras e números' })),
       h('div', { class: 'campo' }, campo('nova2', 'Repita a nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Trocar senha'),
       h('p', { class: 'erro' }));
@@ -2629,6 +2635,9 @@
         prox ? ' · próxima tentativa: ' + quando(prox) : '',
         dj2.erro ? ' · problema: ' + dj2.erro : ''));
     }
+    const tr = robo && robo.tempoRobo;
+    if (tr && sessao.usuario.pode.usuarios) status.append(h('div', { class: 'peq' + (tr.min >= 70 ? ' erro' : '') }, h('strong', {}, 'Tempo de robô hoje: '),
+      `${tr.min} de 90 min do Google`, tr.ontem != null ? ` · ontem: ${tr.ontem} min` : '', tr.min >= 70 ? ' · perto do limite: o Google para os robôs ao chegar em 90' : ''));
     if (robo && robo.agenda) status.append(h('div', { class: 'peq' }, h('strong', {}, 'Google Agenda: '), robo.agenda.replace(/^(\S+)/, iso => quando(iso)), ' · prazos fatais na agenda "PRAZOS FATAIS" do celular'));
     const iaPassageiro = /\b(503|429|500)\b|high demand|overloaded|try again later/i.test(ia.erro || '');
     if (ia.ligada || ia.erro) status.append(h('div', { class: 'peq' + (ia.erro && !iaPassageiro ? ' erro' : '') }, h('strong', {}, 'Resumo por IA: '),
