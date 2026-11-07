@@ -62,3 +62,20 @@ Precisa também da chave do Gemini (Gerenciar acessos › IA), que o painel já 
 - O WhatsApp só deixa responder livremente até **24 horas** depois da última mensagem do cliente. Depois disso, responda pelo celular
   (ou espere o cliente escrever de novo).
 - Custos do Meta: responder a quem escreveu (dentro das 24 h) é gratuito; mensagens iniciadas pelo escritório (modelos) são pagas.
+
+## Como o robô conduz o primeiro atendimento (8.16)
+
+1. **Oi / bom dia / tudo bem?** → ele cumprimenta, diz que é a assistente virtual do escritório e pergunta como pode ajudar.
+2. **A pessoa conta o caso** → no máximo 2 ou 3 perguntas (o que aconteceu, desde quando, cidade).
+3. **Entendeu o caso** → explica em termos gerais o que a Dra. costuma verificar nesse tipo de situação (sem dizer que a pessoa tem direito,
+   sem valores nem prazos) e convida para um atendimento por ligação, vídeo ou no escritório.
+4. **Aceitou** → manda 4 horários LIVRES da agenda (dias úteis, 8h–12h e 13h30–18h, sem bater com audiências, perícias e compromissos).
+5. **Escolheu** ("2", "a primeira", "14h30", "amanhã de tarde") → marca na agenda ATENDIMENTOS, manda o link do cadastro, cria a tarefa
+   "📅 Atendimento …" para a equipe e o cartão no CRM fica com a data. Daí em diante é com vocês.
+6. **Remarcar / cancelar** → desmarca da agenda e oferece novos horários (ou só cancela) e avisa a equipe.
+7. **Passa direto para a equipe**: urgência (preso, audiência hoje, despejo…), "quero falar com a doutora", pagamento/boleto/comprovante,
+   parte contrária ou reclamação. **Não vira contato no funil**: fornecedor, propaganda, currículo, engano.
+8. Parou no meio? Depois de 3 h, UMA mensagem gentil ("Conseguiu ver os horários?"), só no horário do escritório e dentro das 24 h do WhatsApp.
+
+Ajustes na aba Config da planilha (opcionais): `WHATS_DURACAO` (minutos, padrão 30), `WHATS_ANTECEDENCIA_MIN` (padrão 60),
+`WHATS_DIAS_AGENDA` (padrão 10), `WHATS_QUEM` (padrão "a Dra. Júlian"). Teste tudo antes em **🧪 Testar o robô** (conversa completa, nada é enviado nem marcado).

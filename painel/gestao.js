@@ -933,19 +933,32 @@
       try { const n = await apiFresco('whats.conversas', id ? { id } : {}); if (location.hash === marca && (n.mensagens || []).length !== (r.mensagens || []).length || n.itens.length !== r.itens.length || n.itens.some((x, i) => (r.itens[i] || {}).ultima_em !== x.ultima_em)) { clearInterval(iv); telaConversas(params); } } catch (e) { /* tenta de novo */ }
     }, 20000);
   }
+  /** 8.16: conversa de teste com o robô (várias mensagens, como um cliente). Nada é enviado, marcado nem gravado. */
   function dialogoTestarRobo() {
     const { h, api } = K();
-    const ta = h('textarea', { rows: 3, placeholder: 'Escreva como se fosse um cliente. Ex.: "Boa tarde, fui demitido e não recebi nada, vocês atendem?"' });
-    const out = h('div', { class: 'wz-sim' });
-    const bt = h('button', { type: 'button', class: 'btn' }, 'Ver a resposta do robô');
-    bt.addEventListener('click', async () => {
-      if (!ta.value.trim()) return; bt.disabled = true; out.textContent = 'Pensando…';
-      try { const r = await api('whats.config', { simular: ta.value }); const s = r.simulacao || {};
-        out.replaceChildren(h('div', { class: 'wz-msg saida robo' }, h('div', { class: 'wz-txt' }, s.resposta || '—')), s.intencao ? h('p', { class: 'peq' }, `Entendeu: ${s.intencao}${s.area ? ' · ' + s.area : ''}${s.resumo ? ' · ' + s.resumo : ''}`) : null); }
-      catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); }
-      finally { bt.disabled = false; }
-    });
-    dialogo('', h('h2', {}, '🧪 Testar o robô'), h('p', { class: 'peq' }, 'Nada é enviado a ninguém: só mostra o que ele responderia a uma primeira mensagem.'), ta, h('div', { class: 'g-acoes' }, bt), out);
+    const conversa = h('div', { class: 'wz-sim-conversa', 'aria-live': 'polite' });
+    const ta = h('textarea', { rows: 2, placeholder: 'Escreva como se fosse um cliente (Enter manda)' });
+    const fase = h('p', { class: 'peq wz-sim-fase' }, 'Comece com "Oi, boa tarde". Depois conte um caso, aceite marcar e escolha um horário.');
+    const NOME_FASE = { triagem: 'entendendo o caso', oferta: 'horários oferecidos', agendado: 'atendimento marcado' };
+    const balao = (lado, texto, extra) => { const b = h('div', { class: 'wz-msg ' + (lado === 'eu' ? 'entrada' : 'saida robo') }, h('div', { class: 'wz-txt' }, texto), extra || null); conversa.append(b); conversa.scrollTop = conversa.scrollHeight; return b; };
+    const mandar = async () => {
+      const texto = ta.value.trim(); if (!texto) return;
+      ta.value = ''; bt.disabled = true; balao('eu', texto); const pensando = balao('robo', '…');
+      try {
+        const r = await api('whats.config', { simular: texto }); const s2 = r.simulacao || {};
+        pensando.replaceWith(balao('robo', s2.resposta || '—', s2.acoes && s2.acoes.length ? h('ul', { class: 'wz-sim-acoes' }, s2.acoes.map(x => h('li', {}, '⚙ ' + x))) : null));
+        fase.textContent = 'Etapa: ' + (NOME_FASE[s2.fase] || s2.fase || '—') + (s2.area ? ' · ' + s2.area : '') + (s2.resumo ? ' · ' + s2.resumo : '') + (s2.pausado ? ' · robô pausado (equipe assumiu)' : '');
+      } catch (e) { pensando.replaceWith(balao('robo', '⚠ ' + e.message)); }
+      finally { bt.disabled = false; ta.focus(); }
+    };
+    const bt = h('button', { type: 'button', class: 'btn', onclick: mandar }, 'Mandar');
+    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); mandar(); } });
+    const recomecar = h('button', { type: 'button', class: 'btn sec', onclick: async () => { await api('whats.config', { reiniciar: true }).catch(() => {}); conversa.replaceChildren(); fase.textContent = 'Conversa nova.'; ta.focus(); } }, 'Recomeçar');
+    api('whats.config', { reiniciar: true }).catch(() => {});
+    dialogo('wz-sim-dialogo', h('h2', {}, '🧪 Testar o robô'),
+      h('p', { class: 'peq' }, 'Converse como se fosse um cliente. Nada é enviado a ninguém e nada é marcado na agenda: as linhas ⚙ mostram o que ele faria de verdade (agenda, cadastro, funil, equipe). Os horários oferecidos são os livres da agenda de verdade.'),
+      conversa, fase, ta, h('div', { class: 'g-acoes' }, bt, recomecar));
+    setTimeout(() => ta.focus(), 50);
   }
   async function dialogoWhatsConfig() {
     const { h, api, avisar, campo } = K();

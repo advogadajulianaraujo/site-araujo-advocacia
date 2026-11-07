@@ -836,3 +836,19 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pessoa confere e aperta Enviar. Nunca envia sozinho e nunca mexe na caixa se alguém está escrevendo; rascunho do robô é trocado (não somado)
   por outro texto pronto. Envio 100% automático só pela API oficial (8.13, docs/CHATBOT-WHATSAPP.md): automatizar o envio no WhatsApp Web
   arrisca o bloqueio do número.
+
+## 8.16.0 Robô do WhatsApp faz o primeiro atendimento inteiro (pedido da usuária)
+
+- `whatsCerebro_(conv, texto, tipo, novo, sim)`: fases em Conversas.dados.fase triagem → oferta (dados.slots) → agendado (dados.agendado
+  {dia,hora,modo,evento}). Saudação sozinha (`SAUDACAO_WHATS`) responde sem IA; escolha de horário sem IA (`escolhaDoSlot_`: só o número,
+  "opção 2", "a primeira", "14h30"; "daqui 3 dias" NÃO é escolha); `REMARCAR_WHATS`/`CANCELAR_WHATS` desmarcam (`whatsDesmarcar_`);
+  `FINANCEIRO_WHATS` → equipe. IA (`WHATS_SISTEMA` novo, JSON com caso_entendido, quer_atendimento, escolha, dia_preferido, periodo,
+  outro_horario, modo, conflito, nao_quer_agora) recebe HOJE (`hojeExtenso_`) e os HORÁRIOS OFERECIDOS. Explica só em termos gerais; nunca
+  parecer, direito, valores ou prazos (trava de segurança troca a frase). Diz que é assistente virtual (não finge ser a advogada).
+- `horariosLivres_({qtd, desde, dia, periodo})`: dias úteis sem feriado, 8h–12h e 13h30–18h, passo 30 min, duração WHATS_DURACAO, antecedência
+  WHATS_ANTECEDENCIA_MIN, sem bater com NENHUMA agenda do escritório nem a principal da conta (`agendasOcupacao_`, ignora dia inteiro).
+  `whatsMarcar_` confere de novo (`slotLivre_`), cria o evento em ATENDIMENTOS, atualiza o cartão (consulta_em, próxima ação), gera o link do
+  cadastro (não gera de novo se o anterior ainda vale) e cria a tarefa "📅 Atendimento …" (WHATS_RESP). `whatsCutucar_` (robôs do escritório):
+  1 lembrete após 3 h parado, só no horário do escritório e na janela de 24 h.
+- "🧪 Testar o robô" = conversa completa (`whatsSimular_` guarda 1 h no cache por usuário; `reiniciar`); `sim.acoes` mostra o que faria
+  (⚙ agenda, cadastro, CRM, equipe) sem gravar, marcar nem enviar. Guia em docs/CHATBOT-WHATSAPP.md.
