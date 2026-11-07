@@ -1195,12 +1195,23 @@
     return el;
   }
 
+  /** 8.15: etapa de cada cliente (calculada no servidor: funil, assinatura e processos; muda sozinha). */
+  const JORNADA = [['contato', 'Em conversa', '#5b6ee1'], ['cadastro', 'Cadastro enviado', '#7a4fc0'], ['cliente', 'Cadastro preenchido', '#a04fb0'],
+    ['atendido', 'Consulta feita', '#1d8a8a'], ['proposta', 'Procuração e contrato enviados', '#c98a12'], ['inicial', 'Em atendimento · petição inicial', '#1f8a4c'],
+    ['andamento', 'Em atendimento · processo em andamento', '#17693a'], ['encerrado', 'Caso encerrado', '#6f6f76'], ['perdido', 'Não fechou', '#9aa0aa'], ['sem', 'Sem caso aberto', '#b9b4aa']];
+  const NOME_JORNADA = Object.fromEntries(JORNADA.map(j => [j[0], j[1]])), COR_JORNADA = Object.fromEntries(JORNADA.map(j => [j[0], j[2]]));
+  function seloJornada(j, mini) {
+    if (!j) return null;
+    const el = h('span', { class: 'selo-jornada' + (mini ? ' mini' : ''), title: 'Etapa do cliente (muda sozinha)' }, NOME_JORNADA[j] || j);
+    el.style.setProperty('--cor', COR_JORNADA[j] || '#888'); return el;
+  }
   async function telaClientes(params) {
     carregando();
     const busca = params.get('busca') || '';
     const soConferir = params.get('conferir') === '1';
     const area = params.get('area') || '';
     const grupo = ['assinatura'].includes(params.get('grupo')) ? params.get('grupo') : '';
+    const etapa = NOME_JORNADA[params.get('etapa')] ? params.get('etapa') : '';
     const limite = Math.max(100, parseInt(params.get('mais'), 10) || 100);
     lembrarVisao('clientes');
     const [todos, procs, assins] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('documentos.assinaturas', {}).catch(() => [])]);
@@ -1221,12 +1232,13 @@
     if (soConferir) base = base.filter(c => c.situacao !== 'completo');
     if (area) base = base.filter(c => (c.area || 'Sem área') === area);
     const temAcao = c => (porCli[c.id] || []).length > 0 || c.processos > 0;
-    const lista = grupo === 'assinatura' ? base.filter(c => aguarda[c.id]) : base;
+    const contaEtapa = {}; base.forEach(c => { contaEtapa[c.jornada || 'sem'] = (contaEtapa[c.jornada || 'sem'] || 0) + 1; });
+    const lista = (grupo === 'assinatura' ? base.filter(c => aguarda[c.id]) : base).filter(c => !etapa || (c.jornada || 'sem') === etapa);
     const nAssin = base.filter(c => aguarda[c.id]).length;
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const ir = (mud) => {
-      const qs = new URLSearchParams({ busca, area, grupo, conferir: soConferir ? '1' : '', mais: '', ...mud });
+      const qs = new URLSearchParams({ busca, area, grupo, etapa, conferir: soConferir ? '1' : '', mais: '', ...mud });
       [...qs.keys()].forEach(k => { if (!qs.get(k)) qs.delete(k); });
       location.hash = '#/clientes' + (qs.toString() ? '?' + qs : '');
     };
@@ -1234,7 +1246,7 @@
       h('label', { class: 'filtro-sel' }, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
         h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, a)))),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: soConferir, onchange: e => ir({ conferir: e.target.checked ? '1' : '' }) }), `Só cadastros a completar (${aConferir})`),
-      (busca || area || soConferir || grupo) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
+      (busca || area || soConferir || grupo || etapa) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
 
     const ORD = { contratado: 0, ajuizado: 1, andamento: 2, sentenca: 3, acordo: 3, homologacao: 3, recurso: 4, execucao: 5, extinto: 9 };
     const chipProc = p => {
@@ -1254,7 +1266,7 @@
         onclick: () => { location.hash = '#/cliente/' + c.id; }, onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/cliente/' + c.id; } },
         h('span', { class: 'cli-ini' }, String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()),
         h('div', { class: 'cli-card-info' },
-          h('div', { class: 'cli-card-nome' }, h('strong', {}, c.nome),
+          h('div', { class: 'cli-card-nome' }, h('strong', {}, c.nome), seloJornada(c.jornada, true),
             aguarda[c.id] ? h('span', { class: 'tag ' + (aguarda[c.id].dias >= 7 ? 'urgente' : 'atencao') }, '✍ aguardando assinatura' + (aguarda[c.id].dias ? ` · ${aguarda[c.id].dias}d` : '')) : null,
             c.situacao && c.situacao !== 'completo' ? h('span', { class: 'tag atencao mini-tag' }, 'cadastro a completar') : null),
           h('div', { class: 'peq' }, [c.cpf_cnpj, c.telefone, c.cidade, c.area].filter(Boolean).join(' · ') || '—'),
@@ -1273,6 +1285,9 @@
           ['assinatura', '✍ Aguardando assinatura', nAssin, 'Procuração/contrato gerados, ainda não assinados']].map(([v, nome, n, dica]) =>
           h('button', { type: 'button', class: 'grupo-card g-' + (v || 'todos') + (grupo === v ? ' ativo' : ''), 'aria-pressed': String(grupo === v), onclick: () => ir({ grupo: v }) },
             h('b', {}, String(n)), h('span', { class: 'grupo-nome' }, nome), h('span', { class: 'peq' }, dica)))),
+      h('div', { class: 'etapas-cli', role: 'group', 'aria-label': 'Etapa do cliente' }, h('span', { class: 'peq' }, 'Etapa:'),
+        h('button', { type: 'button', class: 'etapa-cli' + (!etapa ? ' ativo' : ''), 'aria-pressed': String(!etapa), onclick: () => ir({ etapa: '' }) }, 'Todas'),
+        JORNADA.filter(([id]) => contaEtapa[id]).map(([id, nome, corJ]) => { const b = h('button', { type: 'button', class: 'etapa-cli' + (etapa === id ? ' ativo' : ''), 'aria-pressed': String(etapa === id), onclick: () => ir({ etapa: etapa === id ? '' : id }) }, h('i', { 'aria-hidden': 'true' }), nome, h('b', {}, String(contaEtapa[id]))); b.style.setProperty('--cor', corJ); return b; })),
       grupo === 'assinatura' ? blocoAssinaturas((assins || []).filter(a => base.some(c => c.id === a.cliente_id)), '✍ Aguardando assinatura — marque quando o cliente assinar') : null,
       h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'} na lista${busca ? ' para "' + busca + '"' : ''}`),
       lista.length ? h('ul', { class: 'lista-cli' }, lista.slice(0, limite).map(cartao)) : h('div', { class: 'caixa vazio-t' }, 'Nenhum cliente encontrado. ', busca ? h('a', { href: '#/processos?busca=' + encodeURIComponent(busca) }, 'Procurar nos processos') : null),
@@ -1809,7 +1824,7 @@
   }
 
   /** 8.12.1: em que ponto do CRM / Funil o cliente está (clicar abre o funil já filtrado pelo nome). */
-  const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Em atendimento', proposta: 'Procuração e contrato enviados', ganho: 'Contrato assinado', perdido: 'Não fechou' };
+  const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Consulta feita', proposta: 'Procuração e contrato enviados', ganho: 'Contrato assinado', perdido: 'Não fechou' };
   function seloFunil(l, c) {
     if (!l) return null;
     return h('a', { class: 'selo-funil etapa-' + l.etapa, href: '#/crm?ver=lista&q=' + encodeURIComponent(c.nome), title: 'Abrir no CRM / Funil' },
@@ -1958,7 +1973,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, c.nome),
         h('p', {}, etiquetaSituacao(c.situacao), r.processos.length ? ` · ${r.processos.length} processo${r.processos.length === 1 ? '' : 's'}` : ''),
-        seloParcelas(r.parcelas, c.id), seloFunil(r.lead, c)),
+        seloJornada(r.jornada), seloParcelas(r.parcelas, c.id), seloFunil(r.lead, c)),
         h('div', { class: 'barra' }, sessao.usuario.pode.usuarios && (incompleto || faltam.length) && window.GESTAO && window.GESTAO.mandarLinkCadastro
             ? h('button', { type: 'button', class: 'btn sec', title: 'O cliente preenche o cadastro pelo celular', onclick: () => window.GESTAO.mandarLinkCadastro(r.lead ? { id: r.lead.id } : { cliente_id: c.id }, () => apiFresco('clientes.obter', { id: c.id }).catch(() => {})) }, '📝 Pedir o cadastro ao cliente') : null,
           h('button', { type: 'button', class: 'btn sec', onclick: () => { const d = document.querySelector('details.editar-cad'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } }, '✎ Editar cadastro'),
@@ -2695,7 +2710,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.14.0';
+  const VERSAO_PAINEL = '8.15.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

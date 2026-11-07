@@ -13,8 +13,11 @@
   const PAINEL = 'https://araujoadvocaciasc.com.br/painel/';
   const CORES = { novo: '#2f6fd0', contato: '#5b6ee1', cadastro: '#7a4fc0', cliente: '#1d8a8a', atendido: '#c98a12', proposta: '#d0602d', ganho: '#1f8a4c', perdido: '#8d8a83', cliente_antigo: '#3a3a3a' };
   const CURTO = { novo: 'Novo', contato: 'Conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro ok', atendido: 'Atendimento', proposta: 'Procuração/contrato', ganho: 'Contratou', perdido: 'Não fechou', cliente_antigo: 'Cliente' };
+  // 8.15: etapa dos clientes (todos, inclusive os antigos)
+  Object.assign(CORES, { j_contato: '#5b6ee1', j_cadastro: '#7a4fc0', j_cliente: '#a04fb0', j_atendido: '#1d8a8a', j_proposta: '#c98a12', j_inicial: '#1f8a4c', j_andamento: '#17693a', j_encerrado: '#6f6f76', j_perdido: '#9aa0aa', j_sem: '#8d8a83' });
+  Object.assign(CURTO, { atendido: 'Consulta feita', j_contato: 'Conversa', j_cadastro: 'Cadastro enviado', j_cliente: 'Cadastro ok', j_atendido: 'Consulta feita', j_proposta: 'Procuração/contrato', j_inicial: 'Em atendimento', j_andamento: 'Processo em andamento', j_encerrado: 'Encerrado', j_perdido: 'Não fechou', j_sem: 'Cliente' });
   const ORDEM = ['novo', 'contato', 'cadastro', 'cliente', 'atendido', 'proposta', 'ganho'];
-  let conf = { auto: true, etiquetas: true, aberto: true }, pareado = false, usuario = '';
+  let conf = { auto: true, etiquetas: true, aberto: true, escrever: true }, pareado = false, usuario = '';
 
   /* ---------- comunicação com o painel (pelo bg.js) ---------- */
   const api = (acao, dados) => new Promise((ok, falha) => {
@@ -60,10 +63,14 @@
     return out;
   }
   /** Põe o texto na caixa de mensagem da conversa aberta (sem enviar: quem envia é a pessoa). */
+  let ultimoRascunho = '';
   function colocarNaCaixa(texto) {
     const box = document.querySelector('#main footer div[contenteditable="true"]') || document.querySelector('footer div[contenteditable="true"]');
     if (!box) { aviso('Não achei a caixa de mensagem: abra a conversa e tente de novo.', true); return false; }
     box.focus();
+    // se na caixa só está o texto que o robô escreveu antes, troca por este (não junta os dois)
+    if (ultimoRascunho && (box.innerText || '').trim() === ultimoRascunho.trim()) { document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); }
+    ultimoRascunho = texto;
     let colou = false;
     try { const dt = new DataTransfer(); dt.setData('text/plain', texto); colou = box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })) === false || (box.innerText || '').includes(texto.slice(0, 15)); } catch (e) { colou = false; }
     if (!colou || !(box.innerText || '').includes(texto.slice(0, 15))) { document.execCommand('insertText', false, texto); }
@@ -197,7 +204,8 @@
     const lead = r.lead, cli = r.cliente;
     const nome = (cli && cli.nome) || (lead && lead.nome) || atual.titulo;
     const partes = [h('h3', {}, nome), h('div', {}, cli ? h('span', { class: 'tag', style: 'background:#3a3a3a' }, 'Cliente') : h('span', { class: 'tag', style: 'background:#2f6fd0' }, 'Contato do funil'),
-      lead ? h('span', { class: 'tag', style: 'background:' + (CORES[lead.etapa] || '#888') }, (Object.fromEntries(etapas))[lead.etapa] || lead.etapa) : null),
+      cli && cli.jornada ? h('span', { class: 'tag', style: 'background:' + (CORES['j_' + cli.jornada] || '#888') }, cli.jornada_nome || cli.jornada)
+        : lead ? h('span', { class: 'tag', style: 'background:' + (CORES[lead.etapa] || '#888') }, (Object.fromEntries(etapas))[lead.etapa] || lead.etapa) : null),
       atual.telefone ? h('div', { class: 'peq' }, '+' + atual.telefone) : null];
     if (lead) {
       partes.push(h('div', { class: 'caixa' }, h('h4', {}, 'Etapa no funil'), etapaBotoes(lead),
@@ -265,9 +273,46 @@
       if (!atual || atual.chave !== pedido) return;
       etapas = r.etapas || etapas; dadosContato = r; desenhar();
       if (!r.achou) analisarNovo(pedido);
-      else olharEventos();
+      else { olharEventos(); escreverSozinho(); }
     } catch (e) { if (atual && atual.chave === pedido) corpo.replaceChildren(h('h3', {}, c.titulo), h('p', { class: 'erro' }, e.message)); }
   }
+  /** 8.15 "escreve por mim": chegou mensagem nova na conversa aberta → o robô escreve a resposta na caixa (sem enviar). */
+  const escritas = new Set(); let escrevendo = false;
+  function objetivoDaConversa() {
+    const d = dadosContato || {}, lead = d.lead, cli = d.cliente;
+    if (!d.achou) return 'acolher a pessoa e entender o caso (o que aconteceu, desde quando), sem dar parecer';
+    if (lead && ['novo', 'contato'].includes(lead.etapa)) return 'entender o caso e, se fizer sentido, dizer que vamos mandar um link para o cadastro';
+    if (lead && lead.etapa === 'cadastro') return 'responder e, se a pessoa ainda não preencheu, lembrar com gentileza do link do cadastro';
+    if (lead && lead.etapa === 'proposta') return 'responder e, se for o caso, lembrar de assinar e devolver a procuração e o contrato';
+    if (cli && /andamento|inicial/.test(cli.jornada || '')) return 'responder sobre o caso de forma acolhedora, usando só o que está no contexto do painel; se pedir detalhes do processo, dizer que a advogada vai conferir e retornar';
+    return 'responder a última mensagem';
+  }
+  function contextoDoPainel() {
+    const d = dadosContato || {}, cli = d.cliente, lead = d.lead, partes = [];
+    if (cli) {
+      partes.push('Situação: ' + (cli.jornada_nome || 'cliente'));
+      (cli.processos || []).forEach(p => partes.push('Processo (' + (p.area || 'área não informada') + '): ' + (p.fase || 'em andamento') + (p.proximo ? '; próximo ato: ' + p.proximo : '')));
+      if (cli.assinatura === 'aguardando') partes.push('Procuração e contrato enviados, aguardando assinatura.');
+    } else if (lead) partes.push('Contato no funil: ' + ((Object.fromEntries(etapas))[lead.etapa] || lead.etapa) + (lead.assunto ? '; assunto: ' + lead.assunto : ''));
+    return partes.join('\n');
+  }
+  async function escreverSozinho() {
+    if (!pareado || !conf.escrever || escrevendo || !atual || atual.grupo || !dadosContato) return;
+    const msgs = mensagens(); const ult = msgs[msgs.length - 1];
+    if (!ult || ult.dir !== 'in' || escritas.has(ult.id)) return;
+    const box = document.querySelector('#main footer div[contenteditable="true"]') || document.querySelector('footer div[contenteditable="true"]');
+    if (!box || (box.innerText || '').trim()) return; // a pessoa já está escrevendo: não mexe
+    escritas.add(ult.id); escrevendo = true;
+    const chave = atual.chave;
+    try {
+      const r = await api('ext.analisar', { mensagens: msgs.map(m => ({ dir: m.dir, texto: m.texto || ('[documento] ' + m.arquivo) })), objetivo: objetivoDaConversa(), contexto: contextoDoPainel() });
+      if (!atual || atual.chave !== chave) return;
+      if (!dadosContato.achou) { analise = r; desenhar(); }
+      const agora = document.querySelector('#main footer div[contenteditable="true"]');
+      if (r.sugestao && agora && !(agora.innerText || '').trim()) { colocarNaCaixa(r.sugestao); aviso('✍ O robô escreveu a resposta. Confira e aperte Enviar (ou apague para escrever outra).'); }
+    } catch (e) { /* sem resposta agora */ } finally { escrevendo = false; }
+  }
+
   /** Contato que não está no painel: a IA lê a conversa uma vez por dia; se for alguém procurando o escritório, entra no funil sozinho. */
   async function analisarNovo(chave) {
     const msgs = mensagens(); if (!msgs.some(m => m.dir === 'in')) return;
@@ -277,6 +322,10 @@
       const r = await api('ext.analisar', { mensagens: msgs.map(m => ({ dir: m.dir, texto: m.texto || ('[documento] ' + m.arquivo) })) });
       if (!atual || atual.chave !== chave) return;
       analise = r; desenhar();
+      const ult = msgs[msgs.length - 1], box = document.querySelector('#main footer div[contenteditable="true"]');
+      if (conf.escrever && r.sugestao && ult && ult.dir === 'in' && !escritas.has(ult.id) && box && !(box.innerText || '').trim()) {
+        escritas.add(ult.id); colocarNaCaixa(r.sugestao); aviso('✍ O robô escreveu a resposta. Confira e aperte Enviar.');
+      }
       if (r.novo_cliente && conf.auto && ja !== hoje) {
         chrome.storage.local.set({ [k]: hoje });
         await api('ext.adicionar', { titulo: atual.titulo, telefone: atual.telefone, nome: r.nome || '', area: r.area || '', resumo: r.resumo || '' });
@@ -330,18 +379,19 @@
   }
 
   /* ---------- começar ---------- */
-  chrome.storage.local.get(['token', 'usuario', 'auto', 'etiquetas', 'aberto'], v => {
+  chrome.storage.local.get(['token', 'usuario', 'auto', 'etiquetas', 'aberto', 'escrever'], v => {
     pareado = !!v.token; usuario = v.usuario || '';
-    conf.auto = v.auto !== false; conf.etiquetas = v.etiquetas !== false; conf.aberto = v.aberto !== false;
+    conf.auto = v.auto !== false; conf.etiquetas = v.etiquetas !== false; conf.aberto = v.aberto !== false; conf.escrever = v.escrever !== false;
     abrir(conf.aberto); desenhar();
     setInterval(() => verificar(false), 1500);
     setInterval(etiquetas, 6000);
     let obsT = null;
-    new MutationObserver(() => { clearTimeout(obsT); obsT = setTimeout(olharEventos, 2000); }).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(() => { clearTimeout(obsT); obsT = setTimeout(() => { olharEventos(); escreverSozinho(); }, 2000); }).observe(document.body, { childList: true, subtree: true });
   });
   chrome.storage.onChanged.addListener(m => {
     if (m.token) { pareado = !!m.token.newValue; atual = null; verificar(true); }
     if (m.auto) conf.auto = m.auto.newValue !== false;
+    if (m.escrever) conf.escrever = m.escrever.newValue !== false;
     if (m.etiquetas) { conf.etiquetas = m.etiquetas.newValue !== false; if (!conf.etiquetas) document.querySelectorAll('.araujo-etq').forEach(e => e.remove()); }
   });
 })();

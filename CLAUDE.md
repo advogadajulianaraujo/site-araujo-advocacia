@@ -822,3 +822,17 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Pareamento: Gerenciar acessos › "Assistente do WhatsApp Web" › Gerar código (`ext.parear`, 6 letras, 10 min, uso único) → digitado na
   extensão (`ext.ativar`, público) → chave `ext_`+64 hex guardada só como hash em Properties EXT_DISPOSITIVOS; abre SÓ rotas `ext.*`
   (`rotear_`); "Desligar" (`ext.dispositivos` revogar). Extensão nova = mudar `version` no manifest.json e refazer o zip.
+
+## 8.15.0 Etapa de TODOS os clientes + robô que escreve no WhatsApp Web (pedido da usuária)
+
+- `jornadasClientes_` (calculado na hora, muda sozinho): processo com número ativo → "Em atendimento · processo em andamento"; petição inicial
+  a fazer ou assinatura "assinado"/lead ganho → "Em atendimento · petição inicial" (ASSINOU = EM ATENDIMENTO); assinatura aguardando →
+  "Procuração e contrato enviados"; senão a etapa aberta do funil; só processos encerrados → "Caso encerrado"; desistiu/perdido → "Não fechou";
+  resto → "Sem caso aberto". Vai em clientes.listar (`jornada`), clientes.obter (`jornada`/`jornada_nome`), ext.contato e nas etiquetas da
+  extensão (`j_<etapa>`). Clientes: linha "Etapa:" com contagem e filtro (`?etapa=`), selo no cartão e no topo da ficha (`seloJornada`).
+  No funil, "atendido" passou a se chamar "Consulta feita" (o "Em atendimento" é depois de assinar).
+- Extensão 1.1.0: "Escrever as respostas sozinho" (popup, padrão ligado, storage `escrever`): última mensagem da conversa aberta é do cliente
+  e a caixa está vazia → `ext.analisar` (com `objetivo` pela etapa e `contexto` do painel, anonimizado) e a resposta vai para a caixa; a
+  pessoa confere e aperta Enviar. Nunca envia sozinho e nunca mexe na caixa se alguém está escrevendo; rascunho do robô é trocado (não somado)
+  por outro texto pronto. Envio 100% automático só pela API oficial (8.13, docs/CHATBOT-WHATSAPP.md): automatizar o envio no WhatsApp Web
+  arrisca o bloqueio do número.

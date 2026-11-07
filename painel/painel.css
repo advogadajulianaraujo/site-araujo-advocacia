@@ -1812,3 +1812,13 @@ a.visao-bt{text-decoration:none}
 .ext-cod{font-size:22px;letter-spacing:.25em;color:#7a5a1f;margin:0 6px}
 .ext-lista{list-style:none;padding:0;margin:6px 0}.ext-lista li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #eee9df}
 .ext-lista li .btn{margin-left:auto}
+/* 8.15 etapa do cliente */
+.selo-jornada{display:inline-flex;align-items:center;gap:6px;margin:6px 8px 0 0;padding:4px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--cor,#555);background:color-mix(in srgb,var(--cor,#555) 12%,#fff);border:1px solid color-mix(in srgb,var(--cor,#555) 30%,#fff)}
+.selo-jornada::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cor,#555)}
+.selo-jornada.mini{margin:0 0 0 8px;padding:1px 8px;font-size:11.5px;vertical-align:middle}
+.etapas-cli{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 6px}
+.etapa-cli{display:inline-flex;align-items:center;gap:6px;border:1px solid #e3dfd6;background:#fff;border-radius:999px;padding:5px 11px;font-size:12.5px;cursor:pointer;color:#2e2f33}
+.etapa-cli i{width:8px;height:8px;border-radius:50%;background:var(--cor,#999)}
+.etapa-cli b{font-weight:600;color:#6f6f76}
+.etapa-cli:hover{border-color:var(--cor,#b58d52)}
+.etapa-cli.ativo{background:var(--cor,#1c1a17);border-color:transparent;color:#fff}.etapa-cli.ativo i{background:#fff}.etapa-cli.ativo b{color:#fff}

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.14.0';
+var VERSAO = '8.15.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -865,6 +865,7 @@ function listarClientes_(d) {
     if (p.pago_em || canc[p.honorario_id] || !p.cliente_id) return;
     var x = parc[p.cliente_id] = parc[p.cliente_id] || [0, 0]; x[0]++; if (p.vencimento && p.vencimento < hojeL) x[1]++;
   });
+  var jor = jornadasClientes_();
   return tabela_('Clientes').linhas
     .filter(function (c) {
       if (!busca) return true;
@@ -875,7 +876,7 @@ function listarClientes_(d) {
       return { id: c.id, tipo: c.tipo, nome: c.nome, cpf_cnpj: c.cpf_cnpj, telefone: c.telefone, cidade: c.cidade,
         area: c.area, situacao: c.situacao, pasta_url: c.pasta_url, processos: porCliente[c.id] || 0,
         obs: String(c.observacoes || '').split('\n')[0].slice(0, 160), n_obs: c.observacoes ? String(c.observacoes).split('\n').length : 0,
-        parc_abertas: parc[c.id] ? parc[c.id][0] : 0, parc_atrasadas: parc[c.id] ? parc[c.id][1] : 0 };
+        parc_abertas: parc[c.id] ? parc[c.id][0] : 0, parc_atrasadas: parc[c.id] ? parc[c.id][1] : 0, jornada: jor[c.id] || 'sem' };
     })
     .sort(function (a, b) { return normalizar_(a.nome) < normalizar_(b.nome) ? -1 : 1; });
 }
@@ -890,7 +891,8 @@ function obterCliente_(d, u) {
   } catch (e) { cli.obs_antigas = ''; }
   var lead = null;
   if (u && PERFIS[u.perfil] && PERFIS[u.perfil].usuarios) try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
-  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id), lead: lead };
+  var j = jornadasClientes_()[c.id] || 'sem';
+  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id), lead: lead, jornada: j, jornada_nome: JORNADA[j] };
 }
 
 /** 8.11.1 (pedido da usuária): quantas parcelas o cliente ainda deve (em vermelho na ficha e no cartão). Ignora honorário cancelado/encerrado. */
@@ -11122,7 +11124,36 @@ function pdfDoDoc_(docId, pasta) {
 // 8.14 (pedido da usuária): as etapas seguem o caminho do escritório — contato → conversa → cadastro enviado → cadastro preenchido (vira
 // cliente) → em atendimento → procuração e contrato enviados → contrato assinado. "consulta" e "negociação" saíram (migração em crmSincronizar_).
 var ETAPAS_CRM = [['novo', 'Novo contato'], ['contato', 'Em conversa'], ['cadastro', 'Cadastro enviado'], ['cliente', 'Cadastro preenchido'],
-  ['atendido', 'Em atendimento'], ['proposta', 'Procuração e contrato enviados'], ['ganho', 'Contrato assinado'], ['perdido', 'Não fechou']];
+  ['atendido', 'Consulta feita'], ['proposta', 'Procuração e contrato enviados'], ['ganho', 'Contrato assinado'], ['perdido', 'Não fechou']];
+
+/** 8.15 (pedido da usuária: "qualifique todos os clientes"): em que ponto CADA cliente está, inclusive os antigos. Calculado na hora
+ *  com o funil, a assinatura e os processos, então muda sozinho em tudo: assinou → "Em atendimento". */
+var JORNADA = { contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Consulta feita',
+  proposta: 'Procuração e contrato enviados', inicial: 'Em atendimento · petição inicial', andamento: 'Em atendimento · processo em andamento',
+  encerrado: 'Caso encerrado', perdido: 'Não fechou', sem: 'Sem caso aberto' };
+function jornadasClientes_() {
+  var procs = {}, ass = {}, leads = {}, r = {};
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (!p.cliente_id) return;
+    var f = faseDe_(p), x = procs[p.cliente_id] = procs[p.cliente_id] || { and: 0, ini: 0, fim: 0 };
+    if (p.status === 'arquivado' || f === 'extinto') x.fim++; else if (f === 'contratado' || !p.numero) x.ini++; else x.and++;
+  });
+  try { tabela_('Assinaturas').linhas.forEach(function (a) { if (a.cliente_id) ass[a.cliente_id] = a; }); } catch (e) { /* aba nova */ }
+  try { tabela_('Leads').linhas.forEach(function (l) { if (l.cliente_id) leads[l.cliente_id] = l; }); } catch (e) { /* aba nova */ }
+  tabela_('Clientes').linhas.forEach(function (c) {
+    var p = procs[c.id] || {}, a = ass[c.id], l = leads[c.id], e;
+    if (p.and) e = 'andamento';
+    else if (p.ini) e = 'inicial';
+    else if (a && a.situacao === 'aguardando') e = 'proposta';
+    else if ((a && a.situacao === 'assinado') || (l && l.etapa === 'ganho')) e = 'inicial';
+    else if (l && ['novo', 'contato', 'cadastro', 'cliente', 'atendido', 'proposta'].indexOf(l.etapa) >= 0) e = l.etapa === 'novo' ? 'contato' : l.etapa;
+    else if (p.fim) e = 'encerrado';
+    else if ((a && a.situacao === 'desistiu') || (l && l.etapa === 'perdido')) e = 'perdido';
+    else e = 'sem';
+    r[c.id] = e;
+  });
+  return r;
+}
 var ORDEM_CRM = { novo: 1, contato: 2, cadastro: 3, cliente: 4, atendido: 5, proposta: 6, ganho: 7, perdido: 7 };
 /** Só anda para a frente (e nunca mexe em quem já fechou ou desistiu). */
 function etapaAFrente_(atual, nova) {
@@ -12384,12 +12415,14 @@ function acharContato_(mapa, titulo, telefone) {
 }
 /** Etiquetas da lista de conversas: para cada título visível, se é cliente/contato e a etapa. */
 function extContatos_(d) {
-  var mapa = mapaContatos_(), r = {};
+  var mapa = mapaContatos_(), r = {}, jor = null;
   (d.itens || []).slice(0, 80).forEach(function (it) {
     var o = acharContato_(mapa, it.titulo, it.telefone); if (!o) return;
-    r[it.chave || it.titulo] = { tipo: o.tipo, etapa: o.tipo === 'lead' ? o.etapa : (o.lead ? o.lead.etapa : 'cliente_antigo') };
+    var cid = o.tipo === 'cliente' ? o.id : o.cliente_id;
+    if (cid) { jor = jor || jornadasClientes_(); r[it.chave || it.titulo] = { tipo: 'cliente', etapa: 'j_' + (jor[cid] || 'sem') }; }
+    else r[it.chave || it.titulo] = { tipo: o.tipo, etapa: o.etapa };
   });
-  return { itens: r, etapas: ETAPAS_CRM };
+  return { itens: r, etapas: ETAPAS_CRM, jornada: JORNADA };
 }
 /** Painel ao lado da conversa aberta. */
 function extContato_(d, u) {
@@ -12413,6 +12446,7 @@ function extContato_(d, u) {
         processos: tabela_('Processos').linhas.filter(function (p) { return p.cliente_id === c.id && p.status !== 'arquivado'; }).slice(0, 5).map(function (p) { return { numero: p.numero || 'a ajuizar', area: p.area, fase: FASES[faseDe_(p)] || '', proximo: p.proximo_ato ? p.proximo_ato + (p.proximo_ato_data ? ' ' + dataBR_(p.proximo_ato_data) : '') : '' }; }),
         parcelas: parcelasAbertasCliente_(c.id),
         assinatura: (tabela_('Assinaturas').linhas.filter(function (a) { return a.cliente_id === c.id; }).pop() || {}).situacao || '' };
+      r.cliente.jornada = jornadasClientes_()[c.id] || 'sem'; r.cliente.jornada_nome = JORNADA[r.cliente.jornada];
       if (PERFIS[u.perfil] && PERFIS[u.perfil].ocultarValores && r.cliente.parcelas) { r.cliente.parcelas.valor_atrasado = null; r.cliente.parcelas.valor_aberto = null; }
     }
   }
@@ -12454,7 +12488,9 @@ function extAnalisar_(d, u) {
     '"area": "Trabalhista"|"Previdenciário"|"Família"|"Cível"|"Criminal"|"Empresarial"|"", "resumo": o caso em até 2 frases (só o que a pessoa contou), "nome": o nome da pessoa se aparecer, ' +
     '"proximo_passo": o que a equipe deve fazer agora (curto), "sugestao": uma resposta para a equipe mandar, escrita como uma pessoa da equipe escreveria no WhatsApp: natural, gentil, curta (até 3 frases), ' +
     'em português do Brasil, sem parecer robô, sem dizer que é IA, sem dar parecer jurídico, sem prometer resultado e sem falar valores}.' + (d.objetivo ? ' Objetivo da resposta: ' + String(d.objetivo).slice(0, 200) + '.' : '') +
-    '\n\nBASE DO ESCRITÓRIO (use só isto para informações):\n' + baseConhecimentoWhats_().slice(0, 4000) + '\n\nCONVERSA:\n' + anonimizar_(msgs, []);
+    '\n\nBASE DO ESCRITÓRIO (use só isto para informações):\n' + baseConhecimentoWhats_().slice(0, 4000) +
+    (d.contexto ? '\n\nCONTEXTO DO PAINEL (só para orientar a resposta; não cite número de processo, valores nem prazos):\n' + anonimizar_(String(d.contexto).slice(0, 1200), []) : '') +
+    '\n\nCONVERSA:\n' + anonimizar_(msgs, []);
   var o = jsonDaIA_(geminiTexto_([{ text: pedido }], { json: true, max: 900, temp: 0.4 }).texto) || {};
   var sug = String(o.sugestao || '');
   if (/R\$\s?\d|\b\d+\s?%|\bvoc[eê] (tem|ter[aá]) direito\b|\bvai ganhar\b/i.test(sug)) sug = '';
