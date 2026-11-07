@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.12.3';
+var VERSAO = '8.13.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -85,6 +85,8 @@ var ESQUEMA = {
   Transcricoes: ['id', 'criado_em', 'criado_por', 'tipo', 'titulo', 'cliente_id', 'processo_id', 'data_ato', 'fonte', 'doc_url', 'resumo_cliente', 'resumo_equipe',
     'documentos', 'publicado', 'publicado_em'],
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
+  Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
+  Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
   PastasConferir: ['pasta', 'pasta_url', 'motivo', 'clientes_possiveis'],
@@ -482,6 +484,11 @@ var ROTAS = {
   'crm.anotar': { permissao: 'usuarios', fn: crmAnotar_ },
   'crm.converter': { permissao: 'usuarios', fn: crmConverter_ },
   'crm.consulta': { permissao: 'usuarios', fn: crmAgendarConsulta_ },
+  // 8.13: chatbot do WhatsApp (a ponte chama a rota pública com a chave secreta; o resto é só da administração)
+  'whats.webhook': { publica: true, fn: whatsWebhook_ },
+  'whats.conversas': { permissao: 'usuarios', fn: whatsConversas_ },
+  'whats.acao': { permissao: 'usuarios', fn: whatsAcao_ },
+  'whats.config': { permissao: 'usuarios', fn: whatsConfig_ },
   'crm.proposta': { fn: gerarProposta_ },
   'padroes.listar': { fn: padroesListar_ },
   'padroes.salvar': { fn: padroesSalvar_ },
@@ -11809,4 +11816,346 @@ function calcIndices_(d) {
   var res = { serie: d.serie, itens: lista };
   try { cache.put(k, JSON.stringify(res), 21600); } catch (e2) { /* segue */ }
   return res;
+}
+
+
+/* ================================================================== */
+/* 8.13 — Chatbot do WhatsApp (API oficial do Meta / WhatsApp Cloud)   */
+/* ================================================================== */
+/*
+ * Caminho de uma mensagem: cliente → WhatsApp (Meta) → "ponte" na Cloudflare (chatbot/worker.js: confere a assinatura do Meta e
+ * responde 200 na hora) → rota pública whats.webhook (confere a chave da ponte) → aqui. A resposta sai pela API do Meta (UrlFetchApp).
+ * Tudo fica nas abas Conversas e Mensagens; o contato entra no CRM / Funil. O robô NUNCA dá parecer, preço de causa nem prazo:
+ * informa, faz a triagem, marca a consulta (a equipe confirma) e passa para uma pessoa quando é urgente ou quando pedem.
+ * Chaves só nas Propriedades do script: WHATS_TOKEN (token do Meta) e WHATS_PONTE_CHAVE (segredo entre a ponte e o painel).
+ */
+var WHATS_API = 'https://graph.facebook.com/';
+function whatsVersao_() { return config_('WHATS_API_VERSAO') || 'v21.0'; }
+function whatsToken_() { return PropertiesService.getScriptProperties().getProperty('WHATS_TOKEN') || ''; }
+function whatsLigado_() { return config_('WHATS_BOT') === 'sim' && !!whatsToken_() && !!config_('WHATS_PHONE_ID'); }
+var URGENTE_WHATS = /\b(pres[oa]|pris[aã]o|flagrante|delegacia|algemad|mandado de pris|pol[ií]cia (me|o|a) lev|audi[eê]ncia (hoje|amanh[aã])|per[ií]cia (hoje|amanh[aã])|prazo (vence|acaba|termina) (hoje|amanh[aã])|liminar|despejo|bloqueio de conta|penhora|oficial de justi[cç]a (aqui|est[aá])|urgente|urg[eê]ncia|socorro)\b/i;
+var PEDE_HUMANO = /\b(falar com (a |o )?(dra|doutora|advogad|atendente|algu[eé]m|pessoa|humano)|quero (uma )?pessoa|n[aã]o quero (falar com )?rob[oô]|atendente humano)\b/i;
+var PEDE_PROCESSO = /\b(meu processo|andamento|como (est[aá]|anda|ficou) (o|meu) (processo|caso|a[cç][aã]o)|novidade(s)? (do|no) (processo|caso)|acompanhar (o )?processo|n[uú]mero do processo)\b/i;
+
+function horarioEscritorio_(d) {
+  d = d || new Date();
+  var hora = +Utilities.formatDate(d, TZ, 'H'), min = +Utilities.formatDate(d, TZ, 'm'), dsem = +Utilities.formatDate(d, TZ, 'u');
+  var hm = hora * 60 + min, dia = Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  var feriado = false; try { feriado = !!mapaFeriados_()[dia]; } catch (e) { /* segue */ }
+  return dsem <= 5 && !feriado && ((hm >= 480 && hm < 720) || (hm >= 810 && hm < 1080));
+}
+
+/* ---------- Envio pela API do Meta ---------- */
+function whatsEnviar_(para, texto) {
+  var resp = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + config_('WHATS_PHONE_ID') + '/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + whatsToken_() },
+    payload: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: String(para).replace(/\D/g, ''), type: 'text', text: { preview_url: true, body: String(texto).slice(0, 4000) } })
+  });
+  var j = {}; try { j = JSON.parse(resp.getContentText()); } catch (e) { /* segue */ }
+  if (resp.getResponseCode() !== 200) {
+    var msg = j.error ? (j.error.message || '') + (j.error.code ? ' (código ' + j.error.code + ')' : '') : 'código ' + resp.getResponseCode();
+    setConfig_('WHATS_ERRO', new Date().toISOString() + ' ' + msg.slice(0, 300), 'Último problema ao mandar mensagem pelo WhatsApp');
+    if (j.error && (j.error.code === 131047 || /24 hours|re-engagement/i.test(j.error.message || ''))) throw falha_('Passaram mais de 24 horas da última mensagem do cliente: o WhatsApp só deixa responder com um modelo aprovado. Mande pelo seu WhatsApp ou peça para o cliente escrever de novo.');
+    throw falha_('O WhatsApp não aceitou a mensagem: ' + msg.slice(0, 200));
+  }
+  return ((j.messages || [])[0] || {}).id || '';
+}
+function whatsMarcarLida_(waId) {
+  try { UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + config_('WHATS_PHONE_ID') + '/messages', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + whatsToken_() }, payload: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: waId }) }); } catch (e) { /* tanto faz */ }
+}
+/** Áudio do cliente: baixa do Meta e transcreve com o Gemini (mensagem de voz é o mais comum no WhatsApp). */
+function whatsTranscreverAudio_(mediaId, mime) {
+  var t = whatsToken_();
+  var info = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + mediaId, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + t } });
+  if (info.getResponseCode() !== 200) return '';
+  var url = (JSON.parse(info.getContentText()) || {}).url; if (!url) return '';
+  var arq = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + t } });
+  if (arq.getResponseCode() !== 200) return '';
+  var bytes = arq.getContent(); if (bytes.length > 15 * 1048576) return '';
+  var r = geminiTexto_([{ inline_data: { mime_type: String(mime || 'audio/ogg').replace(/;.*$/, ''), data: Utilities.base64Encode(bytes) } },
+    { text: 'Transcreva em português do Brasil, palavra por palavra, este áudio de WhatsApp de uma pessoa falando com um escritório de advocacia. Responda só com o texto falado.' }], { max: 3000, temp: 0 });
+  return String(r.texto || '').trim();
+}
+
+/* ---------- Conversas e mensagens ---------- */
+function conversaDoTelefone_(tel, nomePerfil) {
+  var t = tabela_('Conversas'), c = t.linhas.filter(function (x) { return x.telefone === tel; })[0], agora = new Date().toISOString();
+  if (c) return c;
+  var dig = tel.replace(/\D/g, '').slice(-8);
+  var cli = tabela_('Clientes').linhas.filter(function (x) { var d = String(x.telefone || '').replace(/\D/g, ''); return d.length >= 8 && d.indexOf(dig) >= 0; })[0];
+  c = { id: novoId_('W'), telefone: tel, nome: nomeProprio_(String(nomePerfil || '').slice(0, 80)), cliente_id: cli ? cli.id : '', lead_id: '', estado: 'robo', ultima_em: agora, ultima_msg: '',
+    nao_lidas: '0', atendente: '', pausado_ate: '', criado_em: agora, resumo: '', dados: '{}', ultima_cliente_em: '' };
+  inserirLinha_(t, c);
+  return c;
+}
+/** Grava mudanças na conversa relendo a linha na hora (o objeto antigo apagaria o que outra parte acabou de gravar, ex.: a pausa do robô). */
+function atualizarConversa_(id, m) {
+  return comTrava_(function () { var t = tabela_('Conversas'), x = t.linhas.filter(function (r) { return r.id === id; })[0]; if (x) atualizarLinha_(t, x, m); return x; });
+}
+function registrarMsg_(conversa, direcao, tipo, texto, waId, autor) {
+  inserirLinha_(tabela_('Mensagens'), { id: novoId_('M'), conversa_id: conversa.id, quando: new Date().toISOString(), direcao: direcao, tipo: tipo || 'texto',
+    texto: String(texto || '').slice(0, 20000), wa_id: waId || '', autor: autor || '' });
+}
+function historicoConversa_(convId, n) {
+  return tabela_('Mensagens').linhas.filter(function (m) { return m.conversa_id === convId; }).slice(-(n || 14))
+    .map(function (m) { return (m.direcao === 'entrada' ? 'Cliente' : 'Escritório') + ': ' + String(m.texto || '').slice(0, 800); }).join('\n');
+}
+
+/* ---------- Webhook (chamado pela ponte) ---------- */
+function whatsWebhook_(d) {
+  var chave = PropertiesService.getScriptProperties().getProperty('WHATS_PONTE_CHAVE') || '';
+  if (!chave || !iguais_(String(d.chave || ''), chave)) throw falha_('Não autorizado.');
+  var corpo = d.corpo || {}, feitos = 0;
+  (corpo.entry || []).forEach(function (en) {
+    (en.changes || []).forEach(function (ch) {
+      var v = ch.value || {};
+      if (v.metadata && config_('WHATS_PHONE_ID') && String(v.metadata.phone_number_id) !== String(config_('WHATS_PHONE_ID'))) return;
+      var nomes = {}; (v.contacts || []).forEach(function (c) { nomes[c.wa_id] = (c.profile || {}).name || ''; });
+      (v.messages || []).forEach(function (m) { try { whatsReceber_(m, nomes[m.from] || ''); feitos++; } catch (e) { registrar_('whatsapp', 'erro no robô', String(e && e.message || e).slice(0, 300)); } });
+      // número usado também no aplicativo do celular (coexistência): a resposta dada pelo celular entra na conversa e pausa o robô por 3 h
+      (v.message_echoes || []).forEach(function (m) { try { whatsEcoCelular_(m); } catch (e) { /* segue */ } });
+      (v.statuses || []).forEach(function (s) { if (s.status === 'failed') setConfig_('WHATS_ERRO', new Date().toISOString() + ' entrega falhou: ' + JSON.stringify((s.errors || [])[0] || {}).slice(0, 250), 'Último problema ao mandar mensagem pelo WhatsApp'); });
+    });
+  });
+  setConfig_('WHATS_ULTIMA', new Date().toISOString(), 'Última mensagem recebida pelo robô do WhatsApp');
+  return { ok: true, feitos: feitos };
+}
+function whatsEcoCelular_(m) {
+  comTrava_(function () {
+    var tel = String(m.to || '').replace(/\D/g, ''); if (!tel) return;
+    var c = conversaDoTelefone_(tel, '');
+    if (tabela_('Mensagens').linhas.some(function (x) { return x.wa_id && x.wa_id === m.id; })) return;
+    registrarMsg_(c, 'saida', m.type || 'texto', (m.text || {}).body || '[' + (m.type || 'mensagem') + ' enviada pelo celular]', m.id, 'celular');
+    atualizarConversa_(c.id, { estado: 'humano', pausado_ate: new Date(Date.now() + 3 * 3600000).toISOString(), ultima_em: new Date().toISOString() });
+  });
+}
+
+/** Uma mensagem do cliente: guarda, entende e responde (ou deixa para a equipe). */
+function whatsReceber_(m, nomePerfil) {
+  var tel = String(m.from || '').replace(/\D/g, '');
+  if (!tel || m.type === 'reaction' || m.type === 'system' || m.type === 'unsupported') return;
+  var texto = '', tipo = m.type || 'text';
+  if (tipo === 'text') texto = (m.text || {}).body || '';
+  else if (tipo === 'button') texto = (m.button || {}).text || '';
+  else if (tipo === 'interactive') texto = ((m.interactive || {}).button_reply || (m.interactive || {}).list_reply || {}).title || '';
+  else if (tipo === 'audio') { try { texto = whatsTranscreverAudio_((m.audio || {}).id, (m.audio || {}).mime_type); } catch (e) { texto = ''; } texto = texto ? '🎤 ' + texto : '[áudio que não consegui ouvir]'; }
+  else if (/image|document|video|sticker|location|contacts/.test(tipo)) texto = '[' + ({ image: 'foto', document: 'documento', video: 'vídeo', sticker: 'figurinha', location: 'localização', contacts: 'contato' }[tipo] || tipo) + ' enviado(a)]' + ((m[tipo] || {}).caption ? ' ' + m[tipo].caption : '') + ((m.document || {}).filename ? ' ' + m.document.filename : '');
+  var conv, novo = false;
+  var ja = comTrava_(function () {
+    if (tabela_('Mensagens').linhas.some(function (x) { return x.wa_id && x.wa_id === m.id; })) return true; // o Meta reenviou
+    var t = tabela_('Conversas');
+    novo = !t.linhas.some(function (x) { return x.telefone === tel; });
+    conv = conversaDoTelefone_(tel, nomePerfil);
+    registrarMsg_(conv, 'entrada', tipo, texto, m.id, 'cliente');
+    conv = atualizarConversa_(conv.id, { ultima_em: new Date().toISOString(), ultima_cliente_em: new Date().toISOString(), ultima_msg: texto.slice(0, 200),
+      nao_lidas: String((+conv.nao_lidas || 0) + 1), nome: conv.nome || nomeProprio_(String(nomePerfil || '').slice(0, 80)) }) || conv;
+    return false;
+  });
+  if (ja) return;
+  whatsMarcarLida_(m.id);
+  if (config_('WHATS_BOT') !== 'sim') return; // robô desligado: só guarda para a equipe responder pelo painel
+  var pausa = conv.pausado_ate && conv.pausado_ate > new Date().toISOString();
+  if (conv.estado === 'humano' && (pausa || !conv.pausado_ate)) { whatsAvisarEquipe_(conv, texto, false); return; }
+  // freio: no máximo 25 respostas do robô por hora para o mesmo número (evita conversa infinita com outro robô)
+  var cache = CacheService.getScriptCache(), kq = 'wq_' + tel, q = +(cache.get(kq) || 0);
+  if (q >= 25) return; cache.put(kq, String(q + 1), 3600);
+  var resposta = whatsCerebro_(conv, texto, tipo, novo);
+  if (!resposta) return;
+  var waId = whatsEnviar_(tel, resposta);
+  comTrava_(function () { registrarMsg_(conv, 'saida', 'texto', resposta, waId, 'robô'); atualizarConversa_(conv.id, { ultima_em: new Date().toISOString(), ultima_msg: resposta.slice(0, 200) }); });
+}
+
+/** Avisa a equipe (tarefa + e-mail, no máximo 1 a cada 30 min por conversa). */
+function whatsAvisarEquipe_(conv, texto, urgente) {
+  var cache = CacheService.getScriptCache(), k = 'wav_' + conv.id;
+  if (cache.get(k) && !urgente) return; cache.put(k, '1', 1800);
+  var resp = config_('WHATS_RESP') || config_('RESP_SITE') || respSecretaria_() || '';
+  var agora = new Date().toISOString();
+  comTrava_(function () {
+    inserirLinha_(tabela_('Tarefas'), { id: novoId_('T'), titulo: (urgente ? '🚨 URGENTE no WhatsApp — ' : '💬 Responder no WhatsApp — ') + (conv.nome || conv.telefone),
+      descricao: 'Mensagem: ' + String(texto).slice(0, 600) + '\n\nAbrir: Relacionamento › Conversas do WhatsApp (o robô está pausado nesta conversa).', responsavel: resp, processo_id: '', numero: '', cliente_id: conv.cliente_id || '',
+      vence_em: hojeSP_(), etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '', historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô do WhatsApp',
+      criado_em: agora, criado_por: 'whatsapp', atualizado_em: agora, atualizado_por: 'whatsapp', prioridade: urgente ? 'urgente' : 'alta' });
+  });
+  if (urgente) try { GmailApp.sendEmail(config_('CONTATO_EMAIL') || Session.getEffectiveUser().getEmail(), '🚨 WhatsApp urgente: ' + (conv.nome || conv.telefone),
+    'O robô do WhatsApp passou para a equipe uma mensagem URGENTE:\n\n' + String(texto).slice(0, 1500) + '\n\nTelefone: ' + conv.telefone + '\nResponder: https://araujoadvocaciasc.com.br/painel/#/conversas', { name: 'Robô do WhatsApp — Araújo Advocacia' }); } catch (e) { /* segue */ }
+}
+
+/** Base do que o robô pode dizer: só fatos do escritório (o guia do cliente dos Padrões operacionais + dados fixos). */
+function baseConhecimentoWhats_() {
+  var c = CacheService.getScriptCache(), k = 'whats_base_' + versaoDados_().slice(-6), b = c.get(k);
+  if (b) return b;
+  var esc = escritorio_(), guia = '';
+  try { guia = padroesListar_().itens.filter(function (x) { return x.grupo === 'cliente'; }).map(function (x) { return '### ' + x.titulo + '\n' + x.texto; }).join('\n\n'); } catch (e) { guia = ''; }
+  b = ['ESCRITÓRIO: Araújo Advocacia (' + esc.nome + '), Tubarão/SC. Advogada responsável: Dra. Júlian Marcelino Araújo, OAB/SC 54.832, doutora em Direito. Atende com Luís Fernando.',
+    'ENDEREÇO: ' + esc.endereco + ' (em frente à nova rodoviária). TELEFONE: ' + esc.telefone + '. SITE: araujoadvocaciasc.com.br',
+    'HORÁRIO: segunda a sexta, das 8h às 12h e das 13h30 às 18h. Atendimento presencial ou por vídeo, com horário marcado.',
+    'ÁREAS: trabalhista, previdenciário (INSS), família (divórcio, pensão, guarda, inventário), cível e consumidor (bancos, contratos, indenizações), empresarial (assessoria a empresas) e criminal.',
+    'ACOMPANHE: o cliente com processo vê a etapa e as movimentações em araujoadvocaciasc.com.br/acompanhe com CPF e código de 8 caracteres enviado pelo escritório.',
+    'CALCULADORAS GRATUITAS: araujoadvocaciasc.com.br/calculadoras (prazo para ação trabalhista e estimativa de rescisão).',
+    'HONORÁRIOS: combinados por escrito depois da conversa inicial, conforme a Tabela de Honorários da OAB/SC. O robô NÃO informa valores.',
+    guia ? 'GUIA DO CLIENTE:\n' + guia.slice(0, 9000) : ''].filter(Boolean).join('\n');
+  try { c.put(k, b, 21600); } catch (e) { /* segue */ }
+  return b;
+}
+
+var WHATS_SISTEMA = 'Você é a assistente virtual do escritório Araújo Advocacia (Tubarão/SC) no WhatsApp. Fale em português do Brasil, com educação, ' +
+  'acolhimento e frases curtas, como uma recepcionista experiente: no máximo 3 frases curtas por resposta (até ~450 caracteres), uma pergunta por vez, sem emojis em excesso (no máximo 1). ' +
+  'REGRAS: 1) Você informa e organiza; NUNCA dá parecer jurídico, NUNCA diz se a pessoa tem ou não direito, NUNCA promete resultado, NUNCA fala valor de causa nem de honorários, NUNCA informa prazos processuais. ' +
+  'Para isso diga que a Dra. Júlian analisa na conversa inicial. 2) Use SÓ as informações da BASE abaixo; o que não estiver nela, diga que vai confirmar com a equipe. ' +
+  '3) Para um caso novo, colete aos poucos: o nome, a cidade, um resumo do problema (o que aconteceu e desde quando) e se tem documentos; depois ofereça marcar a conversa inicial (presencial no escritório ou por vídeo) e pergunte o melhor dia e período. ' +
+  'Diga que a equipe confirma o horário — você NÃO confirma horário sozinha. 4) Nunca peça CPF, RG, senhas ou dados bancários (a consulta de processo é feita por outro caminho). ' +
+  '5) Se a pessoa já é cliente e pergunta do processo, diga que pode consultar pelo Acompanhe ou que você confere se ela mandar o CPF e o código de acesso. ' +
+  '6) Se pedirem para falar com uma pessoa, ou se for algo urgente, diga que vai chamar a equipe agora. 7) Sem preconceito, sem julgamentos, sem assuntos fora do escritório. ' +
+  '8) Na primeira resposta de uma conversa nova, apresente-se como assistente virtual e diga que as informações são usadas só para o atendimento (LGPD). ' +
+  'Responda SOMENTE em JSON: {"resposta": texto para mandar, "intencao": "novo_caso"|"agendar"|"processo"|"duvida"|"humano"|"financeiro"|"outro", "nome": nome da pessoa se ela disse, ' +
+  '"cidade": se disse, "area": "Trabalhista"|"Previdenciário"|"Família"|"Cível"|"Criminal"|"Empresarial"|"" , "resumo": resumo do caso em até 2 frases (só o que ela contou), ' +
+  '"preferencia": dia/período que ela prefere para a conversa (se disse), "pronto_para_agendar": true/false, "chamar_equipe": true/false}.';
+
+/** Decide a resposta. Urgência e pedido de pessoa vão direto para a equipe; processo pede CPF + código; o resto vai para a IA. */
+function whatsCerebro_(conv, texto, tipo, novo) {
+  var nome1 = String(conv.nome || '').split(' ')[0];
+  var fora = !horarioEscritorio_();
+  var dados = {}; try { dados = JSON.parse(conv.dados || '{}'); } catch (e) { dados = {}; }
+  var salvar = function (m) { atualizarConversa_(conv.id, m); };
+  if (URGENTE_WHATS.test(texto) || PEDE_HUMANO.test(texto)) {
+    var urg = URGENTE_WHATS.test(texto);
+    salvar({ estado: 'humano', pausado_ate: '' });
+    whatsAvisarEquipe_(conv, texto, urg);
+    crmDoWhats_(conv, { resumo: texto.slice(0, 200), intencao: urg ? 'urgente' : 'humano' });
+    return (urg ? 'Entendi, é urgente. ' : '') + 'Já avisei a equipe do escritório' + (urg ? ' agora mesmo' : '') + ' e uma pessoa vai falar com você por aqui' +
+      (fora ? ' assim que possível (nosso horário é de segunda a sexta, 8h–12h e 13h30–18h).' : ' em instantes.') + (urg ? ' Se puder, mande em uma mensagem o que aconteceu e onde você está.' : '');
+  }
+  // consulta do processo: CPF + código (as mesmas regras e travas do Acompanhe)
+  var cpf = (texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/) || [])[0], cod = (texto.toUpperCase().match(/\b[A-Z0-9]{4}-?[A-Z0-9]{4}\b/) || [])[0];
+  if (dados.aguarda_cpf && cpf && cod) {
+    salvar({ dados: JSON.stringify(Object.assign(dados, { aguarda_cpf: false })) });
+    try {
+      var r = consultaCliente_({ cpf: cpf, codigo: cod });
+      if (!r.processos.length) return 'Encontrei o seu cadastro, ' + r.nome + ', mas ainda não há processo em andamento no seu nome. Se tiver dúvida, me conte que eu chamo a equipe.';
+      var linhas = r.processos.slice(0, 4).map(function (p) {
+        return '• ' + (p.area || 'Processo') + (p.numero ? ' nº ' + p.numero : ' (em preparação)') + ': ' + (p.fase_nome || p.situacao) + (p.proximo ? '. Próximo compromisso: ' + p.proximo.ato + ' em ' + dataBR_(p.proximo.data) : '') +
+          (p.movimentacao ? '. Última movimentação em ' + dataBR_(p.movimentacao) : '');
+      });
+      return 'Olá, ' + r.nome + '! Seus processos:\n' + linhas.join('\n') + '\n\nOs detalhes estão em araujoadvocaciasc.com.br/acompanhe. Quer que a Dra. Júlian explique algo? É só dizer.';
+    } catch (e) { return 'Não consegui conferir com esses dados (' + String(e.message || '').replace(/\.$/, '') + '). Confira o CPF e o código de 8 caracteres que enviamos, ou peça para falar com a equipe.'; }
+  }
+  if (PEDE_PROCESSO.test(texto) && !(cpf && cod)) {
+    salvar({ dados: JSON.stringify(Object.assign(dados, { aguarda_cpf: true })) });
+    return 'Claro' + (nome1 ? ', ' + nome1 : '') + '! Para eu consultar com segurança, me mande o seu CPF e o código de acesso de 8 caracteres que o escritório enviou (o mesmo do site araujoadvocaciasc.com.br/acompanhe). Se não tiver o código, me avise que eu peço para a equipe.';
+  }
+  // IA
+  var hist = historicoConversa_(conv.id, 14);
+  var pedido = 'BASE DO ESCRITÓRIO:\n' + baseConhecimentoWhats_() + '\n\nSITUAÇÃO: ' + (novo ? 'conversa NOVA (primeira mensagem). ' : '') + (conv.cliente_id ? 'Esta pessoa JÁ É CLIENTE do escritório. ' : '') +
+    (fora ? 'Agora está FORA do horário de atendimento: diga que a equipe responde no próximo horário. ' : 'Agora é horário de atendimento. ') +
+    (conv.nome ? 'Nome no WhatsApp: ' + conv.nome + '. ' : '') + '\n\nCONVERSA (mais antiga primeiro):\n' + anonimizar_(hist.slice(-6000), []); // sem CPF, telefone, e-mail, conta
+  var o;
+  try { o = jsonDaIA_(geminiTexto_([{ text: pedido }], { sistema: WHATS_SISTEMA, json: true, max: 1200, temp: 0.3 }).texto); } catch (e) { o = null; }
+  if (!o || !o.resposta) {
+    whatsAvisarEquipe_(conv, texto, false);
+    return novo ? 'Olá! Aqui é a assistente virtual do escritório Araújo Advocacia. Recebi a sua mensagem e já passei para a equipe, que responde por aqui ' + (fora ? 'no próximo horário de atendimento (seg. a sex., 8h–12h e 13h30–18h).' : 'em instantes.') : '';
+  }
+  var resposta = String(o.resposta).replace(/\*\*/g, '*').slice(0, 1200);
+  // trava de segurança: se a IA escapar das regras (valores, "você tem direito", prazos), troca por resposta neutra
+  if (/R\$\s?\d|\b\d+\s?%|\bvoc[eê] (tem|ter[aá]) direito\b|\bvai ganhar\b|\bprazo (é|de) \d/i.test(resposta)) resposta = 'Essa é uma pergunta importante, e a Dra. Júlian responde com segurança na conversa inicial, depois de entender o seu caso. Quer que eu veja um horário para vocês conversarem?';
+  if (o.chamar_equipe) { salvar({ estado: 'humano', pausado_ate: '' }); whatsAvisarEquipe_(conv, texto, false); }
+  var muda = {};
+  if (o.nome && !conv.nome) muda.nome = nomeProprio_(String(o.nome).slice(0, 80));
+  ['cidade', 'area', 'resumo', 'preferencia'].forEach(function (k) { if (o[k]) dados[k] = String(o[k]).slice(0, 400); });
+  muda.dados = JSON.stringify(dados); muda.resumo = String(dados.resumo || conv.resumo || '').slice(0, 400);
+  salvar(muda);
+  crmDoWhats_(Object.assign({}, conv, muda), { resumo: dados.resumo, area: dados.area, cidade: dados.cidade, preferencia: dados.preferencia, intencao: o.intencao, agendar: !!o.pronto_para_agendar });
+  return resposta;
+}
+
+/** Leva a conversa para o CRM: cria o contato (canal WhatsApp) ou atualiza; pedido de consulta vira próxima ação para a equipe. */
+function crmDoWhats_(conv, info) {
+  if (conv.cliente_id && !info.agendar && info.intencao !== 'novo_caso') return; // cliente antigo com dúvida: não vira contato novo
+  comTrava_(function () {
+    var t = tabela_('Leads'), agora = new Date().toISOString(), dig = String(conv.telefone).slice(-8);
+    var l = t.linhas.filter(function (x) { return x.id === conv.lead_id; })[0] ||
+      t.linhas.filter(function (x) { return String(x.telefone || '').replace(/\D/g, '').slice(-8) === dig && ['ganho', 'perdido'].indexOf(x.etapa) < 0; })[0];
+    var hist = linhaHist_(null, 'WhatsApp (robô): ' + (info.resumo || info.intencao || 'mensagem'));
+    if (!l) {
+      l = { id: novoId_('L'), criado_em: agora, nome: conv.nome || ('WhatsApp ' + conv.telefone.slice(-4)), telefone: conv.telefone, email: '', area: info.area || '', assunto: String(info.resumo || '').slice(0, 300),
+        canal: 'WhatsApp', etapa: 'contato', valor_estimado: '', responsavel: config_('WHATS_RESP') || config_('RESP_SITE') || '', proxima_acao: 'Ver a conversa do WhatsApp e responder', proxima_data: hojeSP_(),
+        temperatura: 'morno', cliente_id: conv.cliente_id || '', historico: hist, criado_por: 'whatsapp', atualizado_em: agora, atualizado_por: 'robô', primeiro_contato_em: agora };
+      inserirLinha_(t, l);
+    } else {
+      var m = { atualizado_em: agora, atualizado_por: 'robô' };
+      if (info.area && !l.area) m.area = info.area;
+      if (info.resumo && (!l.assunto || l.assunto.length < 20)) m.assunto = String(info.resumo).slice(0, 300);
+      if (conv.nome && /^WhatsApp \d/.test(l.nome)) m.nome = conv.nome;
+      if (String(l.historico || '').split('\n').slice(-1)[0].indexOf(String(info.resumo || '').slice(0, 40)) < 0) m.historico = (l.historico ? l.historico + '\n' : '') + hist;
+      atualizarLinha_(t, l, m);
+    }
+    if (info.agendar) atualizarLinha_(t, l, { proxima_acao: '📅 Marcar a consulta pedida no WhatsApp' + (info.preferencia ? ': ' + String(info.preferencia).slice(0, 120) : ''), proxima_data: hojeSP_(), temperatura: 'quente' });
+    if (!conv.lead_id || conv.lead_id !== l.id) { var tc = tabela_('Conversas'), x = tc.linhas.filter(function (r) { return r.id === conv.id; })[0]; if (x) atualizarLinha_(tc, x, { lead_id: l.id }); }
+  });
+  if (info.agendar) whatsAvisarEquipe_(conv, '📅 Pediu para marcar a conversa inicial' + (info.preferencia ? ' (' + info.preferencia + ')' : '') + '. ' + (info.resumo || ''), false);
+}
+
+/* ---------- Painel: Conversas do WhatsApp (administração) ---------- */
+function whatsConversas_(d) {
+  var msgs = tabela_('Mensagens').linhas;
+  var itens = tabela_('Conversas').linhas.map(function (c) { var o = limpar_(c); delete o.dados; return o; }).sort(function (a, b) { return a.ultima_em < b.ultima_em ? 1 : -1; }).slice(0, 300);
+  var r = { itens: itens, ligado: config_('WHATS_BOT') === 'sim', configurado: !!whatsToken_() && !!config_('WHATS_PHONE_ID'), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '' };
+  if (d.id) {
+    r.mensagens = msgs.filter(function (m) { return m.conversa_id === d.id; }).slice(-200).map(limpar_);
+    var c = tabela_('Conversas').linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (c) { var dd = {}; try { dd = JSON.parse(c.dados || '{}'); } catch (e) { dd = {}; } r.conversa = limpar_(c); r.conversa.dados = dd; delete dd.aguarda_cpf;
+      r.janela = c.ultima_cliente_em ? (Date.now() - Date.parse(c.ultima_cliente_em)) < 23.5 * 3600000 : false; }
+  }
+  return r;
+}
+function whatsAcao_(d, u) {
+  var t = tabela_('Conversas'), c = t.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!c) throw falha_('Conversa não encontrada.');
+  if (d.acao === 'lida') return comTrava_(function () { atualizarLinha_(tabela_('Conversas'), tabela_('Conversas').linhas.filter(function (x) { return x.id === c.id; })[0], { nao_lidas: '0' }); return { ok: true }; });
+  if (d.acao === 'assumir') return comTrava_(function () { atualizarLinha_(tabela_('Conversas'), tabela_('Conversas').linhas.filter(function (x) { return x.id === c.id; })[0], { estado: 'humano', atendente: u.usuario, pausado_ate: '' }); return { ok: true }; });
+  if (d.acao === 'robo') return comTrava_(function () { atualizarLinha_(tabela_('Conversas'), tabela_('Conversas').linhas.filter(function (x) { return x.id === c.id; })[0], { estado: 'robo', atendente: '', pausado_ate: '' }); return { ok: true }; });
+  if (d.acao === 'enviar') {
+    var texto = String(d.texto || '').trim();
+    if (!texto) throw falha_('Escreva a mensagem.');
+    var waId = whatsEnviar_(c.telefone, texto);
+    comTrava_(function () {
+      registrarMsg_(c, 'saida', 'texto', texto, waId, u.nome || u.usuario);
+      atualizarLinha_(tabela_('Conversas'), tabela_('Conversas').linhas.filter(function (x) { return x.id === c.id; })[0], { estado: 'humano', atendente: u.usuario, ultima_em: new Date().toISOString(), ultima_msg: texto.slice(0, 200), nao_lidas: '0' });
+    });
+    registrar_(u.usuario, 'whatsapp ao cliente', (c.cliente_id || c.telefone) + ' (conversa)');
+    return { ok: true };
+  }
+  throw falha_('Ação desconhecida.');
+}
+/** Configuração (só administração): token e número do Meta, liga/desliga, chave da ponte e teste. */
+function whatsConfig_(d, u) {
+  var props = PropertiesService.getScriptProperties();
+  if (d.token !== undefined) {
+    var k = String(d.token || '').replace(/[\s"'`<>]/g, '');
+    if (k && k.length < 40) throw falha_('O token parece incompleto. Copie o token permanente inteiro do Meta (começa com EAA…).');
+    if (k) props.setProperty('WHATS_TOKEN', k); else props.deleteProperty('WHATS_TOKEN');
+    registrar_(u.usuario, 'whatsapp: token', k ? 'cadastrado' : 'apagado');
+  }
+  if (d.phone_id !== undefined) { if (d.phone_id && !/^\d{8,20}$/.test(String(d.phone_id).trim())) throw falha_('O "Phone number ID" é só de números (fica em WhatsApp › Configuração da API no Meta).'); setConfig_('WHATS_PHONE_ID', String(d.phone_id).trim(), 'ID do número do WhatsApp na API do Meta'); }
+  if (d.resp !== undefined) setConfig_('WHATS_RESP', String(d.resp).slice(0, 40), 'Quem recebe as tarefas do WhatsApp');
+  if (d.ligado !== undefined) setConfig_('WHATS_BOT', d.ligado ? 'sim' : 'nao', 'Robô do WhatsApp respondendo sozinho?');
+  if (d.novaChave || !props.getProperty('WHATS_PONTE_CHAVE')) props.setProperty('WHATS_PONTE_CHAVE', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 16));
+  var r = { temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
+    chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_() };
+  if (d.testar) {
+    var tel = String(d.testar).replace(/\D/g, ''); if (tel.length < 12) throw falha_('Informe o seu número com DDI e DDD (ex.: 5548999998888).');
+    whatsEnviar_(tel, 'Teste do painel Araújo Advocacia: o WhatsApp está ligado. ✓'); r.teste = true; setConfig_('WHATS_ERRO', '', 'Último problema ao mandar mensagem pelo WhatsApp'); r.erro = '';
+  }
+  if (d.simular) r.simulacao = whatsSimular_(String(d.simular), u);
+  return r;
+}
+/** "Testar o robô" no painel: mostra o que ele responderia, sem mandar nada a ninguém. */
+function whatsSimular_(texto, u) {
+  var conv = { id: 'SIMULACAO', telefone: '5500000000000', nome: '', cliente_id: '', dados: '{}', estado: 'robo' };
+  if (URGENTE_WHATS.test(texto) || PEDE_HUMANO.test(texto)) return { resposta: '(passaria para a equipe na hora' + (URGENTE_WHATS.test(texto) ? ', como URGENTE, com tarefa e e-mail' : '') + ')' };
+  if (PEDE_PROCESSO.test(texto)) return { resposta: '(pediria o CPF e o código do Acompanhe para consultar o processo)' };
+  var pedido = 'BASE DO ESCRITÓRIO:\n' + baseConhecimentoWhats_() + '\n\nSITUAÇÃO: conversa NOVA. ' + (horarioEscritorio_() ? 'Horário de atendimento.' : 'FORA do horário de atendimento.') + '\n\nCONVERSA:\nCliente: ' + texto.slice(0, 2000);
+  var o = jsonDaIA_(geminiTexto_([{ text: pedido }], { sistema: WHATS_SISTEMA, json: true, max: 1200, temp: 0.3 }).texto) || {};
+  return { resposta: o.resposta || '(a IA não respondeu)', intencao: o.intencao || '', area: o.area || '', resumo: o.resumo || '' };
 }

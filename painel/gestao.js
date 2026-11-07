@@ -848,5 +848,112 @@
       numero(k.inadimplencia > 20 ? 'vermelho' : 'azul', k.inadimplencia + '%', 'Inadimplência', 'do que venceu nos últimos 90 dias'));
   }
 
-  window.GESTAO = { telaCrm, telaCalculadoras, telaTranscricao, telaPadroes, blocoRecibos, blocoPainelFinanceiro, dialogoProposta };
+
+  /* ================================================================ */
+  /* 8.13: Conversas do WhatsApp (chatbot) — só administração          */
+  /* ================================================================ */
+  const horaCurta = iso => { if (!iso) return ''; const d = new Date(iso), hoje = new Date(); return d.toDateString() === hoje.toDateString() ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); };
+  async function telaConversas(params) {
+    const { h, api, apiFresco, mostrar, carregando, avisar, botao, sessao } = K();
+    carregando();
+    const id = params.get('id') || '';
+    const r = await apiFresco('whats.conversas', id ? { id } : {});
+    const aberta = r.conversa || null;
+    if (aberta && +aberta.nao_lidas) api('whats.acao', { id: aberta.id, acao: 'lida' }).catch(() => {});
+    const busca = (params.get('q') || '').toLowerCase();
+    const itens = r.itens.filter(c => !busca || (c.nome + ' ' + c.telefone + ' ' + c.ultima_msg).toLowerCase().includes(busca));
+    const lista = h('ul', { class: 'wz-lista' }, itens.length ? itens.map(c => h('li', { class: (c.id === id ? 'ativa ' : '') + (+c.nao_lidas ? 'nova' : '') },
+      h('a', { href: '#/conversas?id=' + c.id },
+        h('div', { class: 'wz-l1' }, h('strong', {}, c.nome || '+' + c.telefone), h('span', { class: 'peq' }, horaCurta(c.ultima_em))),
+        h('div', { class: 'wz-l2' }, h('span', {}, String(c.ultima_msg || '').slice(0, 70)),
+          +c.nao_lidas ? h('b', { class: 'wz-n' }, c.nao_lidas) : null),
+        h('div', { class: 'wz-l3' }, c.estado === 'humano' ? h('span', { class: 'tag atencao' }, 'com a equipe') : h('span', { class: 'tag ok' }, 'robô'),
+          c.cliente_id ? h('span', { class: 'tag' }, 'cliente') : null)))) : h('li', { class: 'vazia' }, r.configurado ? 'Nenhuma conversa ainda.' : 'Assim que o WhatsApp for ligado, as conversas aparecem aqui.'));
+    let fio = h('div', { class: 'wz-vazio' }, h('p', {}, 'Escolha uma conversa à esquerda.'), h('p', { class: 'peq' }, 'O robô responde sozinho; quando é urgente, quando pedem uma pessoa ou quando você responde por aqui, ele pausa e a conversa fica com a equipe.'));
+    if (aberta) {
+      const msgs = h('div', { class: 'wz-msgs' }, (r.mensagens || []).map(m => h('div', { class: 'wz-msg ' + (m.direcao === 'entrada' ? 'entrada' : 'saida') + (m.autor === 'robô' ? ' robo' : '') },
+        h('div', { class: 'wz-txt' }, m.texto), h('div', { class: 'wz-meta' }, (m.direcao === 'entrada' ? '' : (m.autor === 'robô' ? '🤖 robô · ' : m.autor ? m.autor + ' · ' : '')) + new Date(m.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })))));
+      const ta = h('textarea', { rows: 2, placeholder: r.janela ? 'Escreva a resposta… (o robô pausa nesta conversa)' : 'Passaram 24 h da última mensagem do cliente: o WhatsApp só permite responder pelo seu celular ou depois que ele escrever de novo.', disabled: !r.janela });
+      const enviar = h('button', { type: 'button', class: 'btn', disabled: !r.janela }, 'Enviar');
+      enviar.addEventListener('click', async () => {
+        if (!ta.value.trim()) return; enviar.disabled = true;
+        try { await api('whats.acao', { id: aberta.id, acao: 'enviar', texto: ta.value }); ta.value = ''; await telaConversas(params); }
+        catch (e) { avisar(e.message, true); enviar.disabled = false; }
+      });
+      ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) enviar.click(); });
+      const d = aberta.dados || {};
+      fio = h('div', { class: 'wz-fio' },
+        h('header', { class: 'wz-cab' },
+          h('div', {}, h('strong', {}, aberta.nome || '+' + aberta.telefone), h('div', { class: 'peq' }, '+' + aberta.telefone + (d.cidade ? ' · ' + d.cidade : '') + (d.area ? ' · ' + d.area : ''))),
+          h('div', { class: 'wz-bts' },
+            aberta.estado === 'humano' ? botao('🤖 Devolver ao robô', async () => { await api('whats.acao', { id: aberta.id, acao: 'robo' }); avisar('O robô volta a responder esta conversa.'); telaConversas(params); }, 'mini sec')
+              : botao('✋ Assumir (pausar o robô)', async () => { await api('whats.acao', { id: aberta.id, acao: 'assumir' }); avisar('Conversa com você: o robô não responde mais aqui.'); telaConversas(params); }, 'mini sec'),
+            aberta.lead_id ? h('a', { class: 'btn mini sec', href: '#/crm?ver=lista&q=' + encodeURIComponent(aberta.nome || aberta.telefone) }, 'No CRM') : null,
+            aberta.cliente_id ? h('a', { class: 'btn mini sec', href: '#/cliente/' + aberta.cliente_id }, 'Ficha do cliente') : null)),
+        d.resumo || d.preferencia ? h('div', { class: 'wz-resumo' }, d.resumo ? h('div', {}, h('b', {}, 'Resumo do caso: '), d.resumo) : null, d.preferencia ? h('div', {}, h('b', {}, 'Quer conversar: '), d.preferencia) : null) : null,
+        msgs, h('div', { class: 'wz-resp' }, ta, h('div', { class: 'wz-resp-bt' }, enviar, K().ditado ? K().ditado(ta, aberta.cliente_id) : null)));
+      setTimeout(() => { msgs.scrollTop = msgs.scrollHeight; }, 30);
+    }
+    const status = h('span', { class: 'wz-status ' + (r.ligado && r.configurado ? 'on' : 'off') }, r.configurado ? (r.ligado ? '● Robô respondendo' : '● Robô desligado (só guarda as mensagens)') : '● WhatsApp ainda não ligado');
+    const fBusca = h('form', { class: 'wz-busca', role: 'search' }, h('input', { type: 'search', name: 'q', value: params.get('q') || '', placeholder: 'Buscar conversa' }));
+    fBusca.addEventListener('submit', ev => { ev.preventDefault(); const q = new URLSearchParams(params); if (fBusca.q.value.trim()) q.set('q', fBusca.q.value.trim()); else q.delete('q'); location.hash = '#/conversas?' + q; });
+    mostrar(topo('Relacionamento', 'Conversas do WhatsApp', 'O robô atende 24 h: responde dúvidas, faz a triagem, consulta o processo (com CPF e código) e leva cada contato para o CRM. Urgências vêm direto para a equipe.',
+      status, botao('🧪 Testar o robô', () => dialogoTestarRobo(), 'sec'), botao('⚙ Ligar / configurar', () => dialogoWhatsConfig(), 'dourado')),
+      r.erro ? h('div', { class: 'nota alerta' }, 'Último problema do WhatsApp: ' + r.erro) : null,
+      !r.configurado ? h('div', { class: 'nota' }, 'Falta ligar o WhatsApp: em "⚙ Ligar / configurar" estão os passos (conta do Meta, ponte gratuita na Cloudflare e o token). Enquanto isso, use "🧪 Testar o robô" para ver como ele responde.') : null,
+      h('section', { class: 'wz' }, h('aside', { class: 'wz-lado' }, fBusca, lista), fio));
+    // atualiza sozinho a cada 20 s enquanto a tela estiver aberta (sem perder o que está sendo digitado)
+    const marca = location.hash;
+    const iv = setInterval(async () => {
+      if (location.hash !== marca || document.hidden) { if (location.hash !== marca) clearInterval(iv); return; }
+      const ta = document.querySelector('.wz-resp textarea'); if (ta && ta.value.trim()) return;
+      try { const n = await apiFresco('whats.conversas', id ? { id } : {}); if (location.hash === marca && (n.mensagens || []).length !== (r.mensagens || []).length || n.itens.length !== r.itens.length || n.itens.some((x, i) => (r.itens[i] || {}).ultima_em !== x.ultima_em)) { clearInterval(iv); telaConversas(params); } } catch (e) { /* tenta de novo */ }
+    }, 20000);
+  }
+  function dialogoTestarRobo() {
+    const { h, api } = K();
+    const ta = h('textarea', { rows: 3, placeholder: 'Escreva como se fosse um cliente. Ex.: "Boa tarde, fui demitido e não recebi nada, vocês atendem?"' });
+    const out = h('div', { class: 'wz-sim' });
+    const bt = h('button', { type: 'button', class: 'btn' }, 'Ver a resposta do robô');
+    bt.addEventListener('click', async () => {
+      if (!ta.value.trim()) return; bt.disabled = true; out.textContent = 'Pensando…';
+      try { const r = await api('whats.config', { simular: ta.value }); const s = r.simulacao || {};
+        out.replaceChildren(h('div', { class: 'wz-msg saida robo' }, h('div', { class: 'wz-txt' }, s.resposta || '—')), s.intencao ? h('p', { class: 'peq' }, `Entendeu: ${s.intencao}${s.area ? ' · ' + s.area : ''}${s.resumo ? ' · ' + s.resumo : ''}`) : null); }
+      catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+      finally { bt.disabled = false; }
+    });
+    dialogo('', h('h2', {}, '🧪 Testar o robô'), h('p', { class: 'peq' }, 'Nada é enviado a ninguém: só mostra o que ele responderia a uma primeira mensagem.'), ta, h('div', { class: 'g-acoes' }, bt), out);
+  }
+  async function dialogoWhatsConfig() {
+    const { h, api, avisar, campo } = K();
+    let c, equipe = [];
+    try { [c, equipe] = await Promise.all([api('whats.config', {}), api('equipe.listar', {}).catch(() => [])]); } catch (e) { avisar(e.message, true); return; }
+    const copiar1 = (rot, val) => h('div', { class: 'wz-copia' }, h('span', {}, rot), h('code', {}, val), h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(val, 'Copiado.') }, 'Copiar'));
+    const form = h('form', { class: 'g-form form-grade' },
+      h('h2', { class: 'largo' }, '⚙ Ligar o WhatsApp'),
+      h('ol', { class: 'largo wz-passos' },
+        h('li', {}, 'No Meta (developers.facebook.com › Meus apps › Criar app › Empresa › WhatsApp), ligue o número do escritório. Se ele continua no aplicativo do celular, escolha a opção de usar o mesmo número no aplicativo e na API ("coexistência").'),
+        h('li', {}, 'Crie a ponte grátis na Cloudflare (Workers › Criar › colar o arquivo chatbot/worker.js do site) e coloque nas variáveis: VERIFY_TOKEN (uma senha que você inventar), APP_SECRET (do app no Meta), e as duas abaixo:'),
+        h('li', { class: 'wz-copias' }, copiar1('PAINEL_URL', window.PAINEL_API_URL || c.urlPainel || '(o endereço /exec do programa do Google)'), copiar1('PAINEL_CHAVE', c.chavePonte)),
+        h('li', {}, 'No Meta › WhatsApp › Configuração: URL de retorno = endereço da ponte, token de verificação = o VERIFY_TOKEN; assine o campo "messages" (e "smb_message_echoes" se usar o celular junto).'),
+        h('li', {}, 'Cole aqui o token permanente (usuário do sistema do Meta) e o "Phone number ID", salve, teste e ligue o robô.')),
+      campo('token', c.temToken ? 'Token do Meta (já cadastrado; cole outro para trocar)' : 'Token do Meta (permanente)', '', { tipo: 'password', auto: 'off', largo: true }),
+      campo('phone_id', 'Phone number ID', c.phone_id, { modo: 'numeric' }),
+      campo('resp', 'Quem recebe as tarefas do WhatsApp', c.resp, { opcoes: [['', 'Secretaria / padrão']].concat(equipe.map(p => [p.usuario, p.nome])) }),
+      h('label', { class: 'largo g-opcao' }, h('input', { type: 'checkbox', name: 'ligado', checked: c.ligado }), ' Robô respondendo sozinho (desligado, ele só guarda as mensagens para a equipe responder por aqui)'),
+      c.iaLigada ? null : h('p', { class: 'largo nota alerta' }, 'A IA (chave do Gemini) não está cadastrada: o robô só consegue passar as mensagens para a equipe. Cadastre em Gerenciar acessos › IA.'),
+      h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
+        h('button', { type: 'button', class: 'btn sec', onclick: async () => { const n = prompt('Mandar uma mensagem de teste para qual número? (com 55 e DDD, ex.: 5548999998888)'); if (!n) return; try { await api('whats.config', { testar: n }); avisar('Mensagem de teste enviada.'); } catch (e) { avisar(e.message, true); } } }, 'Mandar um teste'),
+        h('button', { type: 'button', class: 'btn sec', onclick: async () => { if (!confirm('Gerar uma chave nova da ponte? Depois troque PAINEL_CHAVE na Cloudflare.')) return; await api('whats.config', { novaChave: true }); d.close(); dialogoWhatsConfig(); } }, 'Gerar nova chave da ponte')),
+      c.ultima ? h('p', { class: 'peq largo' }, 'Última mensagem recebida: ' + new Date(c.ultima).toLocaleString('pt-BR')) : null,
+      c.erro ? h('p', { class: 'peq largo erro' }, 'Último problema: ' + c.erro) : null, h('p', { class: 'erro largo' }));
+    const d = dialogo('wz-config', form);
+    K().aoEnviar(form, async f => {
+      const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on' };
+      if (f.get('token')) dados.token = f.get('token');
+      await api('whats.config', dados); d.close(); avisar('WhatsApp salvo.'); location.reload();
+    });
+  }
+
+  window.GESTAO = { telaConversas, telaCrm, telaCalculadoras, telaTranscricao, telaPadroes, blocoRecibos, blocoPainelFinanceiro, dialogoProposta };
 })();

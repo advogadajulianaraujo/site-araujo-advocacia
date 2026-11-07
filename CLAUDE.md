@@ -780,3 +780,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   `ditado(textarea, clienteId)` em painel.js (Web Speech pt-BR, texto aparece na caixa; nenhum áudio é guardado) na ficha do cliente e no
   "Anotar conversa" do CRM; "✨ Arrumar o texto" (`ia.organizarNota`: Gemini só pontua e organiza, sem acrescentar; nome do cliente volta
   no lugar de [PARTE]).
+
+## 8.13.0 Chatbot do WhatsApp (pedido da usuária)
+
+- API oficial do Meta (WhatsApp Cloud). Caminho: Meta → ponte Cloudflare (`chatbot/worker.js`: verificação GET, assinatura X-Hub-Signature-256
+  com APP_SECRET, responde 200 na hora e repassa em segundo plano só mensagens/ecos/falhas) → rota PÚBLICA `whats.webhook` (confere a chave
+  da ponte WHATS_PONTE_CHAVE nas Propriedades) → `whatsReceber_`. Token do Meta só nas Propriedades (WHATS_TOKEN); Config WHATS_PHONE_ID,
+  WHATS_BOT (sim/nao), WHATS_RESP, WHATS_API_VERSAO (v21.0). Guia completo em docs/CHATBOT-WHATSAPP.md.
+- Abas Conversas (estado robo|humano, pausado_ate, dados JSON com cidade/área/resumo/preferência/aguarda_cpf) e Mensagens (dedupe por wa_id).
+  SEMPRE gravar a conversa com `atualizarConversa_` (relê a linha; o objeto antigo apagava a pausa e o aguarda_cpf).
+- `whatsCerebro_`: urgência (`URGENTE_WHATS`) ou pedido de pessoa (`PEDE_HUMANO`) → pausa o robô, tarefa (🚨 urgente + e-mail) e resposta fixa;
+  processo (`PEDE_PROCESSO`) → pede CPF + código e consulta com `consultaCliente_` (mesmas travas do Acompanhe); resto → Gemini com
+  `WHATS_SISTEMA` + `baseConhecimentoWhats_` (guia do cliente dos Padrões + dados fixos), JSON; trava de segurança troca resposta com R$/%/
+  "você tem direito"/prazo. Áudio → `whatsTranscreverAudio_` (Gemini). Coexistência: `message_echoes` (resposta pelo celular) pausa 3 h.
+  Freio de 25 respostas/hora por número. `crmDoWhats_` cria/atualiza o cartão no CRM (canal WhatsApp) e "📅 Marcar a consulta pedida".
+- Painel: Relacionamento › "Conversas do WhatsApp" (#/conversas, só administração; `whats.conversas`/`whats.acao`/`whats.config`): lista +
+  conversa estilo WhatsApp, responder (só dentro das 24 h), Assumir/Devolver ao robô, ditado, "🧪 Testar o robô" (simulação sem enviar),
+  "⚙ Ligar / configurar" com os passos e as chaves para copiar. Início da administração: faixa "💬 WhatsApp: N conversas esperando a equipe".

@@ -48,7 +48,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -630,6 +630,7 @@
   // 8.12 (pedido da usuária): Relacionamento (CRM e Marketing), Documentos (com calculadoras e padrões), Inteligência (IA) e Gestão
   Object.assign(ICONES, {
     crm: 'M3.5 5h17l-6.5 7.5V18l-4 2.5v-8z',
+    conversas: 'M4 5.5h16v10H9l-5 4zM8 9.5h8M8 12.5h5',
     calculadoras: 'M6 3.5h12v17H6zM8.5 6.5h7v3h-7zM8.5 13h2M13.5 13h2M8.5 16.5h2M13.5 16.5h2',
     padroes: 'M12 3.5l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9v-5zM9 12l2 2 4-4',
     transcricao: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3ZM6 11.5a6 6 0 0 0 12 0M12 17.5v3M9 20.5h6',
@@ -645,6 +646,7 @@
     ['agenda', 'Agenda', 'Escritório'],
     // 8.12.2 (pedido da usuária): CRM e Marketing só a administração; Padrões operacionais saem do menu (botão discreto no Início);
     // Peças com IA e Biblioteca de prompts saíram; Recibos virou uma aba do Painel financeiro
+    ['conversas', 'Conversas do WhatsApp', 'Relacionamento', 'usuarios'],
     ['crm', 'CRM / Funil', 'Relacionamento', 'usuarios'],
     ['marketing', 'Marketing', 'Relacionamento', 'usuarios'],
     ['modelos', 'Documentos e propostas', 'Documentos'],
@@ -2657,7 +2659,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.12.3';
+  const VERSAO_PAINEL = '8.13.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4762,6 +4764,7 @@ function main() {
         case 'marketing': await telaMarketing(params); break;
         case 'organizar': await telaOrganizar(params); break;
         case 'crm': if (!sessao.usuario.pode.usuarios) { mostrar(h('div', { class: 'nota alerta' }, 'O CRM / Funil é só da administração.')); break; } await G().telaCrm(params); break;
+        case 'conversas': if (!sessao.usuario.pode.usuarios) { mostrar(h('div', { class: 'nota alerta' }, 'As conversas do WhatsApp são só da administração.')); break; } await G().telaConversas(params); break;
         case 'calculadoras': await G().telaCalculadoras(params); break;
         case 'transcricao': await G().telaTranscricao(params); break;
         case 'padroes': await G().telaPadroes(params); break;
@@ -4785,6 +4788,14 @@ function main() {
     if (n !== rotaN || !sessao) return;
     const fim = h('p', { class: 'ini-guia' }, h('a', { href: '#/padroes' }, '📘 Chegou agora no escritório? Veja os padrões operacionais (como trabalhamos)'));
     app.append(fim);
+    if (sessao.usuario.pode.usuarios && window.GESTAO) api('whats.conversas', {}).then(r => {
+      if (n !== rotaN || !r || !r.itens) return;
+      const esperando = r.itens.filter(c => +c.nao_lidas && c.estado === 'humano');
+      if (!esperando.length) return;
+      const faixa = h('a', { class: 'ini-crm ini-wz', href: '#/conversas' }, h('strong', {}, `💬 WhatsApp: ${esperando.length} conversa${esperando.length === 1 ? '' : 's'} esperando a equipe`),
+        h('span', {}, ' · ' + esperando.slice(0, 3).map(c => (c.nome || c.telefone).split(' ')[0]).join(', ')));
+      const topo = app.querySelector('.ini-topo'); if (topo) topo.after(faixa); else app.prepend(faixa);
+    }).catch(() => {});
     if (sessao.usuario.pode.usuarios && window.GESTAO) api('crm.listar', {}).then(r => {
       if (n !== rotaN) return;
       const hoje = hojeISO();
