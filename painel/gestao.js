@@ -283,7 +283,7 @@
         l.etapa !== 'perdido' ? h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); dialogoPerdido(l, depois); } }, 'Não fechou') : null),
       (() => {
         const fa = h('form', { class: 'crm-anotar' }, h('label', { for: 'crm-nota' }, 'Anotar conversa'),
-          h('textarea', { id: 'crm-nota', name: 'texto', rows: 2, placeholder: 'Ex.: liguei, vai mandar os documentos amanhã' }),
+          (() => { const ta = h('textarea', { id: 'crm-nota', name: 'texto', rows: 2, placeholder: 'Ex.: liguei, vai mandar os documentos amanhã (ou dite 🎙)' }); return h('div', {}, ta, K().ditado ? K().ditado(ta, l.cliente_id) : null); })(),
           h('div', { class: 'crm-anotar-linha' }, h('label', {}, h('input', { type: 'checkbox', name: 'contato', checked: l.etapa === 'novo' }), ' falei com a pessoa'),
             h('button', { type: 'submit', class: 'btn mini' }, 'Anotar')), h('p', { class: 'erro' }));
         K().aoEnviar(fa, async f => { await api('crm.anotar', { id: l.id, texto: f.get('texto'), contato: f.get('contato') === 'on' }); d.close(); avisar('Anotado.'); depois(); });

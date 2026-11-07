@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.12.2';
+var VERSAO = '8.12.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -493,6 +493,7 @@ var ROTAS = {
   'ia.transcricoes': { fn: transcricoesListar_ },
   'ia.transcricaoPublicar': { fn: transcricaoPublicar_ },
   'ia.transcricao': { fn: transcricaoObter_ },
+  'ia.organizarNota': { fn: organizarNotaIA_ },
   'ia.transcricaoTarefa': { fn: transcricaoTarefa_ },
   'fin.painel': { permissao: 'financeiro', fn: painelFinanceiro_ },
   'fin.recibos': { permissao: 'financeiro', fn: recibosListar_ },
@@ -11640,6 +11641,23 @@ function transcricaoPublicar_(d, u) {
 }
 
 /* 8.12.2: "Peças com IA" e "Biblioteca de prompts" saíram a pedido da usuária (ficou só Transcrição e resumos). */
+
+/** 8.12.3: observação DITADA no cadastro do cliente → a IA só arruma pontuação, parágrafos e listas (nunca acrescenta nada). */
+function organizarNotaIA_(d, u) {
+  var texto = String(d.texto || '').trim();
+  if (texto.length < 15) throw falha_('Fale ou escreva a observação primeiro.');
+  var c = d.cliente_id ? tabela_('Clientes').linhas.filter(function (x) { return x.id === d.cliente_id; })[0] : null;
+  var nome = c ? String(c.nome || '').trim() : '';
+  var r = geminiTexto_([{ text: 'Abaixo está uma observação DITADA por voz por uma advogada sobre um cliente (o reconhecimento de voz erra pontuação e às vezes palavras). ' +
+    'Reescreva SÓ corrigindo pontuação, maiúsculas, palavras claramente trocadas pelo reconhecimento de voz e organizando em frases curtas ou em itens com "-" quando houver uma lista ' +
+    '(documentos, valores, datas, combinados). NÃO acrescente nada, NÃO resuma, NÃO tire informação, NÃO dê opinião jurídica, mantenha números, datas e valores exatamente. ' +
+    'Responda só com o texto final, sem título e sem comentários.\n\nOBSERVAÇÃO:\n' + anonimizar_(texto.slice(0, 20000), nome ? [nome] : []) }], { max: 4000, temp: 0.1 });
+  var out = String(r.texto || '').replace(/^```\w*|```$/g, '').trim();
+  if (nome) out = out.replace(/\[PARTE\]/g, nomeProprio_(nome));
+  if (!out) throw falha_('A IA não respondeu agora. O texto ditado continua na caixa: pode salvar assim.');
+  registrar_(u.usuario, 'observação arrumada pela IA', d.cliente_id || '');
+  return { texto: out };
+}
 
 /** Um resumo inteiro (com a análise da equipe) para abrir no painel. */
 function transcricaoObter_(d, u) {

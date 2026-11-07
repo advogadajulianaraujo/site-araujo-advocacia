@@ -1759,3 +1759,14 @@ a.visao-bt{text-decoration:none}
 .g-docs{margin:10px 0;padding:10px 14px;background:#faf6ee;border-radius:10px}
 .g-docs ul{margin:4px 0 8px;padding-left:20px}
 .g-tempo.pausado{color:#b07a12}
+/* 8.12.3: escolha do WhatsApp (automático / aplicativo / Web) */
+.whats-modo{max-width:480px;border-radius:16px}
+.whats-modo h2{margin:0 0 6px;font-size:18px}
+.whats-op{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;margin:8px 0 0;padding:12px 14px;border:1px solid #e3dfd6;border-radius:12px;background:#fff;text-align:left;cursor:pointer}
+.whats-op span{font-size:13px;color:var(--mudo)}
+.whats-op:hover,.whats-op.ativo{border-color:var(--acento);background:var(--acento-f)}
+.whats-modo .acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+/* 8.12.3: ditado da observação */
+.ditado{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:6px}
+.ditado-bt.gravando{background:#b42318;border-color:#b42318;color:#fff;animation:g-pulsa 1.6s ease-in-out infinite}
+.ditado-status{font-size:12.5px;color:#7a5a1f;font-style:italic;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

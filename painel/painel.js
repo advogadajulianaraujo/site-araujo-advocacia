@@ -526,27 +526,59 @@
      aplicativo do WhatsApp no computador escolhe "WhatsApp: no aplicativo" no menu do nome (fica guardado neste computador).
      No celular continua o wa.me, que abre o aplicativo. O telefone é conferido (2 números juntos, 0 na frente, sem DDI). */
   const celular = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-  const modoWhats = () => { try { return localStorage.getItem('whats_modo') || 'web'; } catch (e) { return 'web'; } };
+  /* 8.12.3 (pedido da usuária: "não quero apertar esses botões"): modo AUTOMÁTICO. No 1º envio o painel tenta o APLICATIVO do
+     WhatsApp do computador (já aberto e logado); se o aplicativo abriu, guarda "app" e todos os próximos vão direto para ele.
+     Se não abriu, pergunta uma vez só e passa a usar o WhatsApp Web, sempre na MESMA aba (whatsapp_painel), que fica logada.
+     A escolha fica neste computador (localStorage whats_modo = auto|app|web e whats_aprendido = app|web). */
+  const lerLS = (k, pad) => { try { return localStorage.getItem(k) || pad; } catch (e) { return pad; } };
+  const gravarLS = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* sem memória */ } };
+  const modoWhats = () => { const m = lerLS('whats_modo', 'auto'); return m === 'auto' ? lerLS('whats_aprendido', 'auto') : m; };
   const btnWhats = document.getElementById('btn-whats');
-  const rotuloWhats = () => { if (btnWhats) btnWhats.textContent = modoWhats() === 'app' ? 'WhatsApp: no aplicativo' : 'WhatsApp: no navegador'; };
+  const rotuloWhats = () => {
+    if (!btnWhats) return;
+    const m = lerLS('whats_modo', 'auto'), ap = lerLS('whats_aprendido', '');
+    btnWhats.textContent = 'WhatsApp: ' + (m === 'app' ? 'aplicativo' : m === 'web' ? 'WhatsApp Web' : 'automático' + (ap === 'app' ? ' (aplicativo)' : ap === 'web' ? ' (Web)' : ''));
+  };
+  const btnWhatsAbrir = document.getElementById('btn-whats-abrir');
+  if (btnWhatsAbrir) btnWhatsAbrir.hidden = true; // a aba do WhatsApp Web abre sozinha no 1º envio
   if (btnWhats) {
     if (celular) btnWhats.hidden = true;
     rotuloWhats();
     btnWhats.addEventListener('click', () => {
-      try { localStorage.setItem('whats_modo', modoWhats() === 'app' ? 'web' : 'app'); } catch (e) { /* sem memória no navegador */ }
-      rotuloWhats();
-      avisar(modoWhats() === 'app' ? 'Os botões de WhatsApp vão abrir o aplicativo do WhatsApp deste computador.' : 'Os botões de WhatsApp vão abrir o WhatsApp Web, sempre na mesma aba.');
+      const caixa = h('dialog', { class: 'dialogo whats-modo' },
+        h('h2', {}, 'Para onde vão as mensagens de WhatsApp'),
+        h('p', { class: 'peq' }, 'Neste computador. No automático o painel descobre sozinho e não pergunta mais.'),
+        ...[['auto', 'Automático (recomendado)', 'Usa o aplicativo se ele estiver instalado; senão, o WhatsApp Web sempre na mesma aba.'],
+          ['app', 'Sempre o aplicativo do WhatsApp', 'O aplicativo do computador já fica aberto e logado: a mensagem cai direto nele.'],
+          ['web', 'Sempre o WhatsApp Web', 'Abre numa aba do Chrome que o painel reaproveita em todos os envios.']].map(([v, t, d]) =>
+          h('button', { type: 'button', class: 'whats-op' + (lerLS('whats_modo', 'auto') === v ? ' ativo' : ''), onclick: () => {
+            gravarLS('whats_modo', v); if (v === 'auto') gravarLS('whats_aprendido', null); rotuloWhats(); caixa.close(); avisar('Pronto: ' + t.replace(' (recomendado)', '') + '.');
+          } }, h('strong', {}, t), h('span', {}, d))),
+        h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'btn sec', onclick: () => caixa.close() }, 'Fechar')));
+      caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
     });
   }
-  // 8.6.0: abre (ou volta para) a aba do WhatsApp Web que o painel usa. Com ela aberta, todo botão de WhatsApp cai nela.
-  const btnWhatsAbrir = document.getElementById('btn-whats-abrir');
-  if (btnWhatsAbrir) {
-    if (celular) btnWhatsAbrir.hidden = true;
-    btnWhatsAbrir.addEventListener('click', () => {
-      window.open('https://web.whatsapp.com/', 'whatsapp_painel');
-      try { localStorage.setItem('whats_aba_aberta', String(Date.now())); } catch (e) { /* sem memória */ }
-      avisar('WhatsApp Web aberto na aba do painel. Os botões de WhatsApp vão usar ESSA aba (feche outras abas do WhatsApp Web para não confundir).');
-    });
+  const urlApp = (tel, enc) => 'whatsapp://send?phone=' + tel + (enc ? '&text=' + enc : '');
+  const urlWeb = (tel, enc) => 'https://web.whatsapp.com/send?phone=' + tel + (enc ? '&text=' + enc : '');
+  /** 1º envio no modo automático: tenta o aplicativo; se o Chrome perder o foco (o app abriu), aprende "app". Senão pergunta UMA vez. */
+  function descobrirWhats(tel, enc) {
+    let abriu = false;
+    const viu = () => { if (abriu) return; abriu = true; gravarLS('whats_aprendido', 'app'); rotuloWhats(); if (caixa.open) caixa.close(); };
+    const caixa = h('dialog', { class: 'dialogo whats-modo' },
+      h('h2', {}, 'O WhatsApp abriu no aplicativo?'),
+      h('p', { class: 'peq' }, 'Pergunto só desta vez: depois o painel manda sempre para o mesmo lugar, sem perguntar.'),
+      h('div', { class: 'acoes' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { gravarLS('whats_aprendido', 'app'); rotuloWhats(); caixa.close(); avisar('Combinado: as mensagens vão sempre para o aplicativo do WhatsApp deste computador.'); } }, 'Sim, abriu no aplicativo'),
+        h('button', { type: 'button', class: 'btn sec', onclick: () => {
+          gravarLS('whats_aprendido', 'web'); rotuloWhats(); caixa.close();
+          const w = window.open(urlWeb(tel, enc), 'whatsapp_painel');
+          if (w) avisar('Combinado: as mensagens vão para o WhatsApp Web, sempre nesta mesma aba (ela fica logada).');
+        } }, 'Não, usar o WhatsApp Web')));
+    caixa.addEventListener('close', () => { caixa.remove(); removeEventListener('blur', viu); document.removeEventListener('visibilitychange', vis); });
+    const vis = () => { if (document.hidden) viu(); };
+    addEventListener('blur', viu); document.addEventListener('visibilitychange', vis);
+    document.body.append(caixa); caixa.showModal();
+    location.href = urlApp(tel, enc); // se o aplicativo existe, o Chrome entrega a mensagem para ele (na 1ª vez pede "Abrir WhatsApp?")
   }
   function telefoneWhats(bruto) {
     // 8.11: cadastro com dois telefones ("48 99999-0000 / 48 3626-0000", "… ou …") → só o primeiro, ANTES de juntar os dígitos
@@ -572,11 +604,11 @@
     if (!tel) { ev.preventDefault(); avisar('Telefone incompleto ou inválido no cadastro: confira o número (com DDD) e tente de novo.', true); return; }
     const enc = encodeURIComponent(texto);
     if (celular) { a.href = 'https://wa.me/' + tel + (texto ? '?text=' + enc : ''); return; }
-    if (modoWhats() === 'app') { a.href = 'whatsapp://send?phone=' + tel + (texto ? '&text=' + enc : ''); a.removeAttribute('target'); return; }
-    a.href = 'https://web.whatsapp.com/send?phone=' + tel + (texto ? '&text=' + enc : '');
-    a.target = 'whatsapp_painel'; // aba com nome: o próximo clique reaproveita a mesma
-    let dica = false; try { dica = !localStorage.getItem('whats_dica'); localStorage.setItem('whats_dica', '1'); } catch (e) { /* segue */ }
-    if (dica) setTimeout(() => avisar('Dica: o WhatsApp abriu numa aba do painel; os próximos cliques usam essa mesma aba. Uma aba do WhatsApp aberta à mão não pode ser usada pelo painel (regra do navegador) — use "Abrir o WhatsApp Web do painel" no menu do seu nome.'), 400);
+    const modo = modoWhats();
+    if (modo === 'auto') { ev.preventDefault(); descobrirWhats(tel, enc); return; }
+    if (modo === 'app') { a.href = urlApp(tel, enc); a.removeAttribute('target'); return; }
+    a.href = urlWeb(tel, enc);
+    a.target = 'whatsapp_painel'; // aba com nome: todo clique cai na mesma aba, que continua logada
     a.rel = ''; a.referrerPolicy = 'no-referrer'; // "noopener" impediria reaproveitar a aba
   }, true);
 
@@ -1725,6 +1757,48 @@
   }
 
   /** 8.11.1 (pedido da usuária): quantas parcelas faltam pagar — em vermelho na ficha (e no cartão da lista). */
+  /** 8.12.3 (pedido da usuária): DITAR a observação pelo microfone, direto no cadastro do cliente. O texto aparece na caixa enquanto
+      a pessoa fala (reconhecimento de voz do Chrome, em português) e dá para corrigir antes de salvar. "✨ Arrumar o texto" pede ao
+      Gemini só pontuação e organização (sem inventar nada). Nada de áudio fica guardado: só o texto que for salvo. */
+  function ditado(ta, clienteId) {
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const status = h('span', { class: 'ditado-status', 'aria-live': 'polite' });
+    const bt = h('button', { type: 'button', class: 'btn sec ditado-bt', title: 'Falar a observação em vez de digitar' }, '🎙 Ditar');
+    const arrumar = h('button', { type: 'button', class: 'btn sec', title: 'A IA só corrige a pontuação e organiza o que foi dito' }, '✨ Arrumar o texto');
+    let rec = null, ligado = false;
+    const parar = () => { ligado = false; try { rec && rec.stop(); } catch (e) { /* ok */ } bt.textContent = '🎙 Ditar'; bt.classList.remove('gravando'); status.textContent = ''; };
+    bt.addEventListener('click', () => {
+      if (!Rec) { avisar('Este navegador não faz ditado. Use o Google Chrome (no computador ou no celular).', true); return; }
+      if (ligado) { parar(); return; }
+      rec = new Rec(); rec.lang = 'pt-BR'; rec.continuous = true; rec.interimResults = true;
+      const base = () => (ta.value && !/\s$/.test(ta.value) ? ta.value + ' ' : ta.value);
+      rec.onresult = ev => {
+        let parcial = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const t = ev.results[i][0].transcript.trim();
+          if (ev.results[i].isFinal) { ta.value = base() + t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? '' : '.'); ta.dispatchEvent(new Event('input')); }
+          else parcial += t + ' ';
+        }
+        status.textContent = parcial ? '… ' + parcial.trim() : 'ouvindo…';
+      };
+      rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { avisar('O navegador não liberou o microfone: clique no cadeado ao lado do endereço e permita o microfone.', true); parar(); } };
+      rec.onend = () => { if (ligado) { try { rec.start(); } catch (e) { parar(); } } };
+      try { rec.start(); ligado = true; bt.textContent = '■ Parar'; bt.classList.add('gravando'); status.textContent = 'ouvindo…'; ta.focus(); } catch (e) { avisar('Não consegui ligar o microfone.', true); }
+    });
+    arrumar.addEventListener('click', async () => {
+      if (ta.value.trim().length < 15) { avisar('Fale ou escreva a observação primeiro.', true); return; }
+      if (ligado) parar();
+      arrumar.disabled = true; const antes = arrumar.textContent; arrumar.textContent = 'Arrumando…';
+      try { const r = await api('ia.organizarNota', { texto: ta.value, cliente_id: clienteId || '' }); if (r.texto) { ta.value = r.texto; avisar('Texto arrumado. Confira antes de salvar.'); } }
+      catch (e) { avisar(e.message, true); }
+      finally { arrumar.disabled = false; arrumar.textContent = antes; }
+    });
+    const caixa = h('span', { class: 'ditado' }, bt, arrumar, status);
+    // saiu da tela com o microfone ligado: desliga
+    const obs = new MutationObserver(() => { if (!caixa.isConnected) { parar(); obs.disconnect(); } }); setTimeout(() => obs.observe(document.body, { childList: true, subtree: true }), 0);
+    return caixa;
+  }
+
   /** 8.12.1: em que ponto do CRM / Funil o cliente está (clicar abre o funil já filtrado pelo nome). */
   const NOME_ETAPA_CRM = { novo: 'Novo contato', contato: 'Em contato', consulta: 'Consulta agendada', atendido: 'Atendido', proposta: 'Proposta enviada', negociacao: 'Negociação', ganho: 'Contrato fechado', perdido: 'Não fechou' };
   function seloFunil(l, c) {
@@ -1807,9 +1881,9 @@
         }) : [h('li', { class: 'vazia' }, 'Nenhuma observação ainda.')]));
       };
       desenhar(c.observacoes);
-      const f = h('form', { class: 'nota-form', novalidate: true },
-        h('textarea', { name: 'texto', rows: 3, placeholder: 'Escreva uma observação sobre o cliente (atendimento, combinado, pendência…) — sem limite de tamanho', 'aria-label': 'Nova observação' }),
-        h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação')), h('p', { class: 'erro' }));
+      const taNota = h('textarea', { name: 'texto', rows: 3, placeholder: 'Escreva ou dite (🎙) uma observação sobre o cliente (atendimento, combinado, pendência…) — sem limite de tamanho', 'aria-label': 'Nova observação' });
+      const f = h('form', { class: 'nota-form', novalidate: true }, taNota,
+        h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação'), ditado(taNota, c.id)), h('p', { class: 'erro' }));
       aoEnviar(f, async fd => {
         const r = await api('clientes.nota', { id: c.id, texto: fd.get('texto') });
         c.observacoes = r.observacoes; f.reset(); desenhar(r.observacoes); avisar('Observação salva.');
@@ -2583,7 +2657,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.12.2';
+  const VERSAO_PAINEL = '8.12.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4740,7 +4814,7 @@ function main() {
   /* 8.12: telas de gestão (gestao.js). Sem o arquivo (cache velho), pede para atualizar. */
   function G() { if (!window.GESTAO) throw new Error('Atualize a página (F5) para abrir esta tela.'); return window.GESTAO; }
   /* Ferramentas do painel para o módulo do Edifício Future (future.js) e as telas de gestão (gestao.js) */
-  window.PAINEL_KIT = { h, s, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao, telefoneWhats, grafRosca, grafBarras, comSetas,
+  window.PAINEL_KIT = { ditado, h, s, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao, telefoneWhats, grafRosca, grafBarras, comSetas,
     nomeProprioJS, primeiroNome, icone, get sessao() { return sessao; }, rota: () => rota() };
 
   window.addEventListener('hashchange', rota);

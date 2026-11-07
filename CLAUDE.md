@@ -773,3 +773,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   agendada + "confirmar na véspera") e "💬 Mensagem pronta" com 7 modelos (`mensagensLead`). Transcrição: "Resumos feitos" abrem no painel
   (`ia.transcricao`), "Pedir os documentos no WhatsApp", "＋ Tarefa com os próximos passos" (`ia.transcricaoTarefa`, checklist),
   "Tirar do Acompanhe", gravação com Pausar/Continuar e rascunho salvo no computador a cada 10 s (localStorage `transcricao_rascunho`).
+- 8.12.3 (pedidos da usuária): WhatsApp AUTOMÁTICO (localStorage `whats_modo` = auto|app|web, padrão auto; `whats_aprendido`): no 1º envio
+  o painel tenta o aplicativo (`whatsapp://send`) e, se o Chrome perde o foco (o app abriu), aprende "app"; senão pergunta UMA vez ("O WhatsApp
+  abriu no aplicativo?") e passa a usar o WhatsApp Web na aba `whatsapp_painel` (`descobrirWhats`). Menu do nome: um só item "WhatsApp:
+  automático (…)" que abre a escolha (automático/aplicativo/Web); "Abrir o WhatsApp Web do painel" ficou escondido. Ditado nas observações:
+  `ditado(textarea, clienteId)` em painel.js (Web Speech pt-BR, texto aparece na caixa; nenhum áudio é guardado) na ficha do cliente e no
+  "Anotar conversa" do CRM; "✨ Arrumar o texto" (`ia.organizarNota`: Gemini só pontua e organiza, sem acrescentar; nome do cliente volta
+  no lugar de [PARTE]).
