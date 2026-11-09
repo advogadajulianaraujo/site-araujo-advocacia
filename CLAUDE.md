@@ -852,3 +852,22 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   1 lembrete após 3 h parado, só no horário do escritório e na janela de 24 h.
 - "🧪 Testar o robô" = conversa completa (`whatsSimular_` guarda 1 h no cache por usuário; `reiniciar`); `sim.acoes` mostra o que faria
   (⚙ agenda, cadastro, CRM, equipe) sem gravar, marcar nem enviar. Guia em docs/CHATBOT-WHATSAPP.md.
+
+## 8.17.0 Regras de valor e qualificação do robô do WhatsApp (decididas pela usuária na sabatina de 09/11/2026)
+
+- Persona: "aqui é do escritório Araújo Advocacia", sem dizer que é robô; pergunta direta (`PERGUNTA_ROBO`) → verdade em uma frase + oferece a
+  equipe. Nunca se passa pela Dra. nem por uma pessoa.
+- Valor (`consultaGratis_`): trabalhista do empregado (`dados.lado` ≠ empresa) e Previdenciário = sem valor (êxito: 30% / 2 primeiras parcelas);
+  resto = Config WHATS_VALOR (300), `textoValor_` (análise completa ~1 h; pago no dia ANTES do atendimento, Pix ou no escritório; descontado dos
+  honorários se fechar) dito logo antes dos horários ou quando perguntam (`pergunta_preco`). `recusou_preco` → pergunta formal do motivo (fase
+  `motivo`) → CRM perdido "Preço — …". WHATS_DURACAO padrão 60. Pix em Config WHATS_PIX_TXT (só na planilha, nunca no repositório).
+- Sem link de cadastro no robô: depois de marcar, `textoQualificacao_` (dados.qualif = pedida) → `lerQualificacao_` (CPF/RG/CEP/e-mail/data por
+  regra; nome, estado civil, profissão e endereço pela IA, sem CPF) → `faltasQualificacao_` → `whatsSalvarCliente_` (origem "WhatsApp (robô)",
+  cartão → Cadastro preenchido) → `textoDocs_` (`DOCS_AREA`).
+- Documentos: `whatsGuardarMidia_` (whatsReceber_, image/document) baixa do Meta para "PAINEL — DOCUMENTOS DO WHATSAPP (aguardando contrato · não
+  compartilhar)" (Config PASTA_WHATS_DOCS, subpasta por conversa, dados.pasta_docs) e a IA só rotula; responde 1 vez a cada 3 min; "pronto/enviei"
+  → `resumoDocs_` (✓/✗ na tarefa do atendimento). `whatsDocsRobo_` (robôs do escritório): jornada inicial/andamento → move para a pasta do
+  cliente › DOCUMENTOS DO WHATSAPP; 90 dias sem fechar → lixeira.
+- Checagem (`o.checagem`, fase checagem → checagem_enviada): valor + Pix antes (sem custo no trabalhista do empregado); documento + comprovante →
+  `tarefaChecagem_` (vence em 2 dias úteis, `doisDiasUteis_`). O financeiro (`FINANCEIRO_WHATS`) não interrompe a checagem.
+- whatsCerebro_ pode devolver VÁRIAS mensagens (array): whatsReceber_ manda em ordem; o teste junta com "⎯⎯⎯" e aceita "[documento: …]".

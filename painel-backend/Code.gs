@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.16.0';
+var VERSAO = '8.17.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4709,7 +4709,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -12029,10 +12029,19 @@ function whatsReceber_(m, nomePerfil) {
   // freio: no máximo 25 respostas do robô por hora para o mesmo número (evita conversa infinita com outro robô)
   var cache = CacheService.getScriptCache(), kq = 'wq_' + tel, q = +(cache.get(kq) || 0);
   if (q >= 25) return; cache.put(kq, String(q + 1), 3600);
-  var resposta = whatsCerebro_(conv, texto, tipo, novo);
-  if (!resposta) return;
-  var waId = whatsEnviar_(tel, resposta);
-  comTrava_(function () { registrarMsg_(conv, 'saida', 'texto', resposta, waId, 'robô'); atualizarConversa_(conv.id, { ultima_em: new Date().toISOString(), ultima_msg: resposta.slice(0, 200) }); });
+  var midia = null;
+  if (tipo === 'image' || tipo === 'document') {
+    var dd = {}; try { dd = JSON.parse(conv.dados || '{}') || {}; } catch (e) { dd = {}; }
+    try { midia = whatsGuardarMidia_(conv, m, dd); if (dd.pasta_docs) conv = atualizarConversa_(conv.id, { dados: JSON.stringify(dd) }) || conv; } catch (e) { midia = null; }
+    midia = midia || { rotulo: 'documento', legivel: true };
+  }
+  var resposta = whatsCerebro_(conv, texto, tipo, novo, null, midia);
+  if (!resposta || (Array.isArray(resposta) && !resposta.length)) return;
+  [].concat(resposta).filter(Boolean).forEach(function (txt, i) {
+    if (i) Utilities.sleep(1200); // em ordem, como uma pessoa escrevendo
+    var waId = whatsEnviar_(tel, txt);
+    comTrava_(function () { registrarMsg_(conv, 'saida', 'texto', txt, waId, 'robô'); atualizarConversa_(conv.id, { ultima_em: new Date().toISOString(), ultima_msg: txt.slice(0, 200) }); });
+  });
 }
 
 /** Avisa a equipe (tarefa + e-mail, no máximo 1 a cada 30 min por conversa). */
@@ -12082,7 +12091,7 @@ var ROBO_WHATS = { usuario: 'whatsapp', nome: 'Robô do WhatsApp', perfil: 'admi
 var DIAS_CURTO = ['', 'seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
 
 function quemAtende_() { return config_('WHATS_QUEM') || 'a Dra. Júlian'; }
-function duracaoAtendimento_() { var n = +(config_('WHATS_DURACAO') || 30); return n >= 15 && n <= 120 ? n : 30; }
+function duracaoAtendimento_() { var n = +(config_('WHATS_DURACAO') || 60); return n >= 15 && n <= 120 ? n : 60; }
 function hhmm_(min) { return ('0' + Math.floor(min / 60)).slice(-2) + ':' + ('0' + (min % 60)).slice(-2); }
 function msSlot_(dia, hora) { return Date.parse(dia + 'T' + hora + ':00-03:00'); }
 
@@ -12172,72 +12181,247 @@ function escolhaDoSlot_(texto, slots) {
   return null;
 }
 
-/** Marca o atendimento: confere de novo se o horário está livre, cria o evento, atualiza o funil, gera o cadastro e avisa a equipe. */
+/** Marca o atendimento: confere de novo se o horário está livre, cria o evento (1 h), atualiza o funil e cria a tarefa da equipe. */
 function whatsMarcar_(conv, slot, modo, dados, sim) {
-  var modoTxt = NOME_MODO[modo] || 'por ligação', nome = conv.nome || ('WhatsApp ' + String(conv.telefone).slice(-4));
-  if (sim) { sim.acoes.push('marcaria na agenda ATENDIMENTOS: ' + rotuloSlot_(slot) + ' (' + modoTxt + ')', 'mandaria o link do cadastro', 'criaria a tarefa "📅 Atendimento marcado" para a equipe'); return { ok: true, url: SITE_URL + '/cadastro/?c=EXEMPLO-DA-SIMULACAO', cadastro: !conv.cliente_id }; }
+  var modoTxt = NOME_MODO[modo] || 'por ligação', nome = conv.nome || ('WhatsApp ' + String(conv.telefone).slice(-4)), gratis = consultaGratis_(dados);
+  var valorTxt = gratis ? 'sem custo de consulta (' + (dados.area || 'êxito') + ': honorários no êxito)' : 'consulta de R$ ' + valorConsulta_() + ' — receber ANTES de começar (Pix ou no escritório)';
+  if (sim) { sim.acoes.push('marcaria na agenda ATENDIMENTOS: ' + rotuloSlot_(slot) + ' (' + modoTxt + ', 1 h, ' + valorTxt + ')', 'criaria a tarefa "📅 Atendimento" para a equipe'); return { ok: true, pago: !gratis }; }
   if (msSlot_(slot.dia, slot.hora) < Date.now() + 15 * 60000 || !slotLivre_(slot.dia, slot.hora)) return { ok: false, ocupado: true };
   var ids = agendas_(), cal = ids.ATENDIMENTOS ? CalendarApp.getCalendarById(ids.ATENDIMENTOS) : null;
   if (!cal) return { ok: false, erro: 'agenda ATENDIMENTOS não encontrada' };
   var ini = new Date(msSlot_(slot.dia, slot.hora)), fim = new Date(ini.getTime() + duracaoAtendimento_() * 60000);
-  var ev = cal.createEvent('Atendimento ' + modoTxt + ' — ' + nome + (dados.area ? ' (' + dados.area + ')' : ''), ini, fim, {
+  var ev = cal.createEvent('Atendimento ' + modoTxt + ' — ' + nome + (dados.area ? ' (' + dados.area + ')' : '') + (gratis ? '' : ' — R$ ' + valorConsulta_()), ini, fim, {
     location: modo === 'presencial' ? (escritorio_().endereco || 'Escritório') : modo === 'video' ? 'Por vídeo (mandar o link)' : 'Ligar para +' + conv.telefone,
-    description: [dados.resumo ? 'Caso: ' + dados.resumo : '', dados.cidade ? 'Cidade: ' + dados.cidade : '', 'Telefone: +' + conv.telefone, 'Marcado pelo robô do WhatsApp em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + '.'].filter(Boolean).join('\n') });
-  // funil: garante o cartão, liga a conversa e grava a consulta
+    description: [dados.resumo ? 'Caso: ' + dados.resumo : '', dados.cidade ? 'Cidade: ' + dados.cidade : '', 'Telefone: +' + conv.telefone, 'Valor: ' + valorTxt, 'Marcado pelo robô do WhatsApp em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + '.'].filter(Boolean).join('\n') });
   crmDoWhats_(conv, { resumo: dados.resumo, area: dados.area, cidade: dados.cidade, intencao: 'novo_caso' });
-  var c2 = tabela_('Conversas').linhas.filter(function (x) { return x.id === conv.id; })[0] || conv, url = '', leadId = c2.lead_id;
-  var precisaCadastro = !c2.cliente_id || (function () { var cl = tabela_('Clientes').linhas.filter(function (x) { return x.id === c2.cliente_id; })[0]; return !cl || !cl.cpf_cnpj || !cl.endereco; })();
-  var lAtual = leadId ? tabela_('Leads').linhas.filter(function (x) { return x.id === leadId; })[0] : null;
-  var linkValendo = lAtual && lAtual.cadastro_token && lAtual.cadastro_ate > new Date().toISOString() && !lAtual.cadastro_em;
-  if (leadId && precisaCadastro && !linkValendo) { try { url = crmLinkCadastro_({ id: leadId }, ROBO_WHATS).url; } catch (e) { url = ''; } }
+  var c2 = tabela_('Conversas').linhas.filter(function (x) { return x.id === conv.id; })[0] || conv, leadId = c2.lead_id;
   if (leadId) comTrava_(function () {
     var t = tabela_('Leads'), l = t.linhas.filter(function (x) { return x.id === leadId; })[0]; if (!l) return;
     atualizarLinha_(t, l, { consulta_em: slot.dia + 'T' + slot.hora, temperatura: 'quente', proxima_acao: '📅 Atendimento ' + modoTxt + ' em ' + dataBR_(slot.dia).slice(0, 5) + ' às ' + slot.hora, proxima_data: slot.dia,
-      atualizado_em: new Date().toISOString(), atualizado_por: 'robô', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'WhatsApp (robô): atendimento marcado para ' + dataBR_(slot.dia) + ' ' + slot.hora + ' ' + modoTxt + (url ? ' + link do cadastro' : '')) });
+      atualizado_em: new Date().toISOString(), atualizado_por: 'robô', historico: (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'WhatsApp (robô): atendimento marcado para ' + dataBR_(slot.dia) + ' ' + slot.hora + ' ' + modoTxt + ' · ' + valorTxt) });
   });
-  var resp = config_('WHATS_RESP') || config_('RESP_SITE') || respSecretaria_() || '', agora = new Date().toISOString();
+  var resp = config_('WHATS_RESP') || config_('RESP_SITE') || respSecretaria_() || '', agora = new Date().toISOString(), tid = novoId_('T');
   comTrava_(function () {
-    inserirLinha_(tabela_('Tarefas'), { id: novoId_('T'), titulo: '📅 Atendimento ' + modoTxt + ' — ' + nome + ' — ' + dataBR_(slot.dia).slice(0, 5) + ' ' + slot.hora,
-      descricao: 'Marcado pelo robô do WhatsApp.\n' + (dados.resumo ? 'Caso: ' + dados.resumo + '\n' : '') + (dados.area ? 'Área: ' + dados.area + '\n' : '') + 'Telefone: +' + conv.telefone +
-        (modo === 'video' ? '\nMandar o link da chamada de vídeo um pouco antes.' : modo === 'ligacao' || !modo ? '\nLigar para a pessoa no horário.' : '') + (url ? '\nO link do cadastro já foi mandado.' : ''),
+    inserirLinha_(tabela_('Tarefas'), { id: tid, titulo: '📅 Atendimento ' + modoTxt + ' — ' + nome + ' — ' + dataBR_(slot.dia).slice(0, 5) + ' ' + slot.hora + (gratis ? '' : ' (R$ ' + valorConsulta_() + ')'),
+      descricao: 'Marcado pelo robô do WhatsApp.\n' + (dados.resumo ? 'Caso: ' + dados.resumo + '\n' : '') + (dados.area ? 'Área: ' + dados.area + '\n' : '') + 'Telefone: +' + conv.telefone + '\nValor: ' + valorTxt +
+        (modo === 'video' ? '\nMandar o link da chamada de vídeo um pouco antes.' : modo === 'ligacao' || !modo ? '\nLigar para a pessoa no horário.' : '') + '\nO robô pediu a qualificação e os documentos pela conversa.',
       responsavel: resp, processo_id: '', numero: '', cliente_id: c2.cliente_id || '', vence_em: slot.dia, etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
       historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô do WhatsApp', criado_em: agora, criado_por: 'whatsapp', atualizado_em: agora, atualizado_por: 'whatsapp', prioridade: 'alta' });
   });
   registrar_('whatsapp', 'atendimento marcado', (c2.cliente_id || c2.telefone) + ' ' + slot.dia + ' ' + slot.hora + ' ' + modoTxt);
-  return { ok: true, evento: ev.getId(), url: url, cadastro: !!url, cadastroJa: !url && !!linkValendo };
+  return { ok: true, evento: ev.getId(), tarefa: tid, pago: !gratis };
 }
 function whatsDesmarcar_(dados, sim) {
   if (sim || !dados.agendado || !dados.agendado.evento) return;
   try { var ids = agendas_(); var ev = CalendarApp.getCalendarById(ids.ATENDIMENTOS).getEventById(dados.agendado.evento); if (ev) ev.deleteEvent(); } catch (e) { /* segue */ }
 }
-function confirmacaoAtendimento_(slot, modo, r, nome1) {
-  var esc = escritorio_();
+function confirmacaoAtendimento_(slot, modo, r, nome1, conv) {
+  var esc = escritorio_(), pix = pixTexto_();
   var como = modo === 'video' ? 'por vídeo: mandamos o link um pouco antes' : modo === 'presencial' ? 'aqui no escritório (' + (esc.endereco || 'Tubarão/SC') + ', em frente à nova rodoviária)' : 'por ligação: ' + quemAtende_() + ' liga para este número';
-  return 'Pronto' + (nome1 ? ', ' + nome1 : '') + '! Seu atendimento ficou marcado para ' + rotuloSlot_(slot) + ', ' + como + '.' +
-    (r.cadastro && r.url ? '\n\nPara adiantar, preencha o seu cadastro neste link (leva uns 3 minutos e é seguro):\n' + r.url : r.cadastroJa ? '\n\nSe ainda não preencheu o cadastro, o link que mandei continua valendo.' : '') +
-    '\n\nSe precisar remarcar, é só me avisar por aqui.';
+  var msgs = ['Pronto' + (nome1 ? ', ' + nome1 : '') + '! Seu atendimento ficou marcado para ' + rotuloSlot_(slot) + ', ' + como + '.' +
+    (r.pago ? '\n\nO valor da consulta (R$ ' + valorConsulta_() + ') é pago no dia, antes de começar' + (modo === 'presencial' ? ', por Pix ou aqui no escritório.' : ', por Pix' + (pix ? ':\n' + pix : '.')) : '') +
+    '\n\nSe precisar remarcar, é só me avisar por aqui.'];
+  return msgs;
+}
+/* ---------- 8.17: valores, qualificação por texto, documentos e checagem (decisões da usuária, nov/2026) ----------
+ * Consulta: trabalhista do EMPREGADO e previdenciário não falam de valor (êxito: só marcar); o resto é R$ 300 (Config WHATS_VALOR),
+ * pago no dia ANTES do atendimento (Pix ou no escritório) e descontado dos honorários se fechar. Duração 1 h.
+ * Checagem de documento: mesmo valor, Pix ANTES da análise (trabalhista do empregado: sem custo); resposta em até 2 dias úteis.
+ * Depois de marcar: pede a QUALIFICAÇÃO por texto (sem link), preenche o cadastro e manda a lista de documentos do tipo de caso.
+ * Documentos ficam numa pasta reservada do escritório; vão para a pasta do cliente só depois do contrato assinado (90 dias sem fechar = lixeira).
+ * Não abre dizendo que é robô; se perguntarem diretamente, responde a verdade em uma frase e oferece a equipe. */
+var PERGUNTA_ROBO = /(\b(voc[eê]|vc|tu|isso|aqui)\s+(é|e|eh|seria|ta sendo)\s+(um\s+|uma\s+)?(rob[oô]|bot|ia\b|intelig[eê]ncia artificial|m[aá]quina|atendimento autom)|\b(é|e|eh)\s+(um\s+)?(rob[oô]|bot)\s*\?|falando com (um\s+|uma\s+)?(rob[oô]|bot|m[aá]quina|ia\b|pessoa|humano|algu[eé]m de verdade|gente de verdade)|\b(é|e) (uma )?pessoa (de verdade|real)|\bresposta autom[aá]tica\b)/i;
+var DOCS_AREA = {
+  'Trabalhista': ['Carteira de trabalho (ou a digital)', 'Termo de rescisão (TRCT), se tiver', 'Últimos contracheques', 'Extrato do FGTS', 'Documento com foto e comprovante de residência', 'Provas que tiver (mensagens, fotos, áudios)'],
+  'Previdenciário': ['Documento com foto e CPF', 'Comprovante de residência', 'Extrato do CNIS (app Meu INSS)', 'Carta ou decisão do INSS, se tiver', 'Laudos, atestados e exames (se for por doença)', 'Carteira de trabalho'],
+  'Família': ['Documento com foto e comprovante de residência', 'Certidão de casamento ou de nascimento dos filhos', 'Comprovantes de renda', 'Documentos dos bens, se houver'],
+  'Criminal': ['Documento com foto', 'Boletim de ocorrência ou intimação recebida', 'Documentos do inquérito ou processo, se tiver'],
+  'Empresarial': ['Contrato social e cartão CNPJ', 'Documento com foto do sócio', 'Contratos e documentos do caso'],
+  '_': ['Documento com foto e comprovante de residência', 'Contrato ou documento principal do caso', 'Comprovantes de pagamento, boletos ou faturas', 'Prints de conversas, protocolos e e-mails']
+};
+function docsDaArea_(area) { return DOCS_AREA[area] || DOCS_AREA._; }
+function valorConsulta_() { var v = +String(config_('WHATS_VALOR') || '300').replace(/\D/g, ''); return v > 0 ? v : 300; }
+function pixTexto_() { return String(config_('WHATS_PIX_TXT') || '').trim(); }
+/** Sem valor: trabalhista do empregado e previdenciário (o escritório cobra no êxito). */
+function consultaGratis_(dados) { return dados.area === 'Previdenciário' || (dados.area === 'Trabalhista' && dados.lado !== 'empresa'); }
+function textoValor_() {
+  return 'Sobre o atendimento: a consulta é uma análise completa do seu caso com ' + quemAtende_() + ', de cerca de 1 hora. Ela vê os seus documentos, explica com clareza quais caminhos existem, ' +
+    'os riscos e o que esperar, e você sai sabendo exatamente o que fazer, mesmo que decida não seguir com o caso. Por isso o valor é de R$ ' + valorConsulta_() +
+    ', pago no dia, antes do atendimento, por Pix ou no escritório. Se você fechar com o escritório, esse valor é descontado dos honorários.';
+}
+function textoQualificacao_() {
+  return 'Para já deixarmos tudo pronto para o seu atendimento, me envie por aqui, por favor:\n• Nome completo\n• Data de nascimento\n• Estado civil e profissão\n• CPF e RG\n• Endereço completo com CEP\n• E-mail (se tiver)';
+}
+function textoDocs_(area) {
+  return 'Para a Dra. já chegar no atendimento conhecendo o seu caso, se puder me mande por aqui (foto legível ou PDF):\n' + docsDaArea_(area).map(function (x) { return '• ' + x; }).join('\n') +
+    '\n\nNão tem algum? Sem problema: mande o que tiver. Quando terminar, é só me avisar.';
+}
+function cadastroCompleto_(cid) {
+  var c = cid ? tabela_('Clientes').linhas.filter(function (x) { return x.id === cid; })[0] : null;
+  return !!(c && c.cpf_cnpj && c.endereco && c.nascimento && c.profissao);
 }
 
-var WHATS_SISTEMA = 'Você é a assistente virtual do escritório Araújo Advocacia (Tubarão/SC) e faz o PRIMEIRO ATENDIMENTO no WhatsApp, como a recepção de um escritório de advocacia experiente. ' +
+/* ---------- qualificação por texto ---------- */
+function pareceQualificacao_(t) {
+  return /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(t) || /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(t) || /\b\d{5}-?\d{3}\b/.test(t) ||
+    /\b(nome|cpf|rg|nasc|profiss|endere|rua|avenida|bairro|casad|solteir|divorciad|vi[uú]v|uni[aã]o est[aá]vel)/i.test(t) || String(t).split('\n').length >= 3;
+}
+function lerQualificacao_(texto, atual) {
+  var t = String(texto || ''), cad = Object.assign({}, atual || {});
+  var cpf = (t.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/) || [])[0]; if (cpf && cpfValido_(cpf.replace(/\D/g, ''))) cad.cpf = cpf.replace(/\D/g, ''); else if (cpf) cad.cpf_invalido = true;
+  var cep = (t.match(/\b\d{5}-?\d{3}\b/) || [])[0]; if (cep) cad.cep = cep.replace(/\D/g, '');
+  var em = (t.match(/[\w.+-]+@[\w-]+\.[\w.]+/) || [])[0]; if (em) cad.email = em.toLowerCase();
+  var rg = t.match(/\bRG\b[^\dA-Za-z]{0,12}([\dXx.\-\/]{5,16})/i); if (rg) cad.rg = rg[1];
+  var dn = t.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
+  if (dn) { var a = +dn[3]; if (a < 100) a += a > +Utilities.formatDate(new Date(), TZ, 'yy') ? 1900 : 2000; var iso = a + '-' + ('0' + dn[2]).slice(-2) + '-' + ('0' + dn[1]).slice(-2); if (iso < hojeSP_() && iso > '1900-01-01') cad.nascimento = iso; }
+  // nome, estado civil, profissão e endereço: a IA organiza (CPF, RG, CEP, e-mail e telefone saem antes)
+  try {
+    var o = jsonDaIA_(geminiTexto_([{ text: 'Extraia os dados de cadastro desta mensagem de WhatsApp de uma pessoa para um escritório de advocacia. Responda SOMENTE em JSON: ' +
+      '{"nome": nome completo, "estado_civil": "solteiro(a)"|"casado(a)"|"união estável"|"divorciado(a)"|"separado(a)"|"viúvo(a)"|"", "profissao": "", "genero": "feminino"|"masculino"|"", ' +
+      '"rua": "", "numero": "", "complemento": "", "bairro": "", "cidade": "", "uf": sigla}. Deixe vazio o que não estiver na mensagem; não invente.\n\nMENSAGEM:\n' + anonimizar_(t, []).slice(0, 3000) }], { json: true, max: 600, temp: 0 }).texto) || {};
+    ['nome', 'estado_civil', 'profissao', 'genero', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'uf'].forEach(function (k) { if (o[k] && String(o[k]).trim() && !/\[|\]/.test(o[k])) cad[k] = String(o[k]).trim().slice(0, 120); });
+    if (cad.estado_civil && ESTADOS_CIVIS_CAD.indexOf(cad.estado_civil) < 0) delete cad.estado_civil;
+    if (cad.uf) cad.uf = String(cad.uf).toUpperCase().slice(0, 2);
+  } catch (e) { /* segue só com o que a regra achou */ }
+  return cad;
+}
+function faltasQualificacao_(cad) {
+  var f = [];
+  if (!cad.nome || String(cad.nome).trim().split(/\s+/).length < 2) f.push('nome completo');
+  if (!cad.nascimento) f.push('data de nascimento');
+  if (!cad.estado_civil) f.push('estado civil');
+  if (!cad.profissao) f.push('profissão');
+  if (!cad.cpf) f.push(cad.cpf_invalido ? 'CPF (o número que veio não confere, pode conferir?)' : 'CPF');
+  if (!cad.rua || !cad.numero || !cad.cidade) f.push('endereço completo (rua, número, bairro e cidade)');
+  if (!cad.cep) f.push('CEP');
+  return f;
+}
+/** Grava o cadastro do cliente a partir da qualificação (mesmas regras do cadastro online). */
+function whatsSalvarCliente_(conv, cad) {
+  var tel = String(conv.telefone || '').replace(/\D/g, ''); if (tel.length > 11 && tel.indexOf('55') === 0) tel = tel.slice(2);
+  var fone = tel.length >= 10 ? '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4) : '';
+  var dados = { tipo: 'PF', nome: nomeProprio_(cad.nome), cpf_cnpj: cad.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'), rg: cad.rg || '', nascimento: cad.nascimento, estado_civil: cad.estado_civil,
+    profissao: cad.profissao, cep: cad.cep.replace(/(\d{5})(\d{3})/, '$1-$2'), endereco: cad.rua + ', nº ' + cad.numero + (cad.complemento ? ', ' + cad.complemento : '') + (cad.bairro ? ', ' + cad.bairro : ''),
+    cidade: cad.cidade, uf: cad.uf || 'SC', telefone: fone, email: cad.email || '', genero: /^(feminino|masculino)$/.test(cad.genero || '') ? cad.genero : '' };
+  var agora = new Date().toISOString(), carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm'), dd = {}; try { dd = JSON.parse(conv.dados || '{}') || {}; } catch (e) { dd = {}; }
+  return comTrava_(function () {
+    var tc = tabela_('Clientes'), cpf = cad.cpf;
+    var c = (conv.cliente_id && tc.linhas.filter(function (r) { return r.id === conv.cliente_id; })[0]) || tc.linhas.filter(function (r) { return String(r.cpf_cnpj || '').replace(/\D/g, '') === cpf; })[0];
+    var novo = !c;
+    if (c) {
+      var m = { atualizado_em: agora, atualizado_por: 'WhatsApp (robô)' };
+      Object.keys(dados).forEach(function (k) { if (dados[k] && !c[k]) m[k] = dados[k]; });
+      m.observacoes = guardarObsCliente_(c, '[' + carimbo + ' — WhatsApp] Dados de cadastro enviados pelo cliente na conversa.' + (c.observacoes ? '\n' + c.observacoes : ''));
+      if (c.situacao === 'importado — conferir') m.situacao = 'completo';
+      atualizarLinha_(tc, c, m);
+    } else {
+      c = Object.assign({ id: novoId_('C'), origem: 'WhatsApp (robô)', situacao: 'completo', area: dd.area || '', como_conheceu: 'Outro',
+        observacoes: '[' + carimbo + ' — WhatsApp] Cadastro feito pela conversa do WhatsApp.' + (dd.resumo ? ' Caso: ' + dd.resumo : ''),
+        criado_em: agora, atualizado_em: agora, atualizado_por: 'WhatsApp (robô)' }, dados);
+      inserirLinha_(tc, c);
+    }
+    var tcv = tabela_('Conversas'), xc = tcv.linhas.filter(function (r) { return r.id === conv.id; })[0]; if (xc) atualizarLinha_(tcv, xc, { cliente_id: c.id, nome: dados.nome });
+    var tl = tabela_('Leads'), ll = conv.lead_id ? tl.linhas.filter(function (r) { return r.id === conv.lead_id; })[0] : null;
+    if (ll) atualizarLinha_(tl, ll, { cliente_id: c.id, nome: dados.nome, email: dados.email || ll.email, etapa: etapaAFrente_(ll.etapa, 'cliente'), cadastro_em: agora, atualizado_em: agora, atualizado_por: 'robô',
+      historico: (ll.historico ? ll.historico + '\n' : '') + linhaHist_(null, 'WhatsApp (robô): cadastro preenchido na conversa' + (novo ? ' (cliente novo)' : '')) });
+    return { id: c.id, novo: novo };
+  });
+}
+
+/* ---------- documentos recebidos ---------- */
+function pastaDocsWhats_() { return pastaPainel_('PASTA_WHATS_DOCS', 'PAINEL — DOCUMENTOS DO WHATSAPP (aguardando contrato · não compartilhar)'); }
+/** Baixa a foto/PDF do Meta, guarda na pasta reservada da conversa e pede à IA só para dizer QUE documento é (sem opinar sobre o caso). */
+function whatsGuardarMidia_(conv, m, dados) {
+  var tipo = m.type, md = m[tipo] || {}, t = whatsToken_();
+  var info = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + md.id, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + t } });
+  if (info.getResponseCode() !== 200) return null;
+  var j = JSON.parse(info.getContentText()) || {}; if (!j.url) return null;
+  var arq = UrlFetchApp.fetch(j.url, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + t } });
+  if (arq.getResponseCode() !== 200) return null;
+  var bytes = arq.getContent(), mime = String(md.mime_type || j.mime_type || 'application/octet-stream').replace(/;.*$/, '');
+  if (bytes.length > 25 * 1048576) return null;
+  var pasta = null;
+  if (dados.pasta_docs) try { pasta = DriveApp.getFolderById(dados.pasta_docs); } catch (e) { pasta = null; }
+  if (!pasta) { pasta = pastaDocsWhats_().createFolder((conv.nome || 'WhatsApp') + ' — ' + String(conv.telefone).slice(-4) + ' (' + conv.id + ')'); dados.pasta_docs = pasta.getId(); }
+  var ext = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[mime] || '';
+  var rotulo = 'documento', legivel = true, lista = docsDaArea_(dados.area).concat(['Comprovante de pagamento (Pix)']);
+  if (/^image\/|pdf$/.test(mime) && bytes.length <= 12 * 1048576) {
+    try {
+      var o = jsonDaIA_(geminiTexto_([{ inline_data: { mime_type: mime, data: Utilities.base64Encode(bytes) } }, { text: 'Este arquivo foi mandado por uma pessoa a um escritório de advocacia. Diga SÓ que documento é, sem ler nem repetir dados pessoais. ' +
+        'Responda SOMENTE em JSON: {"tipo": o item da LISTA que corresponde (texto exato) ou uma descrição curta de até 5 palavras, "legivel": true/false}. LISTA: ' + lista.join(' | ') }], { json: true, max: 200, temp: 0 }).texto) || {};
+      if (o.tipo) rotulo = String(o.tipo).slice(0, 80); legivel = o.legivel !== false;
+    } catch (e) { /* fica "documento" */ }
+  }
+  var nomeArq = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HHmm') + ' — ' + (md.filename ? String(md.filename).slice(0, 80) : rotulo.replace(/[\\/:*?"<>|]/g, '')) + (md.filename ? '' : ext);
+  var f = pasta.createFile(Utilities.newBlob(bytes, mime, nomeArq));
+  return { id: f.getId(), url: f.getUrl(), rotulo: rotulo, legivel: legivel };
+}
+function resumoDocs_(dados) {
+  var rec = (dados.docs || []).map(function (d) { return d.rotulo; });
+  var lista = docsDaArea_(dados.area), tem = function (x) { return rec.some(function (r) { return normalizar_(r) === normalizar_(x) || normalizar_(x).indexOf(normalizar_(r)) === 0; }); };
+  return { ok: lista.filter(tem), falta: lista.filter(function (x) { return !tem(x); }), ilegivel: (dados.docs || []).filter(function (d) { return d.legivel === false; }).map(function (d) { return d.rotulo; }),
+    outros: rec.filter(function (r) { return !lista.some(function (x) { return normalizar_(r) === normalizar_(x); }); }) };
+}
+/** Robôs do escritório: contrato assinado → os documentos vão para a pasta do cliente; 90 dias sem fechar → lixeira (LGPD). */
+function whatsDocsRobo_() {
+  var n = 0, jor = null, agora = Date.now();
+  tabela_('Conversas').linhas.forEach(function (c) {
+    var dados = {}; try { dados = JSON.parse(c.dados || '{}') || {}; } catch (e) { return; }
+    if (!dados.pasta_docs || dados.docs_movidos || dados.docs_apagados) return;
+    jor = jor || jornadasClientes_();
+    var fechou = c.cliente_id && ['inicial', 'andamento'].indexOf(jor[c.cliente_id]) >= 0, muda = null;
+    try {
+      var origem = DriveApp.getFolderById(dados.pasta_docs);
+      if (fechou) {
+        var cli = tabela_('Clientes').linhas.filter(function (x) { return x.id === c.cliente_id; })[0];
+        if (!cli.pasta_id) criarPastaCliente_({ id: cli.id }, ROBO_WHATS);
+        cli = tabela_('Clientes').linhas.filter(function (x) { return x.id === c.cliente_id; })[0];
+        var raiz = DriveApp.getFolderById(cli.pasta_id), it = raiz.getFoldersByName('DOCUMENTOS DO WHATSAPP'), dest = it.hasNext() ? it.next() : raiz.createFolder('DOCUMENTOS DO WHATSAPP');
+        var fs = origem.getFiles(); while (fs.hasNext()) fs.next().moveTo(dest);
+        origem.setTrashed(true); dados.docs_movidos = new Date().toISOString(); muda = 'movidos para a pasta do cliente';
+      } else if (agora - Date.parse(c.ultima_cliente_em || c.criado_em || 0) > 90 * 86400000) {
+        origem.setTrashed(true); dados.docs_apagados = new Date().toISOString(); muda = 'apagados (90 dias sem contrato)';
+      }
+    } catch (e) { return; }
+    if (muda) { atualizarConversa_(c.id, { dados: JSON.stringify(dados) }); registrar_('whatsapp', 'documentos ' + muda, c.cliente_id || c.telefone); n++; }
+  });
+  return n;
+}
+function doisDiasUteis_() {
+  try { var f = mapaFeriados_(); return proximoUtil_(proximoUtil_(hojeSP_(), '', f, true), '', f, true); } catch (e) { return somarDias_(hojeSP_(), 2); }
+}
+function tarefaChecagem_(conv, dados) {
+  var resp = config_('WHATS_RESP') || config_('RESP_SITE') || respSecretaria_() || '', agora = new Date().toISOString();
+  var links = (dados.docs || []).filter(function (d) { return d.url; }).map(function (d) { return '• ' + d.rotulo + ': ' + d.url; }).join('\n');
+  inserirLinha_(tabela_('Tarefas'), { id: novoId_('T'), titulo: '🔎 Checagem — ' + (conv.nome || conv.telefone) + (dados.chk_gratis ? ' (sem custo)' : ' — conferir o Pix de R$ ' + valorConsulta_()),
+    descricao: 'Análise de documento pedida no WhatsApp. Responder em até 2 dias úteis.\n' + (dados.resumo ? 'Caso: ' + dados.resumo + '\n' : '') + (links ? 'Arquivos:\n' + links : 'Arquivos na conversa do WhatsApp.'),
+    responsavel: resp, processo_id: '', numero: '', cliente_id: conv.cliente_id || '', vence_em: doisDiasUteis_(), etapa: 'afazer', peso: '2', situacao: 'ativa',
+    concluida_por: '', concluida_em: '', historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô do WhatsApp', criado_em: agora, criado_por: 'whatsapp', atualizado_em: agora, atualizado_por: 'whatsapp', prioridade: 'alta' });
+}
+
+var WHATS_SISTEMA = 'Você faz o PRIMEIRO ATENDIMENTO do escritório Araújo Advocacia (Tubarão/SC) no WhatsApp, como a recepção de um escritório de advocacia experiente. Fale como a equipe do escritório ("aqui é do escritório Araújo Advocacia"); não diga que é robô, IA ou assistente virtual, mas também nunca diga que é uma pessoa nem que é a advogada. ' +
   'OBJETIVO: acolher, entender o caso em poucas perguntas, mostrar em termos gerais como o escritório pode ajudar e levar a pessoa a marcar um atendimento com a advogada. Análise, parecer e contrato são da equipe. ' +
   'ESTILO: português do Brasil, cordial, seguro e profissional; frases curtas; no máximo 3 frases (até ~450 caracteres); UMA pergunta por vez; chame pelo primeiro nome quando souber; no máximo 1 emoji; sem juridiquês e sem listas. ' +
   'COMO CONDUZIR: 1) Entender: o que aconteceu, desde quando e a cidade, com no máximo 2 ou 3 perguntas no total; não pergunte de novo o que a pessoa já contou. ' +
   '2) Quando entender o essencial (caso_entendido=true), diga em termos GERAIS e no condicional o que o escritório costuma verificar nesse tipo de situação (ex.: "Nesses casos, a Dra. costuma conferir as verbas da rescisão, o FGTS e as horas extras"), sem afirmar que a pessoa tem direito, e convide para um atendimento com a advogada por ligação, vídeo ou no escritório. ' +
   '3) Se a pessoa aceitar ou pedir para marcar, quer_atendimento=true e a resposta é UMA frase curta de transição (os horários livres são mandados pelo sistema logo depois; não invente horários). ' +
   '4) Se HORÁRIOS OFERECIDOS aparecerem abaixo e a pessoa escolher um, informe o número em "escolha"; se pedir outro dia/horário, use "dia_preferido" (aaaa-mm-dd), "periodo" (manha|tarde) e/ou "outro_horario" (aaaa-mm-ddTHH:MM), convertendo "amanhã", "quinta" etc. a partir de HOJE. ' +
-  '5) Valores: honorários são combinados por escrito depois do atendimento, conforme a tabela da OAB/SC; nunca diga números. ' +
-  'NUNCA: dar parecer, dizer se tem ou não direito, prometer resultado, falar valores (de causa, indenização ou honorários), informar prazos processuais ou de prescrição, pedir CPF/RG/senha/dados bancários, fingir ser a advogada ou uma pessoa, julgar a pessoa ou comentar outros advogados. Para essas perguntas, diga que a Dra. responde com segurança no atendimento. ' +
+  '5) Valores: NUNCA escreva números nem valores; o sistema informa o valor da consulta quando for a hora. Se a pessoa perguntar preço, marque pergunta_preco=true. Se ela achar caro ou recusar por causa do valor, marque recusou_preco=true. ' +
+  '6) Se a pessoa só quer que a Dra. confira/analise um documento pontual (contrato, acordo, rescisão, boleto, cobrança), sem ação nem consulta, marque checagem=true. Trabalhista: informe "lado" = "empregado" ou "empresa". ' +
+  '7) Se não entender o caso, peça com gentileza que explique melhor (o que aconteceu, com quem, desde quando), quantas vezes for preciso. ' +
+  'NUNCA: dar parecer, dizer se tem ou não direito, prometer resultado, falar valores (de causa, indenização ou honorários), informar prazos processuais ou de prescrição, pedir CPF/RG/senha/dados bancários (o sistema pede a qualificação na hora certa), dizer que é a advogada ou uma pessoa, julgar a pessoa ou comentar outros advogados. Para essas perguntas, diga que a Dra. responde com segurança no atendimento. ' +
   'CASOS ESPECIAIS: parte contrária de um cliente do escritório ou reclamação contra o escritório → conflito=true e chamar_equipe=true, sem discutir o caso. Fornecedor, propaganda, currículo, engano → intencao "outro". Cliente que já tem processo e pergunta do caso → intencao "caso_cliente". Pagamento, boleto, parcela → intencao "financeiro". ' +
   'Outra cidade ou estado → o atendimento pode ser por vídeo ou ligação. Mensagem agressiva → responda com calma e ofereça a equipe. Pessoa que não quer agora → respeite (nao_quer_agora=true) e diga que fica à disposição. Use SÓ as informações da BASE; o que não estiver nela, diga que confirma com a equipe. ' +
   'Responda SOMENTE em JSON: {"resposta": texto, "intencao": "novo_caso"|"agendar"|"processo"|"caso_cliente"|"financeiro"|"duvida"|"humano"|"outro", "nome": se disse, "cidade": se disse, ' +
   '"area": "Trabalhista"|"Previdenciário"|"Família"|"Cível"|"Consumidor"|"Criminal"|"Empresarial"|"", "resumo": o caso em até 2 frases (só o que a pessoa contou), "caso_entendido": true/false, "quer_atendimento": true/false, ' +
-  '"nao_quer_agora": true/false, "modo": "ligacao"|"video"|"presencial"|"", "escolha": número ou null, "dia_preferido": "" , "periodo": "", "outro_horario": "", "chamar_equipe": true/false, "conflito": true/false}.';
+  '"nao_quer_agora": true/false, "modo": "ligacao"|"video"|"presencial"|"", "escolha": número ou null, "dia_preferido": "" , "periodo": "", "outro_horario": "", "chamar_equipe": true/false, "conflito": true/false, ' +
+  '"lado": "empregado"|"empresa"|"", "checagem": true/false, "pergunta_preco": true/false, "recusou_preco": true/false, "docs_enviados": true se a pessoa disse que terminou de mandar os documentos}.';
 
 function saudacaoHora_() { var h = +Utilities.formatDate(new Date(), TZ, 'H'); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; }
 function hojeExtenso_() { return ['', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo'][+Utilities.formatDate(new Date(), TZ, 'u')] + ', ' + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + ' (data ISO ' + hojeSP_() + ')'; }
 
 /** Decide a resposta. sim = { hist: [linhas], acoes: [] } no "Testar o robô" (nada é gravado, marcado nem enviado). */
-function whatsCerebro_(conv, texto, tipo, novo, sim) {
+function whatsCerebro_(conv, texto, tipo, novo, sim, midia) {
   var nome1 = primeiroNomeTxt_(conv.nome), fora = !horarioEscritorio_();
   var dados = {}; try { dados = JSON.parse(conv.dados || '{}') || {}; } catch (e) { dados = {}; }
   var salvar = function (m) { if (m.dados && typeof m.dados !== 'string') m.dados = JSON.stringify(m.dados); if (sim) Object.assign(conv, m); else Object.assign(conv, atualizarConversa_(conv.id, m) || m); };
@@ -12246,6 +12430,57 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   var paraEquipe = function (msg, txtEquipe, urg) { salvar({ estado: 'humano', pausado_ate: '' }); avisar(txtEquipe || texto, urg); return msg; };
   var quando = fora ? ' no próximo horário de atendimento (seg. a sex., 8h–12h e 13h30–18h)' : ' em instantes';
   var t = String(texto || '').trim(), tn = normalizar_(t);
+
+  // 0) perguntou se é robô: a verdade, em uma frase, e oferece a equipe
+  if (PERGUNTA_ROBO.test(t) && !midia) return 'É o atendimento automático do escritório, e ' + quemAtende_() + ' acompanha tudo de perto. Se preferir, chamo alguém da equipe agora mesmo; é só dizer.';
+  // 0b) foto ou PDF recebido
+  if (midia) {
+    dados.docs = dados.docs || [];
+    if (midia.rotulo) dados.docs.push({ rotulo: midia.rotulo, legivel: midia.legivel !== false, url: midia.url || '', id: midia.id || '' });
+    if (sim) sim.acoes.push('guardaria o arquivo na pasta reservada (vai para a pasta do cliente só depois do contrato) e identificaria: ' + (midia.rotulo || 'documento'));
+    var ehComprov = /comprovante/i.test(midia.rotulo || '');
+    if (dados.fase === 'checagem') {
+      if (ehComprov) dados.chk_comprovante = true; else dados.chk_doc = true;
+      var pronto = dados.chk_doc && (dados.chk_gratis || dados.chk_comprovante);
+      if (pronto) { dados.fase = 'checagem_enviada'; salvar({ dados: dados }); if (sim) sim.acoes.push('criaria a tarefa "🔎 Checagem" para a Dra.' + (dados.chk_gratis ? '' : ' (conferir o Pix)')); else tarefaChecagem_(conv, dados);
+        return 'Recebido, obrigada! ' + (dados.chk_gratis ? '' : 'A Dra. confere o pagamento e ') + (dados.chk_gratis ? 'A Dra. analisa e te responde' : 'te responde') + ' por aqui em até 2 dias úteis.'; }
+      salvar({ dados: dados });
+      return ehComprov ? 'Recebi o comprovante, obrigada! Agora me mande o documento que a Dra. vai analisar.' : 'Recebi o documento. Assim que fizer o Pix, me mande o comprovante por aqui que eu já encaminho para a Dra.';
+    }
+    var ultimaResp = dados.docs_resp_em ? Date.parse(dados.docs_resp_em) : 0;
+    if (Date.now() - ultimaResp < 3 * 60000) { salvar({ dados: dados }); return ''; } // mandando vários de uma vez: responde uma vez só
+    dados.docs_resp_em = new Date().toISOString(); salvar({ dados: dados });
+    if (midia.legivel === false) return 'Recebi, obrigada! Só que essa imagem ficou difícil de ler. Se puder, mande de novo com mais luz e sem cortar as bordas.';
+    return 'Recebi, obrigada! Pode mandar os outros; quando terminar, me avise que eu confiro o que falta.';
+  }
+  // 0c) terminou de mandar os documentos → confere o que falta
+  if ((dados.docs || []).length && /\b(pronto|terminei|enviei|mandei|so isso|e isso|foram todos|esses sao|era isso|acabei)\b/.test(tn) && t.length < 80) {
+    var rs = resumoDocs_(dados); dados.docs_conferido = new Date().toISOString(); salvar({ dados: dados });
+    if (!sim && dados.agendado && dados.agendado.tarefa) comTrava_(function () { var tt = tabela_('Tarefas'), x = tt.linhas.filter(function (r) { return r.id === dados.agendado.tarefa; })[0];
+      if (x) atualizarLinha_(tt, x, { descricao: String(x.descricao || '').replace(/\n\nDOCUMENTOS[\s\S]*$/, '') + '\n\nDOCUMENTOS (robô):\n' + rs.ok.map(function (d) { return '✓ ' + d; }).concat(rs.falta.map(function (d) { return '✗ ' + d; }), rs.outros.map(function (d) { return '+ ' + d; })).join('\n') }); });
+    if (sim) sim.acoes.push('anotaria na tarefa do atendimento: ✓ ' + rs.ok.join(', ') + (rs.falta.length ? ' | ✗ ' + rs.falta.join(', ') : ''));
+    return 'Obrigada' + (nome1 ? ', ' + nome1 : '') + '! Recebi: ' + (rs.ok.concat(rs.outros).join(', ') || 'os arquivos') + '.' + (rs.falta.length ? '\nSe tiver, ainda ajudaria: ' + rs.falta.join('; ') + '.' : '\nEstá tudo certo para o atendimento.') +
+      (rs.ilegivel.length ? '\nAlgum arquivo ficou difícil de ler (' + rs.ilegivel.join(', ') + '); se puder, mande de novo.' : '');
+  }
+  // 0d) qualificação pedida: lê os dados e preenche o cadastro
+  if (dados.qualif === 'pedida' && pareceQualificacao_(t) && !URGENTE_WHATS.test(t)) {
+    var cad = lerQualificacao_(t, dados.cad || {}), faltas = faltasQualificacao_(cad);
+    dados.cad = cad;
+    if (faltas.length) { salvar({ dados: dados }); return 'Obrigada' + (nome1 ? ', ' + nome1 : '') + '! Só ficou faltando: ' + faltas.join(', ') + '.'; }
+    dados.qualif = 'feita'; var cadSalvo = dados.cad; delete dados.cad; salvar({ dados: dados });
+    if (sim) sim.acoes.push('criaria/completaria o cadastro do cliente ' + cadSalvo.nome + ' (CPF conferido) e o cartão iria para "Cadastro preenchido"');
+    else { var rc = whatsSalvarCliente_(conv, cadSalvo); conv.cliente_id = rc.id; }
+    nome1 = primeiroNomeTxt_(cadSalvo.nome);
+    return ['Cadastro feito, obrigada' + (nome1 ? ', ' + nome1 : '') + '!', textoDocs_(dados.area)];
+  }
+  // 0e) explicou por que não quis (depois de recusar o valor)
+  if (dados.fase === 'motivo') {
+    dados.fase = 'triagem'; salvar({ dados: dados });
+    var motivo = 'Preço — ' + t.slice(0, 60);
+    if (sim) sim.acoes.push('marcaria no CRM "Não fechou" com o motivo: ' + motivo);
+    else if (conv.lead_id) { try { crmEtapa_({ id: conv.lead_id, etapa: 'perdido', motivo: motivo, nota: 'resposta no WhatsApp' }, ROBO_WHATS); } catch (e) { /* segue */ } }
+    return 'Agradecemos muito a sua sinceridade' + (nome1 ? ', ' + nome1 : '') + '. Ficamos à disposição sempre que precisar.';
+  }
 
   // 1) urgência e pedido de pessoa: direto para a equipe
   if (URGENTE_WHATS.test(t) || PEDE_HUMANO.test(t)) {
@@ -12274,7 +12509,7 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
     return 'Claro' + (nome1 ? ', ' + nome1 : '') + '! Para eu consultar com segurança, me mande o seu CPF e o código de acesso de 8 caracteres que o escritório enviou (o mesmo do site araujoadvocaciasc.com.br/acompanhe). Se não tiver o código, me avise que eu peço para a equipe.';
   }
   // 3) financeiro: a equipe responde
-  if (FINANCEIRO_WHATS.test(t) && (conv.cliente_id || /paguei|comprovante|boleto|segunda via|2a via|recibo/.test(tn))) {
+  if (FINANCEIRO_WHATS.test(t) && ['checagem', 'checagem_enviada'].indexOf(dados.fase) < 0 && (conv.cliente_id || /paguei|comprovante|boleto|segunda via|2a via|recibo/.test(tn))) {
     return paraEquipe('Certo' + (nome1 ? ', ' + nome1 : '') + '! Assuntos de pagamento a equipe confere com cuidado. Já passei para eles e te respondem por aqui' + quando + '.', '💰 Financeiro: ' + t, false);
   }
   // 4) atendimento já marcado: remarcar, cancelar ou só tirar dúvida
@@ -12304,8 +12539,7 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
     if (dados.fase === 'agendado' && dados.agendado) return 'Olá' + (nome1 ? ', ' + nome1 : '') + '! Seu atendimento está marcado para ' + rotuloSlot_(dados.agendado) + '. Posso ajudar em mais alguma coisa?';
     if (dados.fase === 'oferta' && dados.slots && dados.slots.length) return 'Olá' + (nome1 ? ', ' + nome1 : '') + '! ' + textoSlots_(dados.slots, nome1);
     if (!dados.saudou) { dados.saudou = true; dados.fase = dados.fase || 'triagem'; salvar({ dados: dados });
-      return saudacaoHora_() + (conv.cliente_id && nome1 ? ', ' + nome1 : '') + '! Aqui é a assistente virtual do escritório Araújo Advocacia. ' +
-        (conv.cliente_id ? 'Como posso te ajudar hoje?' : 'Eu organizo o primeiro atendimento com ' + quemAtende_() + '. Como posso te ajudar?'); }
+      return saudacaoHora_() + (conv.cliente_id && nome1 ? ', ' + nome1 : '') + '! Aqui é do escritório Araújo Advocacia. ' + (conv.cliente_id ? 'Como posso te ajudar hoje?' : 'Como posso te ajudar? Se puder, me explica um pouquinho a situação.'); }
     if (jaFalou) return 'Olá' + (nome1 ? ', ' + nome1 : '') + '! Em que posso ajudar?';
   }
   // 6) escolha de horário sem precisar da IA ("2", "a primeira", "14h30")
@@ -12316,7 +12550,7 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   }
   // 7) IA: entende o caso e conduz
   var hist = sim ? sim.hist.join('\n') : historicoConversa_(conv.id, 16);
-  var pedido = 'BASE DO ESCRITÓRIO:\n' + baseConhecimentoWhats_() + '\n\nHOJE: ' + hojeExtenso_() + '.\nSITUAÇÃO: ' + (jaFalou ? '' : 'conversa NOVA (primeira resposta: apresente-se como assistente virtual do escritório e diga que os dados são usados só para o atendimento, LGPD). ') +
+  var pedido = 'BASE DO ESCRITÓRIO:\n' + baseConhecimentoWhats_() + '\n\nHOJE: ' + hojeExtenso_() + '.\nSITUAÇÃO: ' + (jaFalou ? '' : 'conversa NOVA (cumprimente e diga que aqui é do escritório Araújo Advocacia). ') + (dados.area ? 'Área já identificada: ' + dados.area + (dados.lado ? ' (lado: ' + dados.lado + ')' : '') + '. ' : '') +
     (conv.cliente_id ? 'Esta pessoa JÁ É CLIENTE do escritório. ' : 'Pessoa ainda não é cliente. ') + (fora ? 'Agora está FORA do horário da equipe, mas você pode marcar o atendimento normalmente. ' : '') +
     (conv.nome ? 'Nome no WhatsApp: ' + conv.nome + '. ' : '') + (dados.resumo ? 'O que já se sabe do caso: ' + dados.resumo + '. ' : '') +
     (dados.fase === 'oferta' && dados.slots && dados.slots.length ? '\nHORÁRIOS OFERECIDOS: ' + dados.slots.map(function (s, i) { return (i + 1) + ') ' + s.dia + ' ' + s.hora; }).join('; ') + '.' : '') +
@@ -12327,7 +12561,7 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   if (!o || (!o.resposta && !o.quer_atendimento && !o.escolha)) {
     if (sim) return '(a IA não respondeu: passaria para a equipe)';
     avisar(t, false);
-    return jaFalou ? '' : 'Olá! Aqui é a assistente virtual do escritório Araújo Advocacia. Recebi a sua mensagem e já passei para a equipe, que responde por aqui' + quando + '.';
+    return jaFalou ? '' : saudacaoHora_() + '! Aqui é do escritório Araújo Advocacia. Recebi a sua mensagem e já passei para a equipe, que responde por aqui' + quando + '.';
   }
   var resposta = String(o.resposta || '').replace(/\*\*/g, '*').slice(0, 1200);
   if (/R\$\s?\d|\b\d+\s?%|\bvoc[eê] (tem|ter[aá]) direito\b|\bvai ganhar\b|\bprazo (é|de) \d|\bprescreve em\b/i.test(resposta))
@@ -12335,6 +12569,7 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   if (o.nome && !conv.nome) salvar({ nome: nomeProprio_(String(o.nome).slice(0, 80)) });
   nome1 = primeiroNomeTxt_(conv.nome);
   ['cidade', 'area', 'resumo'].forEach(function (k) { if (o[k]) dados[k] = String(o[k]).slice(0, 400); });
+  if (o.lado === 'empresa' || o.lado === 'empregado') dados.lado = o.lado;
   if (o.modo && NOME_MODO[o.modo]) dados.modo = o.modo;
   modo = modoDoTexto_(t) || dados.modo || '';
   salvar({ dados: dados, resumo: String(dados.resumo || conv.resumo || '').slice(0, 400) });
@@ -12343,7 +12578,24 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   if (o.intencao === 'financeiro') return paraEquipe(resposta || 'Já passei para a equipe, que confere e te responde por aqui' + quando + '.', '💰 Financeiro: ' + t, false);
   if (o.intencao === 'outro') { avisar('Mensagem que não é caso (fornecedor/currículo/outro): ' + t, false); return resposta; }
   if (o.intencao === 'caso_cliente' || o.chamar_equipe) { avisar(t, false); if (o.chamar_equipe) salvar({ estado: 'humano', pausado_ate: '' }); return resposta; }
+  // valor: recusou → pergunta (uma vez, formal) o que pesou; perguntou → explica conforme a área
+  if (o.recusou_preco && !dados.perguntou_motivo) { dados.perguntou_motivo = true; dados.fase = 'motivo'; salvar({ dados: dados });
+    return 'Entendo' + (nome1 ? ', ' + nome1 : '') + ', e agradeço por nos dizer. Para aprimorarmos o nosso atendimento, poderia nos contar o que mais pesou na sua decisão?'; }
   if (o.nao_quer_agora) { dados.fase = 'triagem'; salvar({ dados: dados }); return resposta; }
+  if (o.checagem && dados.fase !== 'checagem') {
+    dados.fase = 'checagem'; dados.chk_gratis = consultaGratis_(dados); salvar({ dados: dados });
+    if (dados.chk_gratis) return 'Claro! Pode me mandar o documento por aqui (foto legível ou PDF) que a Dra. analisa e te responde em até 2 dias úteis.';
+    var pixC = pixTexto_();
+    if (!pixC) avisar('Checagem paga pedida, mas falta a chave Pix em Conversas do WhatsApp › Configurar', false);
+    return ['A análise do documento é feita pela própria Dra., com cuidado, e tem o mesmo valor de uma consulta: R$ ' + valorConsulta_() + ', pago antes da análise por Pix' + (pixC ? ':\n' + pixC : ' (já te passo os dados).') +
+      '\nSe depois você fechar com o escritório, esse valor é descontado dos honorários.', 'É só me mandar por aqui o documento (foto legível ou PDF) e o comprovante do Pix. A Dra. te responde em até 2 dias úteis.'];
+  }
+  if (o.pergunta_preco && !o.quer_atendimento && !o.escolha) {
+    if (!dados.area) return 'Depende do tipo de caso. Me conta um pouquinho o que aconteceu, que eu já te explico direitinho?';
+    if (consultaGratis_(dados)) return 'No seu caso, o escritório trabalha com honorários só no final, se der certo, e a Dra. explica tudo no atendimento. Quer que eu veja um horário para vocês conversarem?';
+    dados.valor_explicado = true; salvar({ dados: dados });
+    return textoValor_() + '\n\nQuer que eu veja um horário para você?';
+  }
   // escolheu um dos horários / pediu outro / aceitou marcar
   if (dados.fase === 'oferta' && dados.slots && o.escolha && dados.slots[+o.escolha - 1]) return marcarOuOferecer_(dados.slots[+o.escolha - 1], modo, resposta);
   var querOutro = (o.outro_horario && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(o.outro_horario)) || o.quer_atendimento || o.dia_preferido || o.periodo || o.intencao === 'agendar';
@@ -12360,16 +12612,24 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
     return perto.length ? (dentro ? 'Esse horário já está ocupado. ' : 'Nesse horário a equipe não atende (seg. a sex., 8h–12h e 13h30–18h). ') + textoSlots_(perto, nome1)
       : paraEquipe('Vou pedir para a equipe te passar um horário por aqui' + quando + '.', '📅 Quer marcar atendimento: ' + o.outro_horario, false);
   }
-  if (o.quer_atendimento || o.dia_preferido || o.periodo || o.intencao === 'agendar') {
+  if ((o.quer_atendimento || o.dia_preferido || o.periodo || o.intencao === 'agendar') && !dados.area && !dados.resumo) {
+    dados.quer_marcar = true; salvar({ dados: dados });
+    return (resposta && /\?\s*$/.test(resposta)) ? resposta : 'Claro, já vejo um horário! Antes, me explica em poucas palavras o que aconteceu, para eu deixar a Dra. a par do seu caso?';
+  }
+  if (o.quer_atendimento || o.dia_preferido || o.periodo || o.intencao === 'agendar' || (dados.quer_marcar && dados.area && o.caso_entendido)) {
+    dados.quer_marcar = false;
     var opc = { qtd: 4 };
     if (/^\d{4}-\d{2}-\d{2}$/.test(o.dia_preferido || '')) opc.dia = o.dia_preferido;
     if (o.periodo === 'manha' || o.periodo === 'tarde') opc.periodo = o.periodo;
     var sl = horariosLivres_(opc);
     if (!sl.length && (opc.dia || opc.periodo)) sl = horariosLivres_({ qtd: 4 });
     if (!sl.length) { crm({ resumo: dados.resumo, area: dados.area, intencao: 'agendar', agendar: true }); return paraEquipe((resposta ? resposta + ' ' : '') + 'Vou pedir para a equipe confirmar um horário com você por aqui' + quando + '.', '📅 Pediu atendimento (agenda sem horário livre)', false); }
-    dados.fase = 'oferta'; dados.slots = sl; salvar({ dados: dados });
-    var trans = resposta && resposta.length < 160 && !/\?\s*$/.test(resposta) ? resposta + '\n\n' : '';
-    return trans + (opc.dia && sl[0].dia !== opc.dia ? 'Nesse dia não tenho horário livre. ' : '') + textoSlots_(sl, nome1);
+    dados.fase = 'oferta'; dados.slots = sl;
+    var avisoValor = !consultaGratis_(dados) && !dados.valor_explicado ? textoValor_() + '\n\n' : '';
+    if (avisoValor) dados.valor_explicado = true;
+    salvar({ dados: dados });
+    var trans = resposta && resposta.length < 160 && !/\?\s*$/.test(resposta) && !avisoValor ? resposta + '\n\n' : '';
+    return trans + avisoValor + (opc.dia && sl[0].dia !== opc.dia ? 'Nesse dia não tenho horário livre. ' : '') + textoSlots_(sl, nome1);
   }
   if (o.caso_entendido && dados.fase !== 'oferta') { dados.fase = 'triagem'; salvar({ dados: dados }); }
   return resposta;
@@ -12377,9 +12637,12 @@ function whatsCerebro_(conv, texto, tipo, novo, sim) {
   function marcarOuOferecer_(slot, modoX, prefixo) {
     var r = whatsMarcar_(conv, slot, modoX, dados, sim);
     if (r.ok) {
-      dados.fase = 'agendado'; dados.agendado = { dia: slot.dia, hora: slot.hora, dsem: slot.dsem, modo: modoX || 'ligacao', evento: r.evento || '' }; dados.slots = [];
+      dados.fase = 'agendado'; dados.agendado = { dia: slot.dia, hora: slot.hora, dsem: slot.dsem, modo: modoX || 'ligacao', evento: r.evento || '', tarefa: r.tarefa || '' }; dados.slots = [];
+      var msgs = confirmacaoAtendimento_(slot, modoX, r, nome1, conv);
+      if (!cadastroCompleto_(conv.cliente_id)) { dados.qualif = 'pedida'; msgs.push(textoQualificacao_()); }
+      else msgs.push(textoDocs_(dados.area));
       salvar({ dados: dados });
-      return confirmacaoAtendimento_(slot, modoX, r, nome1);
+      return msgs;
     }
     if (r.ocupado) {
       var outros = horariosLivres_({ qtd: 4 }); dados.fase = 'oferta'; dados.slots = outros; salvar({ dados: dados });
@@ -12484,10 +12747,12 @@ function whatsConfig_(d, u) {
   }
   if (d.phone_id !== undefined) { if (d.phone_id && !/^\d{8,20}$/.test(String(d.phone_id).trim())) throw falha_('O "Phone number ID" é só de números (fica em WhatsApp › Configuração da API no Meta).'); setConfig_('WHATS_PHONE_ID', String(d.phone_id).trim(), 'ID do número do WhatsApp na API do Meta'); }
   if (d.resp !== undefined) setConfig_('WHATS_RESP', String(d.resp).slice(0, 40), 'Quem recebe as tarefas do WhatsApp');
+  if (d.pix_txt !== undefined) setConfig_('WHATS_PIX_TXT', String(d.pix_txt).slice(0, 400), 'Dados do Pix que o robô manda (consulta e checagem)');
+  if (d.valor !== undefined) { var vv = +String(d.valor).replace(/\D/g, ''); if (!vv) throw falha_('Informe o valor da consulta (só números).'); setConfig_('WHATS_VALOR', String(vv), 'Valor da consulta (R$)'); }
   if (d.ligado !== undefined) setConfig_('WHATS_BOT', d.ligado ? 'sim' : 'nao', 'Robô do WhatsApp respondendo sozinho?');
   if (d.novaChave || !props.getProperty('WHATS_PONTE_CHAVE')) props.setProperty('WHATS_PONTE_CHAVE', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 16));
   var r = { temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
-    chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_() };
+    pix_txt: pixTexto_(), valor: valorConsulta_(), chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_() };
   if (d.testar) {
     var tel = String(d.testar).replace(/\D/g, ''); if (tel.length < 12) throw falha_('Informe o seu número com DDI e DDD (ex.: 5548999998888).');
     whatsEnviar_(tel, 'Teste do painel Araújo Advocacia: o WhatsApp está ligado. ✓'); r.teste = true; setConfig_('WHATS_ERRO', '', 'Último problema ao mandar mensagem pelo WhatsApp'); r.erro = '';
@@ -12504,12 +12769,14 @@ function whatsSimular_(d, u) {
   st = st || { conv: { id: 'SIMULACAO', telefone: '5548900000000', nome: '', cliente_id: '', dados: '{}', estado: 'robo' }, hist: [] };
   st.hist.push('Cliente: ' + texto);
   var sim = { hist: st.hist, acoes: [] };
-  var resp = st.conv.estado === 'humano' ? '(o robô ficou quieto: a equipe assumiu esta conversa. Clique em "Recomeçar" para testar de novo)' : whatsCerebro_(st.conv, texto, 'text', st.hist.length === 1, sim);
+  var mf = texto.match(/^\[(?:foto|documento|pdf|arquivo)\s*:?\s*([^\]]*)\]$/i), midia = mf ? { rotulo: (mf[1] || 'documento').trim(), legivel: !/ileg|borrad/i.test(mf[1] || '') } : null;
+  var resp = st.conv.estado === 'humano' ? '(o robô ficou quieto: a equipe assumiu esta conversa. Clique em "Recomeçar" para testar de novo)' : whatsCerebro_(st.conv, texto, midia ? 'document' : 'text', st.hist.length === 1, sim, midia);
+  resp = [].concat(resp || []).filter(Boolean).join('\n\n⎯⎯⎯\n\n');
   if (resp && !/^\(/.test(resp)) st.hist.push('Escritório: ' + resp);
   st.hist = st.hist.slice(-30);
   try { cache.put(k, JSON.stringify(st), 3600); } catch (e) { /* segue */ }
   var dd = {}; try { dd = JSON.parse(st.conv.dados || '{}') || {}; } catch (e) { dd = {}; }
-  return { resposta: resp || '(sem resposta: passaria para a equipe)', acoes: sim.acoes, fase: dd.fase || 'triagem', resumo: dd.resumo || '', area: dd.area || '', pausado: st.conv.estado === 'humano' };
+  return { resposta: resp || '(não responde agora: espera a pessoa terminar de mandar os arquivos)', acoes: sim.acoes, fase: dd.fase || 'triagem', resumo: dd.resumo || '', area: dd.area || '', pausado: st.conv.estado === 'humano' };
 }
 
 

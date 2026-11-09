@@ -79,3 +79,21 @@ Precisa também da chave do Gemini (Gerenciar acessos › IA), que o painel já 
 
 Ajustes na aba Config da planilha (opcionais): `WHATS_DURACAO` (minutos, padrão 30), `WHATS_ANTECEDENCIA_MIN` (padrão 60),
 `WHATS_DIAS_AGENDA` (padrão 10), `WHATS_QUEM` (padrão "a Dra. Júlian"). Teste tudo antes em **🧪 Testar o robô** (conversa completa, nada é enviado nem marcado).
+
+## Regras de atendimento (8.17, decididas pela Dra. Júlian)
+
+- O robô fala como "o escritório Araújo Advocacia" e não abre dizendo que é robô. Se perguntarem diretamente ("é robô?"), responde a
+  verdade em uma frase e oferece chamar a equipe. Nunca diz que é a Dra. nem inventa nome de pessoa.
+- Sempre tenta entender o caso; se não entender, pede com gentileza para explicar melhor.
+- **Sem valor de consulta:** trabalhista do empregado (30% no êxito) e previdenciário/INSS (2 primeiras parcelas no êxito): só marca.
+- **R$ 300 (Config WHATS_VALOR):** família, cível, consumidor, bancário (revisão de juros), criminal, empresarial, inventário e o lado da
+  empresa no trabalhista. Explicado depois de entender o caso, logo antes dos horários; pago no dia, ANTES do atendimento (Pix ou no
+  escritório); descontado dos honorários se fechar. Atendimento de 1 hora.
+- Achou caro: pergunta uma vez, de forma formal, o que pesou; a resposta vai para o CRM como "Não fechou — Preço — …".
+- Depois de marcar: pede a qualificação por TEXTO (nome, nascimento, estado civil, profissão, CPF, RG, endereço com CEP, e-mail), confere o
+  CPF, pede só o que faltou e cria/completa o cadastro. Depois manda a lista de documentos da área; cada foto/PDF fica na pasta reservada
+  "PAINEL — DOCUMENTOS DO WHATSAPP (aguardando contrato)" e a IA diz só QUE documento é. "Pronto/enviei" → confere o que falta e anota na tarefa.
+- Contrato assinado → os documentos vão para a pasta do cliente › DOCUMENTOS DO WHATSAPP (robô de hora em hora). 90 dias sem fechar → lixeira.
+- Checagem de documento: R$ 300, Pix ANTES (dados em Config WHATS_PIX_TXT, editável em Configurar); trabalhista do empregado sem custo.
+  Documento + comprovante → tarefa "🔎 Checagem" (conferir o Pix); resposta em até 2 dias úteis.
+- Urgência criminal (preso, flagrante, delegacia): não fala valor nem marca; passa como URGENTE.

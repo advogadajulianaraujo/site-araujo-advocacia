@@ -956,7 +956,7 @@
     const recomecar = h('button', { type: 'button', class: 'btn sec', onclick: async () => { await api('whats.config', { reiniciar: true }).catch(() => {}); conversa.replaceChildren(); fase.textContent = 'Conversa nova.'; ta.focus(); } }, 'Recomeçar');
     api('whats.config', { reiniciar: true }).catch(() => {});
     dialogo('wz-sim-dialogo', h('h2', {}, '🧪 Testar o robô'),
-      h('p', { class: 'peq' }, 'Converse como se fosse um cliente. Nada é enviado a ninguém e nada é marcado na agenda: as linhas ⚙ mostram o que ele faria de verdade (agenda, cadastro, funil, equipe). Os horários oferecidos são os livres da agenda de verdade.'),
+      h('p', { class: 'peq' }, 'Converse como se fosse um cliente. Nada é enviado a ninguém e nada é marcado na agenda: as linhas ⚙ mostram o que ele faria de verdade (agenda, cadastro, funil, equipe). Os horários oferecidos são os livres da agenda de verdade. Para fingir que mandou um arquivo, escreva [documento: contracheque] ou [foto: comprovante de pagamento].'),
       conversa, fase, ta, h('div', { class: 'g-acoes' }, bt, recomecar));
     setTimeout(() => ta.focus(), 50);
   }
@@ -976,6 +976,10 @@
       campo('token', c.temToken ? 'Token do Meta (já cadastrado; cole outro para trocar)' : 'Token do Meta (permanente)', '', { tipo: 'password', auto: 'off', largo: true }),
       campo('phone_id', 'Phone number ID', c.phone_id, { modo: 'numeric' }),
       campo('resp', 'Quem recebe as tarefas do WhatsApp', c.resp, { opcoes: [['', 'Secretaria / padrão']].concat(equipe.map(p => [p.usuario, p.nome])) }),
+      campo('valor', 'Valor da consulta (R$) — trabalhista do empregado e INSS não pagam', String(c.valor || 300), { modo: 'numeric' }),
+      h('div', { class: 'largo' }, h('label', { for: 'f-pix' }, 'Dados do Pix que o robô manda (consulta e checagem de documento)'),
+        h('textarea', { id: 'f-pix', name: 'pix_txt', rows: 3, placeholder: 'Ex.: PIX (CNPJ): … — ARAÚJO ADVOCACIA — Banco …, agência …, conta …' }, c.pix_txt || ''),
+        h('p', { class: 'peq' }, 'Fica guardado só na planilha do painel.')),
       h('label', { class: 'largo g-opcao' }, h('input', { type: 'checkbox', name: 'ligado', checked: c.ligado }), ' Robô respondendo sozinho (desligado, ele só guarda as mensagens para a equipe responder por aqui)'),
       c.iaLigada ? null : h('p', { class: 'largo nota alerta' }, 'A IA (chave do Gemini) não está cadastrada: o robô só consegue passar as mensagens para a equipe. Cadastre em Gerenciar acessos › IA.'),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
@@ -985,7 +989,7 @@
       c.erro ? h('p', { class: 'peq largo erro' }, 'Último problema: ' + c.erro) : null, h('p', { class: 'erro largo' }));
     const d = dialogo('wz-config', form);
     K().aoEnviar(form, async f => {
-      const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on' };
+      const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on', valor: f.get('valor') || '300', pix_txt: f.get('pix_txt') || '' };
       if (f.get('token')) dados.token = f.get('token');
       await api('whats.config', dados); d.close(); avisar('WhatsApp salvo.'); location.reload();
     });
