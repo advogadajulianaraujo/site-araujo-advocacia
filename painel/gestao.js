@@ -669,6 +669,16 @@
       const btIA = h('button', { type: 'button', class: 'btn sec', hidden: true }, 'Transcrever o áudio com a IA (identifica quem fala)');
       const btResumo = h('button', { type: 'button', class: 'btn', hidden: true }, 'Fazer os resumos com a transcrição ao vivo');
       let rec = null, mr = null, pedacos = [], ligado = false, inicio = 0, relogio = null, audioBlob = null, pausado = false, pausaEm = 0;
+      // 8.18: além do microfone, o SOM DO COMPUTADOR (Meet, WhatsApp, Zoom), numa trilha separada (a IA sabe quem é quem)
+      let mrSis = null, telaStream = null, pedacosSis = [], audioBlob2 = null, faltamParar = 0;
+      const fonteSalva = (() => { try { return localStorage.getItem('transcricao_fonte') || 'computador'; } catch (e) { return 'computador'; } })();
+      const fonte = h('fieldset', { class: 'g-campo g-fonte' }, h('legend', {}, 'De onde vem a conversa'),
+        h('label', { class: 'g-opcao' }, h('input', { type: 'radio', name: 'fonte', value: 'computador', checked: fonteSalva !== 'mic' }), h('span', {}, h('strong', {}, '🖥 Chamada no computador'), ' (Google Meet, WhatsApp, Zoom): grava você e a outra pessoa')),
+        h('label', { class: 'g-opcao' }, h('input', { type: 'radio', name: 'fonte', value: 'mic', checked: fonteSalva === 'mic' }), h('span', {}, h('strong', {}, '🎙 Presencial'), ' (todos na sala): só o microfone')),
+        h('p', { class: 'peq g-fonte-dica' }, 'Na chamada, ao clicar em Gravar o Chrome pergunta o que compartilhar: no ', h('strong', {}, 'Google Meet'), ' escolha a aba do Meet e deixe ligado "Compartilhar áudio da guia"; no ',
+          h('strong', {}, 'WhatsApp do computador ou Zoom'), ' escolha "Tela inteira" e ligue "Compartilhar áudio do sistema". Ninguém vê a sua tela: só o som é gravado. Com fone de ouvido o som fica mais limpo.'));
+      fonte.addEventListener('change', () => { try { localStorage.setItem('transcricao_fonte', fonteEscolhida()); } catch (e) { /* ok */ } });
+      const fonteEscolhida = () => (fonte.querySelector('[name=fonte]:checked') || {}).value || 'computador';
       // 8.12.2: o texto ao vivo fica salvo neste computador a cada 10 s (fechou a aba sem querer? volta aqui)
       const CH = 'transcricao_rascunho';
       try { const r0 = localStorage.getItem(CH); if (r0) { const o = JSON.parse(r0); if (o.texto && Date.now() - o.t < 3 * 86400000) textoAoVivo.value = o.texto; } } catch (e) { /* ok */ }
@@ -678,8 +688,8 @@
       btPausa.addEventListener('click', () => {
         if (!ligado) return;
         pausado = !pausado;
-        if (pausado) { pausaEm = Date.now(); try { mr && mr.state === 'recording' && mr.pause(); } catch (e) { /* ok */ } try { rec && rec.stop(); } catch (e) { /* ok */ } btPausa.textContent = '▶ Continuar'; tempo.classList.add('pausado'); }
-        else { inicio += Date.now() - pausaEm; try { mr && mr.state === 'paused' && mr.resume(); } catch (e) { /* ok */ } try { rec && rec.start(); } catch (e) { /* ok */ } btPausa.textContent = '❚❚ Pausar'; tempo.classList.remove('pausado'); }
+        if (pausado) { pausaEm = Date.now(); [mr, mrSis].forEach(x => { try { x && x.state === 'recording' && x.pause(); } catch (e) { /* ok */ } }); try { rec && rec.stop(); } catch (e) { /* ok */ } btPausa.textContent = '▶ Continuar'; tempo.classList.add('pausado'); }
+        else { inicio += Date.now() - pausaEm; [mr, mrSis].forEach(x => { try { x && x.state === 'paused' && x.resume(); } catch (e) { /* ok */ } }); try { rec && rec.start(); } catch (e) { /* ok */ } btPausa.textContent = '❚❚ Pausar'; tempo.classList.remove('pausado'); }
       });
       const btLimpar = h('button', { type: 'button', class: 'btn mini sec' }, 'Limpar o texto');
       btLimpar.addEventListener('click', () => { if (ligado || !textoAoVivo.value.trim() || !confirm('Apagar o texto da transcrição?')) return; textoAoVivo.value = ''; try { localStorage.removeItem(CH); } catch (e) { /* ok */ } btResumo.hidden = true; });
@@ -687,20 +697,43 @@
         ligado = false; pausado = false; clearInterval(relogio); btPausa.hidden = true; tempo.classList.remove('pausado'); salvarRasc();
         try { rec && rec.stop(); } catch (e) { /* ok */ }
         try { mr && mr.state !== 'inactive' && mr.stop(); } catch (e) { /* ok */ }
+        try { mrSis && mrSis.state !== 'inactive' && mrSis.stop(); } catch (e) { /* ok */ }
+        if (telaStream) { telaStream.getTracks().forEach(t => t.stop()); telaStream = null; }
         btGravar.textContent = '● Gravar de novo'; btGravar.classList.remove('gravando'); btResumo.hidden = !textoAoVivo.value.trim();
       };
       btGravar.addEventListener('click', async () => {
         if (ligado) { parar(); return; }
         if (!consent.querySelector('input').checked) { avisar('Marque que as pessoas autorizaram a gravação.', true); return; }
+        const doComputador = fonteEscolhida() === 'computador';
+        let somTela = null;
+        if (doComputador) {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { avisar('Este navegador não grava o som do computador. Use o Google Chrome no computador.', true); return; }
+          try { telaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, systemAudio: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'include' }); }
+          catch (e) { avisar('Você não escolheu o que compartilhar. Clique em Gravar de novo e escolha a aba do Meet (ou a tela inteira, para o WhatsApp).', true); return; }
+          const at = telaStream.getAudioTracks();
+          if (!at.length) { telaStream.getTracks().forEach(t => t.stop()); telaStream = null; avisar('O som não veio junto: na janela do Chrome, ligue "Compartilhar áudio da guia" (Meet) ou "Compartilhar áudio do sistema" (tela inteira) e tente de novo.', true); return; }
+          telaStream.getVideoTracks().forEach(t => t.stop()); // só o som; a imagem não é gravada
+          somTela = new MediaStream(at);
+          at[0].addEventListener('ended', () => { if (ligado) { avisar('O compartilhamento do som parou: a gravação foi encerrada.'); parar(); } });
+        }
         let stream;
         try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
-        catch (e) { avisar('O navegador não liberou o microfone. Clique no cadeado ao lado do endereço e permita o microfone.', true); return; }
-        pedacos = []; audioBlob = null;
+        catch (e) { if (telaStream) { telaStream.getTracks().forEach(t => t.stop()); telaStream = null; } avisar('O navegador não liberou o microfone. Clique no cadeado ao lado do endereço e permita o microfone.', true); return; }
+        pedacos = []; audioBlob = null; pedacosSis = []; audioBlob2 = null; mrSis = null; faltamParar = 0;
         const tipoMR = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+        const terminou = () => { if (--faltamParar > 0) return; btIA.hidden = !(audioBlob && audioBlob.size); if (audioBlob2 && audioBlob2.size && audioBlob && audioBlob.size) { estado.textContent = 'Gravação encerrada. A IA já vai transcrever você e a outra pessoa…'; btIA.click(); } };
         try {
           mr = new MediaRecorder(stream, tipoMR ? { mimeType: tipoMR, audioBitsPerSecond: 24000 } : undefined);
           mr.ondataavailable = ev => { if (ev.data && ev.data.size) pedacos.push(ev.data); };
-          mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); audioBlob = new Blob(pedacos, { type: (mr.mimeType || 'audio/webm').replace(/;.*$/, '') }); btIA.hidden = !audioBlob.size; };
+          mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); audioBlob = new Blob(pedacos, { type: (mr.mimeType || 'audio/webm').replace(/;.*$/, '') }); terminou(); };
+          faltamParar++;
+          if (somTela) {
+            mrSis = new MediaRecorder(somTela, tipoMR ? { mimeType: tipoMR, audioBitsPerSecond: 32000 } : undefined);
+            mrSis.ondataavailable = ev => { if (ev.data && ev.data.size) pedacosSis.push(ev.data); };
+            mrSis.onstop = () => { audioBlob2 = new Blob(pedacosSis, { type: (mrSis.mimeType || 'audio/webm').replace(/;.*$/, '') }); terminou(); };
+            faltamParar++;
+            mrSis.start(10000);
+          }
           mr.start(10000);
         } catch (e) { mr = null; }
         if (Rec) {
@@ -727,9 +760,10 @@
         if (!audioBlob) return;
         btIA.disabled = true;
         try {
-          const id = await enviarAudio(audioBlob, 'gravacao.webm', t => { estado.textContent = t; });
-          estado.textContent = 'A IA está transcrevendo e identificando quem fala (pode levar alguns minutos)…';
-          const tr = await api('ia.transcrever', { id, tipo: lerComum().tipo, contexto: lerComum().contexto });
+          const id = await enviarAudio(audioBlob, 'gravacao.webm', t => { estado.textContent = audioBlob2 ? t.replace('o áudio', 'a sua voz') : t; });
+          const id2 = audioBlob2 && audioBlob2.size ? await enviarAudio(audioBlob2, 'computador.webm', t => { estado.textContent = t.replace('o áudio', 'o som do computador'); }) : '';
+          estado.textContent = id2 ? 'A IA está transcrevendo você e a outra pessoa e juntando tudo na ordem (pode levar alguns minutos)…' : 'A IA está transcrevendo e identificando quem fala (pode levar alguns minutos)…';
+          const tr = await api('ia.transcrever', { id, id2: id2 || undefined, tipo: lerComum().tipo, contexto: lerComum().contexto });
           textoAoVivo.value = tr.texto; btResumo.hidden = false;
           await resumir({ ...lerComum(), id }, btIA);
         } catch (e) { estado.textContent = ''; avisar(e.message, true); }
@@ -737,7 +771,7 @@
       });
       painelModo = h('div', { class: 'g-gravador' },
         Rec ? null : h('p', { class: 'nota' }, 'Este navegador não faz a transcrição ao vivo (use o Google Chrome). A gravação funciona: ao parar, use "Transcrever o áudio com a IA".'),
-        consent, h('div', { class: 'g-gravador-linha' }, btGravar, btPausa, tempo, h('span', { class: 'peq' }, 'Grava o áudio leve (≈ 11 MB por hora) e escreve ao vivo. O texto fica salvo neste computador enquanto você grava.')),
+        fonte, consent, h('div', { class: 'g-gravador-linha' }, btGravar, btPausa, tempo, h('span', { class: 'peq' }, 'Ao vivo aparece só a sua voz; quando você parar, a IA transcreve tudo, você e a outra pessoa, separando quem falou. O texto fica salvo neste computador enquanto você grava.')),
         textoAoVivo, prov, h('div', { class: 'g-acoes' }, btResumo, btIA, btLimpar));
     } else if (modo === 'arquivo') {
       const inArq = h('input', { type: 'file', accept: 'audio/*,video/mp4,video/webm,.m4a,.mp3,.ogg,.opus,.wav,.webm,.mp4', 'aria-label': 'Arquivo de áudio' });

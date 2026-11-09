@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.17.0';
+var VERSAO = '8.18.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -11606,21 +11606,58 @@ function promptTranscricao_(tipo, contexto) {
     'Mantenha números, datas e valores exatamente como ditos.' + (contexto ? '\n\nCONTEXTO INFORMADO PELA EQUIPE (nomes e papéis): ' + String(contexto).slice(0, 1500) : '');
 }
 function transcrever_(d, u) {
-  var m = audioMeta_(d.id, u);
-  var arqs = audioPartes_(d.id, m);
-  var f = subirAudioGemini_(arqs, m);
   var tipo = d.tipo === 'audiencia' ? 'audiencia' : 'atendimento';
-  var r;
-  try {
-    var modelo = config_('TRANSCRICAO_MODELO') || modeloIA_().replace(/-lite$/, '');
-    r = geminiTexto_([{ file_data: { mime_type: f.mimeType || m.mime, file_uri: f.uri } }, { text: promptTranscricao_(tipo, d.contexto) }], { modelo: modelo, max: 65000, temp: 0 });
-  } finally { apagarArquivoGemini_(f.name); }
-  if (!r.texto) throw falha_('A IA não devolveu texto. O áudio tem fala? Tente de novo.');
+  var modelo = config_('TRANSCRICAO_MODELO') || modeloIA_().replace(/-lite$/, '');
+  var umAudio = function (id, prompt) {
+    var m = audioMeta_(id, u), arqs = audioPartes_(id, m), f = subirAudioGemini_(arqs, m), r;
+    try { r = geminiTexto_([{ file_data: { mime_type: f.mimeType || m.mime, file_uri: f.uri } }, { text: prompt }], { modelo: modelo, max: 65000, temp: 0 }); }
+    finally { apagarArquivoGemini_(f.name); }
+    arqs.forEach(function (x) { x.setTrashed(true); });
+    return { texto: String(r.texto || ''), cortado: r.cortado, m: m };
+  };
+  var texto, cortado, mb;
+  if (d.id2) { // 8.18: duas trilhas — o microfone (quem está no escritório) e o som do computador (Meet, WhatsApp, Zoom)
+    var outros = tipo === 'audiencia' ? 'juiz(a), partes, testemunhas, advogados e demais participantes' : 'o cliente e quem estiver com ele';
+    var a = umAudio(d.id, promptTranscricao_(tipo, d.contexto) + '\n\nATENÇÃO: este áudio é SÓ o MICROFONE de quem está no escritório. Use o papel "Advogado(a)" (ou o nome do contexto). ' +
+      'Vozes baixas ou abafadas ao fundo que saem do alto-falante (a outra pessoa da chamada) devem ser IGNORADAS: elas estão em outra gravação.');
+    var b = umAudio(d.id2, promptTranscricao_(tipo, d.contexto) + '\n\nATENÇÃO: este áudio é o SOM DO COMPUTADOR (chamada de vídeo ou do WhatsApp): são as OUTRAS pessoas da conversa (' + outros + '). ' +
+      'A advogada do escritório quase não aparece aqui; identifique cada voz pelo papel.');
+    if (!a.texto && !b.texto) throw falha_('A IA não devolveu texto. As gravações têm fala? Tente de novo.');
+    texto = mesclarTranscricoes_(a.texto, b.texto); cortado = a.cortado || b.cortado; mb = (a.m.tamanho + b.m.tamanho) / 1048576;
+  } else {
+    var x = umAudio(d.id, promptTranscricao_(tipo, d.contexto));
+    if (!x.texto) throw falha_('A IA não devolveu texto. O áudio tem fala? Tente de novo.');
+    texto = x.texto; cortado = x.cortado; mb = x.m.tamanho / 1048576;
+  }
   var pasta = pastaPainel_('PASTA_AUDIO_TEMP_ID', 'PAINEL — ÁUDIOS TEMPORÁRIOS (apagados sozinhos)');
-  pasta.createFile(d.id + '_texto', r.texto, MimeType.PLAIN_TEXT);
-  arqs.forEach(function (a) { a.setTrashed(true); });
-  registrar_(u.usuario, 'transcrição', tipo + ' · ' + Math.round(m.tamanho / 1048576) + ' MB');
-  return { id: d.id, texto: r.texto, cortado: r.cortado };
+  pasta.createFile(d.id + '_texto', texto, MimeType.PLAIN_TEXT);
+  registrar_(u.usuario, 'transcrição', tipo + (d.id2 ? ' (microfone + computador)' : '') + ' · ' + Math.round(mb) + ' MB');
+  return { id: d.id, texto: texto, cortado: cortado };
+}
+/** Linhas "[mm:ss] Papel: texto" (ou [h:mm:ss]) com o tempo em segundos; linhas sem tempo continuam a fala anterior. */
+function linhasTempo_(t, origem) {
+  var out = [], ult = null;
+  String(t || '').split('\n').forEach(function (l) {
+    var m = l.match(/^\s*\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*(.*)$/);
+    if (m) { var s = m[3] !== undefined ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : (+m[1]) * 60 + (+m[2]); ult = { s: s, txt: m[4].trim(), o: origem }; out.push(ult); }
+    else if (l.trim() && ult) ult.txt += ' ' + l.trim();
+  });
+  return out;
+}
+/** Junta a trilha do microfone e a do computador pela hora de cada fala. Tira do microfone o que é só o eco do alto-falante (a mesma frase da outra trilha, ±25 s). */
+function mesclarTranscricoes_(mic, sis) {
+  var a = linhasTempo_(mic, 'mic'), b = linhasTempo_(sis, 'sis');
+  if (!a.length) return String(sis || ''); if (!b.length) return String(mic || '');
+  var palavras = function (x) { return normalizar_(String(x).replace(/^[^:]{1,40}:\s*/, '')).replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 2; }); };
+  var bw = b.map(function (x) { return palavras(x.txt); });
+  a = a.filter(function (x) {
+    var w = palavras(x.txt); if (w.length < 3) return true;
+    var perto = []; b.forEach(function (y, i) { if (Math.abs(y.s - x.s) <= 25) perto = perto.concat(bw[i]); });
+    if (!perto.length) return true;
+    return w.filter(function (p) { return perto.indexOf(p) >= 0; }).length / w.length < 0.6;
+  });
+  var fmt = function (s) { var h = Math.floor(s / 3600), mm = Math.floor(s % 3600 / 60), ss = s % 60; return '[' + (h ? h + ':' : '') + ('0' + mm).slice(-2) + ':' + ('0' + ss).slice(-2) + ']'; };
+  return a.concat(b).sort(function (x, y) { return x.s - y.s || (x.o === 'sis' ? 1 : -1); }).map(function (x) { return fmt(x.s) + ' ' + x.txt; }).join('\n');
 }
 function contextoProcesso_(p, u, limite) {
   var cli = p.cliente_id ? (tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}) : {};

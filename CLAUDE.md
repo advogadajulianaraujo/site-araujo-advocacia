@@ -871,3 +871,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Checagem (`o.checagem`, fase checagem → checagem_enviada): valor + Pix antes (sem custo no trabalhista do empregado); documento + comprovante →
   `tarefaChecagem_` (vence em 2 dias úteis, `doisDiasUteis_`). O financeiro (`FINANCEIRO_WHATS`) não interrompe a checagem.
 - whatsCerebro_ pode devolver VÁRIAS mensagens (array): whatsReceber_ manda em ordem; o teste junta com "⎯⎯⎯" e aceita "[documento: …]".
+
+## 8.18.0 Transcrição grava a outra pessoa da chamada (pedido da usuária: "no Meet e no WhatsApp só saía a minha voz")
+
+- Transcrição › Gravar agora: "De onde vem a conversa" (localStorage `transcricao_fonte`): 🖥 Chamada no computador (padrão) ou 🎙 Presencial.
+  Computador = `getDisplayMedia` (Meet: aba + "Compartilhar áudio da guia"; WhatsApp/Zoom: tela inteira + "Compartilhar áudio do sistema"; a imagem é
+  descartada na hora, só o som fica) + microfone, em DUAS trilhas (MediaRecorder separados: `mr` = microfone, `mrSis` = computador). Ao parar,
+  envia as duas e chama `ia.transcrever` com `id2`: `transcrever_` transcreve cada trilha (microfone = "Advogado(a)", ignora o eco; computador =
+  as outras pessoas) e `mesclarTranscricoes_` junta pela hora ([mm:ss] ou [h:mm:ss], `linhasTempo_`), tirando do microfone o eco do alto-falante
+  (≥ 60% das palavras iguais a falas do computador em ±25 s). Ao vivo (Web Speech) continua só a voz do microfone.
