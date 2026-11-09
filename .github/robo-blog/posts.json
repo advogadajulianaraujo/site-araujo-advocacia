@@ -1,5 +1,38 @@
 [
   {
+    "slug": "validade-de-recurso-com-procuracao-enviada-poucas-horas-depois-no-tst",
+    "titulo": "Validade de recurso com procuração enviada poucas horas depois no TST",
+    "resumo": "Entenda a decisão do TST que aceitou o recurso trabalhista apresentado pouco tempo antes da juntada da procuração do advogado no mesmo dia.",
+    "area": "trabalhista",
+    "data": "2026-11-09",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Tribunal Superior do Trabalho (TST)",
+      "url": "https://www.tst.jus.br/-/procuracao-enviada-menos-de-uma-hora-depois-do-recurso-e-valida",
+      "titulo": "Procuração enviada menos de uma hora depois do recurso é válida",
+      "data": "2026-11-05",
+      "conferida": "página (lida pelo Google)"
+    },
+    "corpo": [
+      "A Segunda Turma do Tribunal Superior do Trabalho (TST) manteve a decisão que permitiu o exame de um recurso ordinário apresentado por uma empresa, mesmo com a juntada da procuração do advogado ocorrida algumas horas após o protocolo do recurso.",
+      "## O contexto do caso concreto",
+      "Na origem do processo, uma empresa de móveis e eletrodomésticos de Curitibanos (SC) foi condenada em primeiro grau ao pagamento de horas extras e outras parcelas a um comerciário. Diante da condenação, a empresa apresentou recurso ordinário ao Tribunal Regional do Trabalho da 12ª Região (TRT-12) em 18 de abril de 2023, às 15h09.",
+      "Contudo, a procuração outorgando poderes ao advogado foi anexada ao processo eletrônico no mesmo dia, às 16h03 — exatos 54 minutos após o protocolo do recurso. Posteriormente, o documento de substabelecimento foi juntado às 17h50.",
+      "Em contrarrazões, a defesa do trabalhador pediu a invalidação do recurso em razão da falta do documento de representação no momento exato do envio. Questionou também a existência de um segundo recurso com base no conceito de preclusão consumativa, que impede a repetição de ato processual já praticado. O TRT-12 afastou a alegação quanto ao primeiro recurso por ter sido a procuração anexada na mesma data, levando o trabalhador a recorrer ao TST.",
+      "## A decisão da Segunda Turma do TST",
+      "A relatora do caso no TST, ministra Liana Chaib, observou que a regra geral prevista na Súmula 383 do TST considera inadmissível o recurso assinado por advogado sem procuração nos autos até a sua interposição, salvo hipótese de mandato tácito.",
+      "No entanto, considerando as especificidades do caso, a Turma entendeu que negar o exame do recurso por conta do intervalo de poucas horas no mesmo dia representaria uma formalidade excessiva. O entendimento baseou-se nos seguintes pilares fundamentais:",
+      "- Princípio da simplicidade, orientado ao processo do trabalho para mitigar rigores formais;",
+      "- Princípio da primazia da decisão de mérito, estabelecido no Código de Processo Civil;",
+      "- Princípios da razoabilidade e da proporcionalidade;",
+      "- Garantia da duração razoável do processo, do contraditório e da ampla defesa.",
+      "Para o colegiado, deve prevalecer a intenção demonstrada pela parte de recorrer sobre o apego rígido à formalidade quando esta é suprida quase imediatamente.",
+      "## Pontos de atenção e possibilidade de recurso",
+      "É importante ressaltar que a decisão adotada pela Segunda Turma reflete o entendimento aplicado a este contexto específico. Das decisões proferidas pelas Turmas do TST, pode caber recurso à Subseção I Especializada em Dissídios Individuais (SDI-1).",
+      "Como a aplicação de normas processuais e súmulas envolve particularidades de cada processo, cada situação jurídica deve ser avaliada de forma individual."
+    ]
+  },
+  {
     "slug": "tribunal-mantem-indenizacao-a-irma-de-trabalhador-vitima-de-acidente",
     "titulo": "Tribunal mantém indenização a irmã de trabalhador vítima de acidente",
     "resumo": "Entenda a decisão do TST sobre a presunção de dano moral a familiares de trabalhador vítima de acidente fatal, incluindo irmãos.",
