@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.18.0';
+var VERSAO = '8.19.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -359,6 +359,9 @@ var ROTAS = {
   'prazos.listar': { fn: listarPrazos_ },
   'prazos.salvar': { fn: salvarPrazo_ },
   'prazos.conferir': { permissao: 'conferePrazos', fn: conferirPrazo_ },
+  'prazos.vincular': { fn: vincularPrazo_ },
+  'prazos.recalcularPje': { permissao: 'usuarios', fn: function (d, u) { return recalcularPrazosPje_(d, u); } },
+  'ia.textoCliente': { fn: textoClientePrazo_ },
   'prazos.situacao': { fn: mudarSituacaoPrazo_ },
   'prazos.baixarVencidos': { permissao: 'usuarios', fn: baixarVencidos_ },
   'intimacoes.listar': { fn: listarIntimacoes_ },
@@ -598,10 +601,8 @@ function comMemoria_(acao, u, dados, fn) {
 function validarSenha_(senha, usuario) {
   senha = String(senha || '');
   if (!senha.trim()) throw falha_('Informe uma senha.');
-  if (senha.length < 8) throw falha_('A senha precisa ter pelo menos 8 caracteres.');
-  if (!/[A-Za-zÀ-ÿ]/.test(senha) || !/\d/.test(senha)) throw falha_('A senha precisa ter letras e números.');
-  if (usuario && senha.toLowerCase().indexOf(String(usuario).toLowerCase()) >= 0) throw falha_('A senha não pode conter o nome de usuário.');
-  if (/^(12345678|password|senha123|abc12345|araujo123)/i.test(senha)) throw falha_('Essa senha é fácil demais. Escolha outra.');
+  // 8.19 (pedido da usuária): qualquer senha a partir de 4 caracteres (ex.: 4 números). A trava de 5 erros = 15 min bloqueado continua.
+  if (senha.length < 4) throw falha_('A senha precisa ter pelo menos 4 caracteres (pode ser só números).');
   return senha;
 }
 
@@ -778,7 +779,7 @@ function criarUsuario_(d) {
 }
 
 function listarUsuarios_() {
-  return tabela_('Usuarios').linhas.map(function (r) {
+  return tabela_('Usuarios').linhas.filter(function (r) { return r.ativo !== 'excluido'; }).map(function (r) {
     return { id: r.id, usuario: r.usuario, nome: r.nome, perfil: r.perfil, ativo: r.ativo, ultimo_acesso: r.ultimo_acesso, email: r.email || '', resumo_email: r.resumo_email || '',
       bloqueado: !!(r.bloqueado_ate && new Date(r.bloqueado_ate) > new Date()) };
   });
@@ -816,6 +817,16 @@ function salvarUsuario_(d, u) {
       m.bloqueado_ate = '';
     }
     if (d.desbloquear) { m.tentativas = '0'; m.bloqueado_ate = ''; }
+    // 8.19: "Excluir" tira a pessoa do painel (não entra mais, some das listas); o histórico dela no Log continua
+    if (d.excluir) {
+      if (linha.id === u.id) throw falha_('Você não pode excluir o seu próprio acesso.');
+      if (linha.perfil === 'administrador' && tab.linhas.filter(function (r) { return r.perfil === 'administrador' && r.ativo === 'sim' && r.id !== linha.id; }).length < 1)
+        throw falha_('É preciso manter pelo menos um administrador ativo.');
+      m = { ativo: 'excluido', hash: '', salt: '', usuario: linha.usuario + '#excluido-' + hojeSP_(), sessao_versao: String((parseInt(linha.sessao_versao, 10) || 0) + 1) };
+      atualizarLinha_(tab, linha, m);
+      registrar_(u.usuario, 'usuário excluído', linha.usuario + ' (' + (linha.nome || '') + ')');
+      return { id: linha.id, excluido: true };
+    }
     // senha nova, perfil novo, desativação ou "desconectar agora": derruba as sessões abertas dessa pessoa
     if (m.hash || (m.perfil && m.perfil !== linha.perfil) || m.ativo === 'nao' || d.desconectar) m.sessao_versao = String((parseInt(linha.sessao_versao, 10) || 0) + 1);
     atualizarLinha_(tab, linha, m);
@@ -2705,7 +2716,14 @@ function registrarIntimacao_(ctx, d) {
   var sug = sugerirPrazo_([d.movimento, d.texto].join(' '), proc, proc.tribunal, d.segundoGrau);
   if (aberto) {
     var m = { observacoes: (aberto.observacoes ? aberto.observacoes + ' | ' : '') + d.fonte + ': ' + d.movimento };
-    if (d.ciencia < aberto.ciencia) { m.ciencia = d.ciencia; m.ciencia_tipo = d.ciencia_tipo; }
+    // 8.19 (pedido da usuária: "deixe sempre como o do PJe / igual no eproc"): cada sistema manda no próprio prazo.
+    //  PJe → a publicação no DJEN (exata) substitui a estimativa; eproc → a intimação do eproc (confirmada ou tácita) vale mais que o DJEN.
+    var abertoEproc = /^eproc/.test(aberto.observacoes || ''), abertoEstimado = /estimad|tácita: 10 dias após a expedição \(\d/.test(aberto.ciencia_tipo || '') && !abertoEproc;
+    var trocar = false;
+    if (d.fonte === 'DJEN') trocar = abertoEproc ? false : (abertoEstimado || d.ciencia < aberto.ciencia);
+    else if (/^eproc/.test(d.fonte)) trocar = abertoEproc ? d.ciencia < aberto.ciencia : true;
+    else trocar = !/publicação no DJEN em/.test(aberto.ciencia_tipo || '') && d.ciencia < aberto.ciencia;
+    if (trocar) { m.ciencia = d.ciencia; m.ciencia_tipo = d.ciencia_tipo; }
     if (!(+aberto.dias) && sug.dias) { m.dias = String(sug.dias); m.contagem = sug.contagem; m.descricao = sug.descricao; }
     m.atualizado_em = agora; m.atualizado_por = 'robô';
     atualizarLinha_(ctx.prazos, aberto, m);
@@ -2877,6 +2895,8 @@ function nomesDoCliente_(bloco) {
   return nomes;
 }
 
+/** 8.19: o mais cedo possível para a publicação no DJEN de uma intimação expedida no PJe: disponibilizada no mesmo dia, publicada no dia útil seguinte. */
+function publicacaoEstimadaPje_(data, tribunal) { try { return proximoUtil_(data, tribunal, mapaFeriados_(), true); } catch (e) { return somarDias_(data, 1); } }
 /** Aviso "push" do PJe (TRT): uma tabela de eventos de um processo. */
 function lerAvisoPje_(msg) {
   var corpo = (msg.getPlainBody() || '').replace(/\*/g, '');
@@ -2912,7 +2932,9 @@ function lerAvisoPje_(msg) {
       fonte: 'PJe ' + tribunal, chave: 'pje|' + numero + '|' + data + '|' + mov, recebido_em: msg.getDate().toISOString(),
       numero: numero, tribunal: tribunal, sistema: 'PJe', movimento: mov + (orgao ? ' — ' + orgao : ''), evento: '',
       texto: '', nomes: nomes, tipo: intimacao && paraNos ? 'expedida' : '',
-      ciencia: somarDias_(data, 10), ciencia_tipo: 'tácita: 10 dias após a expedição (' + dataBR_(data) + ')'
+      // 8.19: o PJe conta o prazo do advogado da PUBLICAÇÃO no DJEN (Res. CNJ 455/2022 e 569/2024), não de 10 dias depois:
+      // estimativa = dia útil seguinte à expedição; quando a comunicação do DJEN chega, a data exata dela substitui esta.
+      ciencia: publicacaoEstimadaPje_(data, tribunal), ciencia_tipo: 'publicação no DJEN estimada em ' + dataBR_(publicacaoEstimadaPje_(data, tribunal)) + ' (expedida em ' + dataBR_(data) + ') — conferir no PJe'
     });
   }
   // "Notificação de Documento Anexado": o PJe manda o documento em PDF (muitas vezes a notificação inicial ou a citação).
@@ -3071,6 +3093,58 @@ function dataBR_(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + 
 
 /* ---------- Prazos: leitura e edição pelo painel ---------- */
 
+/** 8.19: prazos do robô no PJe lançados pela regra antiga (ciência tácita 10 dias depois da expedição) passam a contar da publicação
+ *  no DJEN (dia útil seguinte à expedição, ou a data exata se o DJEN do mesmo processo já chegou). Não mexe em conferido, vinculado
+ *  nem em audiência/perícia. Roda uma vez sozinho (Config FIX_PRAZOS_819) e pelo botão em Intimações e prazos (prévia + aplicar). */
+function recalcularPrazosPje_(d, u) {
+  var aplicar = !d || d.aplicar !== false;
+  var lista = [];
+  var corpo = function () {
+    var tab = tabela_('Prazos'), fer = mapaFeriados_(), procs = {}, djen = {};
+    tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+    tabela_('Intimacoes').linhas.forEach(function (i) { if (/^DJEN/.test(i.fonte || '') || /^djen\|/.test(i.chave || '')) (djen[i.numero] = djen[i.numero] || []).push(String(i.recebido_em).slice(0, 10)); });
+    tab.linhas.forEach(function (z) {
+      if (z.origem !== 'robô' || SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || z.situacao === 'conferido' || /^ato:/.test(z.observacoes || '')) return;
+      var m = /tácita: 10 dias após a expedição \((\d{2})\/(\d{2})\/(\d{4})\)/.exec(z.ciencia_tipo || '');
+      if (!m || /^eproc/.test(z.observacoes || '')) return;
+      var exp = m[3] + '-' + m[2] + '-' + m[1], trib = (procs[z.processo_id] || {}).tribunal || tribunalDoNumero_(z.numero);
+      var disp = (djen[z.numero] || []).filter(function (x) { return x >= exp && diffDias_(x, exp) <= 5; }).sort()[0];
+      var ciencia = disp ? proximoUtil_(disp, trib, fer, true) : proximoUtil_(exp, trib, fer, true);
+      var tipo = disp ? 'publicação no DJEN em ' + dataBR_(ciencia) + ' (disponibilizada ' + dataBR_(disp) + ')' : 'publicação no DJEN estimada em ' + dataBR_(ciencia) + ' (expedida em ' + dataBR_(exp) + ') — conferir no PJe';
+      var fatal = calcularFatal_(ciencia, z.dias, z.contagem, trib, fer);
+      if (!fatal || fatal === z.fatal) return;
+      lista.push({ id: z.id, numero: z.numero, descricao: z.descricao, antes: z.fatal, depois: fatal });
+      if (aplicar) atualizarLinha_(tab, z, { ciencia: ciencia, ciencia_tipo: tipo, fatal: fatal, atualizado_em: new Date().toISOString(), atualizado_por: 'robô (8.19: conta da publicação no DJEN)' });
+    });
+  };
+  if (aplicar) comTrava_(corpo); else corpo();
+  if (aplicar && lista.length) registrar_(u ? u.usuario : 'robô', 'prazos do PJe recalculados', lista.length + ' prazo(s): ' + lista.slice(0, 20).map(function (x) { return x.numero + ' ' + x.antes + '→' + x.depois; }).join('; '));
+  return { itens: lista, aplicado: aplicar };
+}
+
+/** 8.19 (uma vez): audiências futuras na agenda de INSTRUÇÃO cujo texto não diz "instrução" junto da palavra audiência →
+ *  tarefa "Conferir o tipo da audiência" com a lista (nada é mudado sozinho na agenda). */
+function conferirAudienciasInstrucao_() {
+  if (config_('FIX_AUD_819')) return 0;
+  var hoje = hojeSP_(), intims = tabela_('Intimacoes').linhas, suspeitas = [];
+  tabela_('Eventos').linhas.forEach(function (e) {
+    if (e.agenda !== 'AUDIÊNCIA INSTRUÇÃO' || !e.data || e.data < hoje) return;
+    var dataBr = dataBR_(e.data), tx = intims.filter(function (i) { return i.numero === e.numero && normalizar_(i.texto + ' ' + i.movimento).indexOf('audiencia') >= 0 && (String(i.texto).indexOf(dataBr) >= 0 || String(i.texto).indexOf(dataBr.slice(0, 5)) >= 0); });
+    if (!tx.length) { suspeitas.push(e.numero + ' — ' + dataBr + ' ' + (e.hora || '') + ' (sem o texto do ato: conferir)'); return; }
+    var a = acharAto_([tx[0].movimento, tx[0].texto].join(' '));
+    if (a && a.agenda !== 'AUDIÊNCIA INSTRUÇÃO') suspeitas.push(e.numero + ' — ' + dataBr + ' ' + (e.hora || '') + ' (o texto diz: ' + a.tipo + ')');
+  });
+  if (suspeitas.length) {
+    var agora = new Date().toISOString();
+    inserirLinha_(tabela_('Tarefas'), { id: novoId_('T'), titulo: '⚖ Conferir o tipo destas audiências (marcadas como instrução)',
+      descricao: 'O robô marcava como INSTRUÇÃO qualquer audiência cujo texto citasse "instrução". Isso foi corrigido. Confira no processo e, se não for instrução, ajuste no Google Agenda:\n' + suspeitas.join('\n'),
+      responsavel: config_('RESP_PADRAO') || respSecretaria_() || '', processo_id: '', numero: '', cliente_id: '', vence_em: hoje, etapa: 'afazer', peso: '2', situacao: 'ativa',
+      concluida_por: '', concluida_em: '', historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô (8.19)', criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô', prioridade: 'alta' });
+  }
+  setConfig_('FIX_AUD_819', new Date().toISOString() + ' · ' + suspeitas.length + ' audiência(s) para conferir', 'Revisão 8.19 do tipo das audiências (uma vez)');
+  return suspeitas.length;
+}
+
 function recalcularPrazosAbertos_(ctx) {
   var tab = ctx ? ctx.prazos : tabela_('Prazos');
   var feriados = ctx ? ctx.feriados : mapaFeriados_();
@@ -3143,6 +3217,7 @@ function prazoPublico_(z, procs, nomes) {
   x.orgao = p.orgao || '';
   x.sistema = p.sistema || '';
   x.fila = filaPrazo_(z);
+  x.avisar_cliente = avisoClienteDe_(z, (prazoPublico_.intims || {})[z.intimacao_id]);
   x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(z.resumo_ia || '');
   return x;
 }
@@ -3161,6 +3236,8 @@ function listarPrazos_(d) {
   var tel = {};
   tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; tel[c.id] = c.telefone; });
   prazoPublico_.tel = tel;
+  var intims = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { intims[i.id] = { movimento: i.movimento, texto: String(i.texto || '').slice(0, 1500) }; }); } catch (e) { /* segue */ }
+  prazoPublico_.intims = intims;
   var limiteFechados = somarDias_(hojeSP_(), -30);
   return tabela_('Prazos').linhas
     .filter(function (z) {
@@ -3225,6 +3302,23 @@ function conferirPrazo_(d, u) {
       atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
     registrar_(u.usuario, 'prazo conferido', z.id + ' ' + z.numero + ' fatal ' + z.fatal + (fonte ? ' · fonte: ' + fonte : ''));
     return { ok: true };
+  });
+}
+
+/** 8.19: a data final que o PJe/eproc mostra passa a ser a do painel (vinculada; o robô não recalcula mais). */
+function vincularPrazo_(d, u) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.fatal || '')) throw falha_('Informe a data final que aparece no PJe / eproc.');
+  var sistema = /eproc/i.test(d.sistema || '') ? 'eproc' : 'PJe';
+  return comTrava_(function () {
+    var tab = tabela_('Prazos'), z = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
+    if (!z) throw falha_('Prazo não encontrado.');
+    var agora = new Date().toISOString(), antes = z.fatal;
+    atualizarLinha_(tab, z, { fatal: d.fatal, situacao: 'conferido', origem: 'vinculado ao ' + sistema, conferido_por: u.nome || u.usuario, conferido_em: agora,
+      conferido_fonte: 'Data final do ' + sistema + (antes && antes !== d.fatal ? ' (o painel tinha ' + dataBR_(antes) + ')' : ''),
+      descricao: String(d.descricao || '').trim() ? String(d.descricao).trim().slice(0, 200) : String(z.descricao || '').replace(/^PROVISÓRIO:?\s*/i, ''),
+      atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'prazo vinculado ao ' + sistema, z.id + ' ' + z.numero + ' fatal ' + d.fatal + (antes && antes !== d.fatal ? ' (era ' + antes + ')' : ''));
+    return { ok: true, fatal: d.fatal, antes: antes };
   });
 }
 
@@ -3875,22 +3969,33 @@ function detectarAudienciaPericia_(ctx, d, proc, intim, semTarefa) {
 
 var MESES_ATO = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
 
+/** 8.19: tipo da audiência pelo trecho junto da palavra (normalizado): instrucao | una | mediacao | inicial | conciliacao | '' (não diz). */
+function tipoAudiencia_(j) {
+  j = String(j || '');
+  if (/audiencias?\s+(\w+\s+){0,3}?(de\s+|do tipo\s+)?instrucao|instrucao e julgamento|audiencia de prosseguimento|encerramento da instrucao/.test(j)) return 'instrucao';
+  if (/audiencias?\s+(\w+\s+){0,3}?una\b|\bpauta una\b/.test(j)) return 'una';
+  if (/mediacao|cejusc/.test(j)) return 'mediacao';
+  if (/audiencias?\s+(\w+\s+){0,3}?inicial/.test(j)) return 'inicial';
+  if (/conciliacao|conciliatoria|tentativa de acordo/.test(j)) return 'conciliacao';
+  return '';
+}
 /** Lê o texto e devolve { ehPericia, tipo, agenda, data, hora } ou { semData: true, ... } (designado, mas sem a data no texto) ou null. */
 function acharAto_(texto) {
   var t = normalizar_(texto);
   if (!t) return null;
   var ehPericia = /pericia|perito/.test(t) && /(designad|designo|marcad|agendad|realizar|realizacao|comparecer|data|dia|local)/.test(t);
   var ehAudiencia = /audiencia|sessao de (conciliacao|mediacao)|cejusc/.test(t) &&
-    /(designad|redesignad|marcad|agendad|pauta|comparecer|comparecimento|para o dia|realizar|realizacao|intimad|intimacao)/.test(t);
+    /(designad|redesignad|designo|designe|marcad|agendad|pauta|comparecer|comparecimento|para o dia|realizar|realizacao|intimad|intimacao)/.test(t);
   if (!ehPericia && !ehAudiencia) return null;
   if (ehPericia && ehAudiencia) ehPericia = t.search(/pericia|perito/) < t.search(/audiencia|sessao de|cejusc/);
   if (/cancelad|retirad[ao] d[ae] pauta|nao realizada|adiada sem|audiencia realizada|pericia realizada|termo de audiencia|ata de audiencia/.test(t) && !/redesignad|designo|designad[ao] (para|o dia|a data)/.test(t)) return null;
-  var tipo = ehPericia ? 'perícia'
-    : /instrucao|instrucao e julgamento/.test(t) ? 'audiência de instrução'
-    : /\bmediacao\b/.test(t) ? 'audiência de mediação'
-    : /inicial|\buna\b/.test(t) ? 'audiência inicial' : 'audiência de conciliação';
-  var agenda = ehPericia ? 'PERÍCIAS' : /instrucao/.test(t) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
   var pos = t.search(ehPericia ? /pericia|perito/ : /audiencia|sessao de|cejusc/);
+  // 8.19 (pedido da usuária: "audiências marcadas como instrução sem ser"): o tipo vem SÓ do que está escrito junto da palavra audiência
+  // (antes, qualquer "instrução" em qualquer lugar do texto virava audiência de instrução)
+  var kind = ehPericia ? 'pericia' : tipoAudiencia_(t.slice(Math.max(0, pos - 40), pos + 160));
+  var tipo = { pericia: 'perícia', instrucao: 'audiência de instrução', una: 'audiência una (conciliação e instrução)', mediacao: 'audiência de mediação',
+    inicial: 'audiência inicial', conciliacao: 'audiência de conciliação', '': 'audiência (tipo a conferir no processo)' }[kind];
+  var agenda = ehPericia ? 'PERÍCIAS' : (kind === 'instrucao' || kind === 'una') ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
   // 8.6.0: números de processo ("…2026.5.12.0041") e de documentos não são data (o robô tinha lido 05/12/2041)
   var trecho = t.slice(Math.max(0, pos), pos + 600).replace(/\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}/g, ' [processo] ');
   var hoje = hojeSP_(), achada = null, anoMax = +hoje.slice(0, 4) + 3;
@@ -4709,7 +4814,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -8825,6 +8930,46 @@ var INSTRUCAO_SEM_TEXTO = 'ATENÇÃO: o tribunal NÃO enviou o texto do ato (ex.
   'Use "prazo_dias": null, a não ser que as movimentações citem o prazo expressamente.';
 
 /** Resumo por IA de um prazo, na hora (botão "Resumir com IA" na tela do prazo). Não muda o prazo. */
+/** 8.19: atos em que o cliente deve ser avisado (pedido da usuária): perícia/laudo, contestação (réplica), audiência marcada,
+ *  sentença/acórdão e acordo. O resto (manifestar sobre petição, síntese, ciência…) não ganha botão de WhatsApp. */
+var AVISAR_CLIENTE = [
+  ['perícia', /per[ií]cia|laudo|perito/i], ['contestação', /contesta[çc][ãa]o|r[ée]plica/i],
+  ['audiência', /audi[êe]ncia|designo .{0,40}(dia|data)/i], ['sentença', /senten[çc]a|ac[óo]rd[ãa]o|julg(o|ou) (im)?procedente|julgamento/i],
+  ['acordo', /acordo|homolog/i]];
+function avisoClienteDe_(z, intim) {
+  var t = [z.descricao, z.observacoes, z.resumo_ia, intim && intim.movimento, intim && String(intim.texto || '').slice(0, 3000)].join(' ');
+  if (/^ato:/.test(z.observacoes || '')) return /per[ií]cia/i.test(t) ? 'perícia' : 'audiência';
+  for (var i = 0; i < AVISAR_CLIENTE.length; i++) if (AVISAR_CLIENTE[i][1].test(t)) return AVISAR_CLIENTE[i][0];
+  return '';
+}
+function textoClientePrazo_(d, u) {
+  var chave = chaveIA_();
+  var tabZ = tabela_('Prazos'), z = tabZ.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!z) throw falha_('Prazo não encontrado.');
+  var tabI = tabela_('Intimacoes'), intim = tabI.linhas.filter(function (i) { return i.id === z.intimacao_id; })[0];
+  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === z.processo_id; })[0] || { numero: z.numero };
+  var cli = tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {};
+  var tipo = avisoClienteDe_(z, intim) || 'andamento', nome1 = primeiroNomeTxt_(cli.nome || p.cliente_nome || '');
+  var base = { 'perícia': 'houve uma novidade sobre a perícia do seu processo', 'contestação': 'a outra parte apresentou a defesa (contestação) no seu processo e agora vamos responder', 'audiência': 'foi marcada uma audiência no seu processo',
+    'sentença': 'saiu a decisão (sentença) do seu processo', 'acordo': 'houve uma novidade sobre o acordo no seu processo', 'andamento': 'houve um andamento no seu processo' }[tipo];
+  var txt = '';
+  if (chave) {
+    var f = fontePrazoIA_(z, tabI, p) || { texto: [z.descricao, z.resumo_ia].join('\n') };
+    var nomes = [cli.nome, p.cliente_nome, p.parte_contraria].concat(String(intim && intim.partes_cliente || '').split(/;\s*/));
+    try {
+      txt = String(geminiTexto_([{ text: 'Escreva UMA mensagem de WhatsApp do escritório Araújo Advocacia para o CLIENTE, avisando, em português bem simples e acolhedor, o que aconteceu no processo dele. ' +
+        'Tipo do acontecimento: ' + tipo + '. Regras: 3 a 5 frases curtas; comece com "Olá, [NOME]!"; explique o que aconteceu e o que acontece agora, sem juridiquês; ' +
+        'NÃO informe prazos internos nem datas de prazo; NÃO prometa resultado; NÃO dê valores que não estejam no texto; se for audiência ou perícia, diga a data e a hora SÓ se estiverem no texto e peça para a pessoa confirmar que viu; ' +
+        'se for sentença, diga em palavras simples se foi favorável, parcialmente favorável ou desfavorável SÓ se o texto deixar claro, senão diga que a advogada vai explicar os detalhes; termine dizendo que o escritório está cuidando e que pode chamar se tiver dúvida. ' +
+        'Não use emojis. Responda só com a mensagem.\n\nTEXTO DO PROCESSO:\n' + anonimizar_(String(f.texto || ''), nomes).slice(0, 6000) }], { max: 700, temp: 0.3 }).texto || '').trim();
+    } catch (e) { txt = ''; }
+  }
+  if (!txt || /\{|\}|```/.test(txt)) txt = 'Olá, [NOME]! Passando para avisar que ' + base + '. A Dra. Júlian já está acompanhando e cuidando de tudo. Se tiver qualquer dúvida, é só nos chamar por aqui.';
+  txt = txt.replace(/\[NOME\]|\[PARTE\]/g, nome1 || 'tudo bem').replace(/Olá, tudo bem!/, 'Olá, tudo bem?');
+  registrar_(u.usuario, 'texto para o cliente (IA)', z.id + ' ' + tipo);
+  return { texto: txt.slice(0, 1200), tipo: tipo };
+}
+
 function resumirPrazoIA_(d, u) {
   var chave = chaveIA_();
   if (!chave) throw falha_('A IA não está ligada. A administração cadastra a chave em Usuários › Resumo das intimações por IA.');

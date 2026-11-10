@@ -1663,7 +1663,8 @@ body{background:var(--marfim)}
 .calc-corpo{border-radius:16px}
 .calc-corpo h2{margin-bottom:6px}
 .calc-res{margin-top:16px;border-top:1px solid var(--linha);padding-top:12px}
-.calc-tab th{text-align:left;font-weight:400}
+.calc-tab th{text-align:left;font-weight:400;text-transform:none;letter-spacing:0;font-size:.92rem;color:var(--tinta)}
+.calc-tab td.num{text-align:right;white-space:nowrap}
 .calc-tab td{font-variant-numeric:tabular-nums}
 .calc-total th,.calc-total td{font-weight:700;border-top:2px solid var(--tinta)}
 /* Painel financeiro */
@@ -1834,3 +1835,7 @@ a.visao-bt{text-decoration:none}
 .g-fonte{display:grid;gap:6px;margin:0 0 10px}
 .g-fonte .g-opcao{align-items:flex-start}
 .g-fonte-dica{margin:4px 0 0;background:#f6f1e7;border-radius:8px;padding:8px 10px}
+/* 8.19 */
+.btn.perigo{background:#fff;color:#a3221a;border:1px solid #e3c7c3}.btn.perigo:hover{background:#fbe9e7}
+.aviso-texto{width:100%;font-size:15px;line-height:1.5}
+.calc-tab .calc-sec th{padding-top:16px;font-size:.74rem;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--dourado,#B58D52);background:transparent}

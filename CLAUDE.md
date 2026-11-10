@@ -880,3 +880,31 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   envia as duas e chama `ia.transcrever` com `id2`: `transcrever_` transcreve cada trilha (microfone = "Advogado(a)", ignora o eco; computador =
   as outras pessoas) e `mesclarTranscricoes_` junta pela hora ([mm:ss] ou [h:mm:ss], `linhasTempo_`), tirando do microfone o eco do alto-falante
   (≥ 60% das palavras iguais a falas do computador em ±25 s). Ao vivo (Web Speech) continua só a voz do microfone.
+
+## 8.19.0 Prazos iguais ao PJe/eproc, aviso ao cliente por IA, acessos e calculadora (pedidos da usuária, 10/11/2026)
+
+- Os e-mails do PJe e do eproc NÃO trazem a data final (só "expedida/confirmada a intimação"): a data final só existe dentro do sistema.
+  PJe: o prazo do advogado conta da PUBLICAÇÃO no DJEN → estimativa = próximo dia útil depois da expedição (`publicacaoEstimadaPje_`,
+  ciencia_tipo "publicação no DJEN estimada em … — conferir no PJe"); a leitura do DJEN troca pela data exata (`registrarIntimacao_`:
+  DJEN substitui estimativa; processo do eproc mantém a ciência do eproc). Antes era tácita de 10 dias depois da expedição (dava data
+  mais tarde que o PJe). `recalcularPrazosPje_` (rota `prazos.recalcularPje`, administração; uma vez no robô, Config FIX_PRAZOS_819)
+  refez os prazos abertos do robô que usavam a regra antiga.
+- "📌 Data do PJe/eproc" na tela do prazo (rota `prazos.vincular`): digita a data final do sistema → prazo "conferido", origem
+  "vinculado ao PJe|eproc", fonte anotada ("o painel tinha …"); o robô não recalcula mais.
+- Aviso ao cliente só nos atos que importam (`AVISAR_CLIENTE`/`avisoClienteDe_`, `avisar_cliente` em prazos.listar): perícia/laudo,
+  contestação/réplica, audiência, sentença/acórdão, acordo. "✨ Avisar o cliente" (rota `ia.textoCliente`): a IA escreve 3–5 frases
+  simples (anonimizado, sem prazo interno, sem promessa; [NOME] = primeiro nome); texto editável + WhatsApp. Os outros prazos
+  (síntese, ciência, manifestação) ficam SEM botão de WhatsApp ("Não precisa avisar o cliente").
+- "✓ Conferido" dentro da tela do prazo fecha a tela (volta para Intimações e prazos).
+- Audiências: o tipo vem SÓ do texto junto da palavra "audiência" (`tipoAudiencia_`); antes qualquer "instrução" no texto virava instrução.
+  Sem tipo claro → "audiência (tipo a conferir no processo)" na agenda de CONCILIAÇÃO; una → INSTRUÇÃO. "designo" agora conta como
+  designação. `conferirAudienciasInstrucao_` (uma vez, Config FIX_AUD_819) criou a tarefa "⚖ Conferir o tipo destas audiências".
+- Gerenciar acessos: "🗑 Excluir pessoa" (`usuarios.salvar` com `excluir`: ativo "excluido", sem senha, usuário renomeado, sessões caem;
+  não exclui a si mesma nem o último administrador; some da lista; o Log continua). Senha: mínimo 4 caracteres (pode ser só números;
+  pedido da usuária — o bloqueio de 15 min depois de 5 erros continua).
+- Menu: "Chatbot do WhatsApp" (antes "Conversas do WhatsApp").
+- Calculadora de rescisão (painel `contaRescisao` em gestao.js = site assets/calculadoras.js): férias integrais (vencidas) + 1/3;
+  INSS 2026 progressivo (Portaria MPS/MF nº 13/2026: 1.621,00 / 2.902,84 / 4.354,27 / 8.475,55 a 7,5/9/12/14%) separado no saldo de
+  salário e no 13º (não no aviso indenizado nem nas férias indenizadas); líquido; FGTS em bloco à parte (não entra no líquido): saldo
+  da conta, FGTS do mês (8% de saldo + 13º), FGTS do aviso indenizado em linha própria e multa 40%/20% sobre a base para fins
+  rescisórios SEM a projeção do aviso (Tema 255 do TST / OJ 42, II, SDI-1). Mudou a regra? Mude os dois arquivos.

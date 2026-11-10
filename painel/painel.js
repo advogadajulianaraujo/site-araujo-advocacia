@@ -646,7 +646,7 @@
     ['agenda', 'Agenda', 'Escritório'],
     // 8.12.2 (pedido da usuária): CRM e Marketing só a administração; Padrões operacionais saem do menu (botão discreto no Início);
     // Peças com IA e Biblioteca de prompts saíram; Recibos virou uma aba do Painel financeiro
-    ['conversas', 'Conversas do WhatsApp', 'Relacionamento', 'usuarios'],
+    ['conversas', 'Chatbot do WhatsApp', 'Relacionamento', 'usuarios'],
     ['crm', 'CRM / Funil', 'Relacionamento', 'usuarios'],
     ['marketing', 'Marketing', 'Relacionamento', 'usuarios'],
     ['modelos', 'Documentos e propostas', 'Documentos'],
@@ -781,7 +781,7 @@
       h('div', { class: 'campo' }, campo('codigo', 'Código de primeiro acesso', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('nome', 'Seu nome', '', { obrigatorio: true })),
       h('div', { class: 'campo' }, campo('usuario', 'Usuário (sem espaços)', '', { obrigatorio: true, auto: 'username' })),
-      h('div', { class: 'campo' }, campo('senha', 'Senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' , dica: 'mínimo 8, com letras e números' })),
+      h('div', { class: 'campo' }, campo('senha', 'Senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' , dica: 'mínimo 4 caracteres (pode ser só números)' })),
       h('div', { class: 'campo' }, campo('senha2', 'Repita a senha', '', { obrigatorio: true, tipo: 'password', auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Criar administrador'),
       h('p', { class: 'erro' }),
@@ -2318,7 +2318,7 @@
         campo('nome', 'Nome da pessoa', '', { obrigatorio: true }),
         campo('usuario', 'Usuário (ex.: Estagiario)', '', { obrigatorio: true }),
         campo('perfil', 'Perfil', 'secretario', { opcoes: PERFIS }),
-        campo('senha', 'Senha inicial', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 8, com letras e números' }),
+        campo('senha', 'Senha inicial', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 4 caracteres (pode ser só números)' }),
         campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', '', { tipo: 'email', auto: 'off' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Criar usuário')),
       h('p', { class: 'erro' }));
@@ -2435,7 +2435,7 @@
         campo('ativo', 'Situação', u.ativo, { opcoes: [['sim', 'Ativo'], ['nao', 'Desativado']] }),
         campo('email', 'E-mail Google (resumo das 7h e edição dos modelos)', u.email, { tipo: 'email', auto: 'off' }),
         campo('resumo_email', 'Resumo das 7h por e-mail', u.resumo_email === 'nao' ? 'nao' : 'sim', { opcoes: [['sim', 'Receber'], ['nao', 'Não receber']] }),
-        campo('senha', 'Nova senha (deixe em branco para manter; mínimo 8, com letras e números)', '', { tipo: 'password', auto: 'new-password' })),
+        campo('senha', 'Nova senha (deixe em branco para manter; mínimo 4 caracteres)', '', { tipo: 'password', auto: 'new-password' })),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
         botao('Desconectar agora', async ev => {
           ev.target.disabled = true;
@@ -2443,6 +2443,11 @@
           catch (e) { avisar(e.message, true); } ev.target.disabled = false;
         }, 'sec'),
         u.bloqueado ? botao('Desbloquear', async () => { await api('usuarios.salvar', { id: u.id, desbloquear: true }); avisar('Usuário desbloqueado.'); telaUsuarios(); }, 'sec') : null,
+        u.usuario !== sessao.usuario.usuario ? botao('🗑 Excluir pessoa', async ev => {
+          if (!confirm(`Excluir ${u.nome} do painel? A pessoa não entra mais e some das listas (o que ela fez continua registrado).`)) return;
+          ev.target.disabled = true;
+          try { await api('usuarios.salvar', { id: u.id, excluir: true }); avisar(`${u.nome} foi excluído(a) do painel.`); telaUsuarios(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'perigo') : null,
         botao('Cancelar', () => alvo.replaceChildren(), 'sec')),
       h('p', { class: 'peq' }, '"Desconectar agora" tira a pessoa do painel em todos os computadores e celulares; ela precisa entrar de novo com a senha. Para impedir a entrada de vez, mude a Situação para Desativado.'),
       h('p', { class: 'erro' }));
@@ -2462,7 +2467,7 @@
     const form = h('form', { class: 'entrar' },
       h('h1', {}, 'Trocar senha'),
       h('div', { class: 'campo' }, campo('atual', 'Senha atual', '', { tipo: 'password', obrigatorio: true, auto: 'current-password' })),
-      h('div', { class: 'campo' }, campo('nova', 'Nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 8, com letras e números' })),
+      h('div', { class: 'campo' }, campo('nova', 'Nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' , dica: 'mínimo 4 caracteres (pode ser só números)' })),
       h('div', { class: 'campo' }, campo('nova2', 'Repita a nova senha', '', { tipo: 'password', obrigatorio: true, auto: 'new-password' })),
       h('button', { type: 'submit', class: 'btn' }, 'Trocar senha'),
       h('p', { class: 'erro' }));
@@ -2569,6 +2574,7 @@
     avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
     // 8.11: inicial protocolada → abre o processo com a mensagem do WhatsApp pronta (com o código do Acompanhe gerado sozinho)
     if (tipo === 'inicial' && r.protocolado) { guardarProtocolo(id, r); location.hash = '#/processo/' + id + '?avisar=1'; return true; }
+    if (/^#\/prazo\//.test(location.hash)) { location.hash = '#/prazos'; return true; } // 8.19: conferiu dentro do prazo → fecha a tela do prazo
     rota();
     return true;
   }
@@ -2646,6 +2652,50 @@
   }
 
   /** Guarda no relatório que o cliente foi avisado pelo WhatsApp (não atrapalha se falhar). */
+  /** 8.19 (pedido da usuária): só estes atos pedem avisar o cliente; o resto (síntese, manifestar, ciência…) não tem WhatsApp. */
+  const AVISAR_CLIENTE = [['perícia', /per[ií]cia|laudo|perito/i], ['contestação', /contesta[çc][ãa]o|r[ée]plica/i], ['audiência', /audi[êe]ncia|designo .{0,40}(dia|data)/i],
+    ['sentença', /senten[çc]a|ac[óo]rd[ãa]o|julg(o|ou) (im)?procedente|julgamento/i], ['acordo', /acordo|homolog/i]];
+  function avisoCliente(...textos) {
+    const t = textos.filter(Boolean).join(' ');
+    if (!t) return '';
+    const x = AVISAR_CLIENTE.find(([, re]) => re.test(t));
+    return x ? x[0] : '';
+  }
+  /** "✨ Avisar o cliente": a IA escreve o que aconteceu (curto, simples) e a pessoa confere antes de mandar. */
+  async function dialogoAvisoCliente(prazoId, ctx) {
+    let tel = telefoneWhats(ctx.telefone || '');
+    if (tel && tel.length <= 11) tel = '55' + tel;
+    const ta = h('textarea', { rows: 7, class: 'aviso-texto' }, 'A IA está escrevendo…');
+    const ir = h('a', { class: 'btn wa', target: '_blank', rel: 'noopener noreferrer', hidden: !tel, onclick: () => registrarWhats(ctx, 'aviso ao cliente: ' + (ctx.tipo || 'andamento')) }, 'Mandar no WhatsApp');
+    const atualizar = () => { if (tel) ir.href = 'https://wa.me/' + tel + '?text=' + encodeURIComponent(ta.value); };
+    ta.addEventListener('input', atualizar);
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, '✨ Avisar o cliente' + (ctx.tipo ? ' — ' + ctx.tipo : '')),
+      h('p', { class: 'peq' }, `${ctx.cliente || 'Cliente'} · ${ctx.numero || ''}. Texto feito pela IA a partir do ato: confira e ajuste antes de mandar. Ela não informa prazos internos nem promete resultado.`),
+      ta, tel ? null : h('p', { class: 'nota alerta' }, 'O cliente está sem telefone no cadastro: copie o texto.'),
+      h('div', { class: 'acoes' }, ir, botao('Copiar o texto', () => copiar(ta.value, 'Texto copiado.'), 'sec'), botao('Fechar', () => { caixa.close(); caixa.remove(); }, 'sec')));
+    document.body.append(caixa); caixa.showModal();
+    try { const r = await api('ia.textoCliente', { id: prazoId }); ta.value = r.texto; }
+    catch (e) { ta.value = `Olá! Passando para avisar que houve uma novidade no seu processo nº ${ctx.numero}. A Dra. Júlian já está cuidando de tudo. Qualquer dúvida, é só nos chamar.`; avisar(e.message, true); }
+    atualizar();
+  }
+  /** 📌 A data final que aparece no PJe/eproc vira a do painel (o robô não recalcula mais). */
+  function dialogoDataSistema(z) {
+    return new Promise(ok => {
+      const data = h('input', { type: 'date', value: z.fatal || '', required: true, 'aria-label': 'Data final' });
+      const sis = h('select', { 'aria-label': 'Sistema' }, ['PJe', 'eproc'].map(x => h('option', { value: x, selected: (/eproc/i.test(z.sistema || z.observacoes || '') ? 'eproc' : 'PJe') === x }, x)));
+      const desc = h('input', { type: 'text', maxlength: 200, value: String(z.descricao || '').replace(/^PROVISÓRIO:?\s*/i, ''), placeholder: 'O que fazer (ex.: Réplica)' });
+      const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, '📌 Data final igual à do sistema'),
+        h('p', { class: 'peq' }, `${z.numero}. Abra o processo no PJe ou no eproc, veja a data final do prazo (expedientes / intimações) e digite aqui: o painel fica igual ao sistema e o robô não muda mais.`),
+        h('label', { class: 'campo' }, h('span', {}, 'Sistema'), sis), h('label', { class: 'campo' }, h('span', {}, 'Data final no sistema'), data), h('label', { class: 'campo' }, h('span', {}, 'O que fazer'), desc),
+        h('div', { class: 'acoes' }, botao('Salvar a data', async () => {
+          if (!data.value) { avisar('Informe a data final.', true); return; }
+          try { const r = await api('prazos.vincular', { id: z.id, fatal: data.value, sistema: sis.value, descricao: desc.value });
+            avisar(r.antes && r.antes !== r.fatal ? `Prazo igual ao ${sis.value}: ${dataBR(r.fatal)} (o painel tinha ${dataBR(r.antes)}).` : `Prazo confirmado igual ao ${sis.value}: ${dataBR(r.fatal)}.`);
+            caixa.close(); caixa.remove(); ok(true); } catch (e) { avisar(e.message, true); }
+        }), botao('Cancelar', () => { caixa.close(); caixa.remove(); ok(false); }, 'sec')));
+      document.body.append(caixa); caixa.showModal();
+    });
+  }
   function registrarWhats(z, motivo) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo }).catch(() => {}); }
   function whatsPrazo(z) {
     let tel = telefoneWhats(z.telefone || '');
@@ -2666,11 +2716,12 @@
 
   function botoesPrazo(z) {
     const pode = sessao.usuario.pode;
-    const wa = SITUACOES_ABERTAS.includes(z.situacao) ? whatsPrazo(z) : null;
+    const tipoAviso = z.avisar_cliente || avisoCliente(z.descricao, z.observacoes, z.resumo_ia);
     const parar = fn => ev => { ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true; fn().catch(e => { b.disabled = false; avisar(e.message, true); }); };
     const aberto = SITUACOES_ABERTAS.includes(z.situacao);
     return h('div', { class: 'mini-acoes' },
-      wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: ev => { ev.stopPropagation(); registrarWhats(z, 'intimação'); } }, 'WhatsApp') : null,
+      SITUACOES_ABERTAS.includes(z.situacao) && tipoAviso ? h('button', { type: 'button', class: 'btn mini wa', title: 'A IA escreve o que aconteceu para mandar ao cliente', onclick: ev => { ev.stopPropagation(); dialogoAvisoCliente(z.id, { ...z, tipo: tipoAviso }); } }, '✨ Avisar o cliente') : null,
+      aberto && z.situacao !== 'conferido' && !/^ato:/.test(z.observacoes || '') ? h('button', { type: 'button', class: 'btn mini sec', title: 'Digite a data final que aparece no PJe/eproc: o painel fica igual', onclick: parar(async () => { if (await dialogoDataSistema(z)) rota(); else throw new Error('Cancelado.'); }) }, '📌 Data do PJe/eproc') : null,
       aberto ? botaoConferido('prazo', z.id, 'Quem fez este prazo?') : null,
       aberto ? botoesEuFaco('prazo', z.id, z.responsavel) : null,
       aberto && /PROVIS|Vista ao|Prazo indicado|conferir/i.test(z.descricao || '') && !/^ato:/.test(z.observacoes || '')
@@ -2710,7 +2761,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.18.0';
+  const VERSAO_PAINEL = '8.19.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2941,7 +2992,7 @@
 
   function itemIntimacao(i) {
     const z = i.prazo;
-    const wa = whatsPrazo({ telefone: i.telefone, cliente: i.cliente, numero: i.numero, descricao: z ? z.descricao : '' });
+    const tipoAviso = avisoCliente(z && z.descricao, i.movimento, i.texto && i.texto.slice(0, 2000), i.resumo_ia);
     const ia = h('div', { class: 'peq ia-txt' + (/⚠/.test(i.resumo_ia || '') ? ' ia-alerta' : /estimativa/.test(i.resumo_ia || '') ? ' ia-estimativa' : '') }, i.resumo_ia || '');
     if (!i.resumo_ia) ia.hidden = true;
     const btIA = h('button', { type: 'button', class: 'btn mini ia-bt', onclick: async ev => {
@@ -2967,7 +3018,8 @@
           : botao('📅 Marcar na agenda', () => caixaMarcarAto({ intimacao_id: i.id, processo_id: i.processo_id, numero: i.numero, texto: [i.movimento, i.texto].join(' ') }), 'sec mini'),
         btIA),
       h('div', { class: 'intim-final' },
-        wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Avisar o cliente pelo WhatsApp', onclick: () => registrarWhats(i, 'intimação') }, '1 · WhatsApp ao cliente') : h('span', { class: 'peq' }, 'Cliente sem telefone'),
+        tipoAviso && z ? h('button', { type: 'button', class: 'btn mini wa', title: 'A IA escreve o que aconteceu para mandar ao cliente', onclick: () => dialogoAvisoCliente(z.id, { telefone: i.telefone, cliente: i.cliente, numero: i.numero, tipo: tipoAviso }) }, '1 · ✨ Avisar o cliente')
+          : h('span', { class: 'peq', title: 'Só perícia, contestação (réplica), audiência, sentença e acordo pedem aviso ao cliente' }, 'Não precisa avisar o cliente'),
         i.terminada_por
           ? h('span', { class: 'terminada-tag' }, '✓ Conferida por ', h('strong', {}, i.terminada_por), i.terminada_em ? ' · ' + new Date(i.terminada_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '',
             i.ok_por ? ' · OK de ' + i.ok_por : ' · aguarda OK')

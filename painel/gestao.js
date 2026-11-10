@@ -383,15 +383,61 @@
   const mesesEntre = (ini, fim) => { let n = 0, a = ini; while (n < 12) { const b = somaMes(a, 1); if (somaDias(b, -1) <= fim) { n++; a = b; } else { if ((fim - a) / 86400000 + 1 >= 15) n++; break; } } return Math.min(12, n); };
   function resultado(linhas, total, notas) {
     const { h } = K();
-    return h('div', { class: 'calc-res' }, h('table', { class: 'tabela calc-tab' }, h('tbody', {}, linhas.map(([r, v]) => h('tr', {}, h('th', { scope: 'row' }, r), h('td', { class: 'num' }, typeof v === 'number' ? din(v) : v))),
+    return h('div', { class: 'calc-res' }, h('table', { class: 'tabela calc-tab' }, h('tbody', {}, linhas.map(([r, v]) => v === undefined ? h('tr', { class: 'calc-sec' }, h('th', { colspan: 2 }, r)) : h('tr', /^(Total|Líquido)/.test(r) ? { class: 'calc-total' } : {}, h('th', { scope: 'row' }, r), h('td', { class: 'num' }, typeof v === 'number' ? din(v) : v))),
       total !== null && total !== undefined ? h('tr', { class: 'calc-total' }, h('th', { scope: 'row' }, 'Total'), h('td', { class: 'num' }, typeof total === 'number' ? din(total) : total)) : null)),
       (notas || []).map(t => h('p', { class: 'peq' }, t)),
-      h('div', { class: 'g-acoes' }, h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(linhas.map(([r, v]) => r + ': ' + (typeof v === 'number' ? din(v) : v)).join('\n') + (total !== null && total !== undefined ? '\nTotal: ' + (typeof total === 'number' ? din(total) : total) : ''), 'Resultado copiado.') }, 'Copiar resultado')));
+      h('div', { class: 'g-acoes' }, h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(linhas.map(([r, v]) => v === undefined ? '\n' + r.toUpperCase() : r + ': ' + (typeof v === 'number' ? din(v) : v)).join('\n') + (total !== null && total !== undefined ? '\nTotal: ' + (typeof total === 'number' ? din(total) : total) : ''), 'Resultado copiado.') }, 'Copiar resultado')));
   }
   const CALCS = [
     ['rescisao', 'Rescisão trabalhista'], ['prescricao', 'Ainda dá tempo? (trabalhista)'], ['prazo', 'Prazo processual'],
     ['correcao', 'Correção e juros'], ['honorarios', 'Honorários e parcelas'], ['datas', 'Entre datas']
   ];
+  // INSS 2026 (Portaria MPS/MF nº 13/2026): progressivo por faixa
+  const INSS_FAIXAS = [[1621.00, 0.075], [2902.84, 0.09], [4354.27, 0.12], [8475.55, 0.14]];
+  const inss = v => { let t = 0, ant = 0; for (const [lim, a] of INSS_FAIXAS) { if (v > ant) t += (Math.min(v, lim) - ant) * a; ant = lim; } return Math.round(t * 100) / 100; };
+  // Conta da rescisão (a mesma do site, assets/calculadoras.js)
+  function contaRescisao(base, adm, saida, motivo, aviso, venc, fgtsInf) {
+    const indireta = motivo === 'indireta'; if (indireta) motivo = 'sem_justa';
+    const anos = anosCompletos(adm, saida);
+    let diasAv = 0;
+    if (motivo === 'sem_justa' && (aviso === 'indenizado' || indireta)) diasAv = diasAviso(anos);
+    if (motivo === 'acordo') diasAv = Math.floor(diasAviso(anos) / 2);
+    const fimProj = diasAv ? somaDias(saida, diasAv) : saida;
+    const ultimo = new Date(Date.UTC(saida.getUTCFullYear(), saida.getUTCMonth() + 1, 0)).getUTCDate();
+    const mesmoMes = adm.getUTCFullYear() === saida.getUTCFullYear() && adm.getUTCMonth() === saida.getUTCMonth();
+    let ds = saida.getUTCDate() === ultimo ? 30 : Math.min(30, saida.getUTCDate());
+    if (mesmoMes) ds = Math.min(ds, saida.getUTCDate() === ultimo && adm.getUTCDate() === 1 ? 30 : saida.getUTCDate() - adm.getUTCDate() + 1);
+    const r = { anos, diasAv, fimProj, motivo, trct: [], fgts: [] };
+    const saldoSal = base / 30 * ds, vAviso = base / 30 * diasAv;
+    r.trct.push([`Saldo de salário (${ds} dias)`, saldoSal]);
+    if (diasAv) r.trct.push([`Aviso prévio indenizado (${diasAv} dias${motivo === 'acordo' ? ', metade' : ''})`, vAviso]);
+    let v13 = 0, v13sem = 0;
+    if (motivo !== 'justa') {
+      const iniAno = new Date(Date.UTC(fimProj.getUTCFullYear(), 0, 1));
+      const m13 = mesesEntre(adm > iniAno ? adm : iniAno, fimProj);
+      v13 = base / 12 * m13;
+      r.trct.push([`13º proporcional (${m13}/12)`, v13]);
+      const iniAno2 = new Date(Date.UTC(saida.getUTCFullYear(), 0, 1));
+      v13sem = base / 12 * mesesEntre(adm > iniAno2 ? adm : iniAno2, saida);
+      let aniv = new Date(Date.UTC(fimProj.getUTCFullYear(), adm.getUTCMonth(), adm.getUTCDate())); if (aniv > fimProj) aniv = somaAnos(aniv, -1); if (aniv < adm) aniv = adm;
+      const mf = mesesEntre(aniv, fimProj);
+      r.trct.push([`Férias proporcionais + 1/3 (${mf}/12)`, base / 12 * mf * 4 / 3]);
+    }
+    if (venc) r.trct.push([`Férias integrais (vencidas, não tiradas) + 1/3 (${venc} período${venc > 1 ? 's' : ''})`, base * venc * 4 / 3]);
+    r.bruto = r.trct.reduce((t, x) => t + x[1], 0);
+    r.inssSaldo = inss(saldoSal); r.inss13 = inss(v13);
+    r.liquido = r.bruto - r.inssSaldo - r.inss13;
+    // FGTS: depositado na conta (não é pago no termo de rescisão)
+    const mesesSem = Math.max(1, Math.round((saida - adm) / (30.4375 * 86400000)));
+    r.saldoInf = fgtsInf > 0; r.saldoConta = fgtsInf > 0 ? fgtsInf : base * 0.08 * mesesSem;
+    r.fgtsMes = 0.08 * (saldoSal + v13); r.fgtsAviso = 0.08 * vAviso;
+    r.pct = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
+    // Tema 255 do TST (OJ 42, II, SDI-1): a multa NÃO inclui o FGTS da projeção do aviso indenizado
+    r.baseMulta = r.saldoConta + 0.08 * (saldoSal + v13sem);
+    r.multa = r.baseMulta * r.pct;
+    r.fgtsRecolher = r.fgtsMes + r.fgtsAviso + r.multa;
+    return r;
+  }
   function calcRescisao(out) {
     const { h, campo } = K();
     const form = h('form', { class: 'g-form form-grade' },
@@ -400,45 +446,28 @@
       campo('saida', 'Saída (último dia trabalhado)', '', { tipo: 'date', obrigatorio: true }),
       campo('motivo', 'Motivo', 'sem_justa', { opcoes: [['sem_justa', 'Dispensa sem justa causa'], ['pedido', 'Pedido de demissão'], ['acordo', 'Acordo (art. 484-A)'], ['justa', 'Justa causa'], ['indireta', 'Rescisão indireta']] }),
       campo('aviso', 'Aviso prévio', 'indenizado', { opcoes: [['indenizado', 'Indenizado'], ['trabalhado', 'Trabalhado / dispensado']] }),
-      campo('vencidas', 'Férias vencidas (períodos)', '0', { opcoes: [['0', 'Nenhuma'], ['1', '1 período'], ['2', '2 períodos']] }),
+      campo('vencidas', 'Férias integrais (vencidas) ainda não tiradas', '0', { opcoes: [['0', 'Nenhuma'], ['1', '1 período'], ['2', '2 períodos']] }),
       campo('fgts', 'Saldo do FGTS (R$)', '', { modo: 'decimal', dica: 'opcional: do extrato' }),
       campo('medias', 'Médias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras, comissões… (opcional)' }),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular')));
     form.addEventListener('submit', ev => {
       ev.preventDefault();
       const base = num(form.salario.value) + num(form.medias.value), adm = lerData(form.admissao.value), saida = lerData(form.saida.value);
-      let motivo = form.motivo.value; const indireta = motivo === 'indireta'; if (indireta) motivo = 'sem_justa';
       if (!(base > 0) || !adm || !saida || saida < adm) { out.replaceChildren(h('p', { class: 'erro' }, 'Confira o salário e as datas.')); return; }
-      const anos = anosCompletos(adm, saida);
-      let diasAv = 0;
-      if (motivo === 'sem_justa' && (form.aviso.value === 'indenizado' || indireta)) diasAv = diasAviso(anos);
-      if (motivo === 'acordo') diasAv = Math.floor(diasAviso(anos) / 2);
-      const fimProj = diasAv ? somaDias(saida, diasAv) : saida;
-      const itens = [];
-      const ultimo = new Date(Date.UTC(saida.getUTCFullYear(), saida.getUTCMonth() + 1, 0)).getUTCDate();
-      const mesmoMes = adm.getUTCFullYear() === saida.getUTCFullYear() && adm.getUTCMonth() === saida.getUTCMonth();
-      let ds = saida.getUTCDate() === ultimo ? 30 : Math.min(30, saida.getUTCDate());
-      if (mesmoMes) ds = Math.min(ds, saida.getUTCDate() === ultimo && adm.getUTCDate() === 1 ? 30 : saida.getUTCDate() - adm.getUTCDate() + 1);
-      itens.push([`Saldo de salário (${ds} dias)`, base / 30 * ds]);
-      if (diasAv) itens.push([`Aviso prévio indenizado (${diasAv} dias${motivo === 'acordo' ? ', metade' : ''})`, base / 30 * diasAv]);
-      if (motivo !== 'justa') {
-        const iniAno = new Date(Date.UTC(fimProj.getUTCFullYear(), 0, 1));
-        const m13 = mesesEntre(adm > iniAno ? adm : iniAno, fimProj);
-        itens.push([`13º proporcional (${m13}/12)`, base / 12 * m13]);
-        let aniv = new Date(Date.UTC(fimProj.getUTCFullYear(), adm.getUTCMonth(), adm.getUTCDate())); if (aniv > fimProj) aniv = somaAnos(aniv, -1); if (aniv < adm) aniv = adm;
-        const mf = mesesEntre(aniv, fimProj);
-        itens.push([`Férias proporcionais + 1/3 (${mf}/12)`, base / 12 * mf * 4 / 3]);
-      }
-      const venc = +form.vencidas.value || 0;
-      if (venc) itens.push([`Férias vencidas + 1/3 (${venc})`, base * venc * 4 / 3]);
-      const meses = Math.max(1, Math.round((fimProj - adm) / (30.4375 * 86400000)));
-      const saldoInf = num(form.fgts.value), saldo = saldoInf > 0 ? saldoInf : base * 0.08 * meses;
-      const multa = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
-      if (multa) itens.push([`Multa do FGTS (${multa * 100}% de ${saldoInf > 0 ? 'saldo informado' : 'saldo estimado ' + din(saldo)})`, saldo * multa]);
-      const total = itens.reduce((t, x) => t + x[1], 0);
-      out.replaceChildren(resultado(itens, total, [
-        `Tempo de casa: ${anos} ano(s) · projeção do aviso até ${dataBR(iso(fimProj))} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(fimProj, 2)))}.`,
-        'Valores brutos (sem INSS e IR). Médias informadas entram na base de todas as verbas. Base: CLT arts. 477, 484-A e 487; Lei 12.506/2011; Lei 8.036/1990; Súmulas 171 e 261 do TST. Conferir antes de usar.']));
+      const r = contaRescisao(base, adm, saida, form.motivo.value, form.aviso.value, +form.vencidas.value || 0, num(form.fgts.value));
+      const linhas = [['Pago diretamente no termo de rescisão (TRCT)'], ...r.trct,
+        ['Total bruto', r.bruto], ['(−) INSS sobre o saldo de salário', -r.inssSaldo]];
+      if (r.inss13) linhas.push(['(−) INSS sobre o 13º', -r.inss13]);
+      linhas.push(['Líquido a pagar (estimado, sem IR)', r.liquido], ['FGTS — depositado na conta do FGTS (não entra no líquido)'],
+        [`Saldo da conta ${r.saldoInf ? '(informado)' : '(estimado, sem a projeção do aviso)'}`, r.saldoConta],
+        ['FGTS a recolher do mês da rescisão (8% do saldo de salário e do 13º)', r.fgtsMes]);
+      if (r.fgtsAviso) linhas.push(['FGTS a recolher sobre o aviso prévio indenizado (8%)', r.fgtsAviso]);
+      if (r.pct) linhas.push([`Multa de ${r.pct * 100}% do FGTS (base para fins rescisórios ${din(r.baseMulta)}, sem a projeção do aviso)`, r.multa]);
+      linhas.push(['Total a recolher na rescisão (FGTS + multa)', r.fgtsRecolher]);
+      out.replaceChildren(resultado(linhas, null, [
+        `Tempo de casa: ${r.anos} ano(s) · projeção do aviso até ${dataBR(iso(r.fimProj))} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fimProj, 2)))}.`,
+        'INSS pela tabela progressiva de 2026 (Portaria MPS/MF nº 13/2026), separado no saldo de salário e no 13º; não há INSS sobre aviso indenizado nem férias indenizadas. IR não calculado. Férias vencidas fora do prazo de concessão podem ser devidas em dobro (CLT, art. 137).',
+        'A multa usa a base para fins rescisórios sem o FGTS da projeção do aviso indenizado (Tema 255 do TST; OJ 42, II, da SDI-1); o FGTS sobre o aviso continua devido (Súmula 305). Médias informadas entram na base de todas as verbas. Base: CLT arts. 477, 484-A e 487; Lei 12.506/2011; Lei 8.036/1990; Súmulas 171 e 261 do TST. Conferir antes de usar.']));
     });
     return form;
   }
@@ -954,7 +983,7 @@
     const status = h('span', { class: 'wz-status ' + (r.ligado && r.configurado ? 'on' : 'off') }, r.configurado ? (r.ligado ? '● Robô respondendo' : '● Robô desligado (só guarda as mensagens)') : '● WhatsApp ainda não ligado');
     const fBusca = h('form', { class: 'wz-busca', role: 'search' }, h('input', { type: 'search', name: 'q', value: params.get('q') || '', placeholder: 'Buscar conversa' }));
     fBusca.addEventListener('submit', ev => { ev.preventDefault(); const q = new URLSearchParams(params); if (fBusca.q.value.trim()) q.set('q', fBusca.q.value.trim()); else q.delete('q'); location.hash = '#/conversas?' + q; });
-    mostrar(topo('Relacionamento', 'Conversas do WhatsApp', 'O robô atende 24 h: responde dúvidas, faz a triagem, consulta o processo (com CPF e código) e leva cada contato para o CRM. Urgências vêm direto para a equipe.',
+    mostrar(topo('Relacionamento', 'Chatbot do WhatsApp', 'O robô atende 24 h: responde dúvidas, faz a triagem, consulta o processo (com CPF e código) e leva cada contato para o CRM. Urgências vêm direto para a equipe.',
       status, botao('🧪 Testar o robô', () => dialogoTestarRobo(), 'sec'), botao('⚙ Ligar / configurar', () => dialogoWhatsConfig(), 'dourado')),
       r.erro ? h('div', { class: 'nota alerta' }, 'Último problema do WhatsApp: ' + r.erro) : null,
       !r.configurado ? h('div', { class: 'nota' }, 'Falta ligar o WhatsApp: em "⚙ Ligar / configurar" estão os passos (conta do Meta, ponte gratuita na Cloudflare e o token). Enquanto isso, use "🧪 Testar o robô" para ver como ele responde.') : null,
