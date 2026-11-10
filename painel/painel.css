@@ -1839,3 +1839,6 @@ a.visao-bt{text-decoration:none}
 .btn.perigo{background:#fff;color:#a3221a;border:1px solid #e3c7c3}.btn.perigo:hover{background:#fbe9e7}
 .aviso-texto{width:100%;font-size:15px;line-height:1.5}
 .calc-tab .calc-sec th{padding-top:16px;font-size:.74rem;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--dourado,#B58D52);background:transparent}
+/* 8.20: aviso já mandado — continua clicável para mandar de novo */
+.btn.wa.feito{background:#e8f4ec;color:#1f6b3a;border-color:#9fcfb0}
+.btn.wa.feito:hover{background:#d6ecdd}

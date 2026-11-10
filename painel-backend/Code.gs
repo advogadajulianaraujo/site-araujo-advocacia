@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.19.0';
+var VERSAO = '8.20.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -86,6 +86,7 @@ var ESQUEMA = {
     'documentos', 'publicado', 'publicado_em'],
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
+  Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
   Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
@@ -7471,7 +7472,8 @@ function listarTarefas_(d, u) {
   var todos = !u.usuario || (PERFIS[u.perfil] && PERFIS[u.perfil].usuarios);
   // colaborador vê só o que é dele (o que pegou com "Eu faço" ou o que passaram para ele); a administração vê tudo
   if (!todos) itens = itens.filter(function (x) { return x.responsavel === u.usuario || (x.tipo === 'tarefa' && !x.responsavel && x.criado_por === u.usuario); });
-  var nomesU = nomesUsuarios_();
+  var nomesU = nomesUsuarios_(), avisos = avisosMapa_();
+  itens.forEach(function (x) { var av = x.tipo === 'tarefa' && avisos['tarefa:' + x.id]; if (av) { x.avisado_em = av.em; x.avisado_por = av.por; } });
   return {
     hoje: hoje, dias: dias, eu: u.usuario, etapas: ETAPAS_TAREFA.map(function (e) { return { id: e, nome: NOMES_ETAPA[e] }; }),
     usuarios: usuarios_().filter(function (x) { return x.ativo === 'sim'; }).map(function (x) { return { usuario: x.usuario, nome: x.nome }; }),
@@ -8293,10 +8295,11 @@ function inicioExtras_(d, u) {
       avisado_dia_em: e.avisado_dia_em || (tDia.feita ? tDia.em : ''), avisado_dia_por: e.avisado_dia_por || tDia.por || '' };
   });
   // aniversariantes de hoje
-  var dm = hoje.slice(5);
+  var dm = hoje.slice(5), avisos = avisosMapa_();
   var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
     .filter(function (c) { return diaMesNasc_(c.nascimento) === dm; })
-    .map(function (c) { var a = /^(\d{4})/.exec(String(c.nascimento)) || /(\d{4})$/.exec(String(c.nascimento)); return { id: c.id, nome: c.nome, telefone: c.telefone || '', idade: a ? (+hoje.slice(0, 4) - +a[1]) : null }; });
+    .map(function (c) { var a = /^(\d{4})/.exec(String(c.nascimento)) || /(\d{4})$/.exec(String(c.nascimento)), ch = 'niver:' + c.id + ':' + hoje.slice(0, 4), av = avisos[ch] || {};
+      return { id: c.id, nome: c.nome, telefone: c.telefone || '', idade: a ? (+hoje.slice(0, 4) - +a[1]) : null, chave: ch, avisado_em: av.em || '', avisado_por: av.por || '' }; });
   // cobranças do dia: parcelas que vencem hoje e as atrasadas (até 30), para a secretaria cobrar no WhatsApp
   var cobrancas = [];
   if (pf.financeiro || u.perfil === 'secretario') {
@@ -8307,7 +8310,8 @@ function inicioExtras_(d, u) {
       .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
       .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
         return { id: q.id, cliente_id: q.cliente_id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',
-          dias: diffDias_(hoje, q.vencimento), valor: verValor ? q.valor : null, mensagem_em: q.mensagem_em || '' }; })
+          dias: diffDias_(hoje, q.vencimento), valor: verValor ? q.valor : null, mensagem_em: q.mensagem_em || '',
+          chave: 'cob:' + q.id, avisado_em: (avisos['cob:' + q.id] || {}).em || '', avisado_por: (avisos['cob:' + q.id] || {}).por || '' }; })
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
@@ -8649,8 +8653,24 @@ function terminarIntimacao_(d, u) {
 /** O painel abriu o WhatsApp para avisar o cliente: fica registrado para o relatório. */
 function registrarWhatsapp_(d, u) {
   var o = String(d.motivo || 'aviso').slice(0, 40);
+  if (d.chave) marcarAviso_(String(d.chave).slice(0, 120), o, u);
   registrar_(u.usuario, 'whatsapp ao cliente', [String(d.cliente || '').slice(0, 80), String(d.numero || '').slice(0, 30), o].filter(String).join(' · '));
   return { ok: true };
+}
+
+/** 8.20 (pedido da usuária): botão de aviso clicado (lembrete, parabéns, cobrança, tarefa) fica "✓ Já avisado".
+ *  Aba Avisos: uma linha por chave ("niver:cliId:ano", "cob:parcelaId", "tarefa:id"); clicar de novo só atualiza quem/quando. */
+function marcarAviso_(chave, tipo, u) {
+  comTrava_(function () {
+    var tab = tabela_('Avisos'), x = tab.linhas.filter(function (r) { return r.chave === chave; })[0], agora = new Date().toISOString(), quem = u.nome || u.usuario;
+    if (x) atualizarLinha_(tab, x, { em: agora, por: quem, tipo: tipo });
+    else inserirLinha_(tab, { chave: chave, tipo: tipo, ref: chave.split(':')[1] || '', em: agora, por: quem });
+  });
+}
+function avisosMapa_() {
+  var m = {};
+  tabela_('Avisos').linhas.forEach(function (r) { if (r.chave) m[r.chave] = { em: r.em, por: r.por }; });
+  return m;
 }
 
 var CATEGORIAS_LOG = [

@@ -917,9 +917,9 @@
     const linhaAud = (a, dia) => {
       const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, hoje: dia, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
       const feito = dia ? a.avisado_dia_em : a.avisado_em, por = dia ? a.avisado_dia_por : a.avisado_por;
-      const lado = feito ? h('span', { class: 'tag ok mini-tag', title: 'Avisado por ' + (por || '') }, '✓ avisado')
-        : link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation();
-            api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: dia ? 'dia' : 'semana', numero: a.numero }).then(() => { avisar('Marcado como avisado.'); rota(); }).catch(e => avisar(e.message, true)); } }, dia ? 'Lembrar hoje' : 'Avisar')
+      const lado = link ? botaoAvisar(link, dia ? 'Lembrar hoje' : 'Avisar', feito ? { em: feito, por } : null, () =>
+            api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: dia ? 'dia' : 'semana', numero: a.numero }).then(() => { if (dia) a.avisado_dia_em = new Date().toISOString(); else a.avisado_em = new Date().toISOString(); }).catch(e => avisar(e.message, true)))
+        : feito ? h('span', { class: 'tag ok mini-tag', title: quandoAvisado(feito, por) }, '✓ Já avisado')
         : h('a', { class: 'peq', href: a.processo_id ? '#/processo/' + a.processo_id : '#/agenda?visao=dia&data=' + a.data, onclick: ev => ev.stopPropagation() }, 'sem telefone — abrir');
       return item(() => { location.hash = a.processo_id ? '#/processo/' + a.processo_id : '#/agenda?visao=dia&data=' + a.data; },
         selo(a.data, dia ? 'faixa-hoje' : ''), `${NOME_A[a.tipo] || a.nome}${a.hora ? ' · ' + a.hora : ''} — ${a.cliente || a.titulo || 'cliente a identificar'}`,
@@ -936,7 +936,7 @@
     const blocoAniversarios = bloco('🎂 Aniversariantes de hoje', null, null,
       ext.aniversarios.length ? h('ul', { class: 'ini-lista' }, ext.aniversarios.map(c => item(() => { location.hash = '#/cliente/' + c.id; },
         h('div', { class: 'selo-data niver' }, h('b', {}, '🎉')), c.nome, c.idade ? c.idade + ' anos' : '',
-        parabens(c) ? h('a', { class: 'btn mini wa', href: parabens(c), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ cliente: c.nome }, 'aniversário'); } }, 'Parabéns') : h('span', { class: 'peq' }, 'sem telefone'))))
+        parabens(c) ? botaoAvisar(parabens(c), 'Parabéns', c.avisado_em ? { em: c.avisado_em, por: c.avisado_por } : null, () => registrarWhats({ cliente: c.nome }, 'aniversário', c.chave)) : h('span', { class: 'peq' }, 'sem telefone'))))
         : vazio('Ninguém faz aniversário hoje.'));
 
     // ----- cobranças do dia (parcelas que vencem hoje e atrasadas) -----
@@ -949,7 +949,7 @@
     const linhaCob = x => item(() => { if (x.cliente_id) location.hash = '#/cliente/' + x.cliente_id; },
         h('div', { class: 'selo-data ' + (x.dias === 0 ? 'faixa-hoje' : 'faixa-vencido') }, h('b', {}, x.dias === 0 ? 'hoje' : String(x.dias)), h('span', {}, x.dias === 0 ? '' : 'dias')),
         x.cliente, [x.numero ? x.numero + 'ª parcela' : 'parcela', 'venc. ' + dataBR(x.vencimento), x.valor !== null && x.valor !== undefined ? reais(+x.valor) : ''].filter(Boolean).join(' · '),
-        cobrar(x) ? h('a', { class: 'btn mini wa', href: cobrar(x), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ cliente: x.cliente }, 'cobrança'); } }, x.dias === 0 ? 'Lembrar' : 'Cobrar') : h('span', { class: 'peq' }, 'sem telefone'));
+        cobrar(x) ? botaoAvisar(cobrar(x), x.dias === 0 ? 'Lembrar' : 'Cobrar', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null, () => registrarWhats({ cliente: x.cliente }, 'cobrança', x.chave)) : h('span', { class: 'peq' }, 'sem telefone'));
     const cobHoje = ext.cobrancas.filter(x => x.dias === 0), naoPagos = ext.cobrancas.filter(x => x.dias > 0);
     const blocoCobHoje = bloco('💬 Vencem hoje — lembrar', pode.financeiro ? '#/financeiro' : null, 'financeiro',
       cobHoje.length ? h('ul', { class: 'ini-lista' }, cobHoje.map(linhaCob)) : vazio('Nenhuma parcela vence hoje.'));
@@ -960,7 +960,7 @@
       ext.cobrancas.length ? h('ul', { class: 'ini-lista' }, ext.cobrancas.slice(0, 8).map(x => item(() => {},
         h('div', { class: 'selo-data ' + (x.dias === 0 ? 'faixa-hoje' : 'faixa-vencido') }, h('b', {}, x.dias === 0 ? 'hoje' : String(x.dias)), h('span', {}, x.dias === 0 ? '' : 'dias')),
         x.cliente, [x.numero ? x.numero + 'ª parcela' : 'parcela', 'venc. ' + dataBR(x.vencimento), x.valor !== null && x.valor !== undefined ? reais(+x.valor) : ''].filter(Boolean).join(' · '),
-        cobrar(x) ? h('a', { class: 'btn mini wa', href: cobrar(x), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ cliente: x.cliente }, 'cobrança'); } }, x.dias === 0 ? 'Lembrar' : 'Cobrar') : h('span', { class: 'peq' }, 'sem telefone'))),
+        cobrar(x) ? botaoAvisar(cobrar(x), x.dias === 0 ? 'Lembrar' : 'Cobrar', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null, () => registrarWhats({ cliente: x.cliente }, 'cobrança', x.chave)) : h('span', { class: 'peq' }, 'sem telefone'))),
         ext.cobrancas.length > 8 ? h('li', { class: 'peq ini-mais' }, `+ ${ext.cobrancas.length - 8} parcela(s) em aberto`) : null)
         : vazio('Nenhuma parcela vencendo hoje ou em atraso. 👏'));
 
@@ -2696,7 +2696,16 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  function registrarWhats(z, motivo) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo }).catch(() => {}); }
+  function registrarWhats(z, motivo, chave) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo, chave: chave || '' }).catch(() => {}); }
+  // 8.20 (pedido da usuária): botão de aviso no WhatsApp que, ao clicar, vira "✓ Já avisado" na hora e fica assim (pode clicar de novo)
+  function quandoAvisado(em, por) { if (!em) return ''; const d = new Date(em); return 'Avisado' + (por ? ' por ' + por : '') + (isNaN(d) ? '' : ' em ' + d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) + ' · clique para mandar de novo'; }
+  function botaoAvisar(link, texto, feito, aoClicar, cls) {
+    const marcar = el => { el.textContent = '✓ Já avisado'; el.classList.add('feito'); };
+    const a = h('a', { class: 'btn mini wa' + (cls ? ' ' + cls : ''), href: link, target: '_blank', rel: 'noopener noreferrer', title: feito ? quandoAvisado(feito.em, feito.por) : '',
+      onclick: ev => { ev.stopPropagation(); marcar(a); a.title = quandoAvisado(new Date().toISOString(), sessao && sessao.usuario ? sessao.usuario.nome : ''); try { aoClicar && aoClicar(); } catch (e) { } } }, texto);
+    if (feito && feito.em) marcar(a);
+    return a;
+  }
   function whatsPrazo(z) {
     let tel = telefoneWhats(z.telefone || '');
     if (!tel || !z.cliente) return null;
@@ -2761,7 +2770,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.19.0';
+  const VERSAO_PAINEL = '8.20.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3985,13 +3994,14 @@
   function botaoWhatsTarefa(x) {
     if (!x.wa || !MOTIVO_WA[x.wa]) return null;
     const l = whatsTarefa(x);
-    return l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ numero: x.numero, cliente: x.cliente }, MOTIVO_WA[x.wa]); } },
-      x.wa === 'avaliacao' ? '⭐ Pedir avaliação' : x.wa === 'assinar' ? 'Cobrar assinatura' : 'WhatsApp ao cliente')
+    return l ? botaoAvisar(l, x.wa === 'avaliacao' ? '⭐ Pedir avaliação' : x.wa === 'assinar' ? 'Cobrar assinatura' : 'WhatsApp ao cliente', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null,
+      () => { registrarWhats({ numero: x.numero, cliente: x.cliente }, MOTIVO_WA[x.wa], x.id ? 'tarefa:' + x.id : ''); if (x.id) x.avisado_em = new Date().toISOString(); })
       : h('span', { class: 'peq' }, 'Cliente sem telefone');
   }
   function botaoWhatsAto(x) {
     const l = whatsAto(x);
-    return l ? h('a', { class: 'btn mini wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.stopPropagation(); registrarWhats({ numero: x.numero, cliente: x.cliente }, 'lembrete de audiência'); } }, 'WhatsApp ao cliente')
+    return l ? botaoAvisar(l, 'WhatsApp ao cliente', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null,
+      () => { registrarWhats({ numero: x.numero, cliente: x.cliente }, 'lembrete de audiência', x.id && x.tipo === 'tarefa' ? 'tarefa:' + x.id : ''); if (x.id) x.avisado_em = new Date().toISOString(); })
       : h('span', { class: 'peq' }, 'Cliente sem telefone');
   }
 

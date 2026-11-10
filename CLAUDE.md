@@ -908,3 +908,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   salário e no 13º (não no aviso indenizado nem nas férias indenizadas); líquido; FGTS em bloco à parte (não entra no líquido): saldo
   da conta, FGTS do mês (8% de saldo + 13º), FGTS do aviso indenizado em linha própria e multa 40%/20% sobre a base para fins
   rescisórios SEM a projeção do aviso (Tema 255 do TST / OJ 42, II, SDI-1). Mudou a regra? Mude os dois arquivos.
+
+## 8.20.0 Botão de aviso vira "✓ Já avisado" (pedido da usuária)
+
+- Todo botão de aviso ao cliente no WhatsApp (Início: "Lembrar hoje"/"Avisar" das audiências e perícias, "Parabéns", "Lembrar"/"Cobrar"
+  das parcelas; Tarefas: "WhatsApp ao cliente", "Cobrar assinatura", "Pedir avaliação") usa `botaoAvisar` em painel.js: ao clicar abre o
+  WhatsApp, muda NA HORA para "✓ Já avisado" (verde, `.btn.wa.feito`, título com quem e quando) e continua clicável para mandar de novo.
+- Fica gravado: audiências em Eventos (`agenda.avisado`, como antes); o resto na aba Avisos (chave, tipo, ref, em, por) pela rota
+  `registro.whatsapp` com `chave` (`marcarAviso_`): "niver:cliId:ano", "cob:parcelaId", "tarefa:id". `avisosMapa_` devolve em
+  `inicio.extras` (aniversarios/cobrancas: chave, avisado_em, avisado_por) e em `tarefas.listar` (avisado_em/por).
