@@ -984,3 +984,25 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Indicadores (`indicadores.mes`, administração; topo de Relatórios, `blocoIndicadores`): prazos cumpridos e % no prazo, folga média antes do
   fatal, tarefas e % no prazo, intimações tratadas e dias até tratar, clientes novos, contratos, recebido — mês × anterior; "Agora": prazos
   vencidos/sem responsável/para conferir, processos ativos e parados 60+ dias, inadimplência; tabela por pessoa.
+
+## 8.23.0 Motor de prazos igual ao PJe, revisão/baixa, robô do DJEN na nuvem, Financeiro novo (pedido da usuária, 13/11/2026)
+
+- Foco do produto (palavra da usuária): GESTÃO PARA ESCRITÓRIOS DE ADVOCACIA integrando PRAZOS e COBRANÇA DE HONORÁRIOS.
+- Motor de prazos (`calcularFatal_` + `cienciaEfetiva_`): ciência em sábado/domingo/feriado/recesso (20/12–20/01, só não criminal) vale no 1º dia
+  útil seguinte (Lei 11.419 art. 4º §3º e art. 5º §§2º–3º); úteis contam do dia útil SEGUINTE; corridos (criminal) terminam no próximo útil. Achado
+  nos dados reais: ciência tácita do eproc caía no sábado/domingo (fatal 1 dia antes do eproc). "🧮 Como o painel contou este prazo"
+  (`prazos.memoria`, `memoriaPrazo_`, `nomesFeriados_`) mostra a conta dia a dia na tela do prazo.
+- Revisão (`revisarPrazos_`, rota `prazos.revisao` admin, botão "🔧 Revisar prazos" em Intimações e prazos): repetidos (mesma intimação/processo
+  + descrição + fatal), "Vista ao Ministério Público", "Intimação de audiência" com a audiência já em Eventos (fica em Audiências com os 3 avisos),
+  data diferente da conta nova (recalcula) → automáticos em toda rodada do robô (`robosEscritorio_` 'prazos823'); VENCIDOS ainda abertos → baixa
+  "cumprido" em lote, com marca "baixa em lote … se NÃO foi feito, reabra" (uma vez sozinho, Config FIX_VENCIDOS_823; depois só pelo botão);
+  lista "Baixados em lote" com Reabrir (`baixadosEmLote_`). Nos dados de 13/11: 143 abertos, 63 "PROVISÓRIO 5 dias", 29 vencidos, um processo
+  com o mesmo aviso repetido dezenas de vezes.
+- Robô do DJEN na NUVEM (GitHub Actions `.github/workflows/robo-djen.yml` + `.github/robo-djen/robo.mjs`, de 2 em 2 h): lê o DJEN e manda pela rota
+  PÚBLICA `djen.robo` (acao config | itens/fim | erro) com a chave do robô (só o hash em Properties DJEN_ROBO_HASH; `djen.roboChave` gera/desliga;
+  botão "☁ Robô do DJEN" em Intimações e prazos). Segredos do repositório: PAINEL_URL e DJEN_ROBO_CHAVE (a usuária cria; o proxy desta nuvem não
+  deixa o Claude criar segredos). Config DJEN_NUVEM_ULTIMA/ERRO. Se o CNJ também recusar o GitHub, o erro aparece no cartão e o navegador continua.
+- Financeiro novo (`telaFinanceiro`): `heroFinanceiro` (recebido no mês + barra de meta = tudo que vence no mês, cartões Em atraso / A receber 30
+  dias / PIX para conferir / Boleto-Pix automático), `reguaCobranca` (barra segmentada: vence em 7 dias → atraso até 30 → 31–90 → +90, clicável),
+  `agendaRecebimentos` (14 dias em colunas), cobranças em CARTÕES (`listaCobrancas`, `chipVenc`: "vence hoje", "3 dias em atraso"…), abas Em atraso /
+  A receber / Recebidas no mês / Ação de cobrança / PIX… fin.resumo devolve `mes`, `agenda`, `recebidas` (RH: sem valores).

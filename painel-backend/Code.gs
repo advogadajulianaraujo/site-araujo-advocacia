@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.22.0';
+var VERSAO = '8.23.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -47,7 +47,7 @@ function semValores_(x) {
 function valoresDoPerfil_(acao, res, perfil) {
   if (!PERFIS[perfil] || !PERFIS[perfil].ocultarValores || !res || typeof res !== 'object') return res;
   if (acao === 'fin.areceber' || acao === 'fin.painel') return semValores_(res);
-  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); return o; }
+  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); o.mes = null; o.agenda = (res.agenda || []).map(function (a) { return { dia: a.dia, qtd: a.qtd, valor: null }; }); return o; }
   return res;
 }
 var ROTAS_VALOR_BLOQUEADAS = { 'fin.renegociar': 1, 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
@@ -374,6 +374,8 @@ var ROTAS = {
   'robo.rodar': { fn: function (d, u) { return rodarRobo_(u.usuario); } },
   'djen.config': { fn: djenConfig_ },
   'djen.importar': { fn: djenImportar_ },
+  'djen.robo': { publica: true, fn: djenRoboNuvem_ },
+  'djen.roboChave': { permissao: 'usuarios', fn: djenRoboChave_ },
   'djen.historico': { fn: djenHistorico_ },
   'agenda.listar': { fn: listarAgenda_ },
   'agenda.criar': { fn: criarCompromisso_ },
@@ -543,11 +545,13 @@ var ROTAS = {
   'fin.recibos': { permissao: 'financeiro', fn: recibosListar_ },
   'fin.recibo.gerar': { permissao: 'financeiro', fn: reciboGerar_ },
   'calc.prazo': { fn: calcPrazo_ },
+  'prazos.memoria': { fn: memoriaPrazo_ },
+  'prazos.revisao': { permissao: 'usuarios', fn: function (d, u) { var r = revisarPrazos_(d, u); r.baixados = baixadosEmLote_(); return r; } },
   'calc.indices': { fn: calcIndices_ }
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -2142,6 +2146,8 @@ function calcularFatal_(ciencia, dias, contagem, tribunal, feriados) {
   dias = parseInt(dias, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ciencia || '') || !(dias > 0)) return '';
   feriados = feriados || mapaFeriados_();
+  // 8.23: ciência em sábado, domingo, feriado ou recesso vale no 1º dia útil seguinte (como o PJe/eproc)
+  ciencia = cienciaEfetiva_(ciencia, tribunal, feriados, contagem === 'corridos');
   if (contagem === 'corridos') {
     var f = somarDias_(ciencia, dias);
     return ehUtil_(f, tribunal, feriados, true) ? f : proximoUtil_(f, tribunal, feriados, true);
@@ -2149,6 +2155,111 @@ function calcularFatal_(ciencia, dias, contagem, tribunal, feriados) {
   var d = ciencia;
   for (var i = 0; i < dias; i++) d = proximoUtil_(d, tribunal, feriados, false);
   return d;
+}
+
+/* ================================================================== */
+/* 8.23 Motor de prazos (pedido da usuária: "um robô que calcule a data como o próprio PJe faz")
+ * 1) Ciência efetiva: se a intimação/publicação cai em sábado, domingo, feriado ou no recesso (20/12 a 20/01, CPC art. 220 e CLT art. 775-A),
+ *    considera-se feita no PRIMEIRO DIA ÚTIL seguinte (Lei 11.419/2006, art. 4º, § 3º e art. 5º, §§ 2º e 3º).
+ * 2) Contagem em dias úteis começa no dia útil SEGUINTE à ciência (CPC arts. 219 e 224); em dias corridos (criminal), começa no dia seguinte e,
+ *    terminando em dia sem expediente, vai para o próximo dia útil (CPP art. 798).
+ * 3) A tela do prazo mostra a conta inteira ("🧮 Como o painel contou"), dia a dia, com o nome de cada feriado pulado.
+ * ================================================================== */
+function cienciaEfetiva_(iso, tribunal, feriados, corridos) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return iso;
+  var d = iso;
+  for (var i = 0; i < 60 && !ehUtil_(d, tribunal, feriados, !!corridos); i++) d = somarDias_(d, 1);
+  return d;
+}
+function nomesFeriados_() {
+  var nomes = {}, ano = +hojeSP_().slice(0, 4);
+  var rot = ['Confraternização Universal', 'Carnaval', 'Carnaval', 'Quarta-feira Santa (Lei 5.010/66)', 'Quinta-feira Santa', 'Sexta-feira da Paixão', 'Tiradentes', 'Dia do Trabalho', 'Corpus Christi',
+    'Fundação dos cursos jurídicos (Lei 5.010/66)', 'Independência', 'Nossa Senhora Aparecida', 'Finados', 'Proclamação da República', 'Consciência Negra', 'Dia da Justiça (Lei 5.010/66)', 'Natal'];
+  [ano - 1, ano, ano + 1, ano + 2].forEach(function (a) { feriadosDoAno_(a).forEach(function (f, i) { nomes[f[0]] = rot[i] || 'feriado'; }); });
+  try { tabela_('Feriados').linhas.forEach(function (f) { if (f.data) nomes[f.data] = f.descricao || 'feriado'; }); } catch (e) { /* segue */ }
+  return nomes;
+}
+function motivoSemExpediente_(iso, nomes) {
+  var w = new Date(iso + 'T12:00:00Z').getUTCDay();
+  return nomes[iso] || (w === 0 ? 'domingo' : w === 6 ? 'sábado' : (iso.slice(5) >= '12-20' || iso.slice(5) <= '01-20') ? 'recesso forense (20/12 a 20/01)' : 'sem expediente');
+}
+/** Memória de cálculo de um prazo: passo a passo, como no PJe. */
+function memoriaPrazo_(d) {
+  var z = d.id ? tabela_('Prazos').linhas.filter(function (x) { return x.id === d.id; })[0] : null;
+  var p = z ? (tabela_('Processos').linhas.filter(function (x) { return x.id === z.processo_id; })[0] || {}) : {};
+  var ciencia = z ? z.ciencia : d.ciencia, dias = parseInt(z ? z.dias : d.dias, 10), cont = (z ? z.contagem : d.contagem) === 'corridos' ? 'corridos' : 'uteis';
+  var trib = (z ? (p.tribunal || tribunalDoNumero_(z.numero)) : d.tribunal) || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ciencia || '') || !(dias > 0)) return { passos: [{ t: 'Sem data de ciência ou sem número de dias: o prazo precisa ser conferido no sistema do tribunal.' }] };
+  var fer = mapaFeriados_(), nomes = nomesFeriados_(), passos = [], corr = cont === 'corridos';
+  if (z && z.ciencia_tipo) passos.push({ t: 'Como a intimação chegou: ' + z.ciencia_tipo + '.' });
+  var ef = cienciaEfetiva_(ciencia, trib, fer, corr);
+  passos.push({ t: 'Ciência: ' + dataBR_(ciencia) + (ef !== ciencia ? ' — ' + motivoSemExpediente_(ciencia, nomes) + ', vale o 1º dia útil seguinte: ' + dataBR_(ef) : '') + '.' });
+  var dia = ef, n = 0, contados = [], pulados = [];
+  if (corr) {
+    var fim = somarDias_(ef, dias);
+    passos.push({ t: dias + ' dias corridos a partir do dia seguinte (' + dataBR_(somarDias_(ef, 1)) + '): termina em ' + dataBR_(fim) + '.' });
+    if (!ehUtil_(fim, trib, fer, true)) { var fu = cienciaEfetiva_(fim, trib, fer, true); passos.push({ t: dataBR_(fim) + ' é ' + motivoSemExpediente_(fim, nomes) + ': vai para o próximo dia útil, ' + dataBR_(fu) + '.' }); fim = fu; }
+    return { fatal: fim, calculado: fim, gravado: z ? z.fatal : '', confere: !z || z.fatal === fim, passos: passos, tribunal: trib };
+  }
+  while (n < dias && contados.length < 400) {
+    dia = somarDias_(dia, 1);
+    if (ehUtil_(dia, trib, fer, false)) { n++; contados.push(dia); } else pulados.push({ data: dia, motivo: motivoSemExpediente_(dia, nomes) });
+  }
+  passos.push({ t: 'Começa a contar no dia útil seguinte: ' + dataBR_(contados[0]) + ' (dia 1).' });
+  var feriadosPulados = pulados.filter(function (x) { return !/sábado|domingo/.test(x.motivo); });
+  if (feriadosPulados.length) passos.push({ t: 'Dias sem expediente pulados (fora sábados e domingos): ' + feriadosPulados.map(function (x) { return dataBR_(x.data) + ' (' + x.motivo + ')'; }).join('; ') + '.' });
+  passos.push({ t: 'Dia ' + dias + ' (último): ' + dataBR_(dia) + '.' });
+  return { fatal: dia, calculado: dia, gravado: z ? z.fatal : '', confere: !z || z.fatal === dia, passos: passos, tribunal: trib,
+    dias: contados.map(function (x, i) { return { n: i + 1, data: x }; }), pulados: pulados };
+}
+
+/**
+ * 8.23 Revisão dos prazos (pedido da usuária: "tem prazos que não fazem sentido; os vencidos que já foram feitos, dê baixa").
+ * Categorias: repetidos (mesmo processo/intimação, mesma descrição e data), Vista ao Ministério Público (não é prazo do escritório),
+ * intimação de audiência quando a audiência já está na agenda (fica com o controle de Audiências e os 3 avisos), data diferente do
+ * motor novo (recalcula) e vencidos ainda abertos (baixa como feito, com marca — dá para reabrir).
+ */
+function revisarPrazos_(d, u) {
+  var aplicar = !!d.aplicar, cats = d.categorias || ['repetidos', 'mp', 'audiencia', 'recalcular'], hoje = hojeSP_();
+  var tab = tabela_('Prazos'), fer = mapaFeriados_(), procs = {}, eventos = {};
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabela_('Eventos').linhas.forEach(function (e) { if (e.numero && e.data && !/^apagado/.test(e.evento_id || '')) (eventos[e.numero] = eventos[e.numero] || []).push(e); });
+  var abertos = tab.linhas.filter(function (z) { return z.id && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; });
+  var r = { repetidos: [], mp: [], audiencia: [], recalcular: [], vencidos: [] }, vistos = {};
+  abertos.sort(function (a, b) { return (a.criado_em || '') < (b.criado_em || '') ? -1 : 1; }).forEach(function (z) {
+    var item = { id: z.id, numero: z.numero, descricao: String(z.descricao || '').slice(0, 120), fatal: z.fatal, ciencia: z.ciencia };
+    var k1 = (z.intimacao_id || z.numero) + '|' + String(z.descricao || '').slice(0, 60) + '|' + (z.fatal || ''), k2 = z.numero + '|' + String(z.descricao || '').slice(0, 60) + '|' + (z.fatal || '');
+    if (vistos[k1] || vistos[k2]) { r.repetidos.push(item); return; }
+    vistos[k1] = vistos[k2] = 1;
+    if (/vista ao minist[eé]rio p[uú]blico/i.test(z.descricao || '') && z.situacao !== 'conferido') { r.mp.push(item); return; }
+    if (/^intima[cç][aã]o de audi[eê]ncia/i.test(z.descricao || '') && z.situacao !== 'conferido' && (eventos[z.numero] || []).some(function (e) { return e.data >= (z.ciencia || '0'); })) { r.audiencia.push(item); return; }
+    if (z.origem === 'robô' && z.situacao !== 'conferido' && !/^ato:/.test(z.observacoes || '') && z.ciencia && z.dias) {
+      var p = procs[z.processo_id] || {}, f = calcularFatal_(z.ciencia, z.dias, z.contagem, p.tribunal || tribunalDoNumero_(z.numero), fer);
+      if (f && f !== z.fatal) { item.novo = f; r.recalcular.push(item); }
+    }
+    if (z.fatal && z.fatal < hoje && !/^ato:/.test(z.observacoes || '')) r.vencidos.push(item);
+    else if (/^ato:/.test(z.observacoes || '') && z.fatal && z.fatal < hoje) r.vencidos.push(item); // audiência que já passou
+  });
+  if (aplicar) comTrava_(function () {
+    var agora = new Date().toISOString(), quem = u ? u.usuario : 'robô', nome = u ? (u.nome || u.usuario) : 'robô';
+    var porId = {}; tab.linhas.forEach(function (z) { porId[z.id] = z; });
+    var mud = function (lista, m) { lista.forEach(function (x) { var z = porId[x.id]; if (z) atualizarLinha_(tab, z, Object.assign({ atualizado_em: agora, atualizado_por: quem }, typeof m === 'function' ? m(z, x) : m)); }); };
+    var obs = function (txt) { return function (z) { return { observacoes: ((z.observacoes || '') + ' | ' + txt).replace(/^ \| /, '') }; }; };
+    if (cats.indexOf('repetidos') >= 0) mud(r.repetidos, function (z) { return Object.assign({ situacao: 'cancelado' }, obs('cancelado: repetido (revisão 8.23)')(z)); });
+    if (cats.indexOf('mp') >= 0) mud(r.mp, function (z) { return Object.assign({ situacao: 'cancelado' }, obs('cancelado: vista ao MP não abre prazo para o escritório (revisão 8.23)')(z)); });
+    if (cats.indexOf('audiencia') >= 0) mud(r.audiencia, function (z) { return Object.assign({ situacao: 'cancelado' }, obs('cancelado: a audiência está na agenda e nos avisos (Audiências) (revisão 8.23)')(z)); });
+    if (cats.indexOf('recalcular') >= 0) mud(r.recalcular, function (z, x) { return { fatal: x.novo }; });
+    if (cats.indexOf('vencidos') >= 0) mud(r.vencidos, function (z) { return Object.assign({ situacao: 'cumprido', cumprido_por: nome + ' (baixa em lote)', cumprido_em: agora, etapa: 'protocolado' },
+      obs('baixa em lote em ' + dataBR_(hoje) + ' (vencido em ' + dataBR_(z.fatal) + '); se NÃO foi feito, reabra')(z)); });
+  });
+  if (aplicar) registrar_(u ? u.usuario : 'robô', 'revisão de prazos (8.23)', cats.map(function (c) { return c + ' ' + r[c].length; }).join(' · '));
+  r.aplicado = aplicar; r.categorias = cats;
+  return r;
+}
+/** Prazos baixados em lote (para reabrir algum que NÃO foi feito). */
+function baixadosEmLote_() {
+  return tabela_('Prazos').linhas.filter(function (z) { return z.situacao === 'cumprido' && /baixa em lote/.test(z.cumprido_por || ''); })
+    .map(function (z) { return { id: z.id, numero: z.numero, descricao: String(z.descricao || '').slice(0, 120), fatal: z.fatal }; }).slice(0, 300);
 }
 
 /* ---------- Feriados forenses ---------- */
@@ -3151,6 +3262,26 @@ function djenHistorico_(d, u) {
   } finally { lock.releaseLock(); }
 }
 
+/* 8.23 Robô do DJEN na nuvem (GitHub Actions, .github/workflows/robo-djen.yml): lê o DJEN de 2 em 2 horas, mesmo com o painel fechado, e
+   manda para cá pela rota pública djen.robo com a chave do robô (só o hash fica nas Propriedades, DJEN_ROBO_HASH). */
+function djenRoboChave_(d, u) {
+  var P = PropertiesService.getScriptProperties();
+  if (d.desligar) { P.deleteProperty('DJEN_ROBO_HASH'); registrar_(u.usuario, 'robô do DJEN na nuvem desligado', ''); return { ligado: false }; }
+  if (!d.gerar) return { ligado: !!P.getProperty('DJEN_ROBO_HASH'), ultima: config_('DJEN_NUVEM_ULTIMA') || '', erro: config_('DJEN_NUVEM_ERRO') || '' };
+  var chave = 'djen_' + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 16);
+  P.setProperty('DJEN_ROBO_HASH', Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, chave)));
+  registrar_(u.usuario, 'robô do DJEN na nuvem: chave nova', '');
+  return { ligado: true, chave: chave };
+}
+function djenRoboNuvem_(d) {
+  var h = PropertiesService.getScriptProperties().getProperty('DJEN_ROBO_HASH');
+  if (!h || !d.chave || !iguais_(Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(d.chave))), h)) throw falha_('Chave do robô inválida.');
+  if (d.acao === 'config') return djenConfig_();
+  if (d.erro) { setConfig_('DJEN_NUVEM_ERRO', String(d.erro).slice(0, 300) + ' (' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ')', 'Último erro do robô do DJEN na nuvem'); return { ok: true }; }
+  var r = djenImportar_(d, { usuario: 'robô DJEN (nuvem)', nome: 'robô DJEN (nuvem)', perfil: 'administrador' });
+  if (d.fim) { setConfig_('DJEN_NUVEM_ULTIMA', new Date().toISOString(), 'Última leitura boa do robô do DJEN na nuvem'); setConfig_('DJEN_NUVEM_ERRO', '', 'Último erro do robô do DJEN na nuvem'); }
+  return r;
+}
 function djenImportar_(d, u) {
   var itens = Array.isArray(d.itens) ? d.itens.slice(0, 300) : [];
   if (d.erro) {
@@ -3992,6 +4123,21 @@ function resumoFinanceiro_() {
     ],
     atrasadas: atrasadas.slice(0, 200),
     proximas: proximas.slice(0, 100), asaas: !!asaasChave_(),
+    // 8.23 layout novo: meta do mês (tudo que vence no mês) × recebido, agenda dos próximos 14 dias e os recebidos do mês
+    mes: (function () {
+      var previsto = parcelas.filter(function (q) { return (q.vencimento || '').slice(0, 7) === mes; });
+      var prev = soma(previsto, function (q) { return dinheiro_(q.valor); }), receb = soma(recebMes, function (q) { return dinheiro_(q.valor_pago) || dinheiro_(q.valor); });
+      return { mes: mes, previsto: prev, recebido: receb, falta: soma(previsto.filter(function (q) { return q.situacao !== 'paga'; }), function (q) { return q.saldo; }), qtd: previsto.length, pagas: previsto.filter(function (q) { return q.situacao === 'paga'; }).length };
+    })(),
+    agenda: (function () {
+      var r = [];
+      for (var i = 0; i < 14; i++) {
+        var dia = somarDias_(hoje, i), doDia = parcelas.filter(function (q) { return q.vencimento === dia && q.situacao !== 'paga'; });
+        r.push({ dia: dia, valor: soma(doDia, function (q) { return q.saldo; }), qtd: doDia.length });
+      }
+      return r;
+    })(),
+    recebidas: parcelas.filter(function (q) { return (q.pago_em || '').slice(0, 7) === mes; }).sort(function (a, b) { return a.pago_em < b.pago_em ? 1 : -1; }).slice(0, 100),
     aConferir: tabela_('Honorarios').linhas.filter(function (h) { return h.situacao === 'importado — conferir'; }).length
   };
 }
@@ -5465,7 +5611,9 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'audiencia', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.audiencia.length + r.recalcular.length;
+    if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);

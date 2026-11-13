@@ -1,0 +1,28 @@
+name: Robô do DJEN (de 2 em 2 horas)
+
+on:
+  schedule:
+    - cron: '23 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: robo-djen
+  cancel-in-progress: false
+
+jobs:
+  djen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Ler o DJEN e mandar ao painel
+        env:
+          PAINEL_URL: ${{ secrets.PAINEL_URL }}
+          DJEN_ROBO_CHAVE: ${{ secrets.DJEN_ROBO_CHAVE }}
+        run: node .github/robo-djen/robo.mjs

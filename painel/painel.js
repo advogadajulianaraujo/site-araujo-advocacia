@@ -2826,7 +2826,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.22.0';
+  const VERSAO_PAINEL = '8.23.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -2979,7 +2979,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações e prazos'),
         h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : { pje: ' no PJe (trabalhista)', civel: ' no eproc cível', federal: ' no eproc federal' }[sis]} · contagem até 23h59 do dia fatal`)),
-        h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
+        h('div', { class: 'barra' }, sessao.usuario.pode.usuarios ? botao('☁ Robô do DJEN', () => dialogoRoboDjen(), 'sec') : null, sessao.usuario.pode.usuarios ? botao('🔧 Revisar prazos', () => dialogoRevisaoPrazos(), 'sec') : null, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       cartaoRobo(resumo.robo),
       blocoAguardandoOk(),
       h('div', { class: 'filas-prazo', role: 'group', 'aria-label': 'Filas de prazos' },
@@ -3187,7 +3187,58 @@
         h('span', { class: 'peq' }, ' Este prazo continua na lista.')),
       h('p', { class: 'peq' }, 'Origem: ' + z.origem + (z.observacoes ? ' · ' + z.observacoes : '')));
     const procZ = procs.find(p => p.id === z.processo_id);
-    mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, novo ? null : notasDoCliente(procZ && procZ.cliente_id), form);
+    mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, novo ? null : blocoMemoriaPrazo(z), novo ? null : notasDoCliente(procZ && procZ.cliente_id), form);
+  }
+  /** 8.23: a conta do prazo, passo a passo (como o PJe faz), para conferir com o sistema do tribunal. */
+  function blocoMemoriaPrazo(z) {
+    const det = h('details', { class: 'caixa memoria-prazo' }, h('summary', {}, '🧮 Como o painel contou este prazo'), h('p', { class: 'peq' }, 'Calculando…'));
+    det.addEventListener('toggle', () => {
+      if (!det.open || det.dataset.ok) return; det.dataset.ok = '1';
+      api('prazos.memoria', { id: z.id }).then(r => {
+        det.lastChild.replaceWith(h('div', {},
+          h('ol', { class: 'memoria-passos' }, r.passos.map(p => h('li', {}, p.t))),
+          r.fatal ? h('p', {}, h('strong', {}, 'Data final pela conta: ' + dataBR(r.fatal)), r.confere ? ' ✓ igual à gravada' : h('span', { class: 'tag conferir' }, ' a gravada é ' + dataBR(r.gravado) + ' (o robô acerta na próxima rodada, se o prazo for dele)')) : null,
+          r.dias && r.dias.length <= 30 ? h('p', { class: 'peq memoria-dias' }, r.dias.map(x => `${x.n}º ${dataBR(x.data).slice(0, 5)}`).join(' · ')) : null,
+          h('p', { class: 'peq' }, 'Regras: ciência em dia sem expediente vale no 1º dia útil seguinte (Lei 11.419/2006); conta a partir do dia útil seguinte (CPC arts. 219 e 224; CLT art. 775); recesso de 20/12 a 20/01 suspende (CPC art. 220; CLT art. 775-A); criminal em dias corridos (CPP art. 798). Feriado local que falte: cadastre em Calculadoras › Prazo processual › feriados.')));
+      }).catch(e => det.lastChild.replaceWith(h('p', { class: 'erro' }, e.message)));
+    });
+    return det;
+  }
+  /** 8.23: robô do DJEN na nuvem (GitHub), que lê o DJEN de 2 em 2 horas mesmo com o painel fechado. */
+  async function dialogoRoboDjen() {
+    const d = h('dialog', { class: 'dialogo dlg-largo' }, h('p', {}, 'Carregando…'));
+    document.body.append(d); d.addEventListener('close', () => d.remove()); d.showModal();
+    const desenhar = (r, chave) => d.replaceChildren(h('h2', {}, '☁ Robô do DJEN na nuvem'),
+      h('p', {}, 'O CNJ bloqueia o servidor do Google, por isso o DJEN só era lido com o painel aberto. Este robô roda no GitHub (o mesmo do blog), lê o DJEN de 2 em 2 horas, dia e noite, e manda as intimações para o painel — que calcula os prazos com a conta nova.'),
+      h('div', { class: 'nota' + (r.ligado ? ' ok' : '') }, r.ligado ? 'Chave criada.' : 'Ainda não ligado.', r.ultima ? ' Última leitura boa: ' + new Date(r.ultima).toLocaleString('pt-BR') + '.' : '', r.erro ? h('div', { class: 'erro' }, 'Último erro: ' + r.erro) : null),
+      chave ? h('div', { class: 'nota alerta' }, h('strong', {}, 'Copie agora (aparece só uma vez): '), h('code', {}, chave), ' ', botao('Copiar', () => navigator.clipboard.writeText(chave).then(() => avisar('Copiada.')), 'mini sec')) : null,
+      h('ol', {}, h('li', {}, 'Clique em "Gerar chave" e copie.'),
+        h('li', {}, 'No GitHub do site: Settings › Secrets and variables › Actions › New repository secret — crie DOIS: ', h('code', {}, 'DJEN_ROBO_CHAVE'), ' = a chave; e ',
+          h('code', {}, 'PAINEL_URL'), ' = ', h('code', { class: 'quebra' }, window.PAINEL_API_URL || ''), ' ', botao('Copiar endereço', () => navigator.clipboard.writeText(window.PAINEL_API_URL || '').then(() => avisar('Copiado.')), 'mini sec')),
+        h('li', {}, 'Actions › "Robô do DJEN" › Run workflow, para testar. Depois ele roda sozinho.')),
+      h('div', { class: 'acoes' }, botao(r.ligado ? 'Gerar chave nova' : 'Gerar chave', async () => { const x = await api('djen.roboChave', { gerar: true }); desenhar(x, x.chave); }),
+        r.ligado ? botao('Desligar', async () => desenhar(await api('djen.roboChave', { desligar: true })), 'sec') : null, botao('Fechar', () => d.close(), 'sec')));
+    try { desenhar(await api('djen.roboChave', {})); } catch (e) { d.replaceChildren(h('p', { class: 'erro' }, e.message), botao('Fechar', () => d.close(), 'sec')); }
+  }
+  /** 8.23: revisão dos prazos — repetidos, vista ao MP, intimação de audiência já na agenda, data pela conta nova e vencidos (baixa em lote). */
+  async function dialogoRevisaoPrazos() {
+    const d = h('dialog', { class: 'dialogo dlg-largo' }, h('p', {}, 'Conferindo todos os prazos abertos…'));
+    document.body.append(d); d.addEventListener('close', () => d.remove()); d.showModal();
+    const desenhar = r => {
+      const CATS = [['repetidos', 'Repetidos (mesmo processo, descrição e data)', 'cancelar'], ['mp', 'Vista ao Ministério Público (não é prazo do escritório)', 'cancelar'],
+        ['audiencia', 'Intimação de audiência com a audiência já na agenda (fica em Audiências, com os 3 avisos)', 'cancelar'],
+        ['recalcular', 'Data final diferente da conta nova (ciência em fim de semana/feriado)', 'corrigir a data'], ['vencidos', 'Vencidos ainda abertos (já feitos)', 'dar baixa como feito']];
+      const marc = new Set(['repetidos', 'mp', 'audiencia', 'recalcular']);
+      d.replaceChildren(h('h2', {}, '🔧 Revisão dos prazos'),
+        h('p', { class: 'peq' }, 'O robô já faz sozinho, a cada hora, as 4 primeiras. Aqui dá para ver o que ele achou e dar baixa nos vencidos que já foram feitos.'),
+        ...CATS.map(([k, rot, acao]) => h('details', { class: 'rev-cat' }, h('summary', {},
+          h('label', { onclick: e => e.stopPropagation() }, h('input', { type: 'checkbox', checked: marc.has(k), disabled: !r[k].length, onchange: e => { if (e.target.checked) marc.add(k); else marc.delete(k); } }), ` ${rot}: `, h('strong', {}, String(r[k].length)), h('span', { class: 'peq' }, ' → ' + acao))),
+          h('ul', { class: 'rev-lista' }, r[k].slice(0, 80).map(x => h('li', {}, h('a', { href: '#/prazo/' + x.id, onclick: () => d.close() }, `${x.numero} · ${x.descricao}`), ` · fatal ${dataBR(x.fatal)}`, x.novo ? ` → ${dataBR(x.novo)}` : ''))))),
+        r.baixados && r.baixados.length ? h('details', { class: 'rev-cat' }, h('summary', {}, `Baixados em lote (${r.baixados.length}) — algum NÃO foi feito? Reabra:`),
+          h('ul', { class: 'rev-lista' }, r.baixados.map(x => h('li', {}, `${x.numero} · ${x.descricao} · fatal ${dataBR(x.fatal)} `, botao('Reabrir', async ev => { ev.target.disabled = true; await api('prazos.situacao', { id: x.id, situacao: 'reabrir' }); ev.target.textContent = 'reaberto ✓'; }, 'mini sec'))))) : null,
+        h('div', { class: 'acoes' }, botao('Aplicar o marcado', async ev => { ev.target.disabled = true; const x = await api('prazos.revisao', { aplicar: true, categorias: [...marc] }); avisar('Revisão aplicada.'); desenhar(x); }), botao('Fechar', () => { d.close(); rota(); }, 'sec')));
+    };
+    try { desenhar(await api('prazos.revisao', { aplicar: false })); } catch (e) { d.replaceChildren(h('p', { class: 'erro' }, e.message), botao('Fechar', () => d.close(), 'sec')); }
   }
 
   /* ---------- agenda ---------- */
@@ -3499,6 +3550,64 @@
   const reais = v => v === null ? '•••••' : BRL.format(+v || 0); // null = valor escondido (perfil RH)
   const TIPOS_HON = { parcelado: 'Parcelado', exito: 'Êxito', mensal: 'Mensal (assessoria)' };
 
+  /* ===== 8.23 Financeiro com layout novo (inspirado no Asaas, ADVBOX e Astrea): resumo do mês com meta, régua de cobrança,
+     agenda de recebimentos e cobranças em cartões ===== */
+  const iniciaisCb = n => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+  function chipVenc(p) {
+    if (p.situacao === 'paga') return h('span', { class: 'cb-chip ok' }, 'recebida ' + dataBR(p.pago_em).slice(0, 5));
+    const d = Math.round((new Date(p.vencimento + 'T12:00:00Z') - new Date(hojeISO() + 'T12:00:00Z')) / 864e5);
+    if (d < 0) return h('span', { class: 'cb-chip atraso' + (d < -30 ? ' grave' : '') }, `${-d} dia${d === -1 ? '' : 's'} em atraso`);
+    if (d === 0) return h('span', { class: 'cb-chip hoje' }, 'vence hoje');
+    return h('span', { class: 'cb-chip' }, d === 1 ? 'vence amanhã' : `vence em ${d} dias`);
+  }
+  function listaCobrancas(lista, depois, vazio) {
+    if (!lista.length) return h('div', { class: 'cb-vazio' }, vazio);
+    const rh = sessao.usuario.pode.ocultarValores;
+    return h('ul', { class: 'cb-lista' }, lista.map(p => h('li', { class: 'cb-item ' + (p.situacao === 'atrasada' ? 'atrasada' : p.situacao === 'paga' ? 'paga' : ''), tabindex: 0,
+        onclick: () => { location.hash = '#/honorario/' + p.honorario_id; }, onkeydown: e => { if (e.key === 'Enter') location.hash = '#/honorario/' + p.honorario_id; } },
+      h('span', { class: 'cb-av', 'aria-hidden': 'true' }, iniciaisCb(p.cliente)),
+      h('div', { class: 'cb-quem' }, h('strong', {}, p.cliente || '—'), h('span', {}, [p.numero ? p.numero + 'ª parcela' : 'parcela', p.honorario, p.asaas_link && !/CANCEL/i.test(p.asaas_status || '') ? '⚡ boleto/Pix gerado' : ''].filter(Boolean).join(' · ')),
+        h('div', { class: 'cb-tags' }, chipVenc(p), etiquetaCobranca(p))),
+      h('div', { class: 'cb-valor' }, h('b', {}, rh && p.valor === null ? '•••' : reais(p.situacao === 'paga' ? (p.valor_pago || p.valor) : (p.saldo || p.valor))), h('span', {}, 'venc. ' + dataBR(p.vencimento))),
+      h('div', { class: 'cb-acoes', onclick: e => e.stopPropagation() }, acoesParcela(p, depois)))));
+  }
+  function heroFinanceiro(r, nPix, rh) {
+    const t = r.totais, m = r.mes || {}, nomeMes = new Date(hojeISO() + 'T12:00:00Z').toLocaleDateString('pt-BR', { month: 'long' });
+    const pct = m.previsto ? Math.min(100, Math.round(m.recebido * 100 / m.previsto)) : 0;
+    const barra = h('div', { class: 'fh-barra' }, h('span', { class: 'fh-feito' })); barra.firstChild.style.setProperty('width', pct + '%');
+    return h('section', { class: 'fh' },
+      h('div', { class: 'fh-mes' }, h('span', { class: 'fh-rot' }, 'Recebido em ' + nomeMes),
+        h('b', { class: 'fh-grande' }, rh ? '—' : reais(t.recebidoMes)),
+        rh ? h('span', { class: 'fh-sub' }, 'totais só para a administração') : h('div', {}, barra,
+          h('span', { class: 'fh-sub' }, m.previsto ? `${pct}% de ${reais(m.previsto)} previstos para o mês · ${m.pagas} de ${m.qtd} parcelas pagas · faltam ${reais(m.falta)}` : 'Nenhuma parcela prevista para este mês.'))),
+      h('div', { class: 'fh-cards' },
+        h('a', { class: 'fh-card vermelho', href: '#/financeiro?ver=atraso' }, h('span', { class: 'fh-rot' }, 'Em atraso'), h('b', {}, rh ? String(t.parcelasAtrasadas) : reais(t.atrasado)), h('span', { class: 'fh-sub' }, `${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
+        h('a', { class: 'fh-card dourado', href: '#/financeiro?ver=proximas' }, h('span', { class: 'fh-rot' }, 'A receber · 30 dias'), h('b', {}, rh ? String(r.proximas.length) : reais(t.aReceber30)), h('span', { class: 'fh-sub' }, `${r.proximas.length} parcela(s)`)),
+        h('a', { class: 'fh-card azul' + (nPix ? ' alerta' : ''), href: '#/financeiro?ver=pix' }, h('span', { class: 'fh-rot' }, 'PIX para conferir'), h('b', {}, String(nPix)), h('span', { class: 'fh-sub' }, nPix ? 'o robô não teve certeza' : 'tudo conciliado')),
+        h('a', { class: 'fh-card verde' + (r.asaas ? '' : ' apagado'), href: '#/financeiro?ver=' + (sessao.usuario.pode.usuarios ? 'asaas' : 'proximas') }, h('span', { class: 'fh-rot' }, 'Boleto/Pix automático'), h('b', {}, r.asaas ? 'ligado' : 'desligado'), h('span', { class: 'fh-sub' }, r.asaas ? 'baixa sozinha quando pagam' : 'ligar com o Asaas'))));
+  }
+  function reguaCobranca(r, rh) {
+    const em7 = r.proximas.filter(p => p.vencimento <= isoSoma(hojeISO(), 7));
+    const segs = [['Vence em 7 dias', em7.length, em7.reduce((a, p) => a + (p.saldo || 0), 0), 'r-azul', 'proximas'],
+      ...r.faixas.map((f, i) => [f.nome.replace('até 30 dias', 'Atraso até 30 dias').replace('31 a 90 dias', 'Atraso 31 a 90').replace('mais de 90 dias', 'Atraso +90'), f.qtd, f.valor, ['r-amarelo', 'r-laranja', 'r-vermelho'][i], i === 2 ? 'acao' : 'atraso'])];
+    const total = segs.reduce((a, x) => a + (rh ? x[1] : (x[2] || 0)), 0) || 1;
+    const barra = h('div', { class: 'regua' }, segs.filter(x => x[1]).map(x => { const el = h('a', { class: 'regua-seg ' + x[3], href: '#/financeiro?ver=' + x[4], title: `${x[0]}: ${x[1]}` }); el.style.setProperty('flex-grow', String(Math.max(0.06, (rh ? x[1] : (x[2] || 0)) / total))); return el; }));
+    return h('section', { class: 'caixa regua-caixa' }, h('div', { class: 'regua-cab' }, h('h2', {}, 'Régua de cobrança'), h('span', { class: 'peq' }, 'do que vence agora ao que precisa de ação')),
+      barra, h('div', { class: 'regua-leg' }, segs.map(x => h('a', { class: 'regua-it', href: '#/financeiro?ver=' + x[4] }, h('span', { class: 'regua-dot ' + x[3] }), h('span', {}, x[0]), h('b', {}, rh ? String(x[1]) : reais(x[2] || 0)), h('span', { class: 'peq' }, `${x[1]} parcela(s)`)))));
+  }
+  function agendaRecebimentos(agenda, rh) {
+    if (!agenda || !agenda.length) return null;
+    const max = Math.max(1, ...agenda.map(a => rh ? a.qtd : a.valor));
+    return h('section', { class: 'caixa agr-caixa' }, h('div', { class: 'regua-cab' }, h('h2', {}, 'Agenda de recebimentos'), h('span', { class: 'peq' }, 'próximos 14 dias')),
+      h('div', { class: 'agr' }, agenda.map((a, i) => {
+        const dt = new Date(a.dia + 'T12:00:00Z'), fds = [0, 6].includes(dt.getUTCDay());
+        const col = h('div', { class: 'agr-dia' + (i === 0 ? ' hoje' : '') + (fds ? ' fds' : '') + (a.qtd ? '' : ' vazio'), title: a.qtd ? `${a.qtd} parcela(s)` : 'nada vence' },
+          h('span', { class: 'agr-sem' }, dt.toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short' }).replace('.', '')), h('span', { class: 'agr-num' }, dt.getUTCDate()),
+          h('div', { class: 'agr-trilho' }, h('span', { class: 'agr-barra' })), h('span', { class: 'agr-val' }, a.qtd ? (rh ? a.qtd + 'x' : reais(a.valor).replace(',00', '')) : '—'));
+        col.querySelector('.agr-barra').style.setProperty('height', Math.round(((rh ? a.qtd : a.valor) / max) * 100) + '%');
+        return col;
+      })));
+  }
   function etiquetaParcela(p) {
     const cls = { 'paga': 'ok', 'paga em parte': 'atencao', 'atrasada': 'urgente', 'a vencer': 'info' }[p.situacao] || '';
     const extra = p.situacao === 'atrasada' ? ` há ${p.dias_atraso} dia${p.dias_atraso === 1 ? '' : 's'}` : '';
@@ -3708,9 +3817,10 @@
     const aba = (id, rot, n) => h('button', { type: 'button', role: 'tab', class: 'visao-bt' + (ver === id ? ' ativo' : ''), 'aria-selected': String(ver === id), onclick: () => ir({ ver: id }) },
       h('span', {}, rot), n !== null && n !== undefined ? h('span', { class: 'visao-n' }, String(n)) : null);
     const conteudo = ver === 'atraso'
-      ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'Parcela atrasou → "Cobrar no WhatsApp" (o texto já vem pronto) → se não pagar, marque "Ação" e entre com a cobrança.'),
-        tabelaParcelas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉', true))
-      : ver === 'proximas' ? tabelaParcelas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.', true)
+      ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'Atrasou → "Cobrar no WhatsApp" (o texto e o link do boleto/Pix já vão prontos) → sem resposta, aba "Ação de cobrança".'),
+        listaCobrancas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉'))
+      : ver === 'proximas' ? listaCobrancas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.')
+      : ver === 'recebidas' ? listaCobrancas(r.recebidas || [], () => telaFinanceiro(params), 'Nada recebido neste mês ainda.')
       : ver === 'acao' ? blocoAcaoCobranca()
       : ver === 'conferir' ? blocoConferencia()
       : ver === 'asaas' ? blocoAsaas()
@@ -3744,17 +3854,12 @@
           h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
           rh ? null : h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
           h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'))),
-      h('section', { class: 'fin-nums' },
-        num('verde', rh ? '—' : reais(t.recebidoMes), 'Recebido no mês', rh ? 'total só para a administração' : 'parcelas pagas neste mês'),
-        num('dourado', rh ? '—' : reais(t.aReceber30), 'A receber', rh ? 'total só para a administração' : 'nos próximos 30 dias'),
-        num('vermelho', rh ? String(t.parcelasAtrasadas) : reais(t.atrasado), rh ? 'Parcelas em atraso' : 'Em atraso', `${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`, '#/financeiro?ver=atraso'),
-        num(nPix ? 'azul alerta' : 'azul', String(nPix), 'PIX para conferir', nPix ? 'o robô não teve certeza' : 'o robô deu baixa em tudo', '#/financeiro?ver=pix')),
-      r.faixas.some(f => f.qtd) ? h('div', { class: 'fin-faixas' }, h('span', { class: 'peq' }, 'Atrasos:'),
-        r.faixas.map((f, i) => h('span', { class: 'fin-faixa f' + i }, h('strong', {}, f.nome), ' ', rh ? '' : reais(f.valor), h('span', { class: 'peq' }, ` · ${f.qtd}`)))) : null,
+      heroFinanceiro(r, nPix, rh),
+      h('div', { class: 'fin-dupla' }, reguaCobranca(r, rh), agendaRecebimentos(r.agenda, rh)),
       r.aConferir ? h('p', { class: 'nota' }, `${r.aConferir} honorário(s) importado(s) do GEA para conferir — veja na aba Honorários.`) : null,
       h('section', { class: 'caixa fin-corpo' },
         h('div', { class: 'visoes fin-abas', role: 'tablist' },
-          aba('atraso', 'Em atraso', r.atrasadas.length), aba('acao', '⚖ Ação de cobrança', null), aba('proximas', 'Próximos 30 dias', r.proximas.length),
+          aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'A receber', r.proximas.length), aba('recebidas', 'Recebidas no mês', (r.recebidas || []).length || null), aba('acao', '⚖ Ação de cobrança', null),
           aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('recibos', '🧾 Recibos', null), aba('conferir', '🔎 Conferir cobranças', null), sessao.usuario.pode.usuarios ? aba('asaas', '⚡ Boleto/Pix automático', null) : null, aba('antigos', '📥 Do sistema antigo', null)),
         conteudo));
     // 8.12 (pedido da usuária): o painel de como estão as finanças, logo abaixo dos números (some para o RH, que não vê totais)
