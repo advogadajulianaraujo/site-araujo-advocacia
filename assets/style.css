@@ -722,3 +722,12 @@ footer.site{color:#b3aea5}
 .guia-card p{color:var(--muted);margin:0 0 16px;max-width:680px}
 .guia-card .go{display:inline-flex;gap:10px;align-items:center;font:600 12px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase}
 @media (max-width:760px){.areas-dest,.online-grid.dois{grid-template-columns:1fr}.area-dest{min-height:0;padding:26px 22px}.areas-outras .more{margin-left:0}}
+/* 8.22 Portal do cliente: pagamentos e documentos */
+.acomp-bloco{border:1px solid var(--line);background:var(--paper);padding:22px 26px;margin:0 0 16px;border-left:4px solid var(--gold,#B58D52)}
+.acomp-bloco h3{margin:0 0 12px;font-size:22px}
+.acomp-docs{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.acomp-docs li{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:8px 0}
+.acomp-docs li.atrasada span{color:#b42318;font-weight:600}
+.acomp-enviar{margin-top:16px;display:grid;gap:8px}
+.acomp-enviar input[type=text]{padding:10px 12px;border:1px solid var(--line);font:inherit}
+.acomp-enviar .btn{justify-self:start}

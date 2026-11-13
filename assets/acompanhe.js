@@ -60,6 +60,76 @@
     String(x.texto || '').split(/\n+/).forEach(function (t) { if (t.trim()) b.appendChild(el('p', '', t.trim())); });
     return b;
   }
+  // 8.22: credenciais só na memória desta página (para baixar/enviar documentos); somem ao sair ou recarregar
+  var cred = null;
+  function api(acao, dados) {
+    return fetch(window.PAINEL_API_URL, { method: 'POST', body: JSON.stringify({ acao: acao, dados: Object.assign({ cpf: cred.cpf, codigo: cred.codigo }, dados) }), redirect: 'follow', credentials: 'omit' })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.erro || 'Não foi possível.'); return j.dados; });
+  }
+  function reais(v) { return (+v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  function blocoPagamentos(r) {
+    if (!r.pagamentos || !r.pagamentos.length) return null;
+    var box = el('section', 'acomp-bloco');
+    box.appendChild(el('h3', '', 'Pagamentos'));
+    var ul = el('ul', 'acomp-docs');
+    r.pagamentos.forEach(function (q) {
+      var li = el('li', q.atrasada ? 'atrasada' : '');
+      li.appendChild(el('span', '', (q.atrasada ? 'Venceu em ' : 'Vence em ') + dataBR(q.vencimento) + ' · ' + reais(q.valor)));
+      if (q.link) { var a = el('a', 'btn sm', 'Pagar (boleto ou Pix)'); a.href = q.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; li.appendChild(a); }
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    if (r.pix && r.pagamentos.some(function (q) { return !q.link; })) box.appendChild(el('p', 'acomp-peq', 'Pagamento por Pix: ' + r.pix + '. Depois, mande o comprovante pelo WhatsApp.'));
+    return box;
+  }
+  function blocoDocumentos(r) {
+    var box = el('section', 'acomp-bloco');
+    box.appendChild(el('h3', '', 'Seus documentos'));
+    if (r.documentos && r.documentos.length) {
+      var ul = el('ul', 'acomp-docs');
+      r.documentos.forEach(function (d) {
+        var li = el('li'); li.appendChild(el('span', '', d.nome + ' · ' + dataBR(d.data)));
+        var b = el('button', 'btn line sm', 'Baixar'); b.type = 'button';
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = 'Baixando…';
+          api('consulta.baixar', { id: d.id }).then(function (x) {
+            var bin = atob(x.dados), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            var url = URL.createObjectURL(new Blob([arr], { type: x.tipo })), a = document.createElement('a'); a.href = url; a.download = x.nome; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 30000); b.textContent = 'Baixado ✓';
+          }).catch(function (e) { b.textContent = 'Baixar'; alert(e.message); }).then(function () { b.disabled = false; });
+        });
+        li.appendChild(b); ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    } else box.appendChild(el('p', 'acomp-peq', 'Quando o escritório disponibilizar documentos (contrato, decisões, recibos), eles aparecem aqui para baixar.'));
+    // enviar documentos ao escritório
+    var env = el('div', 'acomp-enviar');
+    env.appendChild(el('p', '', 'Precisa mandar documentos para o escritório? Envie por aqui (PDF ou foto, até 3 MB cada).'));
+    var inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = 'application/pdf,image/jpeg,image/png,image/webp,image/heic';
+    var obs = document.createElement('input'); obs.type = 'text'; obs.placeholder = 'O que é? (ex.: carteira de trabalho, laudo médico)'; obs.maxLength = 200;
+    var bt = el('button', 'btn sm', 'Enviar'); bt.type = 'button';
+    var st = el('p', 'acomp-peq');
+    bt.addEventListener('click', function () {
+      var fs = Array.prototype.slice.call(inp.files || []);
+      if (!fs.length) { st.textContent = 'Escolha o arquivo primeiro.'; return; }
+      bt.disabled = true; var ok = 0, i = 0;
+      (function prox() {
+        if (i >= fs.length) { st.textContent = ok ? ok + ' arquivo(s) enviado(s). O escritório já foi avisado. Obrigado!' : st.textContent; bt.disabled = false; inp.value = ''; return; }
+        var f = fs[i++];
+        if (f.size > 3 * 1024 * 1024) { st.textContent = f.name + ': maior que 3 MB. Tire a foto de novo com menos qualidade ou mande pelo WhatsApp.'; return prox(); }
+        st.textContent = 'Enviando ' + f.name + '…';
+        var rd = new FileReader();
+        rd.onload = function () {
+          api('consulta.enviar', { nome: f.name, tipo: f.type || 'application/pdf', descricao: obs.value, dados: String(rd.result).split(',')[1] })
+            .then(function () { ok++; }).catch(function (e) { st.textContent = f.name + ': ' + e.message; }).then(prox);
+        };
+        rd.readAsDataURL(f);
+      })();
+    });
+    env.appendChild(inp); env.appendChild(obs); env.appendChild(bt); env.appendChild(st);
+    box.appendChild(env);
+    return box;
+  }
   function mostrar(r) {
     saida.textContent = '';
     var cab = el('div', 'acomp-cab');
@@ -70,7 +140,7 @@
     cab.appendChild(t);
     var sair = el('button', 'btn line sm', 'Sair');
     sair.type = 'button';
-    sair.addEventListener('click', function () { saida.textContent = ''; grade.hidden = false; cpf.value = ''; cod.value = ''; cpf.focus(); });
+    sair.addEventListener('click', function () { cred = null; saida.textContent = ''; grade.hidden = false; cpf.value = ''; cod.value = ''; cpf.focus(); });
     cab.appendChild(sair);
     saida.appendChild(cab);
     (r.comunicados || []).forEach(function (x) { saida.appendChild(resumoEl(x, true)); });
@@ -111,6 +181,8 @@
       card.appendChild(fala);
       saida.appendChild(card);
     });
+    var bp = blocoPagamentos(r); if (bp) saida.appendChild(bp);
+    if (cred) saida.appendChild(blocoDocumentos(r));
     if (r.atualizado) saida.appendChild(el('p', 'acomp-peq', 'Informações atualizadas pelo escritório em ' + new Date(r.atualizado).toLocaleString('pt-BR') + '. Elas não substituem a consulta oficial no sistema do tribunal.'));
     grade.hidden = true;
     saida.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -126,7 +198,7 @@
     btn.disabled = true; btn.textContent = 'Consultando…';
     fetch(window.PAINEL_API_URL, { method: 'POST', body: JSON.stringify({ acao: 'consulta.processos', dados: { cpf: c, codigo: k } }), redirect: 'follow', credentials: 'omit' })
       .then(function (r) { return r.json(); })
-      .then(function (j) { if (!j.ok) throw new Error(j.erro || 'Não foi possível consultar.'); cod.value = ''; mostrar(j.dados); })
+      .then(function (j) { if (!j.ok) throw new Error(j.erro || 'Não foi possível consultar.'); cred = { cpf: c, codigo: k }; cod.value = ''; mostrar(j.dados); })
       .catch(function (e) { erro.textContent = e && e.message && !/fetch|network/i.test(e.message) ? e.message : 'Sem conexão. Tente de novo em instantes.'; })
       .then(function () { btn.disabled = false; btn.textContent = 'Ver meus processos'; });
   });

@@ -960,3 +960,27 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   interativa e sem a faixa "Novo no blog"; "Resolva pelo site" só Acompanhe + Calculadoras; guia em destaque "Fui demitido por justa causa:
   quais documentos devo separar?" (post do escritório no blog). Calculadoras (site e painel): "A empresa NÃO depositou o FGTS" + meses →
   FGTS a cobrar em linha própria e na base da multa.
+
+## 8.22.0 Boleto/Pix automático, fluxos por tipo de ação, portal com documentos, indicadores (pedido da usuária, 13/11/2026)
+
+- Cobrança automática (Asaas): chave SÓ nas Propriedades (ASAAS_CHAVE); Config ASAAS_AMBIENTE (producao|sandbox; ASAAS_URL força outra base),
+  ASAAS_AUTO, ASAAS_DIAS (10), ASAAS_MULTA (2), ASAAS_JUROS (1). `asaas_` (header access_token), `asaasCliente_` (procura pelo CPF/CNPJ, cria;
+  Clientes.asaas_id), `asaasGerar_` (billingType UNDEFINED = boleto/Pix/cartão; vencimento passado → hoje+2; externalReference = id da parcela;
+  Parcelas.asaas_id/asaas_link/asaas_status), `asaasCancelar_`, `asaasRobo_` (robôs do escritório: confere cada cobrança aberta e, paga, chama
+  `pagarParcela_` com forma "Asaas (Pix|boleto|cartão)" e recibo; com ASAAS_AUTO gera as que vencem nos próximos ASAAS_DIAS, clientes com
+  CPF, nunca atrasadas). Rotas `fin.asaas.config` (administração: chave, testar, sincronizar), `fin.asaas.gerar`/`cancelar` (financeiro). Painel:
+  aba "⚡ Boleto/Pix automático" no Financeiro (só administração), botões "Gerar boleto/Pix" / "🔗 Boleto/Pix" / "✕" na parcela
+  (`ASAAS_LIGADO` vem de fin.resumo/fin.honorario), o link vai junto no WhatsApp de cobrança (`linkWhats`). Retirar honorário cancela no Asaas.
+- Fluxos por tipo de ação (`FLUXOS` por área × fase, `fluxoDe_`; áreas Trabalhista, Previdenciário, Família, Cível, Criminal + geral):
+  `fluxosProcessos_` (robôs do escritório) cria a tarefa "📋 <etapa> — cliente" com o checklist quando o processo MUDA de etapa
+  (Processos.fluxo_fase; marca `[fluxo:procId|fase]`; na Petição inicial o checklist entra na tarefa `[inicial:]`). 1ª rodada (Config FLUXO_DESDE)
+  só anota a etapa atual, sem tarefas. Tela do processo: "📋 Checklist da etapa" (`fluxos.processo`, marca pelo `tarefas.check`).
+- Portal do cliente (/acompanhe/): `autenticarCliente_` (mesmas travas do CPF + código). Pasta do cliente › "PORTAL — O CLIENTE VÊ" =
+  documentos que o cliente baixa (`consulta.baixar`: só arquivo DENTRO dessa pasta, até 15 MB, passa pelo servidor — nada público); envio
+  pelo cliente (`consulta.enviar`: PDF/foto até 3 MB, 20/h, pedido até 4,4 MB) → "ENVIADOS PELO CLIENTE (portal)" (sem pasta → pasta central
+  "PAINEL — ENVIADOS PELO PORTAL") + tarefa "📎 … enviou um documento". consulta.processos devolve `documentos` e `pagamentos` (parcelas em
+  aberto até 45 dias, com o link do Asaas; sem link mostra o Pix de WHATS_PIX_TXT). Credenciais só na memória da página. Ficha: seção
+  "Portal do cliente" (`clientes.portal`: abrir/criar a pasta, documentos enviados).
+- Indicadores (`indicadores.mes`, administração; topo de Relatórios, `blocoIndicadores`): prazos cumpridos e % no prazo, folga média antes do
+  fatal, tarefas e % no prazo, intimações tratadas e dias até tratar, clientes novos, contratos, recebido — mês × anterior; "Agora": prazos
+  vencidos/sem responsável/para conferir, processos ativos e parados 60+ dias, inadimplência; tabela por pessoa.

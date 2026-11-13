@@ -1879,3 +1879,11 @@ a.visao-bt{text-decoration:none}
 .fut-conferir{border-left:4px solid #e0a21a;background:#fffaf0}.fut-conf-lista{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
 .fut-conf-lista li{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:8px 12px}
 .fut-caucoes{border-left:4px solid #6b8fc0}
+/* 8.22 indicadores e fluxos */
+.ind-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:10px 0 16px}
+.ind-kpi{display:flex;flex-direction:column;gap:3px;background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;text-decoration:none;color:var(--tinta)}
+.ind-kpi b{font-size:1.5rem;line-height:1.1}.ind-rot{font-size:.8rem;color:#6b6259}.ind-ant{font-size:.75rem;color:#8a8178}
+.ind-var{font-size:.78rem;font-weight:600;color:#8a8178}.ind-var.bom{color:#1f6b3a}.ind-var.ruim{color:#b42318}
+.ind-kpi.alerta{border-color:#e0a21a;background:#fffaf0}
+.fluxo-caixa{border-left:4px solid var(--dourado,#B58D52)}.fluxo-lista{list-style:none;padding:0;margin:8px 0;display:grid;gap:6px}
+.fluxo-lista label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.21.0';
+var VERSAO = '8.22.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -60,10 +60,10 @@ var ESQUEMA = {
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
-    'acesso_hash', 'acesso_criado_em', 'como_conheceu'],
+    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
@@ -72,7 +72,7 @@ var ESQUEMA = {
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
-    'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo_url'],
+    'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo_url', 'asaas_id', 'asaas_link', 'asaas_status'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
@@ -297,7 +297,7 @@ function doPost(e) {
   var req;
   var bruto = (e && e.postData && e.postData.contents) || '{}';
   // 8.12: pedaços de áudio da transcrição (3 MB em base64) podem ser maiores; o resto continua limitado
-  var limite = bruto.slice(0, 40).indexOf('"acao":"ia.audioParte"') >= 0 ? 4400000 : PEDIDO_MAX;
+  var limite = /"acao":"(ia\.audioParte|consulta\.enviar)"/.test(bruto.slice(0, 40)) ? 4400000 : PEDIDO_MAX;
   if (bruto.length > limite) return json_({ ok: false, erro: 'Pedido grande demais.' });
   try {
     req = JSON.parse(bruto);
@@ -352,6 +352,9 @@ var ROTAS = {
   'clientes.whatsapp': { fn: whatsappCliente_ },
   'clientes.acesso': { fn: acessoCliente_ },
   'consulta.processos': { publica: true, fn: consultaCliente_ },
+  'consulta.baixar': { publica: true, fn: portalBaixar_ },
+  'consulta.enviar': { publica: true, fn: portalEnviar_ },
+  'clientes.portal': { fn: portalPainel_ },
   'site.contato': { publica: true, fn: contatoSite_ },
   'whatsapp.entrada': { fn: function () { var e = pastaEntradaWhats_(); return { url: e.getUrl(), pendentes: config_('WHATSAPP_SEM_CLIENTE') || '' }; } },
   'clientes.criarPasta': { fn: criarPastaCliente_ },
@@ -407,6 +410,11 @@ var ROTAS = {
   'fin.honorario.salvar': { permissao: 'financeiro', fn: salvarHonorario_ },
   'fin.renegociar': { permissao: 'financeiro', fn: renegociarHonorario_ },
   'fin.honorario.retirar': { permissao: 'financeiro', fn: retirarHonorario_ },
+  'fin.asaas.config': { permissao: 'usuarios', fn: asaasConfig_ },
+  'indicadores.mes': { permissao: 'usuarios', fn: indicadores_ },
+  'fluxos.processo': { fn: fluxoProcesso_ },
+  'fin.asaas.gerar': { permissao: 'financeiro', fn: asaasGerar_ },
+  'fin.asaas.cancelar': { permissao: 'financeiro', fn: asaasCancelar_ },
   'fin.honorario.dia': { permissao: 'financeiro', fn: mudarDiaHonorario_ },
   'fin.acaoCobranca': { permissao: 'financeiro', fn: acaoCobranca_ },
   'fin.conferencia': { permissao: 'financeiro', fn: conferenciaCobrancas_ },
@@ -539,7 +547,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -1359,7 +1367,8 @@ function acessoCliente_(d, u) {
   });
 }
 
-function consultaCliente_(d) {
+/** Confere CPF + código do Acompanhe (as mesmas travas: 5 erros por CPF, 100 no total → 15 min). Devolve o cliente. */
+function autenticarCliente_(d) {
   var cache = CacheService.getScriptCache();
   var cpf = String(d.cpf || '').replace(/\D/g, '');
   var codigo = String(d.codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1378,6 +1387,81 @@ function consultaCliente_(d) {
     return c.acesso_hash && String(c.cpf_cnpj || '').replace(/\D/g, '') === cpf && iguais_(hashSenha_(codigo, 'acesso|' + c.id), c.acesso_hash);
   })[0];
   if (!cli) falhou();
+  return { cli: cli, cache: cache, kCpf: kCpf };
+}
+
+/* ================================================================== */
+/* 8.22 Portal do cliente com documentos (Acompanhe): a equipe põe na pasta do cliente › "PORTAL — O CLIENTE VÊ" o que o cliente pode
+ * baixar (contrato assinado, sentença, recibos…); o cliente baixa pelo /acompanhe/ (CPF + código) e também ENVIA documentos, que caem em
+ * "ENVIADOS PELO CLIENTE (portal)" com tarefa para a secretaria. Nada fica público no Drive: o arquivo passa pelo servidor.
+ * ================================================================== */
+var PASTA_PORTAL = 'PORTAL — O CLIENTE VÊ', PASTA_RECEBIDOS = 'ENVIADOS PELO CLIENTE (portal)';
+function portalPasta_(cli, nome, criar) {
+  if (!cli.pasta_id) return null;
+  var base; try { base = DriveApp.getFolderById(cli.pasta_id); } catch (e) { return null; }
+  return acharPasta_(base, nome) || (criar ? base.createFolder(nome) : null);
+}
+function portalArquivos_(cli) {
+  var pasta = portalPasta_(cli, PASTA_PORTAL, false); if (!pasta) return [];
+  var it = pasta.getFiles(), l = [];
+  while (it.hasNext() && l.length < 60) { var f = it.next(); if (f.isTrashed && f.isTrashed()) continue;
+    l.push({ id: f.getId(), nome: f.getName(), data: Utilities.formatDate(f.getDateCreated(), TZ, 'yyyy-MM-dd'), tamanho: f.getSize ? f.getSize() : 0 }); }
+  return l.sort(function (a, b) { return a.data < b.data ? 1 : -1; });
+}
+/** Baixar um documento do portal: só arquivo que está na pasta PORTAL deste cliente; até 15 MB. */
+function portalBaixar_(d) {
+  var cli = autenticarCliente_(d).cli, pasta = portalPasta_(cli, PASTA_PORTAL, false);
+  if (!pasta) throw falha_('Nenhum documento disponível.');
+  // só arquivo que ESTÁ na pasta do portal deste cliente (procura dentro dela; nunca abre um id qualquer)
+  var f = null, it = pasta.getFiles(); while (it.hasNext()) { var x = it.next(); if (x.getId() === String(d.id || '')) { f = x; break; } }
+  if (!f) throw falha_('Documento não encontrado.');
+  var blob = f.getMimeType() === MimeType.GOOGLE_DOCS ? f.getAs('application/pdf') : f.getBlob();
+  var bytes = blob.getBytes(); if (bytes.length > 15 * 1024 * 1024) throw falha_('Arquivo grande demais para baixar por aqui. Peça ao escritório pelo WhatsApp.');
+  registrar_('site', 'portal: documento baixado', cli.id + ' · ' + f.getName());
+  var nomeArq = f.getName() + (f.getMimeType() === MimeType.GOOGLE_DOCS ? '.pdf' : '');
+  return { nome: nomeArq, tipo: blob.getContentType(), dados: Utilities.base64Encode(bytes) };
+}
+/** Cliente envia um documento (PDF ou foto, até 3 MB por arquivo; até 20 por hora). Vai para a pasta do cliente e vira tarefa. */
+function portalEnviar_(d) {
+  var au = autenticarCliente_(d), cli = au.cli, cache = au.cache, k = 'portal_env_' + cli.id;
+  if ((parseInt(cache.get(k), 10) || 0) >= 20) throw falha_('Muitos envios agora. Tente de novo daqui a uma hora ou mande pelo WhatsApp.');
+  var tipo = String(d.tipo || ''), nome = String(d.nome || 'documento').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120);
+  if (!/^(application\/pdf|image\/(jpeg|png|webp|heic|heif))$/.test(tipo)) throw falha_('Envie PDF ou foto (JPG, PNG).');
+  var bytes = Utilities.base64Decode(String(d.dados || ''));
+  if (!bytes.length || bytes.length > 3 * 1024 * 1024) throw falha_('Cada arquivo pode ter até 3 MB. Se a foto for maior, tire de novo com menos qualidade ou mande pelo WhatsApp.');
+  var pasta = portalPasta_(cli, PASTA_RECEBIDOS, true);
+  if (!pasta) { // cliente antigo sem pasta: não cria pasta nova do cliente — guarda numa pasta central
+    var base = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents(), raiz = base.hasNext() ? base.next() : DriveApp.getRootFolder();
+    var central = acharPasta_(raiz, 'PAINEL — ENVIADOS PELO PORTAL (sem pasta do cliente)') || raiz.createFolder('PAINEL — ENVIADOS PELO PORTAL (sem pasta do cliente)');
+    pasta = acharPasta_(central, nomePasta_(cli.nome)) || central.createFolder(nomePasta_(cli.nome));
+  }
+  var arq = pasta.createFile(Utilities.newBlob(bytes, tipo, Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HHmm') + ' — ' + nome));
+  cache.put(k, String((parseInt(cache.get(k), 10) || 0) + 1), 3600);
+  var descr = String(d.descricao || '').slice(0, 300);
+  comTrava_(function () {
+    novaTarefaRobo_(tabela_('Tarefas'), { _motivo: 'documento enviado pelo portal', titulo: '📎 ' + cli.nome + ' enviou um documento pelo portal',
+      descricao: 'Arquivo: ' + arq.getName() + (descr ? '\nO cliente escreveu: ' + descr : '') + '\nAbrir: ' + arq.getUrl() + '\nConfira e guarde na pasta certa do caso.',
+      responsavel: respSecretaria_() || '', cliente_id: cli.id, prioridade: 'normal', vence_em: somarDias_(hojeSP_(), 1) });
+  });
+  registrar_('site', 'portal: documento enviado', cli.id + ' · ' + arq.getName());
+  return { ok: true, nome: arq.getName() };
+}
+/** Painel: abre (e cria, se pedir) a pasta "PORTAL — O CLIENTE VÊ" do cliente. */
+function portalPainel_(d, u) {
+  var cli = tabela_('Clientes').linhas.filter(function (c) { return c.id === d.id; })[0];
+  if (!cli) throw falha_('Cliente não encontrado.');
+  if (!cli.pasta_id) return { semPasta: true };
+  var p = portalPasta_(cli, PASTA_PORTAL, !!d.criar), r = portalPasta_(cli, PASTA_RECEBIDOS, false);
+  if (d.copiar && p) { // pôr um documento gerado no portal (cópia em PDF)
+    var f = DriveApp.getFileById(String(d.copiar)), blob = f.getMimeType() === MimeType.GOOGLE_DOCS ? f.getAs('application/pdf') : f.getBlob();
+    p.createFile(blob).setName(f.getName().replace(/\.pdf$/i, '') + '.pdf');
+    registrar_(u.usuario, 'portal: documento publicado', cli.id + ' · ' + f.getName());
+  }
+  return { url: p ? p.getUrl() : '', arquivos: p ? portalArquivos_(cli).length : 0, recebidos_url: r ? r.getUrl() : '', tem_acesso: !!cli.acesso_hash };
+}
+
+function consultaCliente_(d) {
+  var au = autenticarCliente_(d), cli = au.cli, cache = au.cache, kCpf = au.kCpf;
   var hoje = hojeSP_(), publicados = {}, gerais = [];
   try {
     tabela_('Transcricoes').linhas.filter(function (x) { return x.publicado === 'sim' && x.resumo_cliente && (x.cliente_id === cli.id || x.processo_id); }).forEach(function (x) {
@@ -1403,7 +1487,14 @@ function consultaCliente_(d) {
   });
   cache.remove(kCpf);
   registrar_('site', 'consulta do cliente', cli.id + ' (' + procs.length + ' processo(s))');
-  return { nome: nomeProprio_(String(cli.nome || '').split(' ')[0]), processos: procs, comunicados: gerais.slice(-5).reverse(), atualizado: config_('ROBO_ULTIMA_EXECUCAO') || '' };
+  var docs = []; try { docs = portalArquivos_(cli); } catch (eD) { docs = []; }
+  // 8.22: parcelas em aberto do cliente, com o link do boleto/Pix quando a cobrança automática gerou
+  var honsC = {}; tabela_('Honorarios').linhas.forEach(function (h) { if (h.cliente_id === cli.id) honsC[h.id] = h; });
+  var pagar = tabela_('Parcelas').linhas.filter(function (q) { var h = honsC[q.honorario_id]; return h && !q.pago_em && !/^(retirado|cancelado|encerrado)/.test(h.situacao || '') && q.vencimento && q.vencimento <= somarDias_(hoje, 45); })
+    .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }).slice(0, 12)
+    .map(function (q) { return { vencimento: q.vencimento, valor: dinheiro_(q.valor) - dinheiro_(q.valor_pago), atrasada: q.vencimento < hoje, link: /CANCEL/i.test(q.asaas_status || '') ? '' : (q.asaas_link || '') }; });
+  return { nome: nomeProprio_(String(cli.nome || '').split(' ')[0]), processos: procs, comunicados: gerais.slice(-5).reverse(), atualizado: config_('ROBO_ULTIMA_EXECUCAO') || '',
+    documentos: docs, pode_enviar: true, pagamentos: pagar, pix: config_('WHATS_PIX_TXT') || '' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -3592,6 +3683,129 @@ function novaParcela_(h, numero, vencimento, valor, quem) {
     observacoes: '', criado_em: agora, atualizado_em: agora, atualizado_por: quem };
 }
 
+/* ================================================================== */
+/* 8.22 Cobrança automática com boleto e Pix (Asaas) — pedido da usuária ("igual ao Asaas")
+ * A chave da API fica SÓ nas Propriedades do script (ASAAS_CHAVE), nunca na planilha nem no repositório.
+ * Gera a cobrança (boleto + Pix + cartão: o cliente escolhe) de cada parcela, manda o link pelo WhatsApp e, quando o cliente paga,
+ * o robô dá baixa sozinho na parcela (com recibo). O Asaas também manda os lembretes por e-mail/SMS que estiverem ligados na conta.
+ * ================================================================== */
+var ASAAS_URLS = { producao: 'https://api.asaas.com/v3', sandbox: 'https://api-sandbox.asaas.com/v3' };
+function asaasChave_() { return PropertiesService.getScriptProperties().getProperty('ASAAS_CHAVE') || ''; }
+function asaasBase_() { return config_('ASAAS_URL') || ASAAS_URLS[config_('ASAAS_AMBIENTE') === 'sandbox' ? 'sandbox' : 'producao']; }
+function asaas_(metodo, caminho, corpo) {
+  var chave = asaasChave_();
+  if (!chave) throw falha_('A cobrança automática não está ligada: cadastre a chave do Asaas em Painel financeiro › Cobrança automática.');
+  var op = { method: metodo, muteHttpExceptions: true, headers: { access_token: chave, 'User-Agent': 'PainelAraujoAdvocacia' }, contentType: 'application/json' };
+  if (corpo) op.payload = JSON.stringify(corpo);
+  var r = UrlFetchApp.fetch(asaasBase_() + caminho, op), cod = r.getResponseCode(), txt = r.getContentText() || '{}', j;
+  try { j = JSON.parse(txt); } catch (e) { j = {}; }
+  if (cod === 401) throw falha_('O Asaas recusou a chave (401). Confira se a chave é da conta certa (produção ou teste).');
+  if (cod >= 400) throw falha_('Asaas: ' + ((j.errors && j.errors[0] && j.errors[0].description) || ('erro ' + cod)));
+  return j;
+}
+/** Cliente no Asaas (procura pelo CPF/CNPJ; cria se não houver). Guarda o id em Clientes.asaas_id. */
+function asaasCliente_(c) {
+  if (c.asaas_id) return c.asaas_id;
+  var doc = String(c.cpf_cnpj || '').replace(/\D/g, '');
+  if (doc.length !== 11 && doc.length !== 14) throw falha_('Para gerar boleto/Pix, o cadastro de ' + c.nome + ' precisa do CPF (ou CNPJ).');
+  var achou = asaas_('get', '/customers?cpfCnpj=' + doc);
+  var id = achou && achou.data && achou.data[0] ? achou.data[0].id : '';
+  if (!id) {
+    var tel = String(c.telefone || '').split(/\/|,|;| ou /)[0].replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+    var novo = asaas_('post', '/customers', { name: c.nome, cpfCnpj: doc, email: c.email || undefined, mobilePhone: tel.length >= 10 ? tel : undefined,
+      postalCode: String(c.cep || '').replace(/\D/g, '') || undefined, externalReference: c.id, notificationDisabled: false });
+    id = novo.id;
+  }
+  var tab = tabela_('Clientes'), linha = tab.linhas.filter(function (x) { return x.id === c.id; })[0];
+  if (linha) atualizarLinha_(tab, linha, { asaas_id: id });
+  return id;
+}
+/** Gera a cobrança de uma parcela (vencimento passado vira o dia de hoje + 2: o Asaas não aceita data vencida). */
+function asaasGerar_(d, u) {
+  var r = parcelaPorId_(d.id), p = r.p;
+  if (p.pago_em) throw falha_('Esta parcela já está paga.');
+  if (p.asaas_id && !/CANCEL|DELET/i.test(p.asaas_status || '')) return { ok: true, ja: true, link: p.asaas_link, id: p.asaas_id };
+  var h = tabela_('Honorarios').linhas.filter(function (x) { return x.id === p.honorario_id; })[0] || {};
+  if (/^(retirado|cancelado)/.test(h.situacao || '')) throw falha_('O honorário desta parcela foi retirado.');
+  var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === p.cliente_id; })[0];
+  if (!c) throw falha_('Cliente não encontrado.');
+  var valor = Math.round((dinheiro_(p.valor) - dinheiro_(p.valor_pago)) * 100) / 100;
+  if (!(valor >= 5)) throw falha_('O Asaas só gera cobranças a partir de R$ 5,00.');
+  var hoje = hojeSP_(), venc = p.vencimento && p.vencimento >= hoje ? p.vencimento : somarDias_(hoje, 2);
+  var total = tabela_('Parcelas').linhas.filter(function (x) { return x.honorario_id === p.honorario_id; }).length;
+  var corpo = { customer: asaasCliente_(c), billingType: 'UNDEFINED', value: valor, dueDate: venc, externalReference: p.id,
+    description: 'Honorários advocatícios — ' + (h.descricao || 'Araújo Advocacia') + ' — parcela ' + (p.numero || 1) + (total > 1 ? '/' + total : '') };
+  var multa = dinheiro_(config_('ASAAS_MULTA') || '2'), juros = dinheiro_(config_('ASAAS_JUROS') || '1');
+  if (multa > 0) corpo.fine = { value: multa };
+  if (juros > 0) corpo.interest = { value: juros };
+  var pg = asaas_('post', '/payments', corpo);
+  comTrava_(function () {
+    var rr = parcelaPorId_(d.id);
+    atualizarLinha_(rr.tab, rr.p, { asaas_id: pg.id, asaas_link: pg.invoiceUrl || '', asaas_status: pg.status || 'PENDING', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario });
+  });
+  registrar_(u.usuario, 'cobrança Asaas gerada', p.id + ' · ' + pg.id + ' · ' + reaisTxt_(valor) + ' · venc. ' + dataBR_(venc));
+  return { ok: true, id: pg.id, link: pg.invoiceUrl || '', vencimento: venc, valor: valor };
+}
+function asaasCancelar_(d, u) {
+  var r = parcelaPorId_(d.id);
+  if (!r.p.asaas_id) return { ok: true };
+  try { asaas_('delete', '/payments/' + r.p.asaas_id); } catch (e) { if (!/not found|removid|exclu/i.test(e.message)) throw e; }
+  comTrava_(function () { var rr = parcelaPorId_(d.id); atualizarLinha_(rr.tab, rr.p, { asaas_status: 'CANCELADA', asaas_link: '', atualizado_em: new Date().toISOString(), atualizado_por: u.usuario }); });
+  registrar_(u.usuario, 'cobrança Asaas cancelada', d.id);
+  return { ok: true };
+}
+/**
+ * Robô (toda rodada): 1) confere no Asaas as cobranças em aberto e dá baixa nas pagas (com recibo); 2) com Config ASAAS_AUTO = sim, gera sozinho
+ * a cobrança das parcelas que vencem nos próximos ASAAS_DIAS (padrão 10) — só parcelas de clientes com CPF e honorário ativo; atrasadas, não.
+ */
+function asaasRobo_() {
+  if (!asaasChave_()) return 0;
+  var robo = { usuario: 'robô', nome: 'robô (Asaas)', perfil: 'administrador' }, feitos = 0, hoje = hojeSP_();
+  var abertas = tabela_('Parcelas').linhas.filter(function (p) { return p.asaas_id && !p.pago_em && !/CANCEL/i.test(p.asaas_status || ''); });
+  abertas.slice(0, 80).forEach(function (p) {
+    try {
+      var pg = asaas_('get', '/payments/' + p.asaas_id);
+      if (/RECEIVED|CONFIRMED|RECEIVED_IN_CASH/.test(pg.status || '')) {
+        pagarParcela_({ id: p.id, data: String(pg.paymentDate || pg.clientPaymentDate || pg.confirmedDate || hoje).slice(0, 10), valor: pg.value, forma: 'Asaas (' + ({ PIX: 'Pix', BOLETO: 'boleto', CREDIT_CARD: 'cartão' }[pg.billingType] || 'boleto/Pix') + ')' }, robo);
+        comTrava_(function () { var rr = parcelaPorId_(p.id); atualizarLinha_(rr.tab, rr.p, { asaas_status: pg.status }); });
+        feitos++;
+      } else if (pg.status && pg.status !== p.asaas_status) comTrava_(function () { var rr = parcelaPorId_(p.id); atualizarLinha_(rr.tab, rr.p, { asaas_status: pg.deleted ? 'CANCELADA' : pg.status }); });
+    } catch (e) { /* tenta na próxima rodada */ }
+  });
+  if (config_('ASAAS_AUTO') === 'sim') {
+    var dias = parseInt(config_('ASAAS_DIAS'), 10) || 10, ate = somarDias_(hoje, dias), hons = {}, clis = mapaClientes_();
+    tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+    tabela_('Parcelas').linhas.filter(function (p) {
+      var h = hons[p.honorario_id] || {}, c = clis[p.cliente_id] || {};
+      return !p.pago_em && !p.asaas_id && p.vencimento >= hoje && p.vencimento <= ate && !/^(retirado|cancelado|encerrado)/.test(h.situacao || '') && String(c.cpf_cnpj || '').replace(/\D/g, '').length >= 11;
+    }).slice(0, 20).forEach(function (p) { try { asaasGerar_({ id: p.id }, robo); feitos++; } catch (e) { /* segue */ } });
+  }
+  setConfig_('ASAAS_ULTIMA', new Date().toISOString() + ' · ' + feitos + ' ação(ões)', 'Última conferência do Asaas (cobrança automática)');
+  return feitos;
+}
+function asaasConfig_(d, u) {
+  var P = PropertiesService.getScriptProperties();
+  if (d.chave !== undefined) {
+    var ch = String(d.chave || '').trim();
+    if (ch && !/^\$?aact_/.test(ch) && ch.length < 30) throw falha_('Essa não parece uma chave do Asaas (ela começa com "$aact_").');
+    if (ch) P.setProperty('ASAAS_CHAVE', ch); else P.deleteProperty('ASAAS_CHAVE');
+    registrar_(u.usuario, 'Asaas: chave ' + (ch ? 'cadastrada' : 'apagada'), '');
+  }
+  if (d.ambiente) setConfig_('ASAAS_AMBIENTE', d.ambiente === 'sandbox' ? 'sandbox' : 'producao', 'Asaas: producao ou sandbox (teste)');
+  if (d.auto !== undefined) setConfig_('ASAAS_AUTO', d.auto === 'sim' ? 'sim' : 'nao', 'Asaas: gerar sozinho as cobranças que vencem nos próximos dias');
+  if (d.dias) setConfig_('ASAAS_DIAS', String(Math.min(30, Math.max(1, parseInt(d.dias, 10) || 10))), 'Asaas: quantos dias antes do vencimento gerar a cobrança');
+  if (d.multa !== undefined) setConfig_('ASAAS_MULTA', String(dinheiro_(d.multa)), 'Asaas: multa por atraso (%)');
+  if (d.juros !== undefined) setConfig_('ASAAS_JUROS', String(dinheiro_(d.juros)), 'Asaas: juros ao mês (%)');
+  var r = { ligado: !!asaasChave_(), ambiente: config_('ASAAS_AMBIENTE') || 'producao', auto: config_('ASAAS_AUTO') === 'sim', dias: parseInt(config_('ASAAS_DIAS'), 10) || 10,
+    multa: config_('ASAAS_MULTA') || '2', juros: config_('ASAAS_JUROS') || '1', ultima: config_('ASAAS_ULTIMA') || '' };
+  if (d.testar && r.ligado) {
+    try { var b = asaas_('get', '/finance/balance'); r.teste = 'Conectado ao Asaas (' + r.ambiente + ')' + (b && b.balance !== undefined ? ' · saldo ' + reaisTxt_(b.balance) : '') + '.'; }
+    catch (e) { r.teste = '⚠ ' + e.message; }
+  }
+  if (d.sincronizar && r.ligado) r.sincronizados = asaasRobo_();
+  return r;
+}
+
 /* ---------- 8.21 Financeiro (pedidos da usuária) ---------- */
 var HON_FORA = /^(retirado|cancelado)/;
 /** "Retirar honorário": sai da cobrança SEM virar saldo. As parcelas NÃO pagas somem; as pagas ficam como histórico. Só administração e RH. */
@@ -3601,7 +3815,7 @@ function retirarHonorario_(d, u) {
     var tab = tabela_('Honorarios'), h = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
     if (!h) throw falha_('Honorário não encontrado.');
     var parc = tabela_('Parcelas'), abertas = parc.linhas.filter(function (p) { return p.honorario_id === h.id && !p.pago_em; }), n = abertas.length, soma = 0;
-    abertas.forEach(function (p) { soma += dinheiro_(p.valor); apagarLinha_(parc, p); });
+    abertas.forEach(function (p) { soma += dinheiro_(p.valor); if (p.asaas_id) { try { asaas_('delete', '/payments/' + p.asaas_id); } catch (eA) { /* segue */ } } apagarLinha_(parc, p); });
     var agora = new Date().toISOString();
     atualizarLinha_(tab, h, { situacao: 'retirado', observacoes: ((h.observacoes || '') + ' | RETIRADO em ' + dataBR_(hojeSP_()) + ' por ' + (u.nome || u.usuario) + ': ' + String(d.motivo).trim().slice(0, 300) +
       (n ? ' (' + n + ' parcela(s) em aberto, ' + txtDinheiro_(soma) + ', saíram sem virar saldo)' : '')).replace(/^ \| /, ''), atualizado_em: agora, atualizado_por: u.usuario });
@@ -3777,7 +3991,7 @@ function resumoFinanceiro_() {
       { nome: 'mais de 90 dias', valor: soma(faixa(91, 100000), function (p) { return p.saldo; }), qtd: faixa(91, 100000).length }
     ],
     atrasadas: atrasadas.slice(0, 200),
-    proximas: proximas.slice(0, 100),
+    proximas: proximas.slice(0, 100), asaas: !!asaasChave_(),
     aConferir: tabela_('Honorarios').linhas.filter(function (h) { return h.situacao === 'importado — conferir'; }).length
   };
 }
@@ -3822,7 +4036,7 @@ function obterHonorario_(d) {
     parcelas: tabela_('Parcelas').linhas.filter(function (p) { return p.honorario_id === h.id; })
       .map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); })
       .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; }),
-    recebimentos: tabela_('Recebimentos').linhas.filter(function (r) { return r.honorario_id === h.id; }).map(limpar_)
+    asaas: !!asaasChave_(), recebimentos: tabela_('Recebimentos').linhas.filter(function (r) { return r.honorario_id === h.id; }).map(limpar_)
   };
 }
 
@@ -5032,6 +5246,182 @@ function lembrarAudiencias_(ctx) {
   return feitos;
 }
 
+/* ================================================================== */
+/* 8.22 Fluxos prontos por tipo de ação (pedido da usuária): cada vez que um processo muda de ETAPA, o robô cria a tarefa
+ * "📋 <etapa> — cliente" com o checklist daquela etapa para a área do processo (Trabalhista, Previdenciário, Família, Cível/Consumidor,
+ * Criminal; as outras usam o fluxo geral). Na Petição inicial, o checklist entra na própria tarefa da inicial. Marca [fluxo:procId|fase].
+ * Na primeira rodada os processos que já existiam só ganham a etapa atual anotada (Processos.fluxo_fase), sem tarefa — nada de enxurrada.
+ * ================================================================== */
+var FLUXOS = {
+  Trabalhista: {
+    contratado: ['Conferir procuração, contrato e declaração de hipossuficiência assinados', 'Reunir CTPS, contracheques, TRCT, extrato do FGTS e registros de ponto',
+      'Pedir ao cliente os nomes e telefones de possíveis testemunhas', 'Calcular os pedidos (planilha de cálculos)', 'Redigir a petição inicial',
+      'Mandar a inicial ao cliente aprovar', 'Protocolar e lançar o número no painel'],
+    ajuizado: ['Mandar ao cliente o código do Acompanhe', 'Conferir a notificação da reclamada', 'Conferir no PJe a data da audiência'],
+    conciliacao: ['Combinar com o cliente o valor mínimo para acordo', 'Conferir se a audiência é online ou presencial (Audiências)', 'Preparar proposta e contraproposta',
+      'Conferir que os 3 avisos ao cliente saíram (1 semana, véspera, no dia)'],
+    andamento: ['Ler a contestação e os documentos da reclamada', 'Fazer a réplica no prazo', 'Avisar o cliente sobre a defesa da empresa', 'Avaliar se precisa de perícia'],
+    pericia: ['Indicar assistente técnico e quesitos', 'Avisar o cliente da data, do local e do que levar', 'Manifestar sobre o laudo no prazo'],
+    instrucao: ['Anotar as testemunhas (nome, CPF, telefone) em Audiências', 'Preparar o roteiro de perguntas', 'Preparar o cliente para o depoimento',
+      'Conferir se o juízo pediu rol de testemunhas'],
+    sentenca: ['Ler a sentença e explicar ao cliente', 'Avaliar embargos de declaração (5 dias) e recurso ordinário (8 dias)', 'Lançar no Financeiro o êxito, se houver valor'],
+    acordo: ['Conferir o termo do acordo (valores, datas, multa)', 'Lançar as parcelas do acordo e os honorários de êxito no Financeiro', 'Acompanhar cada pagamento e avisar o cliente'],
+    recurso: ['Recurso ou contrarrazões no prazo', 'Avisar o cliente', 'Acompanhar a pauta de julgamento'],
+    execucao: ['Conferir ou impugnar os cálculos de liquidação', 'Pedir bloqueio (SISBAJUD) se não pagar', 'Lançar o alvará e os honorários quando sair', 'Repassar ao cliente com recibo'],
+    extinto: ['Repassar os valores e dar quitação', 'Devolver os documentos originais', 'Arquivar a pasta do cliente']
+  },
+  'Previdenciário': {
+    contratado: ['Conferir procuração, contrato previdenciário e declaração de hipossuficiência assinados', 'Reunir CNIS, carta do INSS (indeferimento), laudos, atestados e PPP',
+      'Pegar o acesso ao Meu INSS do cliente', 'Conferir tempo de contribuição e carência', 'Redigir o requerimento ou a petição inicial', 'Protocolar e lançar o número no painel'],
+    ajuizado: ['Mandar ao cliente o código do Acompanhe', 'Conferir a citação do INSS'],
+    pericia: ['Avisar o cliente da data, do local e dos exames que deve levar', 'Apresentar quesitos', 'Manifestar sobre o laudo no prazo'],
+    andamento: ['Ler a contestação do INSS', 'Réplica no prazo', 'Avisar o cliente'],
+    sentenca: ['Ler a sentença e explicar ao cliente', 'Avaliar recurso no prazo', 'Acompanhar a implantação do benefício'],
+    recurso: ['Recurso ou contrarrazões no prazo', 'Avisar o cliente'],
+    execucao: ['Conferir o cálculo dos atrasados', 'Acompanhar RPV/precatório', 'Lançar os honorários (2 primeiras parcelas / percentual) no Financeiro', 'Repassar ao cliente com recibo'],
+    extinto: ['Dar quitação ao cliente', 'Arquivar a pasta']
+  },
+  'Família': {
+    contratado: ['Conferir procuração e contrato assinados', 'Reunir certidões (casamento, nascimento), documentos dos filhos e comprovantes de renda',
+      'Relacionar os bens (se houver partilha)', 'Redigir a petição inicial', 'Protocolar e lançar o número no painel'],
+    conciliacao: ['Combinar com o cliente o que aceita em acordo (pensão, guarda, visitas, bens)', 'Conferir se a audiência é online ou presencial', 'Conferir os 3 avisos ao cliente'],
+    andamento: ['Ler a contestação', 'Réplica no prazo', 'Avisar o cliente'],
+    sentenca: ['Explicar a sentença ao cliente', 'Avaliar recurso no prazo'],
+    acordo: ['Conferir o termo do acordo', 'Explicar ao cliente o que foi combinado'],
+    extinto: ['Entregar cópia da sentença/acordo ao cliente', 'Arquivar a pasta']
+  },
+  'Cível': {
+    contratado: ['Conferir procuração e contrato assinados', 'Reunir contratos, comprovantes, conversas e prints', 'Redigir a petição inicial', 'Protocolar e lançar o número no painel'],
+    conciliacao: ['Combinar com o cliente o valor mínimo para acordo', 'Conferir se a audiência é online ou presencial', 'Conferir os 3 avisos ao cliente'],
+    andamento: ['Ler a contestação', 'Réplica no prazo', 'Especificar provas'],
+    sentenca: ['Explicar a sentença ao cliente', 'Avaliar recurso no prazo'],
+    execucao: ['Pedir o cumprimento de sentença', 'Lançar o valor e os honorários quando sair', 'Repassar ao cliente com recibo'],
+    extinto: ['Dar quitação ao cliente', 'Arquivar a pasta']
+  },
+  Criminal: {
+    contratado: ['Conferir procuração e contrato assinados', 'Pedir cópia do inquérito/processo', 'Conversar com o cliente sobre a versão dos fatos', 'Relacionar testemunhas de defesa'],
+    andamento: ['Resposta à acusação no prazo (10 dias)', 'Avisar o cliente'],
+    instrucao: ['Anotar as testemunhas de defesa em Audiências', 'Preparar o cliente para o interrogatório', 'Preparar o roteiro de perguntas'],
+    sentenca: ['Explicar a sentença ao cliente', 'Avaliar apelação (5 dias)'],
+    recurso: ['Razões ou contrarrazões no prazo', 'Avisar o cliente'],
+    extinto: ['Arquivar a pasta']
+  },
+  geral: {
+    contratado: ['Conferir procuração e contrato assinados', 'Reunir os documentos do caso', 'Redigir a petição inicial', 'Protocolar e lançar o número no painel'],
+    ajuizado: ['Mandar ao cliente o código do Acompanhe'],
+    conciliacao: ['Combinar com o cliente o que aceita em acordo', 'Conferir os 3 avisos ao cliente'],
+    andamento: ['Ler a defesa da outra parte', 'Réplica no prazo', 'Avisar o cliente'],
+    pericia: ['Quesitos e assistente técnico', 'Avisar o cliente', 'Manifestar sobre o laudo'],
+    instrucao: ['Anotar as testemunhas em Audiências', 'Preparar o cliente'],
+    sentenca: ['Explicar a sentença ao cliente', 'Avaliar recurso no prazo'],
+    acordo: ['Conferir o termo do acordo', 'Lançar os valores no Financeiro'],
+    recurso: ['Recurso ou contrarrazões no prazo', 'Avisar o cliente'],
+    execucao: ['Cumprimento de sentença / cálculos', 'Lançar o valor e os honorários quando sair', 'Repassar ao cliente'],
+    extinto: ['Dar quitação ao cliente', 'Arquivar a pasta']
+  }
+};
+function fluxoDe_(area, fase) {
+  var a = String(area || '');
+  var chave = /trabalh/i.test(a) ? 'Trabalhista' : /previd/i.test(a) ? 'Previdenciário' : /fam[ií]l/i.test(a) ? 'Família' : /c[ií]vel|consum|banc/i.test(a) ? 'Cível' : /crim|penal/i.test(a) ? 'Criminal' : 'geral';
+  return { area: chave, itens: (FLUXOS[chave] && FLUXOS[chave][fase]) || FLUXOS.geral[fase] || [] };
+}
+/** Tela do processo: checklist da etapa atual e a tarefa do fluxo (se já existe). */
+function fluxoProcesso_(d) {
+  var p = tabela_('Processos').linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!p) throw falha_('Processo não encontrado.');
+  var fase = faseDe_(p), f = fluxoDe_(p.area, fase), chave = p.id + '|' + fase;
+  var t = tabela_('Tarefas').linhas.filter(function (x) { return String(x.descricao || '').indexOf('[fluxo:' + chave + ']') >= 0; })[0];
+  return { fase: fase, fase_nome: FASES[fase] || fase, area: f.area, itens: f.itens, tarefa: t ? { id: t.id, titulo: t.titulo, checklist: lerChecklist_(t.checklist), feita: !abertaT_(t) } : null };
+}
+function fluxosProcessos_(ctx) {
+  var tabP = tabela_('Processos'), tabT = (ctx && ctx.tarefas) || tabela_('Tarefas'), agora = new Date().toISOString(), hoje = hojeSP_();
+  var desde = config_('FLUXO_DESDE');
+  if (!desde) { // primeira vez: só anota a etapa atual de quem já existe
+    comTrava_(function () { tabP.adiar = true; tabP.linhas.forEach(function (p) { if (p.id && !p.fluxo_fase) atualizarLinha_(tabP, p, { fluxo_fase: faseDe_(p) }); }); regravarMudadas_(tabP); });
+    setConfig_('FLUXO_DESDE', agora, 'Fluxos por tipo de ação ligados (8.22): a partir daqui, cada mudança de etapa cria a tarefa com o checklist');
+    return 0;
+  }
+  var marcas = marcasDe_(tabT, 'fluxo'), iniciais = marcasDe_(tabT, 'inicial'), clis = mapaClientes_(), n = 0;
+  var mudou = tabP.linhas.filter(function (p) { return p.id && p.status !== 'arquivado' && p.fluxo_fase !== faseDe_(p); });
+  if (!mudou.length) return 0;
+  comTrava_(function () {
+    mudou.slice(0, 30).forEach(function (p) {
+      var fase = faseDe_(p), f = fluxoDe_(p.area, fase), chave = p.id + '|' + fase;
+      atualizarLinha_(tabP, p, { fluxo_fase: fase });
+      if (!f.itens.length || marcas[chave]) return;
+      var nomeCli = (clis[p.cliente_id] || {}).nome || p.cliente_nome || '';
+      var lista = JSON.stringify(f.itens.map(function (t) { return { t: t, ok: false }; }));
+      var ini = fase === 'contratado' && (iniciais[p.id] || []).filter(abertaT_)[0];
+      if (ini) { // a tarefa da petição inicial já existe: o checklist entra nela
+        atualizarLinha_(tabT, ini, { checklist: ini.checklist && ini.checklist !== '[]' ? ini.checklist : lista, descricao: ini.descricao + '\n[fluxo:' + chave + ']' });
+      } else {
+        novaTarefaRobo_(tabT, { _motivo: 'fluxo da etapa ' + (FASES[fase] || fase), titulo: '📋 ' + (FASES[fase] || fase) + (nomeCli ? ' — ' + nomeCli : '') + (p.numero ? ' · ' + p.numero : ''),
+          descricao: 'Checklist da etapa "' + (FASES[fase] || fase) + '" (' + (f.area === 'geral' ? 'fluxo geral' : 'fluxo ' + f.area) + '). Marque cada item ao fazer.\n[fluxo:' + chave + ']',
+          responsavel: p.responsavel || responsavelPadrao_(p, p.numero) || '', processo_id: p.id, numero: p.numero || '', cliente_id: p.cliente_id || '',
+          vence_em: somarDias_(hoje, fase === 'extinto' ? 15 : 5), prioridade: /sentenca|recurso|instrucao|conciliacao|pericia/.test(fase) ? 'alta' : 'normal', checklist: f.itens });
+      }
+      n++;
+    });
+  });
+  if (n) registrar_('robô', 'fluxos por etapa', n + ' checklist(s) criado(s)');
+  return n;
+}
+
+/* ================================================================== */
+/* 8.22 Indicadores de produtividade (Relatórios, só administração): mês escolhido × mês anterior, do escritório e por pessoa. */
+/* ================================================================== */
+function indicadores_(d) {
+  var hoje = hojeSP_(), mes = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : hoje.slice(0, 7);
+  var ant = (function () { var a = +mes.slice(0, 4), m = +mes.slice(5, 7) - 1; if (!m) { a--; m = 12; } return a + '-' + ('0' + m).slice(-2); })();
+  var nomes = nomesUsuarios_ ? nomesUsuarios_() : {};
+  var quem = function (x) { x = String(x || '').trim(); return nomes[x] || x || '(sem nome)'; };
+  var dia = function (iso) { return String(iso || '').slice(0, 10); };
+  var prazos = tabela_('Prazos').linhas, tarefas = tabela_('Tarefas').linhas, intims = tabela_('Intimacoes').linhas;
+  var calc = function (m) {
+    var r = { pessoas: {} }, P = function (n) { n = quem(n); return r.pessoas[n] = r.pessoas[n] || { nome: n, prazos: 0, prazos_no_prazo: 0, folga: 0, tarefas: 0, tarefas_no_prazo: 0, intimacoes: 0 }; };
+    var cump = prazos.filter(function (z) { return z.situacao === 'cumprido' && dia(z.cumprido_em || z.atualizado_em).slice(0, 7) === m; });
+    r.prazos = cump.length; r.prazosNoPrazo = 0; var folgas = [];
+    cump.forEach(function (z) { var dc = dia(z.cumprido_em || z.atualizado_em), ok = !z.fatal || dc <= z.fatal, p = P(z.cumprido_por || z.responsavel);
+      p.prazos++; if (ok) { p.prazos_no_prazo++; r.prazosNoPrazo++; } if (z.fatal) { var f = diffDias_(z.fatal, dc); folgas.push(f); p.folga += f; } });
+    r.folgaMedia = folgas.length ? Math.round(folgas.reduce(function (a, b) { return a + b; }, 0) / folgas.length * 10) / 10 : null;
+    var tf = tarefas.filter(function (t) { return t.concluida_em && dia(t.concluida_em).slice(0, 7) === m && t.situacao !== 'cancelada'; });
+    r.tarefas = tf.length; r.tarefasNoPrazo = 0;
+    tf.forEach(function (t) { var ok = !t.vence_em || dia(t.concluida_em) <= t.vence_em, p = P(t.concluida_por || t.responsavel); p.tarefas++; if (ok) { p.tarefas_no_prazo++; r.tarefasNoPrazo++; } });
+    var im = intims.filter(function (i) { return i.terminada_em && dia(i.terminada_em).slice(0, 7) === m && !/^rob/.test(i.terminada_por || ''); });
+    r.intimacoesFeitas = im.length; var tempos = [];
+    im.forEach(function (i) { P(i.terminada_por).intimacoes++; if (i.recebido_em) tempos.push(diffDias_(dia(i.terminada_em), dia(i.recebido_em))); });
+    r.diasIntimacao = tempos.length ? Math.round(tempos.reduce(function (a, b) { return a + b; }, 0) / tempos.length * 10) / 10 : null;
+    r.intimacoesRecebidas = intims.filter(function (i) { return dia(i.recebido_em).slice(0, 7) === m; }).length;
+    r.clientesNovos = tabela_('Clientes').linhas.filter(function (c) { return dia(c.criado_em).slice(0, 7) === m && !/hist|GEA|carga|levant|importa|revis|organizar|rob|djen|gmail/i.test(c.origem || ''); }).length;
+    r.contratos = tabela_('Assinaturas').linhas.filter(function (a) { return a.situacao === 'assinado' && dia(a.assinado_em).slice(0, 7) === m; }).length;
+    r.recebido = tabela_('Parcelas').linhas.filter(function (q) { return dia(q.pago_em).slice(0, 7) === m; }).reduce(function (a, q) { return a + (dinheiro_(q.valor_pago) || dinheiro_(q.valor)); }, 0);
+    r.pessoas = Object.keys(r.pessoas).map(function (k) { return r.pessoas[k]; }).filter(function (p) { return p.nome !== '(sem nome)' && !/^rob/i.test(p.nome); })
+      .sort(function (a, b) { return (b.prazos + b.tarefas + b.intimacoes) - (a.prazos + a.tarefas + a.intimacoes); });
+    return r;
+  };
+  var agora = calc(mes), antes = calc(ant);
+  // situação de hoje (não depende do mês)
+  var abertos = prazos.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; });
+  var porResp = {};
+  tarefas.filter(abertaT_).forEach(function (t) { if (t.vence_em && t.vence_em < hoje) { var n = quem(t.responsavel); porResp[n] = (porResp[n] || 0) + 1; } });
+  var procs = tabela_('Processos').linhas.filter(function (p) { return p.status !== 'arquivado' && faseDe_(p) !== 'extinto'; });
+  var limiteParado = somarDias_(hoje, -60);
+  var hons = {}; tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var abertasP = tabela_('Parcelas').linhas.filter(function (q) { var h = hons[q.honorario_id] || {}; return !q.pago_em && !/^(retirado|cancelado)/.test(h.situacao || ''); });
+  var vencido = abertasP.filter(function (q) { return q.vencimento && q.vencimento < hoje; }).reduce(function (a, q) { return a + dinheiro_(q.valor) - dinheiro_(q.valor_pago); }, 0);
+  var aVencer = abertasP.filter(function (q) { return q.vencimento && q.vencimento >= hoje && q.vencimento <= somarDias_(hoje, 30); }).reduce(function (a, q) { return a + dinheiro_(q.valor) - dinheiro_(q.valor_pago); }, 0);
+  var hojeR = {
+    prazosVencidos: abertos.filter(function (z) { return z.fatal && z.fatal < hoje; }).length,
+    prazosSemResp: abertos.filter(function (z) { return !z.responsavel; }).length,
+    prazosConferir: abertos.filter(function (z) { return /PROVIS/i.test(z.descricao || '') || z.situacao === 'a definir'; }).length,
+    tarefasAtrasadas: Object.keys(porResp).map(function (k) { return { nome: k, n: porResp[k] }; }).sort(function (a, b) { return b.n - a.n; }),
+    processosAtivos: procs.length,
+    processosParados: procs.filter(function (p) { return p.numero && (p.ultimo_movimento_em || p.criado_em || '') < limiteParado; }).length,
+    inadimplencia: vencido + aVencer > 0 ? Math.round(vencido / (vencido + aVencer) * 100) : 0, vencido: vencido
+  };
+  return { mes: mes, anterior: ant, agora: agora, antes: antes, hoje: hojeR };
+}
+
 /* ---------- Robôs do escritório (7.7.0) ----------
  * 1) Alvará / RPV / precatório nas intimações → tarefa "levantar o valor" + lista "A levantar" no Financeiro
  * 2) Processo parado há 60 dias → tarefa "verificar andamento / pedir impulso" (até 10 por dia)
@@ -5075,7 +5465,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
