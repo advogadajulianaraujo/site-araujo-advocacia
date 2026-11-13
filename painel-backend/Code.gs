@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.20.0';
+var VERSAO = '8.21.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -75,6 +75,8 @@ var ESQUEMA = {
     'cobranca', 'mensagem_em', 'acao_processo_id', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo_url'],
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
+  Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -404,6 +406,11 @@ var ROTAS = {
   'fin.honorario': { permissao: 'financeiro', fn: obterHonorario_ },
   'fin.honorario.salvar': { permissao: 'financeiro', fn: salvarHonorario_ },
   'fin.renegociar': { permissao: 'financeiro', fn: renegociarHonorario_ },
+  'fin.honorario.retirar': { permissao: 'financeiro', fn: retirarHonorario_ },
+  'fin.honorario.dia': { permissao: 'financeiro', fn: mudarDiaHonorario_ },
+  'fin.acaoCobranca': { permissao: 'financeiro', fn: acaoCobranca_ },
+  'fin.conferencia': { permissao: 'financeiro', fn: conferenciaCobrancas_ },
+  'fin.acaoCobranca.marcar': { permissao: 'financeiro', fn: acaoCobrancaMarcar_ },
   'fin.parcela.salvar': { permissao: 'financeiro', fn: salvarParcela_ },
   'fin.parcela.pagar': { permissao: 'financeiro', fn: pagarParcela_ },
   'fin.parcela.cobranca': { permissao: 'financeiro', fn: cobrancaParcela_ },
@@ -424,6 +431,8 @@ var ROTAS = {
   'inicio.extras': { fn: inicioExtras_ },
   'inicio.acoes': { fn: inicioAcoes_ },
   'agenda.avisado': { fn: marcarAvisado_ },
+  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), hoje: hojeSP_() }; } },
+  'audiencias.salvar': { fn: salvarFichaAto_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
   'future.resumo': { future: true, fn: futureResumo_ },
@@ -437,6 +446,7 @@ var ROTAS = {
   'future.lancamentos': { future: true, fn: futureLancamentos_ },
   'future.lancamento.salvar': { future: true, fn: futureSalvarLancamento_ },
   'future.energia.salvar': { future: true, fn: futureSalvarEnergia_ },
+  'future.conferir': { future: true, fn: futureConferir_ },
   'future.relatorio': { future: true, fn: futureRelatorio_ },
   'future.config': { future: true, fn: futureConfig_ },
   'future.importar': { future: true, fn: futureImportar_ },
@@ -529,7 +539,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -1737,9 +1747,10 @@ function abrirAcaoCliente_(d, u) {
     var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === d.id; })[0];
     if (!c) throw falha_('Cliente não encontrado.');
     var tabP = tabela_('Processos');
-    var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && !x.numero && x.status !== 'arquivado'; })[0];
+    var tipo = d.tipo_acao ? TIPOS_ACAO[d.tipo_acao] : null, areaNova = (tipo && tipo.area) || d.area || '';
+    // 8.21: cliente pode ter várias ações — só reaproveita a inicial sem número da MESMA área (ou quando pedirem "nova" explicitamente)
+    var ja = d.nova ? null : tabP.linhas.filter(function (x) { return x.cliente_id === c.id && !x.numero && x.status !== 'arquivado' && x.fase !== 'extinto' && (!areaNova || !x.area || x.area === areaNova); })[0];
     if (ja) return { id: ja.id, ja: true };
-    var tipo = d.tipo_acao ? TIPOS_ACAO[d.tipo_acao] : null;
     if (d.responsavel) validarResponsavel_(d.responsavel);
     var agora = new Date().toISOString();
     var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || d.area || c.area || '',
@@ -3196,13 +3207,13 @@ function inicioAcoes_(d, u) {
   // audiências e perícias dos próximos 7 dias: sem horário ou cliente ainda não avisado
   var sec = respSecretaria_(), porNumero = {};
   Object.keys(procs).forEach(function (k) { if (procs[k].numero) porNumero[procs[k].numero] = procs[k]; });
-  tabela_('Eventos').linhas.forEach(function (e) {
-    if (!e.data || e.data < hoje || e.data > em7 || !/audi|per[ií]cia/i.test(e.tipo || '')) return;
-    var proc = porNumero[e.numero] || null;
-    var quem = nomeDe(sec), sub = (proc ? (nomes[proc.cliente_id] || proc.cliente_nome || '') + ' · ' : '') + e.numero;
-    var tit = (e.tipo || 'Ato') + ' em ' + dataBR_(e.data) + (e.hora ? ' às ' + e.hora : '');
-    if (!e.hora) itens.push({ tipo: 'semhora', nivel: 'aviso', ordem: 3, titulo: tit + ' — sem horário', sub: sub, quem: quem, quem_us: sec || '', acao: 'Abrir o processo e lançar o horário na agenda', link: '#/agenda?visao=dia&data=' + e.data, fatal: e.data });
-    else if (!e.avisado_em) itens.push({ tipo: 'aviso', nivel: 'aviso', ordem: 4, titulo: tit + ' — cliente ainda não avisado', sub: sub, quem: quem, quem_us: sec || '', acao: 'Avisar o cliente no WhatsApp (Início › Próximos 7 dias)', link: '#/agenda?visao=dia&data=' + e.data, fatal: e.data });
+  // 8.21: os três avisos (1 semana, véspera útil, no dia) — o que está na hora e ninguém fez aparece aqui
+  audienciasLista_(7).forEach(function (e) {
+    var quem = nomeDe(sec), sub = (e.cliente ? e.cliente + ' · ' : '') + (e.numero || e.titulo || '');
+    var tit = e.nome.charAt(0).toUpperCase() + e.nome.slice(1) + ' em ' + dataBR_(e.data) + (e.hora ? ' às ' + e.hora : '');
+    if (!e.hora) itens.push({ tipo: 'semhora', nivel: 'aviso', ordem: 3, titulo: tit + ' — sem horário', sub: sub, quem: quem, quem_us: sec || '', acao: 'Abrir o processo e lançar o horário na agenda', link: '#/audiencias', fatal: e.data });
+    if (e.devido) itens.push({ tipo: 'aviso', nivel: e.devido === 'semana' ? 'aviso' : 'risco', ordem: e.devido === 'semana' ? 4 : 1, titulo: tit + ' — falta o aviso ' + NOME_AVISO_ATO[e.devido], sub: sub, quem: quem, quem_us: sec || '', acao: 'Avisar o cliente no WhatsApp (Audiências)', link: '#/audiencias', fatal: e.data });
+    if (e.tipo === 'instrucao' && !e.testemunhas.length) itens.push({ tipo: 'testemunhas', nivel: 'aviso', ordem: 4, titulo: tit + ' — testemunhas não anotadas', sub: sub, quem: quem, quem_us: sec || '', acao: 'Perguntar ao cliente e anotar nome, CPF e telefone (Audiências)', link: '#/audiencias', fatal: e.data });
   });
   itens.sort(function (a, b) { return (a.ordem - b.ordem) || ((a.fatal || '9') < (b.fatal || '9') ? -1 : (a.fatal || '9') > (b.fatal || '9') ? 1 : 0); });
   return { itens: itens.slice(0, 40), total: itens.length, intimSemResp: semResp, intimSemRespRecentes: semRespRecentes };
@@ -3581,13 +3592,168 @@ function novaParcela_(h, numero, vencimento, valor, quem) {
     observacoes: '', criado_em: agora, atualizado_em: agora, atualizado_por: quem };
 }
 
+/* ---------- 8.21 Financeiro (pedidos da usuária) ---------- */
+var HON_FORA = /^(retirado|cancelado)/;
+/** "Retirar honorário": sai da cobrança SEM virar saldo. As parcelas NÃO pagas somem; as pagas ficam como histórico. Só administração e RH. */
+function retirarHonorario_(d, u) {
+  if (!String(d.motivo || '').trim()) throw falha_('Escreva o motivo (ex.: lançado em duplicidade, cliente não deve, acordo de quitação).');
+  return comTrava_(function () {
+    var tab = tabela_('Honorarios'), h = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!h) throw falha_('Honorário não encontrado.');
+    var parc = tabela_('Parcelas'), abertas = parc.linhas.filter(function (p) { return p.honorario_id === h.id && !p.pago_em; }), n = abertas.length, soma = 0;
+    abertas.forEach(function (p) { soma += dinheiro_(p.valor); apagarLinha_(parc, p); });
+    var agora = new Date().toISOString();
+    atualizarLinha_(tab, h, { situacao: 'retirado', observacoes: ((h.observacoes || '') + ' | RETIRADO em ' + dataBR_(hojeSP_()) + ' por ' + (u.nome || u.usuario) + ': ' + String(d.motivo).trim().slice(0, 300) +
+      (n ? ' (' + n + ' parcela(s) em aberto, ' + txtDinheiro_(soma) + ', saíram sem virar saldo)' : '')).replace(/^ \| /, ''), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'honorário retirado', h.id + ' · ' + n + ' parcela(s) em aberto apagadas · motivo: ' + String(d.motivo).slice(0, 120));
+    return { ok: true, parcelas: n };
+  });
+}
+/** "Mudar o dia de pagamento": todas as parcelas em aberto (a partir de uma data, se informada) passam para o novo dia do mês. */
+function mudarDiaHonorario_(d, u) {
+  var dia = parseInt(d.dia, 10);
+  if (!(dia >= 1 && dia <= 31)) throw falha_('Escolha um dia entre 1 e 31.');
+  return comTrava_(function () {
+    var h = tabela_('Honorarios').linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!h) throw falha_('Honorário não encontrado.');
+    var parc = tabela_('Parcelas'), desde = /^\d{4}-\d{2}-\d{2}$/.test(d.desde || '') ? d.desde : '', agora = new Date().toISOString(), n = 0;
+    parc.linhas.filter(function (p) { return p.honorario_id === h.id && !p.pago_em && p.vencimento && (!desde || p.vencimento >= desde); }).forEach(function (p) {
+      var ano = +p.vencimento.slice(0, 4), mes = +p.vencimento.slice(5, 7), ult = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+      var novo = p.vencimento.slice(0, 8) + ('0' + Math.min(dia, ult)).slice(-2);
+      if (novo !== p.vencimento) { atualizarLinha_(parc, p, { vencimento: novo, observacoes: ((p.observacoes || '') + ' | vencimento ' + dataBR_(p.vencimento) + ' → ' + dataBR_(novo)).replace(/^ \| /, ''), atualizado_em: agora, atualizado_por: u.usuario }); n++; }
+    });
+    if (h.tipo === 'mensal') atualizarLinha_(tabela_('Honorarios'), h, { dia_vencimento: String(dia), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'honorário: dia de pagamento', h.id + ' → dia ' + dia + ' (' + n + ' parcela(s))');
+    return { ok: true, parcelas: n };
+  });
+}
+/**
+ * "Ação de cobrança" (pedido da usuária: "uma aba de quem devemos fazer ação de cobrança"): por cliente, quem deve há mais de 60 dias
+ * (ou já marcado "Ação"), com o total, a parcela mais antiga, o último aviso, quantos dias faltam para prescrever (5 anos, art. 25 do
+ * EAOAB, contados do vencimento) e a etapa sugerida: cobrar no WhatsApp → notificação extrajudicial → ação de cobrança/execução.
+ */
+function acaoCobranca_(d) {
+  var hoje = hojeSP_(), clientes = mapaClientes_(), hons = {}, porCli = {};
+  tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var ignorados = {}; String(config_('ACAO_COB_IGNORADOS') || '').split(',').forEach(function (x) { if (x) ignorados[x] = 1; });
+  tabela_('Parcelas').linhas.forEach(function (p) {
+    var h = hons[p.honorario_id] || {};
+    if (HON_FORA.test(h.situacao || '') || /encerrado/.test(h.situacao || '')) return;
+    if (situacaoParcela_(p, hoje) !== 'atrasada') return;
+    var dias = diffDias_(hoje, p.vencimento);
+    var g = porCli[p.cliente_id] = porCli[p.cliente_id] || { cliente_id: p.cliente_id, parcelas: [], total: 0, mais_antiga: '', ultimo_aviso: '', marcado_acao: false, honorarios: {}, promissoria: false };
+    var saldo = dinheiro_(p.valor) - dinheiro_(p.valor_pago);
+    g.parcelas.push({ id: p.id, numero: p.numero, vencimento: p.vencimento, valor: saldo, dias: dias, cobranca: p.cobranca || '', mensagem_em: p.mensagem_em || '' });
+    g.total += saldo;
+    if (!g.mais_antiga || p.vencimento < g.mais_antiga) g.mais_antiga = p.vencimento;
+    if ((p.mensagem_em || '') > g.ultimo_aviso) g.ultimo_aviso = p.mensagem_em;
+    if (p.cobranca === 'acao') g.marcado_acao = true;
+    g.honorarios[h.id] = h.descricao || TIPOS_HONORARIO[h.tipo] || '';
+    if (/promiss/i.test((h.observacoes || '') + ' ' + (h.descricao || '') + ' ' + (p.observacoes || ''))) g.promissoria = true;
+  });
+  var lista = Object.keys(porCli).map(function (k) {
+    var g = porCli[k], c = clientes[k] || {}, dias = diffDias_(hoje, g.mais_antiga);
+    var prescreve = somarDias_(g.mais_antiga, 0).replace(/^(\d{4})/, function (a) { return String(+a + 5); });
+    g.cliente = c.nome || ''; g.telefone = c.telefone || ''; g.cpf = c.cpf_cnpj ? 'sim' : ''; g.endereco = c.endereco ? 'sim' : '';
+    g.dias = dias; g.total = Math.round(g.total * 100) / 100; g.prescreve_em = prescreve; g.dias_prescricao = diffDias_(prescreve, hoje);
+    g.honorarios = Object.keys(g.honorarios).map(function (id) { return { id: id, descricao: g.honorarios[id] }; });
+    g.etapa = g.marcado_acao ? 'acao' : !g.ultimo_aviso ? 'whatsapp' : diffDias_(hoje, g.ultimo_aviso) >= 15 ? (dias >= 90 ? 'notificacao' : 'whatsapp') : 'aguardando';
+    g.ignorado = !!ignorados[k];
+    return g;
+  }).filter(function (g) { return g.marcado_acao || g.dias > 60; })
+    .sort(function (a, b) { return (b.marcado_acao - a.marcado_acao) || (a.dias_prescricao - b.dias_prescricao) || (b.total - a.total); });
+  return { hoje: hoje, lista: lista.filter(function (g) { return !g.ignorado || d.todos; }), ignorados: lista.filter(function (g) { return g.ignorado; }).length };
+}
+function acaoCobrancaMarcar_(d, u) {
+  return comTrava_(function () {
+    var parc = tabela_('Parcelas'), hoje = hojeSP_(), agora = new Date().toISOString(), n = 0;
+    if (d.acao === 'ignorar' || d.acao === 'voltar') {
+      var l = String(config_('ACAO_COB_IGNORADOS') || '').split(',').filter(function (x) { return x && x !== d.cliente_id; });
+      if (d.acao === 'ignorar') l.push(d.cliente_id);
+      setConfig_('ACAO_COB_IGNORADOS', l.join(','), 'Clientes tirados da lista "Ação de cobrança" (8.21)');
+      registrar_(u.usuario, 'ação de cobrança: ' + d.acao, d.cliente_id);
+      return { ok: true };
+    }
+    parc.linhas.filter(function (p) { return p.cliente_id === d.cliente_id && !p.pago_em && p.vencimento < hoje; }).forEach(function (p) {
+      var m = { atualizado_em: agora, atualizado_por: u.usuario };
+      if (d.acao === 'acao') { m.cobranca = 'acao'; m.acao_processo_id = d.processo_id || p.acao_processo_id || ''; }
+      else if (d.acao === 'avisado') { m.cobranca = p.cobranca === 'acao' ? 'acao' : 'mensagem'; m.mensagem_em = hoje; }
+      else if (d.acao === 'limpar') { m.cobranca = ''; m.acao_processo_id = ''; }
+      else throw falha_('Ação inválida.');
+      atualizarLinha_(parc, p, m); n++;
+    });
+    registrar_(u.usuario, 'ação de cobrança: ' + d.acao, d.cliente_id + ' · ' + n + ' parcela(s)');
+    return { ok: true, parcelas: n };
+  });
+}
+
+/**
+ * 8.21 Conferência das cobranças (pedido da usuária: "ver se estão corretas, se está todo mundo, se não esquecemos de ninguém").
+ * Só aponta: parcelas sem honorário, parcelas/honorários em duplicidade, honorário sem parcelas, valor vazio, pagamento com data no
+ * futuro, dívida que já pode ter prescrito (5 anos), "importado — conferir" parado e cliente com processo ativo SEM honorário.
+ */
+function conferenciaCobrancas_() {
+  var hoje = hojeSP_(), clientes = mapaClientes_(), hons = {}, porHon = {}, itens = [];
+  var add = function (tipo, nivel, titulo, sub, link, cliente_id) { itens.push({ tipo: tipo, nivel: nivel, titulo: titulo, sub: sub || '', link: link || '', cliente: (clientes[cliente_id] || {}).nome || '', cliente_id: cliente_id || '' }); };
+  var honsL = tabela_('Honorarios').linhas;
+  honsL.forEach(function (h) { hons[h.id] = h; porHon[h.id] = []; });
+  var parcs = tabela_('Parcelas').linhas.filter(function (p) { return p.id; });
+  parcs.forEach(function (p) {
+    if (!hons[p.honorario_id]) { add('orfa', 'erro', 'Parcela sem honorário', 'parcela ' + (p.numero || '') + ' · venc. ' + dataBR_(p.vencimento) + ' · ' + reaisTxt_(dinheiro_(p.valor)), '#/cliente/' + p.cliente_id, p.cliente_id); return; }
+    porHon[p.honorario_id].push(p);
+    if (!(dinheiro_(p.valor) > 0)) add('semvalor', 'erro', 'Parcela sem valor', 'parcela ' + (p.numero || '') + ' · venc. ' + dataBR_(p.vencimento), '#/honorario/' + p.honorario_id, p.cliente_id);
+    if (!p.vencimento) add('semvenc', 'erro', 'Parcela sem vencimento', 'parcela ' + (p.numero || ''), '#/honorario/' + p.honorario_id, p.cliente_id);
+    if (p.pago_em && p.pago_em.slice(0, 10) > hoje) add('futuro', 'aviso', 'Pagamento com data no futuro', 'pago em ' + dataBR_(p.pago_em.slice(0, 10)), '#/honorario/' + p.honorario_id, p.cliente_id);
+    if (!p.pago_em && p.vencimento && diffDias_(hoje, p.vencimento) > 5 * 365 && !HON_FORA.test(hons[p.honorario_id].situacao || ''))
+      add('prescrita', 'aviso', 'Dívida com mais de 5 anos (pode ter prescrito — art. 25 do EAOAB)', 'venc. ' + dataBR_(p.vencimento) + ' · ' + reaisTxt_(dinheiro_(p.valor)) + ' · decidir: cobrar (se houve interrupção) ou retirar', '#/honorario/' + p.honorario_id, p.cliente_id);
+    if (p.pago_em && p.cliente_id && hons[p.honorario_id].cliente_id && p.cliente_id !== hons[p.honorario_id].cliente_id) add('cliente', 'erro', 'Parcela ligada a outro cliente que não o do honorário', '', '#/honorario/' + p.honorario_id, p.cliente_id);
+  });
+  // parcelas repetidas no mesmo honorário (mesmo vencimento e valor, as duas em aberto)
+  Object.keys(porHon).forEach(function (hid) {
+    var vistos = {};
+    porHon[hid].forEach(function (p) {
+      if (p.pago_em) return;
+      var k = p.vencimento + '|' + dinheiro_(p.valor);
+      if (vistos[k]) add('dupparc', 'erro', 'Parcela repetida no mesmo honorário', 'venc. ' + dataBR_(p.vencimento) + ' · ' + reaisTxt_(dinheiro_(p.valor)) + ' (2 vezes em aberto)', '#/honorario/' + hid, p.cliente_id);
+      vistos[k] = 1;
+    });
+  });
+  // honorários repetidos (mesmo cliente, tipo, valor/percentual; os dois ativos) e honorário sem parcelas
+  var chH = {};
+  honsL.forEach(function (h) {
+    if (!h.id || HON_FORA.test(h.situacao || '') || /encerrado/.test(h.situacao || '')) return;
+    var k = h.cliente_id + '|' + h.tipo + '|' + dinheiro_(h.valor_total) + '|' + dinheiro_(h.percentual) + '|' + dinheiro_(h.valor_mensal);
+    if (chH[k]) add('duphon', 'erro', 'Honorário em duplicidade', (TIPOS_HONORARIO[h.tipo] || h.tipo) + (h.valor_total ? ' · ' + reaisTxt_(dinheiro_(h.valor_total)) : '') + (h.percentual ? ' · ' + h.percentual + '%' : '') + ' — confira e use "Retirar honorário" no repetido', '#/honorario/' + h.id, h.cliente_id);
+    chH[k] = 1;
+    if ((h.tipo === 'parcelado' || h.tipo === 'mensal') && !porHon[h.id].length) add('semparc', 'aviso', 'Honorário ' + (TIPOS_HONORARIO[h.tipo] || h.tipo).toLowerCase() + ' sem nenhuma parcela', h.descricao || '', '#/honorario/' + h.id, h.cliente_id);
+    if (h.tipo === 'parcelado' && porHon[h.id].length && dinheiro_(h.valor_total) > 0) {
+      var soma = porHon[h.id].reduce(function (t, p) { return t + dinheiro_(p.valor); }, 0);
+      if (Math.abs(soma - dinheiro_(h.valor_total)) > 1) add('soma', 'aviso', 'Soma das parcelas diferente do valor do contrato', 'contrato ' + reaisTxt_(dinheiro_(h.valor_total)) + ' · parcelas ' + reaisTxt_(soma) + ' (renegociação ou desconto? confira)', '#/honorario/' + h.id, h.cliente_id);
+    }
+    if (h.situacao === 'importado — conferir') add('importado', 'info', 'Honorário importado ainda não conferido', (TIPOS_HONORARIO[h.tipo] || h.tipo) + (h.descricao ? ' · ' + h.descricao : ''), '#/honorario/' + h.id, h.cliente_id);
+  });
+  // cliente com processo ativo e SEM honorário nenhum (pode ter ficado de fora)
+  var comHon = {}; honsL.forEach(function (h) { if (h.cliente_id) comHon[h.cliente_id] = 1; });
+  var semHon = {};
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (!p.cliente_id || comHon[p.cliente_id] || semHon[p.cliente_id]) return;
+    if (/arquiv|baixad|encerr/i.test(p.status || '') || p.fase === 'extinto') return;
+    semHon[p.cliente_id] = 1;
+    add('semhon', 'info', 'Cliente com processo ativo e sem honorário no painel', (p.numero || 'sem número') + (p.area ? ' · ' + p.area : '') + ' — lance o honorário ou confira no GEA/contrato', '#/cliente/' + p.cliente_id, p.cliente_id);
+  });
+  var ordem = { erro: 0, aviso: 1, info: 2 };
+  itens.sort(function (a, b) { return ordem[a.nivel] - ordem[b.nivel] || (a.cliente < b.cliente ? -1 : 1); });
+  var cont = {}; itens.forEach(function (x) { cont[x.tipo] = (cont[x.tipo] || 0) + 1; });
+  return { itens: itens.slice(0, 600), total: itens.length, contagem: cont, parcelas: parcs.length, honorarios: honsL.length };
+}
+
 function resumoFinanceiro_() {
   comTrava_(estenderMensais_);
   var hoje = hojeSP_();
   var clientes = mapaClientes_();
   var hons = {};
   tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
-  var parcelas = tabela_('Parcelas').linhas.map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); });
+  var parcelas = tabela_('Parcelas').linhas.filter(function (p) { return !HON_FORA.test((hons[p.honorario_id] || {}).situacao || ''); }).map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); });
   var atrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; })
     .sort(function (a, b) { return b.dias_atraso - a.dias_atraso; });
   var em30 = somarDias_(hoje, 30);
@@ -4729,46 +4895,140 @@ function atosDaAgenda_(hoje, ate, eventos) {
   return atos.sort(function (a, b) { return (a.data + a.hora) < (b.data + b.hora) ? -1 : 1; });
 }
 
-/**
- * 8.6.0 (pedido da usuária: "não podemos perder audiência"): DOIS avisos ao cliente para cada audiência/perícia —
- * 1 semana antes (ou assim que o robô souber, se faltar menos) e NO DIA. Cada aviso vira uma tarefa com o WhatsApp pronto.
- */
+/* ---------- 8.21 Audiências: TRÊS avisos ao cliente + ficha (pedido da usuária: "NUNCA deixe de avisar") ----------
+ * 1 semana antes (se o dia cair em sábado, domingo ou feriado → o dia útil ANTERIOR), na véspera útil (audiência na segunda → avisa
+ * na sexta) e NO DIA. Cada aviso vira tarefa da secretaria com o WhatsApp pronto; a tela Audiências (#/audiencias) mostra os três
+ * checks, a ciência da equipe, se é online ou presencial e as testemunhas (nome, CPF, telefone) da instrução. */
+var AVISOS_ATO = ['semana', 'vespera', 'dia'];
+var NOME_AVISO_ATO = { semana: '1 semana antes', vespera: 'véspera', dia: 'no dia' };
+function utilAteh_(iso, fer) { var d = iso; for (var i = 0; i < 15 && !ehUtil_(d, 'todos', fer, true); i++) d = somarDias_(d, -1); return d; }
+function utilAntes_(iso, fer) { return utilAteh_(somarDias_(iso, -1), fer); }
+/** Dias em que cada aviso deve sair. */
+function diasDosAvisos_(data, fer) {
+  var vespera = utilAntes_(data, fer), semana = utilAteh_(somarDias_(data, -7), fer);
+  return { semana: semana < vespera ? semana : vespera, vespera: vespera, dia: data };
+}
+/** Qual aviso está na hora (o mais urgente que ainda falta). */
+function avisoDevido_(data, hoje, feitos, fer) {
+  var d = diasDosAvisos_(data, fer);
+  if (hoje === data) return feitos.dia ? '' : 'dia';
+  if (hoje > data) return '';
+  if (hoje >= d.vespera) return feitos.vespera ? '' : 'vespera';
+  if (hoje >= d.semana) return feitos.semana ? '' : 'semana';
+  return '';
+}
+function fichasAtos_() {
+  var r = {}, tab = tabela_('Audiencias');
+  tab.linhas.forEach(function (f) { if (f.chave) r[f.chave] = f; });
+  return { tab: tab, porChave: r };
+}
+/** Ficha de um ato (se a audiência mudou de dia, herda testemunhas/modo da ficha anterior do mesmo processo e tipo). */
+function fichaDoAto_(fichas, a) {
+  var f = fichas.porChave[a.chave];
+  if (f) return f;
+  var ant = fichas.tab.linhas.filter(function (x) { return a.numero && x.numero === a.numero && x.tipo === a.tipo; }).sort(function (x, y) { return x.data < y.data ? 1 : -1; })[0];
+  return ant ? { chave: '', herdada: true, modo: ant.modo, link: ant.link, testemunhas: ant.testemunhas, obs: ant.obs } : null;
+}
+/** Estado dos três avisos de um ato: Eventos (antigo) + ficha + tarefas do robô concluídas. */
+function estadoAvisosAto_(a, tarefasAviso, fichas) {
+  var f = fichas.porChave[a.chave] || {}, e = a.ev || {}, r = {};
+  var tS = tarefasAviso[a.chave] || {}, tV = tarefasAviso[a.chave + '|vespera'] || {}, tD = tarefasAviso[a.chave + '|dia'] || {};
+  r.semana = { em: f.aviso_semana_em || e.avisado_em || (tS.feita ? tS.em : ''), por: f.aviso_semana_por || e.avisado_por || tS.por || '' };
+  r.vespera = { em: f.aviso_vespera_em || (tV.feita ? tV.em : ''), por: f.aviso_vespera_por || tV.por || '' };
+  r.dia = { em: f.aviso_dia_em || e.avisado_dia_em || (tD.feita ? tD.em : ''), por: f.aviso_dia_por || e.avisado_dia_por || tD.por || '' };
+  return r;
+}
+function tarefasDeAviso_(tabT) {
+  var r = {};
+  tabT.linhas.forEach(function (t) {
+    var re = /\[lembrete:([^\]]+)\]/g, m;
+    while ((m = re.exec(t.descricao || ''))) r[m[1]] = { feita: !abertaT_(t) && t.situacao !== 'cancelada', aberta: abertaT_(t), por: t.concluida_por || '', em: t.concluida_em || '', id: t.id };
+  });
+  return r;
+}
+function testemunhasDe_(f) { try { var l = JSON.parse((f && f.testemunhas) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+
+/** Lista para a tela Audiências e para o Início: atos de hoje até +dias, com cliente, avisos, ficha e o aviso devido agora. */
+function audienciasLista_(dias) {
+  var hoje = hojeSP_(), ate = somarDias_(hoje, Math.min(120, Math.max(1, +dias || 60))), fer = mapaFeriados_();
+  var clis = {}, procs = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
+  var tAv = tarefasDeAviso_(tabela_('Tarefas')), fichas = fichasAtos_();
+  return atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 150).map(function (a) {
+    var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {}, f = fichaDoAto_(fichas, a) || {};
+    var av = estadoAvisosAto_(a, tAv, fichas), feitos = { semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em };
+    return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
+      titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
+      avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer),
+      modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      // compatibilidade com o Início antigo
+      avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
+  });
+}
+
+/** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência). */
+function salvarFichaAto_(d, u) {
+  if (!d.lembrete) throw falha_('Audiência não encontrada.');
+  return comTrava_(function () {
+    var fichas = fichasAtos_(), f = fichas.porChave[d.lembrete], agora = new Date().toISOString(), quem = u.nome || u.usuario, m = { atualizado_em: agora, atualizado_por: u.usuario };
+    if (d.modo !== undefined) m.modo = /online|video|vídeo/i.test(d.modo) ? 'online' : /presen/i.test(d.modo) ? 'presencial' : '';
+    if (d.link !== undefined) m.link = String(d.link || '').trim().slice(0, 300);
+    if (d.obs !== undefined) m.obs = String(d.obs || '').slice(0, 3000);
+    if (d.testemunhas !== undefined) {
+      var l = (Array.isArray(d.testemunhas) ? d.testemunhas : []).map(function (t) { return { nome: String(t.nome || '').trim().slice(0, 120), cpf: String(t.cpf || '').replace(/[^\d.\-]/g, '').slice(0, 14),
+        telefone: String(t.telefone || '').trim().slice(0, 30), obs: String(t.obs || '').trim().slice(0, 300), confirmou: t.confirmou ? 'sim' : '' }; }).filter(function (t) { return t.nome || t.telefone || t.cpf; });
+      m.testemunhas = JSON.stringify(l.slice(0, 10));
+    }
+    if (d.ciente) { m.ciente_em = d.ciente === 'desfazer' ? '' : agora; m.ciente_por = d.ciente === 'desfazer' ? '' : quem; }
+    if (f) atualizarLinha_(fichas.tab, f, m);
+    else inserirLinha_(fichas.tab, Object.assign({ chave: d.lembrete, numero: d.numero || '', data: d.data || '', hora: d.hora || '', tipo: d.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
+      ciente_em: '', ciente_por: '', aviso_semana_em: '', aviso_semana_por: '', aviso_vespera_em: '', aviso_vespera_por: '', aviso_dia_em: '', aviso_dia_por: '', criado_em: agora }, m));
+    registrar_(u.usuario, 'audiência: ficha', (d.numero || '') + ' ' + (d.data ? dataBR_(d.data) : '') + ' ' + Object.keys(m).filter(function (k) { return !/atualizado/.test(k); }).join(','));
+    return { ok: true };
+  });
+}
+
 function lembrarAudiencias_(ctx) {
-  var hoje = hojeSP_();
+  var hoje = hojeSP_(), fer = mapaFeriados_();
   var tabT = ctx.tarefas = ctx.tarefas || tabela_('Tarefas');
-  var ja = {};
-  tabT.linhas.forEach(function (t) { var re = /\[lembrete:([^\]]+)\]/g, m; while ((m = re.exec(t.descricao || ''))) ja[m[1]] = 1; });
+  var tAv = tarefasDeAviso_(tabT), fichas = fichasAtos_();
   var porNumero = {};
   ctx.procs.linhas.forEach(function (p) { if (p.numero) porNumero[p.numero] = p; });
-  var atos = atosDaAgenda_(hoje, somarDias_(hoje, 7), ctx.eventos || tabela_('Eventos'));
+  var atos = atosDaAgenda_(hoje, somarDias_(hoje, 10), ctx.eventos || tabela_('Eventos'));
   var feitos = 0, agora = new Date().toISOString();
   atos.forEach(function (a) {
-    var noDia = a.data === hoje;
-    // aviso da semana: a antiga marca [lembrete:chave] (2 dias úteis) vale como aviso da semana
-    var chave = noDia ? a.chave + '|dia' : a.chave;
-    if (ja[chave] || (!noDia && (ja[a.chave + '|dia']))) return;
-    if (noDia && a.ev && a.ev.avisado_dia_em) return;
-    if (!noDia && a.ev && a.ev.avisado_em) return;
-    ja[chave] = 1;
+    var av = estadoAvisosAto_(a, tAv, fichas);
+    var devido = avisoDevido_(a.data, hoje, { semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, fer);
+    if (!devido) return;
+    var chave = devido === 'semana' ? a.chave : a.chave + '|' + devido;
+    if (tAv[chave]) return; // já existe a tarefa deste aviso (aberta ou feita)
+    tAv[chave] = { aberta: true };
+    // tarefa do aviso anterior que ninguém fez: fecha (o novo aviso já cobre) para não acumular
+    AVISOS_ATO.forEach(function (k) { var ck = k === 'semana' ? a.chave : a.chave + '|' + k, t = tAv[ck]; if (k !== devido && t && t.aberta && t.id) {
+      var tt = tabT.linhas.filter(function (x) { return x.id === t.id; })[0]; if (tt) atualizarLinha_(tabT, tt, { situacao: 'cancelada', historico: historicoMais_(tt.historico, { nome: 'robô' }, 'substituída pelo aviso ' + NOME_AVISO_ATO[devido]), atualizado_em: agora, atualizado_por: 'robô' }); } });
     var p = porNumero[a.numero] || {};
     var cli = p.cliente_id ? (ctx.clientes.linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}) : {};
     var nomeCli = cli.nome || (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '';
     var quando = dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '');
     var nomeAto = a.nome.charAt(0).toUpperCase() + a.nome.slice(1);
+    var titulo = { semana: 'Avisar o cliente (1 semana antes): ', vespera: '⚖ VÉSPERA — lembrar o cliente: ', dia: '⚖ HOJE — lembrar o cliente: ' }[devido];
+    var orient = { semana: 'Avise o cliente pelo botão de WhatsApp desta tarefa (a mensagem explica o que é a audiência e pergunta se será online ou presencial' + (a.tipo === 'instrucao' ? ' e pede as testemunhas: nome, CPF e telefone' : '') + ').',
+      vespera: 'O próximo dia útil é o da audiência: lembre o cliente agora pelo WhatsApp e confirme que ele vai.',
+      dia: 'É HOJE: mande a mensagem de lembrete pelo botão de WhatsApp e confirme que o cliente vai.' }[devido];
     inserirLinha_(tabT, { id: novoId_('T'),
-      titulo: (noDia ? '⚖ HOJE — lembrar o cliente: ' : 'Avisar o cliente (1 semana antes): ') + a.nome + ' em ' + quando + (nomeCli ? ' — ' + nomeCli : ''),
+      titulo: titulo + a.nome + ' em ' + quando + (nomeCli ? ' — ' + nomeCli : ''),
       descricao: nomeAto + ' ' + quando + (a.local ? ' · ' + a.local : '') + (a.numero ? ' · processo ' + a.numero : '') + (a.titulo && !a.numero ? ' · ' + a.titulo : '') +
-        '.\n' + (noDia ? 'É HOJE: mande a mensagem de lembrete pelo botão de WhatsApp desta tarefa e confirme que o cliente vai.' : 'Avise o cliente pelo botão de WhatsApp desta tarefa e confira o checklist.') +
-        ' Depois aperte "✓ Conferido".\n' +
-        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + chave + ']' + (noDia ? '\n[avisodia]' : ''),
+        '.\n' + orient + ' Anote testemunhas e se é online/presencial em Audiências (menu). Depois aperte "✓ Conferido".\n' +
+        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + chave + ']' + (devido === 'dia' ? '\n[avisodia]' : devido === 'vespera' ? '\n[avisovespera]' : ''),
       responsavel: respSecretaria_() || p.responsavel || responsavelPadrao_(p, a.numero) || '', processo_id: p.id || '', numero: a.numero || '', cliente_id: p.cliente_id || '',
       vence_em: hoje, etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
-      historico: historicoMais_('', { nome: 'robô' }, (noDia ? 'lembrete do dia: ' : 'aviso de 1 semana: ') + a.nome), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
-      prioridade: noDia || diffDias_(a.data, hoje) <= 1 ? 'urgente' : 'alta', checklist: noDia ? '' : JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })),
+      historico: historicoMais_('', { nome: 'robô' }, 'aviso ' + NOME_AVISO_ATO[devido] + ': ' + a.nome), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
+      prioridade: devido === 'semana' ? 'alta' : 'urgente', checklist: devido === 'semana' ? JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })) : '',
       repetir: '', ok_por: '', ok_em: '' });
     feitos++;
   });
-  if (feitos) registrar_('robô', 'lembretes de audiência', feitos + ' tarefa(s) "lembrar o cliente"');
+  if (feitos) registrar_('robô', 'lembretes de audiência', feitos + ' tarefa(s) de aviso ao cliente');
   return feitos;
 }
 
@@ -5057,7 +5317,9 @@ function abrirPeticaoInicial_(c, tipoChave, contra, docs, u) {
   var tipo = TIPOS_ACAO[tipoChave] || null;
   return comTrava_(function () {
     var tabP = tabela_('Processos');
-    var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && (!x.numero || x.fase === 'contratado') && x.status !== 'arquivado'; })[0];
+    // 8.21 (pedido da usuária: "a pessoa pode ter mais de um processo"): só reaproveita a inicial em aberto da MESMA área
+    var areaNova = (tipo && tipo.area) || '';
+    var ja = tabP.linhas.filter(function (x) { return x.cliente_id === c.id && (!x.numero || x.fase === 'contratado') && x.status !== 'arquivado' && x.fase !== 'extinto' && (!areaNova || !x.area || x.area === areaNova); })[0];
     if (ja) return ja.id;
     var agora = new Date().toISOString();
     var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
@@ -5188,6 +5450,18 @@ function desfazerFechamento_(a, procId, u, agora, motivo) {
   return res;
 }
 /** Botão "Não vai fechar" na petição inicial (processo sem número). */
+/** 8.21: "Não vai fechar" na petição inicial → o cartão do cliente no CRM vai para "Não fechou" com o motivo (cria o cartão se não houver). */
+function crmPerdido_(clienteId, motivo, u) {
+  if (!clienteId) return '';
+  var t = tabela_('Leads'), agora = new Date().toISOString(), c = mapaClientes_()[clienteId] || {};
+  var l = t.linhas.filter(function (x) { return x.cliente_id === clienteId && ['ganho', 'perdido'].indexOf(x.etapa) < 0; })[0] ||
+    t.linhas.filter(function (x) { return x.cliente_id === clienteId; }).sort(function (a, b) { return (a.atualizado_em || '') < (b.atualizado_em || '') ? 1 : -1; })[0];
+  var hist = linhaHist_(u, 'Não vai fechar' + (motivo ? ': ' + motivo : ''));
+  if (l) atualizarLinha_(t, l, { etapa: 'perdido', perdido_em: agora, motivo_perda: motivo, historico: (l.historico ? l.historico + '\n' : '') + hist, atualizado_em: agora, atualizado_por: u.usuario });
+  else inserirLinha_(t, { id: novoId_('L'), criado_em: agora, nome: c.nome || '', telefone: c.telefone || '', email: c.email || '', area: c.area || '', assunto: c.tipo_acao || '', canal: c.como_conheceu || '',
+    etapa: 'perdido', perdido_em: agora, motivo_perda: motivo, cliente_id: clienteId, temperatura: 'frio', historico: hist, criado_por: u.usuario, atualizado_em: agora, atualizado_por: u.usuario });
+  return 'perdido';
+}
 function naoFechou_(d, u) {
   return comTrava_(function () {
     var pr = tabela_('Processos').linhas.filter(function (p) { return p.id === d.id; })[0];
@@ -5197,6 +5471,7 @@ function naoFechou_(d, u) {
       .sort(function (x, y) { return (x.gerado_em || '') < (y.gerado_em || '') ? 1 : -1; })[0] || null;
     var r = desfazerFechamento_(a, pr.id, u, new Date().toISOString(), String(d.motivo || 'cliente não vai fechar').slice(0, 200));
     registrar_(u.usuario, 'cliente não fechou', pr.cliente_id + ' · ' + pr.id + (r.honorarios ? ' · ' + r.honorarios + ' honorário(s) cancelado(s)' : ''));
+    r.crm = crmPerdido_(pr.cliente_id, String(d.motivo || 'Desistiu / sem interesse').slice(0, 200), u); // 8.21: o cartão do funil vai para "Não fechou"
     return Object.assign({ ok: true }, r);
   });
 }
@@ -6599,7 +6874,7 @@ function linhasPromissorias_(notas, c, esc, tipo, numProc) {
       ', ou à sua ordem, a quantia de **' + reaisTxt_(n.valor) + '** (' + extenso_(n.valor) + '), em moeda corrente nacional, pagável em ' + esc.cidade + '.']);
     linhas.push(['p', '**Emitente:** **' + nome + '**, ' + doc + (end ? ', ' + (c.tipo === 'PJ' ? 'com sede ' : 'residente e domiciliad{{c:o|a}} ') + comPreposicao_(end) : '') +
       '. Referente à ' + n.numero + 'ª parcela dos honorários advocatícios contratados' + ref + '.']);
-    linhas.push(['l', 'Local e data da emissão: ' + esc.cidade + ', ' + porExtensoData_(hojeSP_()) + '.']);
+    linhas.push(['l', 'Local e data da emissão: ' + cidadeAssinatura_({}, c, esc) + ', ' + porExtensoData_(hojeSP_()) + '.']);
     linhas.push(['a', nome + ' — Emitente']);
   });
   return linhas;
@@ -6828,6 +7103,13 @@ function lancarHonorariosForm_(f, c, descricao, u) {
  * Gera os documentos escolhidos a partir dos modelos, na pasta do cliente, em Google Docs e PDF.
  * d: { cliente_id, modelos: [], advogado_id, tipo_acao, parte_contraria, objeto, honorarios: {...}, recibo: {valor, referente} }
  */
+/** 8.21 (pedido da usuária): cidade da linha "Cidade, data" = a informada no gerador; senão a cidade do cliente; senão a do escritório. */
+function cidadeAssinatura_(d, c, esc) {
+  var inf = String(d.cidade_assinatura || '').trim();
+  if (inf) return inf;
+  if (c && c.cidade) return String(c.cidade).trim() + (c.uf ? '/' + String(c.uf).trim().toUpperCase() : '');
+  return esc.cidade;
+}
 function gerarDocumentos_(d, u) {
   var pode = PERFIS[u.perfil];
   var doDrive = {};
@@ -6867,7 +7149,13 @@ function gerarDocumentos_(d, u) {
     var h = null, parcelas = [];
     if (!f.forma || f.forma === 'cadastrado') {
       var hons = tabela_('Honorarios').linhas.filter(function (x) { return x.cliente_id === c.id; });
-      h = hons.filter(function (x) { return x.id === d.honorario_id; })[0] || hons.filter(function (x) { return x.situacao === 'ativo'; }).pop() || null;
+      // 8.21: sem honorário escolhido → o que tem MAIS parcelas em aberto (antes pegava o último "ativo", às vezes um êxito sem parcelas,
+      // e as notas promissórias falhavam)
+      var abertasDe = function (hh) { return tabela_('Parcelas').linhas.filter(function (p) { return p.honorario_id === hh.id && !p.pago_em; }).length; };
+      var validos = hons.filter(function (x) { return !/^(retirado|cancelado|encerrado)/.test(x.situacao || ''); });
+      h = hons.filter(function (x) { return x.id === d.honorario_id; })[0] ||
+        validos.slice().sort(function (a, b) { return abertasDe(b) - abertasDe(a); }).filter(function (x) { return abertasDe(x) > 0; })[0] ||
+        hons.filter(function (x) { return x.situacao === 'ativo'; }).pop() || null;
       if (h) parcelas = tabela_('Parcelas').linhas.filter(function (p) { return p.honorario_id === h.id; });
       if (!h) faltando.push('forma dos honorários (a cláusula saiu em branco)');
     }
@@ -6880,11 +7168,19 @@ function gerarDocumentos_(d, u) {
       var nP = f.forma === 'avista' ? 1 : Math.max(1, parseInt(f.parcelas, 10) || 1);
       var valsP = valoresParcelas_(dinheiro_(f.valor_total), nP);
       notasP = datasParcelas_(f.primeiro_vencimento, nP, f.dia_demais).map(function (dt, i) { return { numero: i + 1, total: nP, vencimento: dt, valor: valsP[i] }; });
-    } else if (h && h.tipo === 'parcelado') {
-      var abertasP = parcelas.filter(function (q) { return !q.pago_em; }).sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
-      notasP = abertasP.map(function (q) { return { numero: +q.numero || 1, total: parcelas.length, vencimento: q.vencimento, valor: dinheiro_(q.valor) }; });
+    } else {
+      // honorário já cadastrado: as parcelas em aberto dele (qualquer tipo); sem nenhuma, as parcelas em aberto de todos os honorários do cliente
+      var abertasP = parcelas.filter(function (q) { return !q.pago_em; });
+      var totalP = parcelas.length;
+      if (!abertasP.length) {
+        var honsOk = {}; tabela_('Honorarios').linhas.forEach(function (x) { if (x.cliente_id === c.id && !/^(retirado|cancelado)/.test(x.situacao || '')) honsOk[x.id] = 1; });
+        var todasP = tabela_('Parcelas').linhas.filter(function (q) { return honsOk[q.honorario_id]; });
+        abertasP = todasP.filter(function (q) { return !q.pago_em; }); totalP = todasP.length;
+      }
+      abertasP.sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+      notasP = abertasP.map(function (q) { return { numero: +q.numero || 1, total: totalP, vencimento: q.vencimento, valor: dinheiro_(q.valor) - dinheiro_(q.valor_pago) }; }).filter(function (n) { return n.valor > 0; });
     }
-    if (!notasP.length) throw falha_('As notas promissórias precisam de valor fixo: escolha "Valor fixo à vista", "Valor fixo parcelado" ou "Fixo + percentual" (ou um honorário parcelado já cadastrado com parcelas em aberto).');
+    if (!notasP.length) throw falha_('Não achei parcelas para as notas promissórias. Escolha "Valor fixo à vista" ou "Valor fixo parcelado" e informe valor e vencimento, ou cadastre o honorário parcelado do cliente no Financeiro (as notas saem das parcelas em aberto).');
   }
   var menores = [];
   if (quais.indexOf('procuracao_menor') >= 0) {
@@ -6960,7 +7256,7 @@ function gerarDocumentos_(d, u) {
     '{{clausula_honorarios}}': clausula, '{{advogado}}': qualificacaoAdvogado_(adv), '{{advogado_nome}}': String(adv.nome).toUpperCase(),
     '{{advogado_oab}}': oabTexto_(adv), '{{escritorio}}': esc.nome, '{{escritorio_endereco}}': esc.endereco,
     '{{escritorio_email}}': esc.email, '{{escritorio_telefone}}': esc.telefone, '{{foro}}': esc.foro,
-    '{{cidade_assinatura}}': esc.cidade, '{{data_extenso}}': porExtensoData_(hoje), '{{endereco_completo}}': enderecoCompleto_(c), '{{endereco_com_prep}}': comPreposicao_(enderecoCompleto_(c)),
+    '{{cidade_assinatura}}': cidadeAssinatura_(d, c, esc), '{{data_extenso}}': porExtensoData_(hoje), '{{endereco_completo}}': enderecoCompleto_(c), '{{endereco_com_prep}}': comPreposicao_(enderecoCompleto_(c)),
     '{{valor}}': rec.valor ? reaisTxt_(rec.valor) : '', '{{valor_extenso}}': rec.valor ? extenso_(dinheiro_(rec.valor)) : '',
     '{{referente}}': String(rec.referente || '').trim() || 'honorários advocatícios',
     '{{cpf_cnpj}}': c.cpf_cnpj || '', '{{rg}}': c.rg || '', '{{endereco}}': c.endereco || '', '{{cidade}}': c.cidade || '', '{{uf}}': c.uf || '',
@@ -7079,7 +7375,7 @@ function gerarDocumentos_(d, u) {
       assinatura = comTrava_(function () {
         var tabA = tabela_('Assinaturas'), agora = new Date().toISOString();
         var nomes = assinaveis.map(function (k) { return (MODELOS[k] || {}).nome || k; });
-        var ja = tabA.linhas.filter(function (x) { return x.cliente_id === c.id && x.situacao === 'aguardando'; })[0];
+        var ja = tabA.linhas.filter(function (x) { return x.cliente_id === c.id && x.situacao === 'aguardando' && (!d.tipo_acao || !x.tipo_acao || x.tipo_acao === d.tipo_acao); })[0];
         if (ja) { atualizarLinha_(tabA, ja, { documentos: nomes.join(' · '), gerado_em: agora, gerado_por: u.usuario, tipo_acao: d.tipo_acao || ja.tipo_acao, parte_contraria: contra || ja.parte_contraria, lembretes: '0', lembrete_em: '', honorarios: honPendente || ja.honorarios || '' }); return ja.id; }
         var a = { id: novoId_('AS'), cliente_id: c.id, cliente_nome: c.nome, documentos: nomes.join(' · '), tipo_acao: d.tipo_acao || '', parte_contraria: contra || '', gerado_em: agora,
           gerado_por: u.usuario, situacao: 'aguardando', assinado_em: '', assinado_por: '', processo_id: '', lembretes: '0', lembrete_em: '', pasta_url: c.pasta_url || '', honorarios: honPendente, honorarios_lancados: '' };
@@ -7405,7 +7701,8 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
 }
 function atoDaTarefa_(desc) {
   var m = /\[ato:([a-z]+)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(desc || '');
-  return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim(), hoje: /\[avisodia\]/.test(desc || '') } : null;
+  return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim(), hoje: /\[avisodia\]/.test(desc || ''),
+    quando: /\[avisodia\]/.test(desc || '') ? 'dia' : /\[avisovespera\]/.test(desc || '') ? 'vespera' : 'semana', lembrete: ((/\[lembrete:([^\]|]+)/.exec(desc || '') || [])[1]) || '' } : null;
 }
 
 function lerChecklist_(txt) {
@@ -8280,20 +8577,8 @@ function inicioExtras_(d, u) {
   var clis = {}, procs = {};
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
-  // audiências e perícias de hoje e dos próximos 7 dias (Eventos + Google Agenda): aviso de 1 semana e aviso do dia
-  var tarefasAviso = {};
-  tabela_('Tarefas').linhas.forEach(function (t) {
-    var re = /\[lembrete:([^\]]+)\]/g, m;
-    while ((m = re.exec(t.descricao || ''))) tarefasAviso[m[1]] = { feita: !abertaT_(t) && t.situacao !== 'cancelada', por: t.concluida_por || '', em: t.concluida_em || '' };
-  });
-  var audiencias = atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 40).map(function (a) {
-    var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {};
-    var tSem = tarefasAviso[a.chave] || {}, tDia = tarefasAviso[a.chave + '|dia'] || {};
-    return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
-      titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', telefone: c.telefone || '', processo_id: p.id || '',
-      avisado_em: e.avisado_em || (tSem.feita ? tSem.em : ''), avisado_por: e.avisado_por || tSem.por || '',
-      avisado_dia_em: e.avisado_dia_em || (tDia.feita ? tDia.em : ''), avisado_dia_por: e.avisado_dia_por || tDia.por || '' };
-  });
+  // audiências e perícias de hoje e dos próximos 7 dias: os três avisos (1 semana, véspera, dia) — 8.21
+  var audiencias = audienciasLista_(7).slice(0, 40);
   // aniversariantes de hoje
   var dm = hoje.slice(5), avisos = avisosMapa_();
   var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
@@ -8318,19 +8603,25 @@ function inicioExtras_(d, u) {
   return { audiencias: audiencias, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
 }
 
-/** "Avisei o cliente" da audiência: fica marcado para a equipe não avisar duas vezes. */
+/** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
 function marcarAvisado_(d, u) {
-  var dia = d.quando === 'dia', agora = new Date().toISOString(), quem = u.nome || u.usuario;
+  var q = d.quando === 'dia' ? 'dia' : d.quando === 'vespera' ? 'vespera' : 'semana', agora = new Date().toISOString(), quem = u.nome || u.usuario;
   return comTrava_(function () {
-    var tab = tabela_('Eventos'), e = tab.linhas.filter(function (x) { return x.chave === d.chave; })[0];
-    if (e) atualizarLinha_(tab, e, dia ? { avisado_dia_em: agora, avisado_dia_por: quem } : { avisado_em: agora, avisado_por: quem });
-    // fecha a tarefa do aviso (1 semana ou do dia) que o robô criou
-    var lembrete = (d.lembrete || '') + (dia ? '|dia' : ''), tabT = tabela_('Tarefas'), n = 0;
+    var tab = tabela_('Eventos'), e = d.chave ? tab.linhas.filter(function (x) { return x.chave === d.chave; })[0] : null;
+    if (e && q !== 'vespera') atualizarLinha_(tab, e, q === 'dia' ? { avisado_dia_em: agora, avisado_dia_por: quem } : { avisado_em: agora, avisado_por: quem });
+    if (d.lembrete) {
+      var fichas = fichasAtos_(), f = fichas.porChave[d.lembrete], m = {}; m['aviso_' + q + '_em'] = agora; m['aviso_' + q + '_por'] = quem; m.atualizado_em = agora; m.atualizado_por = u.usuario;
+      if (f) atualizarLinha_(fichas.tab, f, m);
+      else inserirLinha_(fichas.tab, Object.assign({ chave: d.lembrete, numero: d.numero || (e && e.numero) || '', data: d.data || (e && e.data) || '', hora: d.hora || '', tipo: d.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
+        ciente_em: '', ciente_por: '', aviso_semana_em: '', aviso_semana_por: '', aviso_vespera_em: '', aviso_vespera_por: '', aviso_dia_em: '', aviso_dia_por: '', criado_em: agora }, m));
+    }
+    // fecha a tarefa deste aviso que o robô criou
+    var lembrete = (d.lembrete || '') + (q === 'semana' ? '' : '|' + q), tabT = tabela_('Tarefas');
     if (d.lembrete) tabT.linhas.filter(function (t) { return String(t.descricao || '').indexOf('[lembrete:' + lembrete + ']') >= 0 && abertaT_(t); }).forEach(function (t) {
-      atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: u.usuario, historico: historicoMais_(t.historico, u, 'cliente avisado pelo WhatsApp'), atualizado_em: agora, atualizado_por: u.usuario }); n++;
+      atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: u.usuario, historico: historicoMais_(t.historico, u, 'cliente avisado pelo WhatsApp'), atualizado_em: agora, atualizado_por: u.usuario });
     });
-    if (!e && !n) throw falha_('Audiência não encontrada.');
-    registrar_(u.usuario, 'whatsapp ao cliente', (d.numero || (e && e.numero) || '') + ' · aviso ' + (dia ? 'do dia' : 'de 1 semana') + (e ? ' de ' + e.tipo + ' em ' + dataBR_(e.data) : ''));
+    if (!e && !d.lembrete) throw falha_('Audiência não encontrada.');
+    registrar_(u.usuario, 'whatsapp ao cliente', (d.numero || (e && e.numero) || '') + ' · aviso ' + NOME_AVISO_ATO[q] + (e ? ' de ' + e.tipo + ' em ' + dataBR_(e.data) : d.data ? ' (' + dataBR_(d.data) + ')' : ''));
     return { ok: true };
   });
 }
@@ -9711,7 +10002,7 @@ function futureGerarCobrancas_(comp, T) {
   comp = comp || futComp_();
   var desde = config_('FUTURE_COBRAR_DESDE');
   if (desde && comp < desde) return 0; // antes da importação o controle era a planilha antiga
-  try { futSemearEnergia_(T); futMigrarReferencia_(T); } catch (eS) { /* segue */ }
+  try { futSemearEnergia_(T); futMigrarReferencia_(T); futCaucaoNormalizar_(T); } catch (eS) { /* segue */ }
   var lavRef = futLavPorUnidade_(T, futCompMais_(comp, -1));
   var dia = Math.min(28, Math.max(1, parseInt(config_('FUTURE_DIA_VENC'), 10) || 10));
   var agora = new Date().toISOString(), feitas = 0, taxaSala = futN_(config_('FUTURE_TAXAS_SALA')) || 107;
@@ -9749,7 +10040,7 @@ function futureGerarCobrancas_(comp, T) {
   T.co.linhas.forEach(function (c) {
     if (c.competencia !== comp || c.pago_em || c.situacao === 'paga fora') return;
     var refC = futRefDaCobranca_(c);
-    var pagos = T.la.linhas.filter(function (l) { return l.tipo === 'receita' && l.unidade === c.unidade && l.competencia === refC && /aluguel/i.test(l.categoria) && l.origem !== 'cobrança'; });
+    var pagos = T.la.linhas.filter(function (l) { return l.tipo === 'receita' && l.unidade === c.unidade && l.competencia === refC && /aluguel/i.test(l.categoria) && !futEhCaucao_(l) && l.origem !== 'cobrança'; });
     if (!pagos.length) return;
     var soma = pagos.reduce(function (a, l) { return a + futN_(l.valor); }, 0);
     atualizarLinha_(T.co, c, { pago_em: pagos.map(function (l) { return l.data; }).sort().pop() || hojeSP_(), valor_pago: txtDinheiro_(soma),
@@ -9777,11 +10068,11 @@ function futureResumo_(d, u) {
   });
   var n = function (s) { return unidades.filter(function (x) { return x.situacao === s; }).length; };
   var ref = futCompMais_(comp, -1);
-  var noMes = function (tipo) { return T.la.linhas.filter(function (l) { return l.tipo === tipo && l.competencia === ref; }).reduce(function (a, l) { return a + futN_(l.valor); }, 0); };
+  var noMes = function (tipo) { return T.la.linhas.filter(function (l) { return l.tipo === tipo && l.competencia === ref && !futEhCaucao_(l); }).reduce(function (a, l) { return a + futN_(l.valor); }, 0); };
   var serie = [];
   for (var i = 11; i >= 0; i--) {
     var cp = futCompMais_(comp, -i), r = 0, ds = 0, en = 0;
-    T.la.linhas.forEach(function (l) { if (l.competencia !== cp) return; if (l.tipo === 'receita') r += futN_(l.valor); else { ds += futN_(l.valor); if (l.categoria === 'Energia') en += futN_(l.valor); } });
+    T.la.linhas.forEach(function (l) { if (l.competencia !== cp || futEhCaucao_(l)) return; if (l.tipo === 'receita') r += futN_(l.valor); else { ds += futN_(l.valor); if (l.categoria === 'Energia') en += futN_(l.valor); } });
     serie.push({ mes: cp, receitas: r, despesas: ds, energia: en });
   }
   var abertas = T.co.linhas.filter(function (c) { var s = futSituacaoCobranca_(c, hoje); return s === 'aberta' || s === 'atrasada' || s === 'paga em parte'; });
@@ -10849,9 +11140,43 @@ function futureSalvarEnergia_(d, u) {
 }
 
 /** Relatório do mês: o que entrou, o que saiu, energia, ocupação e pendências, com o mês anterior para comparar. */
+/** 8.21: caução é garantia (devolvida no fim do contrato), não aluguel nem receita. "Calção" (como vinha da planilha antiga) também. */
+function futEhCaucao_(l) { return /cau[cç][aã]o|cal[cç][aã]o/i.test((l && l.categoria) || ''); }
+/** 8.21 (uma vez, Config FUTURE_CAUCAO_821): "Calção"/"Calçao" da planilha antiga vira a categoria "Caução". */
+function futCaucaoNormalizar_(T) {
+  if (config_('FUTURE_CAUCAO_821')) return 0;
+  var n = 0;
+  T.la.linhas.forEach(function (l) { if (/cal[cç][aã]o/i.test(l.categoria || '') && l.categoria !== 'Caução') { atualizarLinha_(T.la, l, { categoria: 'Caução' }); n++; } });
+  setConfig_('FUTURE_CAUCAO_821', new Date().toISOString() + ' · ' + n + ' lançamento(s) "Calção" → "Caução"', 'Edifício Future: categoria da caução acertada (8.21, uma vez)');
+  return n;
+}
+/**
+ * 8.21 Conferência do caixa do prédio (pedido da usuária: "tome cuidado, tem pagamentos que são caução e outros são cobranças; não junte").
+ * Só aponta: caução com descrição de aluguel (ou o contrário), lançamento repetido (mesma unidade, mês, categoria e valor),
+ * receita sem unidade e categoria fora da lista.
+ */
+function futureConferir_() {
+  var T = futTabs_(), itens = [], vistos = {};
+  T.la.linhas.forEach(function (l) {
+    if (!l.id || l.tipo === 'excluido') return;
+    var cau = futEhCaucao_(l), desc = String(l.descricao || '');
+    var base = { id: l.id, data: l.data, competencia: l.competencia, tipo: l.tipo, categoria: l.categoria, unidade: l.unidade, pessoa: l.pessoa, valor: futN_(l.valor), descricao: desc };
+    if (l.tipo === 'receita' && cau && /aluguel|referente a/i.test(desc)) itens.push(Object.assign({ motivo: 'Lançado como CAUÇÃO, mas a descrição fala em aluguel: é caução ou aluguel?' }, base));
+    if (l.tipo === 'receita' && !cau && /cau[cç][aã]o|cal[cç][aã]o/i.test(desc)) itens.push(Object.assign({ motivo: 'Lançado como ' + (l.categoria || 'receita') + ', mas a descrição fala em caução: troque a categoria para Caução' }, base));
+    if (l.tipo === 'receita' && !l.unidade && !/hercil|outros/i.test((l.pessoa || '') + ' ' + (l.categoria || ''))) itens.push(Object.assign({ motivo: 'Receita sem apartamento/sala: diga de qual unidade é' }, base));
+    if (l.origem === 'cobrança') return; // as baixas feitas pelo painel não contam como repetição
+    var k = [l.tipo, l.unidade, l.competencia, (l.categoria || '').toLowerCase(), futN_(l.valor).toFixed(2)].join('|');
+    if (l.unidade && vistos[k]) itens.push(Object.assign({ motivo: 'Parece repetido: mesma unidade, mês, categoria e valor de outro lançamento (' + dataBR_(vistos[k].data || '') + ')' }, base));
+    else vistos[k] = l;
+  });
+  return { itens: itens.sort(function (a, b) { return (a.competencia || '') < (b.competencia || '') ? 1 : -1; }) };
+}
 function futureRelatorio_(d) {
   var T = futTabs_(), hoje = hojeSP_(), comp = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futComp_(hoje), ant = futCompMais_(comp, -1);
-  var doMes = function (cp) { return T.la.linhas.filter(function (l) { return l.competencia === cp && l.tipo !== 'excluido'; }); };
+  var doMesTudo = function (cp) { return T.la.linhas.filter(function (l) { return l.competencia === cp && l.tipo !== 'excluido'; }); };
+  // 8.21 (pedido da usuária): caução NÃO é receita do prédio (é garantia, devolvida no fim) — fica num quadro à parte
+  var doMes = function (cp) { return doMesTudo(cp).filter(function (l) { return !futEhCaucao_(l); }); };
+  var cauMes = doMesTudo(comp).filter(function (l) { return futEhCaucao_(l); });
   var soma = function (ls, tipo) { return ls.filter(function (l) { return l.tipo === tipo; }).reduce(function (a, l) { return a + futN_(l.valor); }, 0); };
   var porCat = function (ls, tipo) { var r = {}; ls.forEach(function (l) { if (l.tipo === tipo) r[l.categoria || 'Outros'] = (r[l.categoria || 'Outros'] || 0) + futN_(l.valor); });
     return Object.keys(r).map(function (k) { return { categoria: k, valor: r[k] }; }).sort(function (a, b) { return b.valor - a.valor; }); };
@@ -10863,6 +11188,7 @@ function futureRelatorio_(d) {
   var energiaAnt = T.en.linhas.filter(function (e) { return e.competencia === ant; }).reduce(function (a, e) { return a + futN_(e.valor); }, 0);
   var un = T.un.linhas; var oc = un.filter(function (x) { return /^(alugado|renovar)$/.test(x.situacao); }).length, alugaveis = un.filter(function (x) { return x.situacao !== 'proprio'; }).length;
   return { mes: comp, anterior: ant,
+    caucoes: { total: cauMes.reduce(function (a, l) { return a + (l.tipo === 'receita' ? 1 : -1) * futN_(l.valor); }, 0), lista: cauMes.map(function (l) { return { data: l.data, tipo: l.tipo, unidade: l.unidade, pessoa: l.pessoa, valor: futN_(l.valor), descricao: l.descricao }; }) },
     receitas: soma(L, 'receita'), despesas: soma(L, 'despesa'), receitasAnt: soma(LA, 'receita'), despesasAnt: soma(LA, 'despesa'),
     receitasCat: porCat(L, 'receita'), despesasCat: porCat(L, 'despesa'),
     lancamentos: L.sort(function (a, b) { return (a.data || '') < (b.data || '') ? -1 : 1; }).map(function (l) { return { data: l.data, tipo: l.tipo, categoria: l.categoria, unidade: l.unidade, pessoa: l.pessoa, valor: futN_(l.valor), descricao: l.descricao, forma: l.forma }; }),
@@ -11334,12 +11660,56 @@ function canalDoContato_(o) { return { ads: 'Google Ads (anúncio)', organico: '
 function linhaHist_(u, txt) { return Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + ' · ' + (u ? (u.nome || u.usuario) : 'sistema') + ': ' + txt; }
 
 /** Contatos do site que ainda não viraram lead e leads cujo contrato foi assinado (ou desistido) no painel. Só grava se mudou. */
+/** 8.21 (pedido da usuária: "no CRM tem cliente com o número do WhatsApp e não o nome"): cartão sem nome de verdade ganha o nome do
+ *  cadastro ligado, do cliente com o mesmo telefone (e passa a ficar ligado a ele) ou o nome do perfil do WhatsApp da conversa.
+ *  Sem nenhum desses, fica como está e o painel mostra "nome a confirmar" (a equipe pergunta o nome). */
+function nomeEhNumero_(n) { n = String(n || '').trim(); return !n || /^[\s+\d().\-]{6,}$/.test(n) || /^WhatsApp\s*[\d+]/i.test(n) || /^\+?\d[\d\s-]{5,}$/.test(n); }
+function crmNomes_() {
+  var t = tabela_('Leads'), faltam = t.linhas.filter(function (l) { return l.id && nomeEhNumero_(l.nome); });
+  if (!faltam.length) return 0;
+  var d8 = function (x) { x = String(x || '').replace(/\D/g, ''); return x.length >= 8 ? x.slice(-8) : ''; };
+  var clis = {}, porTel = {}, conv = {};
+  tabela_('Clientes').linhas.forEach(function (c) { if (!c.nome || nomeEhNumero_(c.nome)) return; clis[c.id] = c; String(c.telefone || '').split(/\/|,|;| ou | e /).forEach(function (tt) { var k = d8(tt); if (k) porTel[k] = porTel[k] === undefined ? c : null; }); });
+  tabela_('Conversas').linhas.forEach(function (c) { var k = d8(c.telefone); if (k && c.nome && !nomeEhNumero_(c.nome)) conv[k] = c.nome; });
+  var n = 0, agora = new Date().toISOString();
+  comTrava_(function () {
+    faltam.forEach(function (l) {
+      var k = d8(l.telefone || l.nome), c = (l.cliente_id && clis[l.cliente_id]) || (k && porTel[k]) || null, m = null;
+      if (c) m = { nome: c.nome, cliente_id: l.cliente_id || c.id };
+      else if (k && conv[k]) m = { nome: conv[k] };
+      if (!m) return;
+      m.telefone = l.telefone || (/\d{8}/.test(String(l.nome).replace(/\D/g, '')) ? l.nome : '');
+      m.historico = (l.historico ? l.historico + '\n' : '') + linhaHist_(null, 'nome acertado pelo robô (estava "' + String(l.nome || '').slice(0, 30) + '")');
+      m.atualizado_em = agora; m.atualizado_por = 'robô';
+      atualizarLinha_(t, l, m); n++;
+    });
+  });
+  return n;
+}
+/** 8.21: procuração/contrato gerado com o tipo de ação (ex.: trabalhista) → o cartão do funil ganha a ÁREA (etiqueta) e o assunto. */
+function crmAreas_() {
+  var assin = {}, t = tabela_('Leads');
+  tabela_('Assinaturas').linhas.forEach(function (a) { if (a.cliente_id && a.tipo_acao) assin[a.cliente_id] = a; });
+  var mud = t.linhas.filter(function (l) { var a = l.cliente_id && assin[l.cliente_id]; return a && (!l.area || !l.assunto); });
+  if (!mud.length) return 0;
+  comTrava_(function () {
+    mud.forEach(function (l) {
+      var a = assin[l.cliente_id], tipo = TIPOS_ACAO[a.tipo_acao] || null, nomeT = tipo ? tipo.nome : a.tipo_acao, m = { atualizado_em: new Date().toISOString(), atualizado_por: 'robô' };
+      if (!l.area) m.area = (tipo && tipo.area) || areaMkt_(nomeT).replace('Geral', '');
+      if (!l.assunto) m.assunto = nomeT + (a.parte_contraria ? ' — contra ' + a.parte_contraria : '');
+      atualizarLinha_(t, l, m);
+    });
+  });
+  return mud.length;
+}
 function crmSincronizar_() {
   if (!config_('CRM_ETAPAS_814')) comTrava_(function () {
     var tm = tabela_('Leads'); tm.adiar = true;
     tm.linhas.forEach(function (l) { var n = { consulta: 'contato', negociacao: 'proposta' }[l.etapa]; if (n) atualizarLinha_(tm, l, { etapa: n }); });
     regravarMudadas_(tm); setConfig_('CRM_ETAPAS_814', new Date().toISOString(), 'Etapas antigas do funil (consulta, negociação) passadas para as novas');
   });
+  try { crmNomes_(); } catch (e) { /* segue */ }
+  try { crmAreas_(); } catch (e) { /* segue */ }
   var tabL = tabela_('Leads'), porContato = {}, mud = false;
   tabL.linhas.forEach(function (l) { if (l.contato_id) porContato[l.contato_id] = l; });
   var desde = new Date(Date.now() - 120 * 86400000).toISOString(), agora = new Date().toISOString();

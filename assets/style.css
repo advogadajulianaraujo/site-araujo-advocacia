@@ -700,3 +700,25 @@ footer.site{color:#b3aea5}
 .cad-ok h2{font:400 30px/1.15 var(--display);margin:0 0 10px}
 .cad-wrap .safety{margin-top:22px}
 @media (max-width:640px){.cad-grid{grid-template-columns:1fr}.cad-form{padding:20px}}
+/* 2026.3 (revisão nov/2026): primeira tela mais curta, Trabalhista e Previdenciário em destaque, guia em destaque */
+.hero2 h1{font-size:clamp(38px,4vw,62px);max-width:700px}
+.hero2 .lead{margin:18px 0 26px;font-size:clamp(17px,1.35vw,20px)}
+.areas-dest{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.area-dest{display:flex;flex-direction:column;gap:12px;background:var(--paper,#fff);border:1px solid var(--line);border-top:4px solid var(--gold,#B58D52);padding:34px 32px 28px;min-height:260px;transition:background .3s,color .3s;text-decoration:none;color:inherit}
+.area-dest h3{font-size:clamp(24px,2.1vw,32px);line-height:1.15;margin:0}
+.area-dest p{margin:0;flex:1;color:var(--muted);font-size:16px}
+.area-dest .go{display:inline-flex;align-items:center;gap:10px;font:600 12px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;padding-top:16px;border-top:1px solid var(--line)}
+.area-dest .go .arrow{margin-left:auto}
+.area-dest:hover{background:var(--black,#171513);color:#fff}.area-dest:hover p{color:#cfc8bb}
+.areas-outras{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:22px;font-size:15.5px}
+.areas-outras span{color:var(--muted)}
+.areas-outras a:not(.more){border:1px solid var(--line);border-radius:999px;padding:8px 16px;text-decoration:none;color:inherit;background:var(--paper,#fff)}
+.areas-outras a:not(.more):hover{border-color:var(--gold,#B58D52)}
+.areas-outras .more{margin-left:auto}
+.online-grid.dois{grid-template-columns:1fr 1fr;max-width:900px}
+.guia-dest{padding:clamp(40px,5vw,72px) 0 0}
+.guia-card{display:block;border:1px solid var(--line);border-left:5px solid var(--gold,#B58D52);padding:clamp(26px,3vw,42px);text-decoration:none;color:inherit;background:var(--paper,#fff)}
+.guia-card h2{font-size:clamp(26px,2.6vw,40px);margin:8px 0 10px}
+.guia-card p{color:var(--muted);margin:0 0 16px;max-width:680px}
+.guia-card .go{display:inline-flex;gap:10px;align-items:center;font:600 12px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase}
+@media (max-width:760px){.areas-dest,.online-grid.dois{grid-template-columns:1fr}.area-dest{min-height:0;padding:26px 22px}.areas-outras .more{margin-left:0}}

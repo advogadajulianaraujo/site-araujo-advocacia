@@ -150,6 +150,7 @@
       const c = h('article', { class: 'crm-card temp-' + (l.temperatura || 'morno') + (l.atrasado ? ' atrasado' : ''), draggable: 'true', tabindex: 0,
         onclick: () => dialogoLead(l, r, equipe, recarregar), onkeydown: ev => { if (ev.key === 'Enter') dialogoLead(l, r, equipe, recarregar); } },
         h('div', { class: 'crm-card-topo' }, h('strong', {}, l.nome), l.valor_estimado && !rh ? h('span', { class: 'crm-valor' }, din(l.valor_estimado)) : null),
+        /^[\s+\d().-]{6,}$|^WhatsApp\s*[\d+]/i.test(String(l.nome || '').trim()) ? h('span', { class: 'tag conferir', title: 'O robô não achou o nome: pergunte ao cliente e corrija no cartão' }, '❓ nome a confirmar') : null,
         h('div', { class: 'crm-tags' }, l.cliente_id ? h('span', { class: 'tag ok', title: 'Já tem cadastro de cliente' }, '✓ cliente') : null, l.area ? h('span', { class: 'tag' }, l.area) : null, l.canal ? h('span', { class: 'tag sec' }, l.canal.replace(/ \(.*\)$/, '')) : null),
         l.assunto ? h('p', { class: 'crm-assunto' }, String(l.assunto).slice(0, 90)) : null,
         l.proxima_acao ? h('p', { class: 'crm-prox' + (l.atrasado ? ' atrasado' : '') }, '→ ', l.proxima_acao.slice(0, 80), l.proxima_data ? h('span', {}, ' · ' + dataBR(l.proxima_data)) : null) : null,
@@ -396,7 +397,7 @@
   const INSS_FAIXAS = [[1621.00, 0.075], [2902.84, 0.09], [4354.27, 0.12], [8475.55, 0.14]];
   const inss = v => { let t = 0, ant = 0; for (const [lim, a] of INSS_FAIXAS) { if (v > ant) t += (Math.min(v, lim) - ant) * a; ant = lim; } return Math.round(t * 100) / 100; };
   // Conta da rescisão (a mesma do site, assets/calculadoras.js)
-  function contaRescisao(base, adm, saida, motivo, aviso, venc, fgtsInf) {
+  function contaRescisao(base, adm, saida, motivo, aviso, venc, fgtsInf, naoDep) {
     const indireta = motivo === 'indireta'; if (indireta) motivo = 'sem_justa';
     const anos = anosCompletos(adm, saida);
     let diasAv = 0;
@@ -429,13 +430,14 @@
     r.liquido = r.bruto - r.inssSaldo - r.inss13;
     // FGTS: depositado na conta (não é pago no termo de rescisão)
     const mesesSem = Math.max(1, Math.round((saida - adm) / (30.4375 * 86400000)));
-    r.saldoInf = fgtsInf > 0; r.saldoConta = fgtsInf > 0 ? fgtsInf : base * 0.08 * mesesSem;
+    r.mesesNP = naoDep ? Math.min(mesesSem, naoDep > 0 ? naoDep : mesesSem) : 0; r.fgtsNP = base * 0.08 * r.mesesNP; // FGTS que a empresa não depositou
+    r.saldoInf = fgtsInf > 0; r.saldoConta = fgtsInf > 0 ? fgtsInf : base * 0.08 * Math.max(0, mesesSem - r.mesesNP);
     r.fgtsMes = 0.08 * (saldoSal + v13); r.fgtsAviso = 0.08 * vAviso;
     r.pct = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
     // Tema 255 do TST (OJ 42, II, SDI-1): a multa NÃO inclui o FGTS da projeção do aviso indenizado
-    r.baseMulta = r.saldoConta + 0.08 * (saldoSal + v13sem);
+    r.baseMulta = r.saldoConta + r.fgtsNP + 0.08 * (saldoSal + v13sem);
     r.multa = r.baseMulta * r.pct;
-    r.fgtsRecolher = r.fgtsMes + r.fgtsAviso + r.multa;
+    r.fgtsRecolher = r.fgtsNP + r.fgtsMes + r.fgtsAviso + r.multa;
     return r;
   }
   function calcRescisao(out) {
@@ -449,18 +451,21 @@
       campo('vencidas', 'Férias integrais (vencidas) ainda não tiradas', '0', { opcoes: [['0', 'Nenhuma'], ['1', '1 período'], ['2', '2 períodos']] }),
       campo('fgts', 'Saldo do FGTS (R$)', '', { modo: 'decimal', dica: 'opcional: do extrato' }),
       campo('medias', 'Médias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras, comissões… (opcional)' }),
+      h('label', { class: 'largo g-opcao' }, h('input', { type: 'checkbox', name: 'fgts_np' }), ' A empresa NÃO depositou o FGTS (ou só parte)'),
+      campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'vazio = o contrato todo' }),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular')));
     form.addEventListener('submit', ev => {
       ev.preventDefault();
       const base = num(form.salario.value) + num(form.medias.value), adm = lerData(form.admissao.value), saida = lerData(form.saida.value);
       if (!(base > 0) || !adm || !saida || saida < adm) { out.replaceChildren(h('p', { class: 'erro' }, 'Confira o salário e as datas.')); return; }
-      const r = contaRescisao(base, adm, saida, form.motivo.value, form.aviso.value, +form.vencidas.value || 0, num(form.fgts.value));
+      const r = contaRescisao(base, adm, saida, form.motivo.value, form.aviso.value, +form.vencidas.value || 0, num(form.fgts.value), form.fgts_np.checked ? (parseInt(form.meses_np.value, 10) || -1) : 0);
       const linhas = [['Pago diretamente no termo de rescisão (TRCT)'], ...r.trct,
         ['Total bruto', r.bruto], ['(−) INSS sobre o saldo de salário', -r.inssSaldo]];
       if (r.inss13) linhas.push(['(−) INSS sobre o 13º', -r.inss13]);
       linhas.push(['Líquido a pagar (estimado, sem IR)', r.liquido], ['FGTS — depositado na conta do FGTS (não entra no líquido)'],
         [`Saldo da conta ${r.saldoInf ? '(informado)' : '(estimado, sem a projeção do aviso)'}`, r.saldoConta],
         ['FGTS a recolher do mês da rescisão (8% do saldo de salário e do 13º)', r.fgtsMes]);
+      if (r.fgtsNP) linhas.splice(linhas.length - 1, 0, [`FGTS que a empresa não depositou (${r.mesesNP} meses — a cobrar)`, r.fgtsNP]);
       if (r.fgtsAviso) linhas.push(['FGTS a recolher sobre o aviso prévio indenizado (8%)', r.fgtsAviso]);
       if (r.pct) linhas.push([`Multa de ${r.pct * 100}% do FGTS (base para fins rescisórios ${din(r.baseMulta)}, sem a projeção do aviso)`, r.multa]);
       linhas.push(['Total a recolher na rescisão (FGTS + multa)', r.fgtsRecolher]);

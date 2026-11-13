@@ -10,7 +10,7 @@
 <link rel="icon" href="/assets/logo-araujo.png" type="image/png">
 <link rel="preload" href="/assets/bodoni-moda-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/jost-latin-300-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/style.css?v=17">
+<link rel="stylesheet" href="/assets/style.css?v=18">
 <script>document.documentElement.classList.add('js')</script>
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_BR">
@@ -23,8 +23,8 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Início","item":"https://araujoadvocaciasc.com.br/"},{"@type":"ListItem","position":2,"name":"Trabalhista","item":"https://araujoadvocaciasc.com.br/trabalhista/"},{"@type":"ListItem","position":3,"name":"Calculadoras","item":"https://araujoadvocaciasc.com.br/calculadoras/"}]}</script>
 <script src="/assets/ads-measurement.js" defer></script>
 <script src="/assets/site.js?v=12" defer></script>
-<script src="/assets/calculadoras.js?v=4" defer></script>
-<link rel="stylesheet" href="/assets/calculadoras.css?v=2">
+<script src="/assets/calculadoras.js?v=5" defer></script>
+<link rel="stylesheet" href="/assets/calculadoras.css?v=3">
 </head>
 <body data-area="trabalhista">
 <a class="skip" href="#principal">Pular para o conteúdo</a>
@@ -35,7 +35,7 @@
 <nav class="nav" id="navigation" aria-label="Navegação principal">
 <a href="/atuacao/">Atuação</a>
 <a href="/trabalhista/">Trabalhista</a>
-<a href="/empresarial/">Empresarial</a>
+<a href="/previdenciario/">Previdenciário</a>
 <a href="/escritorio/">O Escritório</a>
 <a href="/blog/">Blog</a>
 <a href="/contato/">Contato</a>
@@ -75,6 +75,8 @@
 <label class="campo-aviso">Aviso prévio<select name="aviso"><option value="indenizado">Indenizado (não trabalhei)</option><option value="trabalhado">Trabalhado</option></select></label>
 <div class="linha2"><label>Férias integrais (vencidas) ainda não tiradas<select name="vencidas"><option value="0">Nenhuma</option><option value="1">1 período</option><option value="2">2 períodos</option></select></label>
 <label>Saldo do FGTS (opcional, R$)<input name="fgts" inputmode="decimal" placeholder="Veja no app FGTS"></label></div>
+<label class="calc-chk"><input type="checkbox" name="fgts_np"> A empresa NÃO depositou o FGTS (ou depositou só uma parte)</label>
+<label class="campo-fgtsnp" hidden>Quantos meses ficaram sem depósito?<input name="meses_np" inputmode="numeric" placeholder="Deixe vazio se foi o contrato todo"></label>
 <button class="btn" type="submit">Calcular a estimativa</button>
 </form>
 <div class="calc-res" id="res-rescisao" role="status" hidden></div>

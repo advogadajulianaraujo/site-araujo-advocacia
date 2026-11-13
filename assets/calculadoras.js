@@ -43,6 +43,8 @@
   if (fr) {
     const mostraAviso = () => { const m = fr.motivo.value; fr.querySelector('.campo-aviso').hidden = !(m === 'sem_justa' || m === 'pedido'); };
     fr.motivo.addEventListener('change', mostraAviso); mostraAviso();
+    const mostraNP = () => { fr.querySelector('.campo-fgtsnp').hidden = !fr.fgts_np.checked; };
+    fr.fgts_np.addEventListener('change', mostraNP); mostraNP();
     fr.addEventListener('submit', ev => {
       ev.preventDefault();
       const out = $('#res-rescisao');
@@ -95,11 +97,14 @@
       // FGTS: depositado na conta, não é pago no termo de rescisão
       const mesesSem = Math.max(1, Math.round((saida - adm) / (30.4375 * 86400000)));
       const saldoInf = parseFloat(String(fr.fgts.value || '').replace(/\./g, '').replace(',', '.'));
-      const saldoFgts = saldoInf > 0 ? saldoInf : sal * 0.08 * mesesSem;
+      // FGTS que a empresa não depositou: vira dívida a cobrar e também entra na base da multa
+      const naoDep = fr.fgts_np.checked, mesesNP = naoDep ? Math.min(mesesSem, parseInt(fr.meses_np.value, 10) || mesesSem) : 0;
+      const fgtsNP = sal * 0.08 * mesesNP;
+      const saldoFgts = saldoInf > 0 ? saldoInf : sal * 0.08 * Math.max(0, mesesSem - mesesNP);
       const fgtsMes = 0.08 * (saldoSal + v13), fgtsAviso = 0.08 * vAviso;
       const multa = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
       // Tema 255 do TST: a multa não inclui o FGTS da projeção do aviso indenizado
-      const baseMulta = saldoFgts + 0.08 * (saldoSal + v13sem), vMulta = baseMulta * multa;
+      const baseMulta = saldoFgts + fgtsNP + 0.08 * (saldoSal + v13sem), vMulta = baseMulta * multa;
       const sec = t => `<tr class="calc-sec"><th scope="rowgroup" colspan="2">${t}</th></tr>`;
       const saque = motivo === 'sem_justa'
         ? 'pode sacar o saldo da conta e a multa (saque-rescisão). Atenção: quem aderiu ao saque-aniversário, pela regra geral, saca só a multa de 40%; o saldo fica bloqueado'
@@ -108,8 +113,11 @@
       out.innerHTML = `<table class="calc-tab"><tbody>${sec('Pago no acerto (termo de rescisão)')}${itens.map(x => linha(x[0], reais(x[1]))).join('')}${linha('<b>Total bruto</b>', '<b>' + reais(total) + '</b>', 'calc-total')}
         ${linha('(−) INSS sobre o saldo de salário', '− ' + reais(inssSaldo))}${inss13 ? linha('(−) INSS sobre o 13º', '− ' + reais(inss13)) : ''}${linha('<b>Líquido estimado a receber</b>', '<b>' + reais(liquido) + '</b>', 'calc-total')}
         ${sec('FGTS — vai para a conta do FGTS (não entra no líquido)')}${linha('Saldo da conta ' + (saldoInf > 0 ? '(informado)' : '(estimado: 8% do salário por mês)'), reais(saldoFgts))}
+        ${naoDep ? linha('<b>FGTS que a empresa não depositou</b> (' + mesesNP + ' ' + (mesesNP === 1 ? 'mês' : 'meses') + ', a cobrar)', '<b>' + reais(fgtsNP) + '</b>') : ''}
         ${linha('FGTS do mês da rescisão (8% do saldo de salário e do 13º)', reais(fgtsMes))}${fgtsAviso ? linha('FGTS sobre o aviso prévio indenizado (8%)', reais(fgtsAviso)) : ''}
-        ${multa ? linha('Multa de ' + (multa * 100) + '% do FGTS (sobre ' + reais(baseMulta) + ', sem a projeção do aviso)', reais(vMulta)) : ''}</tbody></table>
+        ${multa ? linha('Multa de ' + (multa * 100) + '% do FGTS (sobre ' + reais(baseMulta) + (naoDep ? ', incluindo o que não foi depositado' : '') + ', sem a projeção do aviso)', reais(vMulta)) : ''}
+        ${linha('<b>Total de FGTS e multa a receber</b>', '<b>' + reais(saldoFgts + fgtsNP + fgtsMes + fgtsAviso + vMulta) + '</b>', 'calc-total')}</tbody></table>
+        ${naoDep ? '<p class="calc-alerta-txt"><b>FGTS não depositado:</b> a empresa deve depositar os meses em atraso, com correção, e a multa ' + (multa ? 'de ' + (multa * 100) + '% ' : '') + 'é calculada sobre todos os depósitos devidos, inclusive os que faltaram (Lei 8.036/1990, arts. 15 e 18). Confira os meses no extrato do app FGTS.</p>' : ''}
         <p>FGTS: o trabalhador ${saque}.${motivo === 'sem_justa' ? ' Na dispensa sem justa causa também pode haver direito ao seguro-desemprego.' : ''} Confira o saldo no app FGTS.</p>
         <p class="calc-nota">Estimativa informativa. Desconto de INSS pela tabela de 2026; imposto de renda não calculado. Sem médias de horas extras, comissões, adicionais ou diferenças que o caso possa ter. Férias vencidas fora do prazo de concessão podem ser devidas em dobro (CLT, art. 137). A multa do FGTS é calculada sem o FGTS da projeção do aviso indenizado (Tema 255 do TST). Base: CLT arts. 137, 477, 484-A e 487; Lei 12.506/2011 (aviso proporcional); Lei 8.036/1990 (FGTS); Súmulas 171, 261 e 305 do TST. Para saber o valor certo, é preciso analisar os documentos.</p>
         <p><a class="btn" href="${zap('Olá, Dra. Júlian. Fiz a estimativa de rescisão no site e gostaria de conferir se os valores do meu acerto estão corretos.')}" target="_blank" rel="noopener noreferrer" data-contact="calculadora-rescisao">Conferir minha rescisão no WhatsApp</a></p>`;

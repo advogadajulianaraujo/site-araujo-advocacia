@@ -1842,3 +1842,40 @@ a.visao-bt{text-decoration:none}
 /* 8.20: aviso já mandado — continua clicável para mandar de novo */
 .btn.wa.feito{background:#e8f4ec;color:#1f6b3a;border-color:#9fcfb0}
 .btn.wa.feito:hover{background:#d6ecdd}
+/* 8.21 Audiências: três avisos, ciência, online/presencial e testemunhas */
+.aud-nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0}
+.aud-num{display:flex;flex-direction:column;gap:2px;background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;color:var(--tinta);text-decoration:none}
+.aud-num b{font-size:1.6rem;line-height:1}.aud-num span{font-size:.85rem;color:#6b6259}
+.aud-num.alerta{border-color:#e0a21a;background:#fffaf0}.aud-num.alerta b{color:#8a5a00}
+.aud-lista{display:flex;flex-direction:column;gap:18px;margin-top:12px}
+.aud-dia-tit{font-size:1rem;margin:0 0 8px;color:#6b6259}
+.aud-cartao{background:#fff;border:1px solid var(--linha);border-left:4px solid #6b8fc0;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+.aud-cartao.aud-instrucao{border-left-color:#b42318}.aud-cartao.aud-pericia{border-left-color:#7a4fa0}
+.aud-cartao.aud-tem-aviso{box-shadow:0 0 0 2px #f2c14e inset}
+.aud-cab{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.aud-tit{display:flex;flex-direction:column;gap:2px;flex:1;min-width:200px}
+.aud-cab-dir{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.aud-avisos{display:flex;gap:6px;flex-wrap:wrap}
+.aud-chip{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font-size:.82rem;border:1px solid var(--linha);background:#f6f4f0;color:#6b6259}
+.aud-chip.ok{background:#e8f4ec;color:#1f6b3a;border-color:#9fcfb0}.aud-chip.sem{background:#fdf0ef;color:#b42318;border-color:#f1b8b2}
+.btn.wa.aud-devido{background:#1f8f4e;color:#fff;font-weight:600;box-shadow:0 0 0 3px #c9ecd6}
+.aud-linha{display:flex;gap:8px;flex-wrap:wrap}.aud-linha select{max-width:260px}.aud-linha input{min-width:200px;flex:1}
+.aud-cartao textarea{min-height:0;height:auto}
+.aud-testemunhas{border-top:1px dashed var(--linha);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.aud-sub{display:flex;gap:8px;align-items:center}
+.aud-test{display:grid;grid-template-columns:2fr 1fr 1fr 2fr auto auto;gap:6px;align-items:center}
+.aud-test input{min-width:0}
+.aud-conf{display:flex;gap:4px;align-items:center;font-size:.82rem;white-space:nowrap}
+.btn.feito-ciente{background:#e8f4ec;color:#1f6b3a;border-color:#9fcfb0}
+.link-btn{background:none;border:0;color:var(--dourado,#8a6a35);text-decoration:underline;cursor:pointer;padding:0;align-self:flex-start}
+@media (max-width:700px){.aud-test{grid-template-columns:1fr 1fr}.aud-test input:first-child,.aud-test input:last-of-type{grid-column:1/-1}}
+/* 8.21 Ação de cobrança */
+.cob-lista{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.cob-cartao{background:#fff;border:1px solid var(--linha);border-left:4px solid #e0a21a;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.cob-cartao.cob-acao{border-left-color:#b42318}
+.cob-cab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cob-dir{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.cob-total{font-size:1.15rem}
+.txt-vermelho{color:#b42318}
+.fut-conferir{border-left:4px solid #e0a21a;background:#fffaf0}.fut-conf-lista{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
+.fut-conf-lista li{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:8px 12px}
+.fut-caucoes{border-left:4px solid #6b8fc0}

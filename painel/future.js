@@ -3,6 +3,20 @@
 (() => {
   'use strict';
   const K = () => window.PAINEL_KIT;
+  /** 8.21: lançamentos do caixa do prédio para conferir (caução × aluguel, repetidos, sem unidade). Some quando não há nada. */
+  function blocoConferirCaixa() {
+    const { h, api, reais } = K();
+    const box = h('section', { class: 'caixa fut-conferir', hidden: true });
+    api('future.conferir', {}).then(r => {
+      if (!r.itens.length) return;
+      box.hidden = false;
+      box.append(h('details', {}, h('summary', {}, h('strong', {}, `⚠ ${r.itens.length} lançamento(s) do caixa para conferir`), ' — caução lançada como aluguel (ou o contrário), repetidos e sem unidade'),
+        h('ul', { class: 'fut-conf-lista' }, r.itens.map(x => h('li', {}, h('b', {}, `${x.unidade || 'sem unidade'} · ${x.categoria} · ${reais(x.valor)}`), ` — ${x.pessoa || ''} (${x.competencia}) `,
+          h('div', { class: 'peq' }, x.motivo, x.descricao ? ' · "' + x.descricao + '"' : ''),
+          h('a', { class: 'btn mini sec', href: '#/future/caixa?mes=' + x.competencia }, 'abrir o caixa do mês'))))));
+    }).catch(() => {});
+    return box;
+  }
   const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const SIT = {
     alugado: ['Alugado', 'f-alugado'], disponivel: ['Disponível', 'f-livre'], renovar: ['Renovar contrato', 'f-renovar'],
@@ -106,6 +120,7 @@
         numero('vermelho', reais(r.despesas), 'Despesas', 'lançadas em ' + MESES[+ref.slice(5, 7) - 1], '#/future/caixa?mes=' + ref),
         numero(r.receitas - r.despesas >= 0 ? 'dourado' : 'vermelho', reais(r.receitas - r.despesas), 'Resultado', 'recebido − despesas'),
         numero(r.atrasado ? 'vermelho' : 'azul', reais(r.aReceber), 'Falta receber', r.atrasado ? `${reais(r.atrasado)} em atraso` : 'cobranças em aberto', '#/future/cobrancas?mes=' + ref)),
+      blocoConferirCaixa(),
       h('section', { class: 'caixa fut-predio-caixa' }, h('h2', {}, 'O prédio agora'), legenda,
         h('div', { class: 'fut-predio' }, andares.map(([nome, us]) => h('div', { class: 'fut-andar' }, h('span', { class: 'fut-andar-nome' }, nome), h('div', { class: 'fut-aps' }, us.map(tile)))))),
       h('div', { class: 'fut-duas' },
@@ -662,6 +677,10 @@
           numero('verde', reais(r.receitas), 'Receitas', '', null), numero('vermelho', reais(r.despesas), 'Despesas'),
           numero(r.receitas - r.despesas >= 0 ? 'dourado' : 'vermelho', reais(r.receitas - r.despesas), 'Resultado'),
           numero('azul', `${r.ocupacao.ocupadas}/${r.ocupacao.alugaveis}`, 'Ocupação', r.ocupacao.disponiveis.length ? 'livres: ' + r.ocupacao.disponiveis.join(', ') : 'todas ocupadas')),
+        r.caucoes && r.caucoes.lista.length ? h('section', { class: 'caixa fut-caucoes' }, h('h2', {}, `Cauções do mês (garantia, não é receita) · ${reais(r.caucoes.total)}`),
+          h('p', { class: 'peq' }, 'A caução fica guardada e é devolvida (ou usada para cobrir débitos) no fim do contrato. Por isso não entra em Receitas nem dá baixa no aluguel.'),
+          tabela(['Data', 'Unidade', 'Quem', 'Valor', 'Descrição'], r.caucoes.lista, l => [h('td', {}, dataBR(l.data)), h('td', {}, l.unidade || '—'), h('td', {}, l.pessoa || '—'),
+            h('td', { class: 'num' }, (l.tipo === 'despesa' ? '− ' : '') + reais(l.valor)), h('td', {}, l.descricao || '')], () => {}, '')) : null,
         h('section', { class: 'fin-nums' },
           numero('dourado', reais(somaC('total')), 'Cobrado do mês', `aluguel ${reais(somaC('aluguel'))} · taxas ${reais(somaC('taxas'))} · energia ${reais(somaC('energia'))} · lavanderia ${reais(somaC('lavanderia'))}`),
           numero('verde', reais(somaC('pago')), 'Já recebido', `${pagas} de ${r.cobrancas.length} cobranças`),

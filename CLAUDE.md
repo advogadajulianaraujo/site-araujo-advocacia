@@ -917,3 +917,46 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Fica gravado: audiências em Eventos (`agenda.avisado`, como antes); o resto na aba Avisos (chave, tipo, ref, em, por) pela rota
   `registro.whatsapp` com `chave` (`marcarAviso_`): "niver:cliId:ano", "cob:parcelaId", "tarefa:id". `avisosMapa_` devolve em
   `inicio.extras` (aniversarios/cobrancas: chave, avisado_em, avisado_por) e em `tarefas.listar` (avisado_em/por).
+
+## 8.21.0 Audiências com 3 avisos, cobrança, CRM, site (pedidos da usuária, 13/11/2026)
+
+- AUDIÊNCIAS (regra FIXA da usuária: "NUNCA deixe de avisar"): TRÊS avisos ao cliente em cada audiência/perícia — 1 semana antes (caiu em
+  sábado/domingo/feriado → o dia útil ANTERIOR), na VÉSPERA útil (audiência na segunda → aviso na sexta) e NO DIA (`diasDosAvisos_`,
+  `avisoDevido_`, `utilAteh_`/`utilAntes_`). `lembrarAudiencias_` (toda rodada) cria a tarefa do aviso devido para a secretaria (marcas
+  `[lembrete:chave]`, `[lembrete:chave|vespera]` + `[avisovespera]`, `[lembrete:chave|dia]` + `[avisodia]`) e cancela a tarefa do aviso
+  anterior que ninguém fez. Ficha de cada ato na aba Audiencias (chave = a do `atosDaAgenda_`; herda testemunhas/modo da ficha anterior
+  do mesmo processo e tipo): modo online/presencial + link, testemunhas (nome, CPF, telefone, obs, confirmou), anotações, "ciente" da equipe
+  e aviso_semana/vespera/dia (em/por). Rotas `audiencias.listar` (`audienciasLista_`, também no Início via inicio.extras) e `audiencias.salvar`;
+  `agenda.avisado` aceita quando = semana|vespera|dia e grava na ficha. Tela Audiências (#/audiencias, menu Escritório): três botões por
+  ato (`chipsAvisosAto`: feito ✓, "📲 Avisar agora" verde no devido, cinza com a data nos futuros), filtros e números. Mensagens
+  (`textoAvisoAto`): conciliação explica que é TENTATIVA DE ACORDO e diz se é online/presencial; instrução pede as testemunhas (nome, CPF,
+  telefone); véspera diz "amanhã" ou "na segunda-feira (dd/mm)". "Precisa de ação agora": aviso devido (véspera/dia em vermelho) e
+  instrução sem testemunhas.
+- Financeiro: "Retirar honorário" (`fin.honorario.retirar`, motivo obrigatório; parcelas NÃO pagas apagadas, pagas ficam; situação
+  "retirado" — não vira saldo; resumo ignora retirado/cancelado), "Mudar o dia de pagamento" (`fin.honorario.dia`, a partir de uma data),
+  "📝 Notas promissórias" no honorário (abre Modelos com docs=promissoria&honorario=; o gerador usa o honorário com MAIS parcelas em aberto
+  quando nenhum é escolhido e, sem nenhuma, as parcelas abertas de todos os honorários do cliente). Aba "⚖ Ação de cobrança"
+  (`fin.acaoCobranca`/`.marcar`: atraso > 60 dias ou marcado; etapas WhatsApp → notificação (15 dias sem resposta e > 90 de atraso) → ação;
+  prescrição 5 anos do vencimento, art. 25 EAOAB; "Não cobrar" = Config ACAO_COB_IGNORADOS). Aba "🔎 Conferir cobranças"
+  (`fin.conferencia`): parcela sem honorário, sem valor/vencimento, repetida, honorário em duplicidade/sem parcelas/soma diferente,
+  pagamento no futuro, dívida > 5 anos, importado não conferido e cliente com processo ativo SEM honorário. Só aponta.
+- CRM: `crmNomes_` (toda sincronização) troca nome que é número de telefone pelo nome do cadastro ligado, do cliente com o mesmo telefone
+  (e liga) ou do perfil da conversa do WhatsApp; sem nenhum, o cartão mostra "❓ nome a confirmar". `crmAreas_`: tipo de ação da Assinatura
+  vira área/assunto do cartão (etiqueta "Trabalhista" etc.). "Não vai fechar" na petição inicial → `crmPerdido_` (cartão "Não fechou").
+- Várias ações por cliente: "＋ Nova ação" na ficha (`clientes.abrirAcao` com `nova`); a inicial sem número só é reaproveitada se for da
+  MESMA área (`abrirAcaoCliente_`, `abrirPeticaoInicial_`); "aguardando assinatura" só junta com o do MESMO tipo de ação. Ficha lista os
+  processos com a ETAPA de cada um.
+- Gerador: área previdenciária marca procuração + contrato PREVIDENCIÁRIO (troca ao mudar o tipo de ação); campo "Cidade da assinatura"
+  (linha "Cidade, data") vem com a cidade do cliente (`cidadeAssinatura_`: informada → cidade/UF do cliente → escritório); promissória emitida
+  na cidade do cliente. Ficha sem pasta: não há mais "Criar pasta" (a pasta nasce ao gerar o 1º documento).
+- Sessão parada no navegador: 1 hora (antes 30 min).
+- Edifício Future: caução NUNCA é aluguel — `futEhCaucao_` ("Caução"/"Calção"); a baixa automática não junta caução; Relatório e Visão geral
+  tiram a caução das receitas (quadro "Cauções do mês (garantia, não é receita)"); `futCaucaoNormalizar_` (uma vez, Config FUTURE_CAUCAO_821)
+  trocou "Calção" por "Caução". `future.conferir` (Visão geral, caixa amarela): caução com descrição de aluguel (ou o contrário), lançamento
+  repetido (mesma unidade, mês, categoria e valor) e receita sem unidade.
+- Site 2026.3 (revisão externa): primeira tela curta (título menor, 2 linhas, botão "Falar com o escritório pelo WhatsApp"); "Como podemos
+  ajudar" = Trabalhista e Previdenciário lado a lado abrindo as PÁGINAS ("Ver atendimento trabalhista/previdenciário"), demais áreas em
+  pílulas + "Todas as áreas"; menu: Previdenciário no lugar de Empresarial (Empresarial fica em Atuação e no rodapé); home sem a calculadora
+  interativa e sem a faixa "Novo no blog"; "Resolva pelo site" só Acompanhe + Calculadoras; guia em destaque "Fui demitido por justa causa:
+  quais documentos devo separar?" (post do escritório no blog). Calculadoras (site e painel): "A empresa NÃO depositou o FGTS" + meses →
+  FGTS a cobrar em linha própria e na base da multa.
