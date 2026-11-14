@@ -1032,3 +1032,25 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   por pessoa + produtividade).
 - Correções: "null" solto nas telas (append/replaceChildren ignoram null/false — patch no início do painel.js) e a tabela de prazos não passa
   mais da tela (`.tabela.compacta .mini-acoes` quebra linha).
+
+## 8.25.0 (nov/2026: Entregas 2 e 3 da revisão + preparo do banco novo)
+
+- Agenda que não trava (Code.gs): `eventosDoMes_` guarda os eventos do Google por MÊS na memória do servidor (10 min, em pedaços);
+  `listarAgenda_` junta os meses do período; `aquecerAgenda_` (no `aquecerGatilho` e depois do robô de hora em hora) deixa prontos o mês passado,
+  o atual e o próximo. Mudança feita pelo painel chama `mudouAgenda_` (criarCompromisso_, criarEventoAto_, sincronizarAgenda_, limparAtosImpossiveis_,
+  whatsMarcar_, whatsDesmarcar_) e a próxima leitura vai ao Google; mudança direto no Google aparece em até 10 min ou no botão "↻" da Agenda
+  (`atualizar: true`). Função nova que crie/mude evento no Google: chame `mudouAgenda_()` no começo.
+- Agenda abre na visão LISTA da semana (dia a dia, hora, bolinha, título, local; lembra em localStorage `agenda_visao`); Dia/Semana/Mês continuam.
+  Início: agenda PEQUENA em tabela (`blocoAgendaMini`: Quando/Hora/O quê/Agenda, hoje · amanhã · 7 dias), minimiza e lembra (`inicio_agenda`).
+- Audiências: LISTA simples (data, hora, cliente, tipo, 3 bolinhas dos avisos: verde = avisado, contorno verde = avisar agora); clicar abre a
+  ficha (avisos, online/presencial, testemunhas, anotações, ciente) logo abaixo da linha, uma por vez. Os 4 quadrinhos viraram uma linha de alerta.
+- Ficha do cliente em ABAS (`fichaEmAbas`): Resumo · Processos · Cobranças · Anotações · Documentos e portal · Cadastro (lembra a aba por
+  cliente na sessão; "✎ Editar cadastro" abre a aba Cadastro; cadastro incompleto abre nela).
+- Intimações e prazos: "semáforo" do robô (`semaforoRobo`: verde/âmbar/vermelho + "Falta(m) N coisa(s) para rodar 100%": robô atrasado,
+  Code.gs velho, DJEN sem leitura há 26 h, alertas do vigia; detalhes = o cartão antigo). Os 5 quadrinhos saíram: as contagens estão nos filtros.
+- Documentos abre com 3 escolhas (sem parâmetros): Documentos para um cliente (#/modelos?passo=gerar), Proposta de honorários, Petição simples
+  (`abrir=peticoes` abre a janela de documentos já em Petições: `seletorDocumentos().abrirEm`).
+- CRM: cartões mais limpos (iniciais de quem cuida, dias parado em âmbar a partir de 3, botões só ao passar o mouse; colunas cinza-azuladas).
+- Celular: `.btn.mini` com 34 px de toque; `table.mini-tab` rola dentro do cartão.
+- Banco novo: `supabase/esquema.sql` (gerado do ESQUEMA: uma tabela por aba + `escritorio_id` + RLS) e o plano em docs/BANCO-SUPABASE.md.
+  Falta a usuária criar o projeto no Supabase (região São Paulo); as chaves vão por formulário seguro / Propriedades do script.

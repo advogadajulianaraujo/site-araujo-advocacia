@@ -2127,3 +2127,116 @@ a{color:inherit}
 @media (max-width:760px){.rel-nums{grid-template-columns:1fr 1fr}.rel-dois{grid-template-columns:1fr}.rel-n b{font-size:21px}}
 .eq-kpi.total{background:var(--acento);border-color:var(--acento)}.eq-kpi.total b,.eq-kpi.total span{color:#fff}
 body.modo-future .barra-topo{display:none}
+/* ===== 8.25 Agenda: visão Lista e agenda pequena do Início ===== */
+.ag-lista{display:flex;flex-direction:column;gap:12px}
+.ag-lista-dia{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px}
+.ag-lista-dia.hoje{border-color:var(--acento);box-shadow:inset 3px 0 0 var(--acento)}
+.ag-lista-dia h3{font-size:15px;margin:0 0 8px;text-transform:capitalize}
+.ag-lista-dia ul{list-style:none;margin:0;padding:0}
+.ag-lista-dia li{display:grid;grid-template-columns:62px 12px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 6px;border-top:1px solid var(--linha);cursor:pointer;border-radius:6px}
+.ag-lista-dia li:first-child{border-top:0}
+.ag-lista-dia li:hover{background:var(--acento-f2)}
+.ag-l-hora{font-variant-numeric:tabular-nums;font-weight:600;color:var(--tinta)}
+.ag-l-tit small,.agm-tab small{display:block;color:var(--mudo);font-size:12px}
+.ag-l-tipo{font-size:12px;color:var(--mudo);text-align:right}
+@media (max-width:640px){.ag-lista-dia li{grid-template-columns:52px 10px minmax(0,1fr)}.ag-l-tipo{display:none}}
+.agm{background:#fff;border:1px solid var(--linha);border-radius:12px;margin-bottom:16px}
+.agm>summary{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;list-style:none}
+.agm>summary::-webkit-details-marker{display:none}
+.agm>summary::after{content:'▾';margin-left:4px;color:var(--mudo);transition:transform .15s}
+.agm:not([open])>summary::after{transform:rotate(-90deg)}
+.agm-tit{font-weight:600;color:var(--tinta)}
+.agm-resumo{color:var(--mudo);font-size:13.5px}
+.agm-link{margin-left:auto;font-size:13px;color:var(--acento);text-decoration:none}
+.agm-corpo{padding:0 16px 12px}
+.agm-tab{width:100%;border-collapse:collapse;font-size:14px}
+.agm-tab th{text-align:left;font:500 11px/1.3 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mudo);padding:6px 8px;border-bottom:1px solid var(--linha)}
+.agm-tab td{padding:8px;border-bottom:1px solid var(--linha);vertical-align:top}
+.agm-tab tr{cursor:pointer}.agm-tab tbody tr:hover td{background:var(--acento-f2)}
+.agm-tab tr.hoje td:first-child{font-weight:600;color:var(--acento-esc)}
+.agm-tab td small{display:inline;margin-left:6px}
+.agm-tab td .bolinha{margin-right:6px}
+/* ===== 8.25 Audiências em lista simples (a ficha abre na linha) ===== */
+.aud-lista2{list-style:none;margin:0;padding:0;background:#fff;border:1px solid var(--linha);border-radius:14px;overflow:hidden}
+.aud-item{border-bottom:1px solid var(--linha)}
+.aud-item:last-child{border-bottom:0}
+.aud-item.devido{box-shadow:inset 3px 0 0 #1f8f4e}
+.aud-item.hoje .aud-l-data b{color:var(--acento-esc)}
+.aud-linha-bt{width:100%;display:grid;grid-template-columns:70px 56px minmax(0,1fr) 150px 64px 18px;gap:12px;align-items:center;padding:11px 16px;background:none;border:0;text-align:left;cursor:pointer;font:inherit;color:inherit}
+.aud-linha-bt:hover,.aud-item.aberta .aud-linha-bt{background:var(--acento-f2)}
+.aud-l-data b{display:block;font-variant-numeric:tabular-nums}.aud-l-data small{color:var(--mudo);font-size:12px;text-transform:capitalize}
+.aud-l-hora{font-weight:600;color:var(--tinta)}
+.aud-l-quem{min-width:0}.aud-l-quem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.aud-l-alerta{color:#8A6100;font-size:12px}
+.aud-l-tipo{font-size:13px;padding:4px 9px;border-radius:999px;background:#EEF2F4;color:var(--texto);justify-self:start;white-space:nowrap}
+.aud-t-conciliacao{background:#E6F3EA;color:#1F7A3F}.aud-t-instrucao{background:#F1EAF8;color:#6B3FA0}.aud-t-pericia{background:#FBEFE3;color:#A1520E}
+.aud-bols{display:flex;gap:5px}
+.aud-bol{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #C6CFD5;background:#fff;vertical-align:-1px}
+.aud-bol.ok{background:#1F7A3F;border-color:#1F7A3F}
+.aud-bol.devido{background:#fff;border-color:#1f8f4e;box-shadow:0 0 0 3px #C9ECD6}
+.aud-l-seta{color:var(--mudo);transition:transform .15s}
+.aud-item.aberta .aud-l-seta{transform:rotate(180deg)}
+.aud-ficha{padding:4px 16px 16px;background:var(--acento-f2);border-top:1px solid var(--linha)}
+.aud-ficha .aud-cartao{margin:8px 0 0;border-radius:12px}
+.aud-legenda{margin-top:10px}
+@media (max-width:700px){
+  .aud-linha-bt{grid-template-columns:56px minmax(0,1fr) auto;row-gap:4px}
+  .aud-l-hora{grid-column:1;grid-row:2;font-size:13px}
+  .aud-l-tipo{grid-column:2;grid-row:2}
+  .aud-bols{grid-column:3;grid-row:1}
+  .aud-l-seta{display:none}
+}
+.aud-alerta-linha{margin:0 0 10px;padding:10px 14px;border-radius:10px;background:#E6F3EA;color:#1F7A3F;font-weight:500}.aud-alerta-linha a{color:inherit}
+/* ===== 8.25 Ficha do cliente em abas ===== */
+.ficha-abas-caixa{margin-top:6px}
+.ficha-abas{display:flex;gap:2px;border-bottom:1px solid var(--linha);margin-bottom:16px;overflow-x:auto;scrollbar-width:none}
+.ficha-abas button{border:0;background:none;padding:11px 14px;font:500 14.5px/1 var(--sans);color:var(--mudo);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.ficha-abas button:hover{color:var(--tinta)}
+.ficha-abas button.on{color:var(--acento-esc);border-bottom-color:var(--acento);font-weight:600}
+.ficha-corpo>div>.caixa:first-child,.ficha-corpo>.caixa:first-child{margin-top:0}
+/* ===== 8.25 Intimações: semáforo do robô e contagens nos filtros ===== */
+.semaforo{background:#fff;border:1px solid var(--linha);border-radius:12px;margin-bottom:14px}
+.semaforo>summary{display:flex;align-items:center;gap:10px;padding:11px 16px;cursor:pointer;list-style:none;font-size:14px}
+.semaforo>summary::-webkit-details-marker{display:none}
+.sem-ponto{width:12px;height:12px;border-radius:50%;flex:none;background:#1F7A3F;box-shadow:0 0 0 4px #E6F3EA}
+.s-amarelo .sem-ponto{background:#D99A1E;box-shadow:0 0 0 4px #FDF1D6}
+.s-vermelho .sem-ponto{background:#B42318;box-shadow:0 0 0 4px #FDECEA}
+.s-amarelo{border-color:#EED9A8}.s-vermelho{border-color:#F2B8B2}
+.sem-ver{margin-left:auto;color:var(--acento);font-size:13px;white-space:nowrap}
+.semaforo[open] .sem-ver{visibility:hidden}
+.semaforo>.robo,.semaforo>div{margin:0 12px 12px}
+.chip-filtro .cb-n{margin-left:6px}
+.chip-filtro.chip-alerta .cb-n{background:#FDECEA;color:#B42318}
+.chip-filtro.ativo .cb-n{background:rgba(255,255,255,.22);color:#fff}
+/* ===== 8.25 Documentos: 3 escolhas ===== */
+.doc-escolhas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:8px}
+.doc-escolha-cartao{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:left;padding:24px 22px;background:#fff;border:1px solid var(--linha);border-radius:16px;text-decoration:none;color:var(--texto);cursor:pointer;font:inherit;transition:border-color .15s,box-shadow .15s,transform .15s}
+.doc-escolha-cartao:hover{border-color:var(--acento);box-shadow:0 12px 30px -18px rgba(15,110,110,.5);transform:translateY(-2px)}
+.doc-esc-ico{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;font-size:24px;background:var(--acento-f)}
+.doc-escolha-cartao b{font-size:18px;color:var(--tinta)}
+.doc-escolha-cartao span:last-child{color:var(--mudo);font-size:14px;line-height:1.5}
+.doc-escolhas-rodape{margin-top:18px}
+.doc-escolhas-rodape a{color:var(--acento)}
+@media (max-width:860px){.doc-escolhas{grid-template-columns:1fr}}
+/* ===== 8.25 CRM mais limpo ===== */
+.crm-col{background:#EEF2F4;border-top-width:3px}
+.crm-col.alvo{background:#E3EBEE}
+.crm-col header strong{color:var(--tinta)}
+.crm-card{border-left-width:3px;padding:11px 12px;box-shadow:0 1px 2px rgba(16,35,43,.05)}
+.crm-card.temp-morno{border-left-color:var(--acento)}
+.crm-card-topo strong{font-size:14.5px}
+.crm-assunto{font-size:13px;color:var(--mudo);margin:6px 0 0;line-height:1.4}
+.crm-prox{font-size:12.5px;margin:6px 0 0}
+.crm-card-pe{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:8px;min-height:30px}
+.crm-quem{display:flex;align-items:center;gap:6px}
+.crm-av{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 10.5px/1 var(--sans);background:var(--acento-f);color:var(--acento-esc)}
+.crm-dias{font-size:12px;color:var(--mudo);font-variant-numeric:tabular-nums}
+.crm-dias.parado{color:#8A6100;background:#FDF1D6;border-radius:999px;padding:2px 7px}
+@media (hover:hover){.crm-card .crm-bts{opacity:0;transition:opacity .12s}.crm-card:hover .crm-bts,.crm-card:focus-within .crm-bts{opacity:1}}
+.aud-ficha .aud-cab .selo-data,.aud-ficha .aud-cab .aud-tit{display:none}.aud-ficha .aud-cab{justify-content:flex-end}
+/* 8.25: celular — botões pequenos com área de toque maior e tabelinhas que rolam dentro do cartão */
+@media (max-width:700px){
+  .btn.mini{min-height:34px;padding:8px 12px}
+  button.link,.link-btn{min-height:32px}
+  table.mini-tab{display:block;overflow-x:auto;max-width:100%}
+}

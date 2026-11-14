@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.23.0';
+var VERSAO = '8.25.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3648,25 +3648,71 @@ function agendas_() {
   return ids;
 }
 
-function listarAgenda_(d) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') || !/^\d{4}-\d{2}-\d{2}$/.test(d.fim || '')) throw falha_('Período inválido.');
-  if (diffDias_(d.fim, d.inicio) > 45) throw falha_('Período longo demais.');
-  var ini = new Date(d.inicio + 'T00:00:00-03:00');
-  var fim = new Date(somarDias_(d.fim, 1) + 'T00:00:00-03:00');
-  var ids = agendas_();
-  var eventos = [];
-  var avisos = [];
+/* 8.25 (pedido da usuária: "a agenda trava muito"): os eventos do Google ficam guardados por MÊS na memória do servidor (10 min);
+   o aquecedor deixa prontos o mês passado, o atual e o próximo. Mudança feita pelo painel (compromisso, ato, prazo, WhatsApp) troca a
+   versão (`mudouAgenda_`) e a próxima leitura vai ao Google; mudança feita direto no Google aparece em até 10 min. */
+function mudouAgenda_() { try { CacheService.getScriptCache().put('versao_agenda', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue */ } }
+function versaoAgenda_() {
+  var c = CacheService.getScriptCache(), v = c.get('versao_agenda');
+  if (!v) { v = String(Date.now()); c.put('versao_agenda', v, 21600); }
+  return v;
+}
+function eventosDoMes_(mes, forcar) {
+  var cache = CacheService.getScriptCache(), k = 'agm' + versaoAgenda_().slice(-12) + mes;
+  if (!forcar) {
+    try {
+      var n = cache.get(k + ':n');
+      if (n) {
+        var tudo = cache.getAll(Array.apply(null, Array(+n)).map(function (_, i) { return k + ':' + i; })), partes = [];
+        for (var i = 0; i < +n; i++) { if (!tudo[k + ':' + i]) { partes = null; break; } partes.push(tudo[k + ':' + i]); }
+        if (partes) return JSON.parse(partes.join(''));
+      }
+    } catch (e) { /* lê de novo */ }
+  }
+  var ini = new Date(mes + '-01T00:00:00-03:00');
+  var prox = Utilities.formatDate(new Date(ini.getTime() + 32 * 864e5), TZ, 'yyyy-MM') + '-01';
+  var fim = new Date(prox + 'T00:00:00-03:00');
+  var ids = agendas_(), eventos = [], avisos = [];
   NOMES_AGENDAS.forEach(function (nome) {
     if (!ids[nome]) { avisos.push('Agenda "' + nome + '" não encontrada.'); return; }
     var cal = CalendarApp.getCalendarById(ids[nome]);
     if (!cal) { avisos.push('Sem acesso à agenda "' + nome + '".'); return; }
     cal.getEvents(ini, fim).forEach(function (ev) {
-      var diaTodo = ev.isAllDayEvent();
       eventos.push({
         id: ev.getId(), agenda: nome, titulo: ev.getTitle(), local: ev.getLocation() || '',
         descricao: String(ev.getDescription() || '').replace(/<[^>]+>/g, ' ').slice(0, 500),
-        diaTodo: diaTodo, inicio: dataHora_(ev.getStartTime()), fim: dataHora_(ev.getEndTime())
+        diaTodo: ev.isAllDayEvent(), inicio: dataHora_(ev.getStartTime()), fim: dataHora_(ev.getEndTime())
       });
+    });
+  });
+  var r = { eventos: eventos, avisos: avisos };
+  try {
+    var txt = JSON.stringify(r), TAM = 90000, obj = {}, q = Math.ceil(txt.length / TAM);
+    if (q <= 30) { for (var j = 0; j < q; j++) obj[k + ':' + j] = txt.slice(j * TAM, (j + 1) * TAM); obj[k + ':n'] = String(q); cache.putAll(obj, 600); }
+  } catch (e2) { /* grande demais */ }
+  return r;
+}
+function aquecerAgenda_() {
+  var hoje = hojeSP_(), m = hoje.slice(0, 7);
+  var ant = Utilities.formatDate(new Date(new Date(m + '-01T12:00:00-03:00').getTime() - 5 * 864e5), TZ, 'yyyy-MM');
+  var prox = Utilities.formatDate(new Date(new Date(m + '-01T12:00:00-03:00').getTime() + 35 * 864e5), TZ, 'yyyy-MM');
+  [m, prox, ant].forEach(function (x) { try { eventosDoMes_(x); } catch (e) { /* segue */ } });
+}
+
+function listarAgenda_(d) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') || !/^\d{4}-\d{2}-\d{2}$/.test(d.fim || '')) throw falha_('Período inválido.');
+  if (diffDias_(d.fim, d.inicio) > 45) throw falha_('Período longo demais.');
+  var meses = [], m = d.inicio.slice(0, 7);
+  while (m <= d.fim.slice(0, 7) && meses.length < 3) { meses.push(m); m = Utilities.formatDate(new Date(new Date(m + '-01T12:00:00-03:00').getTime() + 35 * 864e5), TZ, 'yyyy-MM'); }
+  var eventos = [], avisos = [], vistos = {};
+  meses.forEach(function (mes) {
+    var x = eventosDoMes_(mes, !!d.atualizar);
+    x.avisos.forEach(function (a) { if (avisos.indexOf(a) < 0) avisos.push(a); });
+    x.eventos.forEach(function (ev) {
+      var dia = ev.inicio.slice(0, 10), diaFim = ev.fim.slice(0, 10);
+      if (diaFim < d.inicio || dia > d.fim) return;
+      var chave = ev.agenda + '|' + ev.id + '|' + ev.inicio; if (vistos[chave]) return; vistos[chave] = 1;
+      eventos.push(ev);
     });
   });
   var prazos = listarPrazos_({}).filter(function (z) { return z.fatal && z.fatal >= d.inicio && z.fatal <= d.fim; });
@@ -3678,6 +3724,7 @@ function dataHora_(d) {
 }
 
 function criarCompromisso_(d, u) {
+  mudouAgenda_();
   var ids = agendas_();
   if (NOMES_AGENDAS.indexOf(d.agenda) < 0 || !ids[d.agenda]) throw falha_('Escolha uma das agendas do escritório.');
   var titulo = String(d.titulo || '').trim();
@@ -4547,6 +4594,7 @@ function acharAto_(texto) {
 
 /** Cria o evento no Google Agenda. Devolve o id do evento ou "erro: …". */
 function criarEventoAto_(agenda, titulo, data, hora, descricao) {
+  mudouAgenda_();
   try {
     var ids = agendas_();
     var cal = ids[agenda] && CalendarApp.getCalendarById(ids[agenda]);
@@ -5101,6 +5149,7 @@ function agendaPrazos_() {
  *    evento apagado no Google → o lembrete do ato é cancelado (dá para reabrir).
  */
 function sincronizarAgenda_(ctx, limiteMs) {
+  mudouAgenda_();
   var t0 = Date.now(), hoje = hojeSP_(), ate = somarDias_(hoje, 90), r = { criados: 0, movidos: 0, apagados: 0, atos: 0 };
   var cal = agendaPrazos_();
   var procs = {}, clis = {};
@@ -5168,6 +5217,7 @@ function sincronizarAgenda_(ctx, limiteMs) {
  * processo como 05/12/2041 e, com o dia mudando no Google Agenda, recriou a cada hora). Tira o evento do Google e cancela o lembrete.
  */
 function limparAtosImpossiveis_(ctx) {
+  mudouAgenda_();
   if (config_('FIX_ATOS_86')) return 0;
   var anoMax = +hojeSP_().slice(0, 4) + 3, ids = {}, n = 0, agora = new Date().toISOString();
   try { ids = agendas_(); } catch (e) { ids = {}; }
@@ -9062,6 +9112,7 @@ function aquecerGatilho() {
   if (!util) return;
   var t0 = Date.now();
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
+  try { aquecerAgenda_(); } catch (e) { /* segue */ }
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -10367,6 +10418,7 @@ function marketingResumo_(d) {
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
   try { aquecerMemoria_(); } catch (eQ) { /* segue */ }
+  try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
 }
 
@@ -13293,6 +13345,7 @@ function escolhaDoSlot_(texto, slots) {
 
 /** Marca o atendimento: confere de novo se o horário está livre, cria o evento (1 h), atualiza o funil e cria a tarefa da equipe. */
 function whatsMarcar_(conv, slot, modo, dados, sim) {
+  mudouAgenda_();
   var modoTxt = NOME_MODO[modo] || 'por ligação', nome = conv.nome || ('WhatsApp ' + String(conv.telefone).slice(-4)), gratis = consultaGratis_(dados);
   var valorTxt = gratis ? 'sem custo de consulta (' + (dados.area || 'êxito') + ': honorários no êxito)' : 'consulta de R$ ' + valorConsulta_() + ' — receber ANTES de começar (Pix ou no escritório)';
   if (sim) { sim.acoes.push('marcaria na agenda ATENDIMENTOS: ' + rotuloSlot_(slot) + ' (' + modoTxt + ', 1 h, ' + valorTxt + ')', 'criaria a tarefa "📅 Atendimento" para a equipe'); return { ok: true, pago: !gratis }; }
@@ -13322,6 +13375,7 @@ function whatsMarcar_(conv, slot, modo, dados, sim) {
   return { ok: true, evento: ev.getId(), tarefa: tid, pago: !gratis };
 }
 function whatsDesmarcar_(dados, sim) {
+  mudouAgenda_();
   if (sim || !dados.agendado || !dados.agendado.evento) return;
   try { var ids = agendas_(); var ev = CalendarApp.getCalendarById(ids.ATENDIMENTOS).getEventById(dados.agendado.evento); if (ev) ev.deleteEvent(); } catch (e) { /* segue */ }
 }
