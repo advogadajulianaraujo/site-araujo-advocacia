@@ -673,6 +673,7 @@
     const [clientes, processos, feitos] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('ia.transcricoes', {}).catch(() => ({ itens: [] }))]);
     const modo = params.get('modo') || 'gravar';
     const sel = seletorCasos(clientes, processos);
+    if (params.get('cliente')) { const c0 = clientes.find(c => c.id === params.get('cliente')); if (c0) { sel.inCli.value = c0.nome; sel.achar(); } }
     const saida = h('div', { class: 'g-saida' });
     const estado = h('p', { class: 'g-estado', 'aria-live': 'polite' });
     const comum = h('div', { class: 'form-grade g-form' },

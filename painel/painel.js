@@ -649,25 +649,27 @@
     prompts: 'M4 5.5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5.5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z',
     recibos: 'M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 11.5h6M9 15h3'
   });
+  // 8.24 (pedido da usuária, layout "C"): menu lateral CLARO com poucos itens; o resto virou sub-aba no topo (SUBABAS)
   const ABAS = [
-    ['inicio', 'Início', 'Escritório'],
-    ['clientes', 'Clientes e processos', 'Escritório'],
-    ['prazos', 'Intimações e prazos', 'Escritório'],
-    ['tarefas', 'Tarefas', 'Escritório'],
-    ['agenda', 'Agenda', 'Escritório'],
-    ['audiencias', 'Audiências', 'Escritório'],
-    // 8.12.2 (pedido da usuária): CRM e Marketing só a administração; Padrões operacionais saem do menu (botão discreto no Início);
-    // Peças com IA e Biblioteca de prompts saíram; Recibos virou uma aba do Painel financeiro
-    ['conversas', 'Chatbot do WhatsApp', 'Relacionamento', 'usuarios'],
-    ['crm', 'CRM / Funil', 'Relacionamento', 'usuarios'],
-    ['marketing', 'Marketing', 'Relacionamento', 'usuarios'],
-    ['modelos', 'Documentos e propostas', 'Documentos'],
-    ['calculadoras', 'Calculadoras', 'Documentos'],
-    ['transcricao', 'Transcrição e resumos', 'Inteligência'],
-    ['financeiro', 'Painel financeiro', 'Gestão', 'financeiro'],
-    ['relatorios', 'Relatórios', 'Gestão', 'usuarios']
-    // 8.13.1 (pedido da usuária): "Gerenciar acessos" fica no menu do nome (clicar no usuário, embaixo), não nos tópicos
+    ['inicio', 'Início'],
+    ['clientes', 'Clientes e processos'],
+    ['prazos', 'Intimações e prazos'],
+    ['tarefas', 'Tarefas'],
+    ['agenda', 'Agenda'],
+    ['financeiro', 'Cobranças', 'financeiro', 'cobranca'],
+    ['modelos', 'Documentos'],
+    ['crm', 'Atendimento', 'usuarios', 'conversas']
+    // Relatórios, Equipe e Gerenciar acessos ficam no menu do nome (clicar no usuário, embaixo)
   ];
+  // sub-abas da barra do topo: [rota, nome, permissão]
+  const SUBABAS = {
+    agenda: [['agenda', 'Calendário'], ['audiencias', 'Audiências e perícias']],
+    modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa']],
+    crm: [['crm', 'Funil de atendimento', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
+    relatorios: [['relatorios', 'Resumo do mês', 'usuarios'], ['relatorios?ver=equipe', 'Equipe', 'usuarios']]
+  };
+  const SECAO_DA_TELA = { audiencias: 'agenda', compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
+    processos: 'clientes', processo: 'clientes', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
   ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
@@ -701,9 +703,8 @@
       if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
       itens.push(h('a', { href: '#/' + id, 'data-aba': id, onclick: () => abrirLateral(false) }, icone(ic), h('span', {}, nome)));
     });
-    else ABAS.filter(a => !a[3] || pode[a[3]]).forEach(([id, nome, g]) => {
-      if (g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
-      itens.push(h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id), onclick: () => abrirLateral(false) }, icone(id), h('span', {}, nome)));
+    else ABAS.filter(a => !a[2] || pode[a[2]]).forEach(([id, nome, , ic]) => {
+      itens.push(h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id), onclick: () => abrirLateral(false) }, icone(ic || id), h('span', {}, nome)));
     });
     // botão de trocar de painel (só para quem tem acesso ao Edifício Future)
     if (pode.future) itens.push(h('a', { class: 'trocar-painel', href: fut ? '#/inicio' : '#/future', onclick: () => abrirLateral(false) },
@@ -714,7 +715,8 @@
     document.getElementById('quem-perfil').textContent = sessao.usuario.perfilNome;
     document.getElementById('quem-avatar').textContent = String(nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
     const mUs = document.getElementById('menu-usuarios'); mUs.textContent = 'Gerenciar acessos'; mUs.hidden = !pode.usuarios;
-    document.getElementById('menu-relatorios').hidden = true;
+    const mRel = document.getElementById('menu-relatorios'); mRel.hidden = !pode.usuarios;
+    const mEq = document.getElementById('menu-equipe'); if (mEq) mEq.hidden = !pode.usuarios;
     document.body.classList.remove('sem-sessao');
     abasEl.hidden = false;
     quemEl.hidden = false;
@@ -733,10 +735,27 @@
   if (!lateralEl) console.warn('menu lateral ausente');
 
   function marcarAba(id) {
-    if (modoFuture()) { const c = (location.hash.slice(2).split('?')[0]).replace(/^future\/unidade\/.*/, 'future/unidades'); abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === c)); return; }
-    id = { processos: 'clientes', processo: 'clientes', cliente: 'clientes' }[id] || id;
+    if (modoFuture()) { const c = (location.hash.slice(2).split('?')[0]).replace(/^future\/unidade\/.*/, 'future/unidades'); abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === c)); desenharSubabas(''); return; }
+    const tela = id;
+    id = SECAO_DA_TELA[id] || id;
     abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === id));
+    desenharSubabas(id, tela);
   }
+  /** 8.24: barra do topo — busca única + sub-abas da seção (Agenda › Audiências, Documentos › Calculadoras, Atendimento › Chatbot…). */
+  function desenharSubabas(secao, tela) {
+    const nav = document.getElementById('subabas'); if (!nav) return;
+    const pode = (sessao && sessao.usuario.pode) || {};
+    const lista = (SUBABAS[secao] || []).filter(x => !x[2] || pode[x[2]]);
+    const hashAgora = location.hash.slice(2);
+    const atual = lista.find(x => x[0] === hashAgora) || lista.find(x => x[0] === tela && !/\?/.test(x[0]) && !/[?&]ver=equipe/.test(hashAgora)) || lista.find(x => x[0].split('?')[0] === tela);
+    nav.replaceChildren(...(lista.length > 1 ? lista.map(x => h('a', { href: '#/' + x[0], 'aria-current': x === atual ? 'page' : null }, x[1])) : []));
+    nav.hidden = lista.length < 2;
+  }
+  (function montarBuscaTopo() {
+    const form = document.getElementById('busca-topo'); if (!form) return;
+    form.addEventListener('submit', ev => { ev.preventDefault(); const v = form.q.value.trim(); if (!v) return; location.hash = '#/clientes?busca=' + encodeURIComponent(v); form.q.blur(); });
+    document.addEventListener('keydown', ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); form.q.focus(); form.q.select(); } });
+  })();
 
   /* ---------- login ---------- */
 
@@ -1937,7 +1956,8 @@
       desenhar(c.observacoes);
       const taNota = h('textarea', { name: 'texto', rows: 3, placeholder: 'Escreva ou dite (🎙) uma observação sobre o cliente (atendimento, combinado, pendência…) — sem limite de tamanho', 'aria-label': 'Nova observação' });
       const f = h('form', { class: 'nota-form', novalidate: true }, taNota,
-        h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação'), ditado(taNota, c.id)), h('p', { class: 'erro' }));
+        h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar observação'), ditado(taNota, c.id),
+          h('a', { class: 'btn sec', href: '#/transcricao?cliente=' + encodeURIComponent(c.id), title: 'Grava a conversa (presencial, Meet ou WhatsApp no computador); a IA transcreve, resume e guarda aqui nas observações' }, '🎙 Gravar atendimento')), h('p', { class: 'erro' }));
       aoEnviar(f, async fd => {
         const r = await api('clientes.nota', { id: c.id, texto: fd.get('texto') });
         c.observacoes = r.observacoes; f.reset(); desenhar(r.observacoes); avisar('Observação salva.');
@@ -3666,7 +3686,7 @@
     caixa.hidden = false;
   }
 
-  function acoesParcela(p, depois) {
+  function acoesParcela(p, depois, semWhats) {
     const parar = fn => ev => { ev.stopPropagation(); fn(ev).catch(e => avisar(e.message, true)); };
     const caixa = h('div', { class: 'mini-acoes' });
     const wa = linkWhats(p);
@@ -3701,6 +3721,7 @@
         catch (e) { ev.target.disabled = false; ev.target.textContent = 'Gerar boleto/Pix'; throw e; }
       }) }, 'Gerar boleto/Pix'));
     }
+    if (semWhats) { if (p.situacao === 'atrasada' && p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Marcado: ação de cobrança.'); depois(); }) }, 'Mandar para ação de cobrança')); return caixa; }
     if (p.situacao !== 'atrasada' && p.vencimento >= hojeISO()) {
       caixa.append(wa
         ? h('a', { class: 'btn mini sec wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com um lembrete pronto', onclick: ev => ev.stopPropagation() }, 'Lembrar no WhatsApp')
@@ -3808,30 +3829,30 @@
     return caixa;
   }
 
+  /* 8.24 (pedido da usuária: "cobrança poluída, sem base de nada"): COBRANÇAS no modelo dos bancos digitais e do Asaas —
+     3 números, uma lista com 4 abas e UM botão por linha (o resto no ⋯); clicar na linha abre a cobrança na lateral.
+     Ferramentas (honorários, ação de cobrança, PIX, alvarás, recibos, conferir, sistema antigo, boleto/Pix, entradas e saídas)
+     ficam no botão "Ferramentas"; cada uma abre com "← Cobranças". */
+  const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['pix', 'PIX recebidos'], ['acao', 'Ação de cobrança'], ['levantar', 'Alvarás e RPV a levantar'],
+    ['recibos', 'Recibos'], ['conferir', 'Conferir cobranças'], ['antigos', 'Do sistema antigo'], ['asaas', 'Boleto/Pix automático (Asaas)', 'usuarios'], ['painel', 'Entradas e saídas do mês', 'usuarios']];
   async function telaFinanceiro(params) {
     carregando();
     const busca = params.get('busca') || '';
-    const [r, hons, px, lev] = await Promise.all([api('fin.resumo'), api('fin.honorarios', { busca }), api('fin.pix', {}).catch(() => null), api('fin.alevantar', {}).catch(() => [])]);
-    const t = r.totais, rh = sessao.usuario.pode.ocultarValores;
+    const ver0 = params.get('ver') || '';
+    const ver = { atraso: 'atrasadas', proximas: 'mes' }[ver0] || ver0 || '';
+    const ehFerramenta = FERRAMENTAS_FIN.some(f => f[0] === ver);
+    const [r, hons, px, lev] = await Promise.all([api('fin.resumo'), ver === 'honorarios' ? api('fin.honorarios', { busca }) : Promise.resolve([]), api('fin.pix', {}).catch(() => null), ver === 'levantar' ? api('fin.alevantar', {}).catch(() => []) : Promise.resolve([])]);
+    const t = r.totais, rh = sessao.usuario.pode.ocultarValores, admin = sessao.usuario.pode.usuarios;
     ASAAS_LIGADO = !!r.asaas;
     const nPix = px ? px.conferir : 0;
-    const ver = params.get('ver') || (r.atrasadas.length ? 'atraso' : 'proximas');
     const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/financeiro' + (q.toString() ? '?' + q : ''); };
-    const num = (cls, valor, rotulo, sub, href) => h(href ? 'a' : 'div', { class: 'fin-num ' + cls, href },
-      h('span', { class: 'fin-num-rot' }, rotulo), h('b', {}, valor), sub ? h('span', { class: 'fin-num-sub' }, sub) : null);
+    const recarregar = () => telaFinanceiro(params);
     const form = h('form', { class: 'busca-grande', role: 'search' },
       h('span', { class: 'busca-ico', 'aria-hidden': 'true' }, '⌕'),
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar honorário por cliente', 'aria-label': 'Buscar honorários' }),
       h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), ver: 'honorarios' }); });
-    const aba = (id, rot, n) => h('button', { type: 'button', role: 'tab', class: 'visao-bt' + (ver === id ? ' ativo' : ''), 'aria-selected': String(ver === id), onclick: () => ir({ ver: id }) },
-      h('span', {}, rot), n !== null && n !== undefined ? h('span', { class: 'visao-n' }, String(n)) : null);
-    const conteudo = ver === 'atraso'
-      ? h('div', {}, h('p', { class: 'peq fin-dica' }, 'Atrasou → "Cobrar no WhatsApp" (o texto e o link do boleto/Pix já vão prontos) → sem resposta, aba "Ação de cobrança".'),
-        listaCobrancas(r.atrasadas, () => telaFinanceiro(params), 'Nenhuma parcela em atraso. 🎉'))
-      : ver === 'proximas' ? listaCobrancas(r.proximas, () => telaFinanceiro(params), 'Nada vencendo nos próximos 30 dias.')
-      : ver === 'recebidas' ? listaCobrancas(r.recebidas || [], () => telaFinanceiro(params), 'Nada recebido neste mês ainda.')
-      : ver === 'acao' ? blocoAcaoCobranca()
+    const ferramenta = () => ver === 'acao' ? blocoAcaoCobranca()
       : ver === 'conferir' ? blocoConferencia()
       : ver === 'asaas' ? blocoAsaas()
       : ver === 'pix' ? blocoPix()
@@ -3847,7 +3868,8 @@
           h('td', { 'data-r': 'Com quem' }, x.responsavel || '—'),
           h('td', {}, x.honorario_id ? h('a', { class: 'btn mini', href: '#/honorario/' + x.honorario_id, onclick: ev => ev.stopPropagation() }, 'Lançar') : h('a', { class: 'btn mini sec', href: '#/honorario/novo', onclick: ev => ev.stopPropagation() }, 'Criar honorário'))
         ], x => { location.hash = '#/tarefas?q=' + encodeURIComponent(x.cliente || x.numero || ''); }, 'Nenhum alvará ou RPV esperando levantamento.'))
-      : h('div', {}, form,
+      : ver === 'painel' ? (() => { const box = h('div', {}, h('p', { class: 'peq' }, 'Montando…')); if (window.GESTAO) window.GESTAO.blocoPainelFinanceiro().then(el => box.replaceChildren(el || h('p', { class: 'peq' }, 'Sem dados.'))).catch(e => box.replaceChildren(h('p', { class: 'erro' }, e.message))); return box; })()
+      : h('div', {}, r.aConferir ? h('p', { class: 'nota' }, `${r.aConferir} honorário(s) importado(s) do GEA para conferir.`) : null, form,
         tabela(['Cliente', 'Tipo', 'Contratado', 'Recebido', 'Em atraso', 'Situação'], hons, x => [
           h('td', { 'data-r': 'Cliente' }, h('strong', {}, x.cliente), x.descricao ? h('div', { class: 'peq' }, x.descricao) : null),
           h('td', { 'data-r': 'Tipo' }, TIPOS_HON[x.tipo] || x.tipo, x.tipo === 'exito' && x.percentual ? ` · ${x.percentual}%` : '', x.tipo === 'mensal' && x.valor_mensal ? ` · ${reais(x.valor_mensal)}/mês` : ''),
@@ -3856,32 +3878,101 @@
           h('td', { class: 'num', 'data-r': 'Em atraso' }, x.resumo.atrasado ? h('span', { class: 'tag urgente' }, reais(x.resumo.atrasado)) : '—'),
           h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (x.situacao === 'ativo' ? 'ok' : x.situacao === 'encerrado' ? '' : 'atencao') }, x.situacao))
         ], x => { location.hash = '#/honorario/' + x.id; }, 'Nenhum honorário cadastrado.'));
-    mostrar(
-      h('header', { class: 'carteira-topo' },
-        h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Gestão'), h('h1', {}, 'Painel financeiro'),
-          h('p', {}, rh ? 'Você lança, dá baixa e cobra; só os totais a receber ficam com a administração.' : 'Tudo o que entra: parcelas, cobranças e PIX do Inter.')),
-        h('div', { class: 'carteira-acoes' },
-          h('a', { class: 'btn dourado', href: '#/honorario/novo' }, '+ Novo honorário'),
-          rh ? null : h('a', { class: 'btn sec', href: '#/financeiro/receber' }, 'A receber por cliente'),
-          h('a', { class: 'btn sec', href: '#/financeiro/caixa' }, 'Caixa e contas'))),
-      heroFinanceiro(r, nPix, rh),
-      h('div', { class: 'fin-dupla' }, reguaCobranca(r, rh), agendaRecebimentos(r.agenda, rh)),
-      r.aConferir ? h('p', { class: 'nota' }, `${r.aConferir} honorário(s) importado(s) do GEA para conferir — veja na aba Honorários.`) : null,
-      h('section', { class: 'caixa fin-corpo' },
-        h('div', { class: 'visoes fin-abas', role: 'tablist' },
-          aba('atraso', 'Em atraso', r.atrasadas.length), aba('proximas', 'A receber', r.proximas.length), aba('recebidas', 'Recebidas no mês', (r.recebidas || []).length || null), aba('acao', '⚖ Ação de cobrança', null),
-          aba('pix', '⚡ PIX recebidos', nPix || null), aba('levantar', '💰 A levantar', lev.length || null), aba('honorarios', 'Honorários', hons.length), aba('recibos', '🧾 Recibos', null), aba('conferir', '🔎 Conferir cobranças', null), sessao.usuario.pode.usuarios ? aba('asaas', '⚡ Boleto/Pix automático', null) : null, aba('antigos', '📥 Do sistema antigo', null)),
-        conteudo));
-    // 8.12 (pedido da usuária): o painel de como estão as finanças, logo abaixo dos números (some para o RH, que não vê totais)
-    if (!rh && window.GESTAO) {
-      let aberto = true; try { aberto = localStorage.getItem('fin_painel') !== 'fechado'; } catch (e) { /* ok */ }
-      const det = h('details', { class: 'caixa secao pf-secao', open: aberto }, h('summary', {}, '📊 Entradas e saídas do mês'), h('p', { class: 'peq' }, 'Montando o painel…'));
-      det.addEventListener('toggle', () => { try { localStorage.setItem('fin_painel', det.open ? 'aberto' : 'fechado'); } catch (e) { /* ok */ } });
-      const ref = app.querySelector('.fin-corpo'); if (ref) ref.before(det);
-      window.GESTAO.blocoPainelFinanceiro().then(el => { if (el) det.lastChild.replaceWith(el); else det.remove(); }).catch(() => det.remove());
-    }
+
+    // menu "Ferramentas"
+    const menuF = h('details', { class: 'cb-ferr' }, h('summary', { class: 'btn sec' }, 'Ferramentas ▾'),
+      h('div', { class: 'cb-ferr-menu', role: 'menu' },
+        FERRAMENTAS_FIN.filter(f => !f[2] || sessao.usuario.pode[f[2]]).filter(f => !(rh && f[0] === 'painel')).map(f => h('a', { href: '#/financeiro?ver=' + f[0], role: 'menuitem' }, f[1], f[0] === 'pix' && nPix ? h('span', { class: 'cb-n' }, String(nPix)) : null)),
+        h('hr'),
+        rh ? null : h('a', { href: '#/financeiro/receber', role: 'menuitem' }, 'A receber por cliente'),
+        h('a', { href: '#/financeiro/caixa', role: 'menuitem' }, 'Caixa e contas a pagar')));
+    const cab = h('header', { class: 'cb-cab' },
+      h('div', {}, h('h1', {}, ehFerramenta ? (FERRAMENTAS_FIN.find(f => f[0] === ver) || [])[1] : 'Cobranças'),
+        ehFerramenta ? h('a', { class: 'cb-voltar', href: '#/financeiro' }, '← Cobranças') : h('p', {}, rh ? 'Você lança, dá baixa e cobra. Os totais ficam com a administração.' : 'Quem pagou, quem falta pagar e quem está atrasado.')),
+      h('div', { class: 'cb-cab-acoes' }, menuF, h('a', { class: 'btn', href: '#/honorario/novo' }, '+ Novo honorário')));
+    if (ehFerramenta) { mostrar(cab, h('section', { class: 'caixa cb-ferr-corpo' }, ferramenta())); return; }
+
+    // as 4 listas
+    const hoje = hojeISO(), fimMes = hoje.slice(0, 8) + String(new Date(+hoje.slice(0, 4), +hoje.slice(5, 7), 0).getDate()).padStart(2, '0');
+    const listas = { atrasadas: r.atrasadas, mes: r.proximas.filter(p => p.vencimento <= fimMes), proximas: r.proximas.filter(p => p.vencimento > fimMes), pagas: r.recebidas || [] };
+    const aba = ver && listas[ver] ? ver : (listas.atrasadas.length ? 'atrasadas' : 'mes');
+    const nomeMes = new Date(hoje + 'T12:00:00Z').toLocaleDateString('pt-BR', { month: 'long' });
+    const m = r.mes || {};
+    const numero = (rot, valor, cls, alvo) => h('a', { class: 'cb-num ' + (cls || ''), href: '#/financeiro?ver=' + alvo }, h('small', {}, rot), h('b', {}, valor));
+    const numeros = h('section', { class: 'cb-nums' },
+      numero('Recebido em ' + nomeMes, rh ? `${listas.pagas.length} parcela(s)` : reais(t.recebidoMes), 'ok', 'pagas'),
+      numero('Falta receber em ' + nomeMes, rh ? `${listas.mes.length} parcela(s)` : reais(m.falta != null ? m.falta : listas.mes.reduce((a, p) => a + (+p.saldo || +p.valor || 0), 0)), '', 'mes'),
+      numero('Em atraso', rh ? `${t.parcelasAtrasadas} parcela(s)` : reais(t.atrasado), t.atrasado || t.parcelasAtrasadas ? 'ruim' : '', 'atrasadas'));
+    const avisoPix = nPix ? h('a', { class: 'cb-aviso', href: '#/financeiro?ver=pix' }, `${nPix} PIX ${nPix > 1 ? 'chegaram e precisam' : 'chegou e precisa'} de você · conferir →`) : null;
+    const abas = h('div', { class: 'cb-abas', role: 'tablist' }, [['atrasadas', 'Atrasadas'], ['mes', 'Este mês'], ['proximas', 'Próximas'], ['pagas', 'Pagas no mês']].map(([id, rot]) =>
+      h('button', { type: 'button', role: 'tab', class: 'cb-aba' + (aba === id ? ' on' : ''), 'aria-selected': String(aba === id), onclick: () => ir({ ver: id }) }, rot, listas[id].length ? h('span', { class: 'cb-n' }, String(listas[id].length)) : null)));
+    const VAZIO = { atrasadas: 'Ninguém atrasado. 🎉', mes: 'Nada mais vence neste mês.', proximas: 'Nada vencendo nos próximos 30 dias.', pagas: 'Nada recebido neste mês ainda.' };
+    mostrar(cab, numeros, avisoPix, h('section', { class: 'cb-corpo' }, abas, linhasCobranca(listas[aba], recarregar, VAZIO[aba])));
   }
 
+  /** 8.24: uma linha por parcela — nome, parcela, vencimento, situação, valor, UM botão e o ⋯. */
+  function linhasCobranca(lista, depois, vazio) {
+    if (!lista.length) return h('div', { class: 'cb-vazio' }, vazio);
+    const rh = sessao.usuario.pode.ocultarValores;
+    return h('ul', { class: 'cb-linhas' }, lista.map(p => {
+      const paga = p.situacao === 'paga', wa = linkWhats(p);
+      const principal = paga
+        ? (p.recibo_url ? h('a', { class: 'btn mini sec', href: p.recibo_url, target: '_blank', rel: 'noopener noreferrer' }, 'Recibo') : null)
+        : wa ? h('a', { class: 'btn mini wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com a mensagem pronta' + (p.asaas_link ? ' (com o link do boleto/Pix)' : ''),
+            onclick: () => { if (p.situacao === 'atrasada') api('fin.parcela.cobranca', { id: p.id, etapa: 'mensagem' }).catch(() => {}); } }, p.situacao === 'atrasada' ? 'Cobrar' : 'Lembrar')
+          : h('span', { class: 'peq cb-semtel', title: 'Sem telefone no cadastro' }, 'sem telefone');
+      const mais = h('details', { class: 'cb-mais' }, h('summary', { 'aria-label': 'Mais ações desta parcela', title: 'Pago, boleto/Pix, ação de cobrança…' }, '⋯'),
+        h('div', { class: 'cb-mais-menu' }, acoesParcela(p, depois, true), h('a', { class: 'btn mini sec', href: '#/honorario/' + p.honorario_id }, 'Abrir o honorário')));
+      const li = h('li', { class: 'cb-linha' + (p.situacao === 'atrasada' ? ' atrasada' : paga ? ' paga' : ''), tabindex: 0 },
+        h('div', { class: 'cb-quem' }, h('b', {}, p.cliente || '—'),
+          h('span', { class: 'peq' }, [p.numero ? p.numero + 'ª parcela' : 'parcela', p.honorario, p.qtdAtrasadas > 1 ? p.qtdAtrasadas + ' em atraso' : ''].filter(Boolean).join(' · '))),
+        h('span', { class: 'cb-data num' }, dataBR(paga ? p.pago_em : p.vencimento).slice(0, 5)),
+        h('span', { class: 'cb-sit' }, chipVenc(p)),
+        h('b', { class: 'cb-val num' }, rh && p.valor === null ? '•••' : reais(paga ? (p.valor_pago || p.valor) : (p.saldo || p.valor))),
+        h('span', { class: 'cb-bts' }, principal, mais));
+      const abrir = ev => { if (ev.target.closest('a,button,details,input,select,form')) return; gavetaCobranca(p, depois); };
+      li.addEventListener('click', abrir); li.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target === li) gavetaCobranca(p, depois); });
+      return li;
+    }));
+  }
+
+  /** 8.24: a cobrança aberta na LATERAL (sem trocar de tela): situação, contato, todas as parcelas do honorário. */
+  async function gavetaCobranca(p, depois) {
+    let g = document.getElementById('cb-gaveta');
+    if (!g) { g = h('aside', { id: 'cb-gaveta', class: 'cb-gaveta', role: 'dialog', 'aria-label': 'Cobrança' }); document.body.append(g, h('div', { id: 'cb-gaveta-fundo', class: 'cb-gaveta-fundo', onclick: () => fecharGaveta() })); }
+    const fundo = document.getElementById('cb-gaveta-fundo');
+    const fechar = h('button', { type: 'button', class: 'fechar', 'aria-label': 'Fechar', onclick: () => fecharGaveta() }, '×');
+    const rh = sessao.usuario.pode.ocultarValores;
+    g.replaceChildren(fechar, h('span', { class: 'carteira-kicker' }, 'Cobrança'), h('h2', {}, p.cliente || '—'), h('p', { class: 'peq' }, p.honorario || ''),
+      h('div', { class: 'cb-g-linha' }, chipVenc(p), etiquetaCobranca(p)),
+      h('dl', { class: 'cb-g-dados' },
+        h('dt', {}, 'Parcela'), h('dd', {}, p.numero ? p.numero + 'ª' : '—'),
+        h('dt', {}, 'Vencimento'), h('dd', {}, dataBR(p.vencimento)),
+        h('dt', {}, 'Valor'), h('dd', {}, rh && p.valor === null ? '•••' : reais(p.saldo || p.valor)),
+        h('dt', {}, 'Telefone'), h('dd', {}, p.telefone || 'sem telefone'),
+        p.asaas_link ? [h('dt', {}, 'Boleto/Pix'), h('dd', {}, h('a', { href: p.asaas_link, target: '_blank', rel: 'noopener noreferrer' }, 'abrir a página de pagamento'))] : null),
+      h('div', { class: 'cb-g-acoes' }, acoesParcela(p, async () => { await depois(); fecharGaveta(); })),
+      h('h3', {}, 'Todas as parcelas deste honorário'), h('div', { class: 'cb-g-parc' }, h('p', { class: 'peq' }, 'Carregando…')),
+      h('a', { class: 'btn sec', href: '#/honorario/' + p.honorario_id, onclick: () => fecharGaveta() }, 'Abrir o honorário completo'));
+    g.classList.add('aberta'); fundo.hidden = false; document.body.classList.add('gaveta-aberta');
+    fechar.focus();
+    try {
+      const d = await api('fin.honorario', { id: p.honorario_id });
+      const caixa = g.querySelector('.cb-g-parc'); if (!caixa) return;
+      caixa.replaceChildren(h('ul', { class: 'cb-g-lista' }, (d.parcelas || []).map(q => h('li', { class: q.pago_em ? 'paga' : q.vencimento < hojeISO() ? 'atrasada' : '' },
+        h('span', {}, (q.numero ? q.numero + 'ª' : '—') + ' · ' + dataBR(q.vencimento)),
+        h('span', { class: 'num' }, rh && q.valor === null ? '•••' : reais(q.valor)),
+        h('span', { class: 'peq' }, q.pago_em ? 'paga ' + dataBR(q.pago_em).slice(0, 5) : q.vencimento < hojeISO() ? 'atrasada' : 'a vencer')))));
+    } catch (e) { const caixa = g.querySelector('.cb-g-parc'); if (caixa) caixa.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+  }
+  function fecharGaveta() {
+    const g = document.getElementById('cb-gaveta'), f = document.getElementById('cb-gaveta-fundo');
+    if (g) g.classList.remove('aberta'); if (f) f.hidden = true; document.body.classList.remove('gaveta-aberta');
+  }
+  window.addEventListener('hashchange', () => fecharGaveta());
+  // menus ⋯ e Ferramentas: um clique fora fecha
+  document.addEventListener('click', ev => { document.querySelectorAll('details.cb-mais[open],details.cb-ferr[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; }); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') fecharGaveta(); });
 
   /** 8.22: cobrança automática com boleto e Pix (Asaas). A chave vai só para as Propriedades do servidor. */
   function blocoAsaas() {
@@ -4872,18 +4963,27 @@
     const pct = r.percentualNoPrazo;
     const cartaoG = (titulo, sub, corpo) => h('section', { class: 'caixa rel-cartao' }, h('h2', {}, titulo), sub ? h('p', { class: 'peq' }, sub) : null, corpo);
     const pctMes = r.prazosEntregues.map((n, i) => n ? Math.round(r.prazosNoPrazo[i] * 100 / n) : 0);
-    mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Relatórios'), h('p', {}, 'Últimos 12 meses. Clientes e processos importados (GEA, Gmail antigo) não contam como novos.')),
-        h('div', { class: 'barra' }, botao('Imprimir', () => window.print(), 'sec'))),
-      blocoIndicadores(mesSel),
-      blocoResultados(r),
-      blocoSemana(sem, per),
-      h('div', { class: 'numeros' },
-        h('div', { class: 'numero' }, h('b', {}, String(soma(r.clientesNovos))), h('span', {}, 'clientes novos')),
-        h('div', { class: 'numero' }, h('b', {}, String(soma(r.processosNovos))), h('span', {}, 'processos novos')),
-        h('div', { class: 'numero' + (pct !== null && pct < 90 ? ' destaque' : '') }, h('b', {}, pct === null ? '—' : pct + '%'), h('span', {}, 'prazos cumpridos até o dia fatal')),
-        h('div', { class: 'numero' + (r.prazosVencidosAbertos ? ' destaque' : '') }, h('b', {}, String(r.prazosVencidosAbertos)), h('span', {}, 'prazos vencidos ainda sem baixa')),
-        h('div', { class: 'numero' }, h('b', {}, reais(soma(r.entradas) - soma(r.saidas))), h('span', {}, 'resultado (entradas − saídas)'))),
+    const produtividade = () => h('section', { class: 'caixa' }, h('h2', {}, `Produtividade por pessoa · últimos ${r.diasProdutividade} dias`),
+        r.produtividade.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab placar' }, h('thead', {}, h('tr', {}, ['Pessoa', 'Pontos', 'Entregues', 'No prazo', 'Atrasadas', 'Em aberto', 'Vencidas agora'].map(t => h('th', {}, t)))),
+          h('tbody', {}, r.produtividade.map(p => h('tr', {}, h('th', { scope: 'row' }, p.nome), h('td', {}, h('b', {}, String(p.pontos))), h('td', {}, String(p.entregues)),
+            h('td', {}, String(p.no_prazo) + (p.entregues ? ` (${Math.round(p.no_prazo * 100 / p.entregues)}%)` : '')), h('td', {}, String(p.atrasadas)), h('td', {}, String(p.abertas)), h('td', {}, String(p.vencidas)))))))
+          : h('p', { class: 'peq' }, 'Ainda não há tarefas ou prazos entregues no período.'));
+    // 8.24 (pedido da usuária: "relatório com muita informação"): EQUIPE fica numa página própria (menu do nome › Equipe)
+    if (params && params.get('ver') === 'equipe') {
+      mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Equipe'), h('p', {}, 'O que cada pessoa fez: conferidos, prazos, tarefas, avisos ao cliente, documentos.'))),
+        blocoSemana(sem, per), produtividade());
+      return;
+    }
+    const iMes = mesSel && r.meses.includes(mesSel) ? r.meses.indexOf(mesSel) : r.meses.length - 1;
+    const mesRef = r.meses[iMes], nomeMes0 = new Date(mesRef + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }), nomeMes = nomeMes0.charAt(0).toUpperCase() + nomeMes0.slice(1);
+    const irMes = d => { const i = iMes + d; if (i < 0 || i >= r.meses.length) return null; return '#/relatorios?mes=' + r.meses[i]; };
+    const ativos = soma(r.porArea.map(a => a.ativos || 0));
+    const resultado = (r.entradas[iMes] || 0) - (r.saidas[iMes] || 0);
+    const n = (rot, valor, sub, cls) => h('div', { class: 'rel-n ' + (cls || '') }, h('small', {}, rot), h('b', {}, valor), sub ? h('span', {}, sub) : null);
+    const ant = i => (i > 0 ? i - 1 : null);
+    const comp = (arr, fmt) => ant(iMes) === null ? '' : 'mês anterior: ' + (fmt ? fmt(arr[iMes - 1] || 0) : String(arr[iMes - 1] || 0));
+    const detalhes = h('details', { class: 'caixa rel-detalhes' }, h('summary', {}, 'Ver todos os gráficos e indicadores'),
+      blocoIndicadores(mesSel), blocoResultados(r),
       h('div', { class: 'rel-grade' },
         r.contratosFechados ? cartaoG('Contratos fechados (assinados) por mês', 'Procuração/contrato marcados "✓ Assinado".', grafColunas(r.meses, [{ nome: 'Contratos fechados', valores: r.contratosFechados, cor: 'c-verde' }])) : null,
         r.processosFinalizados ? cartaoG('Processos finalizados por mês', 'Arquivados / encerrados (pela última movimentação).', grafColunas(r.meses, [{ nome: 'Finalizados', valores: r.processosFinalizados, cor: 'c-tinta' }])) : null,
@@ -4896,12 +4996,21 @@
         cartaoG('Processos por área', 'Processos ativos; passe o mouse para ver a porcentagem.', grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.ativos })), { rotulo: 'ativos', titulo: 'Processos por área' })),
         r.porFase ? cartaoG('Processos por fase', 'Ativos. Clique para abrir em Processos.', grafRosca(Object.keys(FASES).map(f => ({ nome: FASES[f], valor: r.porFase[f] || 0, cor: CORES_FASE[f], ir: () => { location.hash = '#/processos?fase=' + f; } })), { rotulo: 'ativos', titulo: 'Processos por fase' })) : null,
         r.porTribunal ? cartaoG('Processos por tribunal', 'Ativos.', grafRosca(r.porTribunal.slice(0, 8).map(t => ({ nome: t.tribunal, valor: t.n, ir: () => { location.hash = '#/processos?trib=' + encodeURIComponent(t.tribunal); } })), { rotulo: 'ativos', titulo: 'Processos por tribunal' })) : null,
-        cartaoG('Arquivados por área', null, grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.arquivados })), { rotulo: 'arquivados', titulo: 'Arquivados por área', vazio: 'Nenhum arquivado.' }))),
-      h('section', { class: 'caixa' }, h('h2', {}, `Produtividade por pessoa · últimos ${r.diasProdutividade} dias`),
-        r.produtividade.length ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab placar' }, h('thead', {}, h('tr', {}, ['Pessoa', 'Pontos', 'Entregues', 'No prazo', 'Atrasadas', 'Em aberto', 'Vencidas agora'].map(t => h('th', {}, t)))),
-          h('tbody', {}, r.produtividade.map(p => h('tr', {}, h('th', { scope: 'row' }, p.nome), h('td', {}, h('b', {}, String(p.pontos))), h('td', {}, String(p.entregues)),
-            h('td', {}, String(p.no_prazo) + (p.entregues ? ` (${Math.round(p.no_prazo * 100 / p.entregues)}%)` : '')), h('td', {}, String(p.atrasadas)), h('td', {}, String(p.abertas)), h('td', {}, String(p.vencidas)))))))
-          : h('p', { class: 'peq' }, 'Ainda não há tarefas ou prazos entregues no período.')));
+        cartaoG('Arquivados por área', null, grafRosca(r.porArea.slice(0, 10).map(a => ({ nome: a.area, valor: a.arquivados })), { rotulo: 'arquivados', titulo: 'Arquivados por área', vazio: 'Nenhum arquivado.' }))));
+    mostrar(
+      h('div', { class: 'cab rel-cab' }, h('div', {}, h('h1', {}, 'Relatórios'), h('p', {}, 'Clientes e processos importados (GEA, Gmail antigo) não contam como novos.')),
+        h('div', { class: 'rel-mes' }, irMes(-1) ? h('a', { class: 'btn sec mini', href: irMes(-1), 'aria-label': 'Mês anterior' }, '‹') : null, h('b', {}, nomeMes), irMes(1) ? h('a', { class: 'btn sec mini', href: irMes(1), 'aria-label': 'Próximo mês' }, '›') : null)),
+      h('section', { class: 'rel-nums' },
+        n('Recebido', reais(r.entradas[iMes] || 0), comp(r.entradas, reais), 'ok'),
+        n('Resultado (entradas − saídas)', reais(resultado), 'saídas: ' + reais(r.saidas[iMes] || 0), resultado < 0 ? 'ruim' : ''),
+        n('Clientes novos', String(r.clientesNovos[iMes] || 0), comp(r.clientesNovos)),
+        n('Contratos fechados', String((r.contratosFechados || [])[iMes] || 0), r.contratosFechados ? comp(r.contratosFechados) : ''),
+        n('Prazos cumpridos no prazo', r.prazosEntregues[iMes] ? pctMes[iMes] + '%' : '—', `${r.prazosEntregues[iMes] || 0} entregue(s)` + (r.prazosVencidosAbertos ? ` · ${r.prazosVencidosAbertos} vencido(s) sem baixa` : ''), r.prazosEntregues[iMes] && pctMes[iMes] < 90 ? 'ruim' : ''),
+        n('Processos ativos', String(ativos), `${soma(r.processosNovos)} novos em 12 meses`)),
+      h('div', { class: 'rel-grade rel-dois' },
+        cartaoG('Entradas × saídas', 'Últimos 12 meses.', grafColunas(r.meses, [{ nome: 'Entradas', valores: r.entradas, cor: 'c-verde' }, { nome: 'Saídas', valores: r.saidas, cor: 'c-vermelho' }], { dinheiro: true })),
+        cartaoG('Clientes novos e contratos fechados', 'Últimos 12 meses.', grafColunas(r.meses, [{ nome: 'Clientes novos', valores: r.clientesNovos, cor: 'c-azul' }].concat(r.contratosFechados ? [{ nome: 'Contratos fechados', valores: r.contratosFechados, cor: 'c-verde' }] : [])))),
+      detalhes);
   }
 
   /* ---------- Organizar cadastros (8.7.0): processos sem cliente e cadastros para completar ---------- */

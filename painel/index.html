@@ -6,18 +6,18 @@
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://viacep.com.br https://comunicaapi.pje.jus.br; base-uri 'none'; form-action 'none'; object-src 'none'">
-<meta name="theme-color" content="#14161a">
+<meta name="theme-color" content="#0F6E6E">
 <title>Painel interno | Araújo Advocacia</title>
 <link rel="icon" href="/assets/logo-araujo.png" type="image/png">
 <link rel="preconnect" href="https://script.google.com" crossorigin>
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="dns-prefetch" href="https://script.googleusercontent.com">
 <link rel="preload" href="/assets/jost-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/painel/painel.css?v=89">
+<link rel="stylesheet" href="/painel/painel.css?v=90">
 <script src="/painel/config.js?v=2" defer></script>
 <script src="/painel/future.js?v=13" defer></script>
-<script src="/painel/gestao.js?v=13" defer></script>
-<script src="/painel/painel.js?v=106" defer></script>
+<script src="/painel/gestao.js?v=14" defer></script>
+<script src="/painel/painel.js?v=107" defer></script>
 </head>
 <body class="com-lateral">
 <header class="barra-cel" id="barra-cel">
@@ -32,6 +32,7 @@
       <span class="quem-avatar" id="quem-avatar" aria-hidden="true"></span><span class="quem-txt"><span id="quem-nome"></span><small id="quem-perfil"></small></span><span class="quem-seta" aria-hidden="true">▴</span></button>
     <div class="quem-menu" id="quem-menu" role="menu" hidden>
       <a href="#/relatorios" id="menu-relatorios" role="menuitem" hidden>Relatórios</a>
+      <a href="#/relatorios?ver=equipe" id="menu-equipe" role="menuitem" hidden>Equipe: o que cada um fez</a>
       <a href="#/usuarios" id="menu-usuarios" role="menuitem" hidden>Gerenciar acessos</a>
       <a href="/" role="menuitem">Ver o site</a>
       <button type="button" id="btn-whats-abrir" role="menuitem">Abrir o WhatsApp Web do painel</button>
@@ -42,6 +43,14 @@
   </div>
 </aside>
 <div class="lateral-fundo" id="lateral-fundo" hidden></div>
+<header class="barra-topo" id="barra-topo">
+  <form class="busca-topo" id="busca-topo" role="search">
+    <span class="busca-topo-ico" aria-hidden="true">⌕</span>
+    <input type="search" name="q" aria-label="Buscar cliente ou processo" placeholder="Buscar cliente, CPF, telefone ou nº do processo" autocomplete="off">
+    <kbd class="busca-topo-atalho" aria-hidden="true">Ctrl K</kbd>
+  </form>
+  <nav class="subabas" id="subabas" aria-label="Nesta seção" hidden></nav>
+</header>
 <main id="app" class="app" aria-live="polite">
   <p class="carregando">Carregando…</p>
 </main>

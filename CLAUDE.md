@@ -1006,3 +1006,29 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   dias / PIX para conferir / Boleto-Pix automático), `reguaCobranca` (barra segmentada: vence em 7 dias → atraso até 30 → 31–90 → +90, clicável),
   `agendaRecebimentos` (14 dias em colunas), cobranças em CARTÕES (`listaCobrancas`, `chipVenc`: "vence hoje", "3 dias em atraso"…), abas Em atraso /
   A receber / Recebidas no mês / Ação de cobrança / PIX… fin.resumo devolve `mes`, `agenda`, `recebidas` (RH: sem valores).
+
+## 8.24 (nov/2026: Entrega 1 da revisão — escolhas da usuária: layout "C" e cor "3")
+
+- Só painel (Code.gs continua 8.23.0; `VERSAO_PAINEL` não mudou para não acusar "Code.gs velho"). Revisão completa com as próximas entregas:
+  artifact "Revisão do Painel Araújo" (Entrega 2: Clientes/Intimações/Agenda; 3: Documentos/CRM; 4: Supabase; 5: produto/SaaS).
+- Layout C: menu lateral CLARO com poucos itens (`ABAS` = [id, nome, permissão, ícone]): Início, Clientes e processos, Intimações e prazos,
+  Tarefas, Agenda, Cobranças (financeiro), Documentos (modelos), Atendimento (crm, só administração). Barra do topo (`#barra-topo` em
+  index.html): busca única (`#busca-topo` → #/clientes?busca=…, atalho Ctrl+K) e SUB-ABAS da seção (`SUBABAS`, `SECAO_DA_TELA`,
+  `desenharSubabas`): Agenda › Calendário | Audiências e perícias; Documentos › Gerar documentos | Calculadoras | Gravar e resumir conversa;
+  Atendimento › Funil | Chatbot | Marketing; Relatórios › Resumo do mês | Equipe. Relatórios e "Equipe: o que cada um fez" ficam no menu do NOME.
+  Ficha do cliente: "🎙 Gravar atendimento" nas observações (#/transcricao?cliente=ID já escolhe o cliente).
+- Cor 3 (verde-petróleo): bloco "8.24 — tema" no fim do painel.css (`--acento:#0F6E6E`, `--acento-esc`, `--acento-f`, fundo `#F4F6F7`,
+  `--preto` = verde-petróleo para os botões). Cabeçalhos das telas CLAROS (carteira-topo, ini-hero, eq-topo); sem faixas escuras nem dourado.
+  Avisos continuam: âmbar = conferir, vermelho = vencido/risco, verde = feito. O Edifício Future mantém o tema verde dele.
+- Cobranças (`telaFinanceiro`, pedido da usuária: "poluído, sem base de nada"): 3 números (Recebido no mês, Falta receber no mês, Em atraso),
+  aviso azul só quando há PIX para conferir, abas Atrasadas | Este mês | Próximas | Pagas no mês (`ver=atrasadas|mes|proximas|pagas`; os antigos
+  atraso/proximas ainda funcionam), uma linha por parcela (`linhasCobranca`): nome, parcela, data, situação (`chipVenc`), valor, UM botão
+  (Cobrar/Lembrar no WhatsApp; paga → Recibo) e o ⋯ (`acoesParcela(p, depois, semWhats)`: Pago, boleto/Pix, ação de cobrança, abrir honorário).
+  Clicar na linha abre a cobrança na LATERAL (`gavetaCobranca`: dados, ações e todas as parcelas do honorário). O resto foi para "Ferramentas"
+  (`FERRAMENTAS_FIN`: honorários, PIX, ação de cobrança, alvarás, recibos, conferir, sistema antigo, Asaas, entradas e saídas; A receber por cliente;
+  Caixa), cada uma com "← Cobranças". Saíram da tela: régua, agenda de 14 dias e o painel de entradas/saídas aberto.
+- Relatórios: 6 números do mês (navega ‹ ›; recebido, resultado, clientes novos, contratos, prazos no prazo, processos ativos) + 2 gráficos
+  (entradas × saídas; clientes novos e contratos); o resto em "Ver todos os gráficos e indicadores". `?ver=equipe` = página Equipe (semana/mês
+  por pessoa + produtividade).
+- Correções: "null" solto nas telas (append/replaceChildren ignoram null/false — patch no início do painel.js) e a tabela de prazos não passa
+  mais da tela (`.tabela.compacta .mini-acoes` quebra linha).
