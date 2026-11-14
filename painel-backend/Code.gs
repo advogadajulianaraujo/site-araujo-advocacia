@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.27.0';
+var VERSAO = '8.28.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -236,7 +236,7 @@ function importarCargaInicial_() {
 function gravarLote_(tab) {
   if (!tab.buffer || !tab.buffer.length) { tab.buffer = null; return; }
   var linhas = tab.buffer.map(function (o) { delete o._novo; return tab.cab.map(function (k) { return seguro_(o[k]); }); });
-  tab.aba.getRange(tab.buffer[0]._linha, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_();
+  tab.aba.getRange(tab.buffer[0]._linha, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_(); sbMarcar_(tab, tab.buffer[0]._linha, linhas.length);
   tab.buffer = null;
   tab.base = 0;
 }
@@ -250,8 +250,9 @@ function regravarMudadas_(tab) {
   mud.forEach(function (o) { min = Math.min(min, o._linha); max = Math.max(max, o._linha); });
   var faixa = tab.aba.getRange(min, 1, max - min + 1, tab.cab.length);
   var vals = faixa.getDisplayValues().map(function (l) { return l.map(seguro_); });
-  mud.forEach(function (o) { vals[o._linha - min] = tab.cab.map(function (k) { return seguro_(o[k]); }); delete o._mudou; sbAnotar_(tab, o); });
+  mud.forEach(function (o) { vals[o._linha - min] = tab.cab.map(function (k) { return seguro_(o[k]); }); delete o._mudou; });
   faixa.setNumberFormat('@').setValues(vals); marcarMudanca_();
+  mud.forEach(function (o) { sbMarcar_(tab, o._linha); });
   return mud.length;
 }
 
@@ -260,7 +261,7 @@ function gravarVarias_(nome, objs) {
   var tab = tabela_(nome);
   var linhas = objs.map(function (o) { return tab.cab.map(function (k) { return seguro_(o[k]); }); });
   var r = tab.aba.getLastRow() + 1;
-  tab.aba.getRange(r, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_();
+  tab.aba.getRange(r, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_(); sbMarcar_(nome, r, linhas.length);
 }
 
 /** Código que permite criar o primeiro administrador pelo painel. Só quem abre a planilha vê. */
@@ -294,7 +295,6 @@ function doGet() {
 }
 
 function doPost(e) {
-  SB_LIGADO_ = undefined; SB_FILA_ = null; SB_MUDOU_ = false; // cada pedido começa limpo
   var req;
   var bruto = (e && e.postData && e.postData.contents) || '{}';
   // 8.12: pedaços de áudio da transcrição (3 MB em base64) podem ser maiores; o resto continua limitado
@@ -306,13 +306,14 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, erro: 'Pedido inválido.' });
   }
-  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); sbDescarregar_(); return json_({ ok: true, dados: lote }); }
+  // 8.28: o que foi gravado neste pedido vai ao banco novo (Supabase) antes da resposta, para o painel nunca ler dado atrasado
+  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); try { sbEnviarSujas_(); } catch (eL) { /* fica pendente */ } return json_({ ok: true, dados: lote }); }
   try {
-    var saida = rotear_(req.acao, req.token, req.dados || {});
-    sbDescarregar_();
-    return json_({ ok: true, dados: saida });
+    var dados = rotear_(req.acao, req.token, req.dados || {});
+    try { sbEnviarSujas_(); } catch (eS) { /* fica pendente */ }
+    return json_({ ok: true, dados: dados });
   } catch (err) {
-    sbDescarregar_();
+    try { sbEnviarSujas_(); } catch (eS2) { /* fica pendente */ }
     var msg = err && err.publico ? err.message : 'Erro interno. Tente de novo.';
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
     return json_({ ok: false, erro: msg, sessao: !!(err && err.sessao) });
@@ -418,8 +419,7 @@ var ROTAS = {
   'fin.honorario.retirar': { permissao: 'financeiro', fn: retirarHonorario_ },
   'fin.asaas.config': { permissao: 'usuarios', fn: asaasConfig_ },
   'banco.config': { permissao: 'usuarios', fn: bancoConfig_ },
-  'banco.sessao': { fn: sbSessaoUsuario_ },
-  'banco.medicao': { permissao: 'usuarios', fn: bancoMedicao_ },
+  'banco.sessao': { fn: bancoSessao_ },
   'indicadores.mes': { permissao: 'usuarios', fn: indicadores_ },
   'fluxos.processo': { fn: fluxoProcesso_ },
   'fin.asaas.gerar': { permissao: 'financeiro', fn: asaasGerar_ },
@@ -577,9 +577,7 @@ function rotear_(acao, token, dados) {
   MEMO_LEITURA = LEITURAS_RAPIDAS[acao] ? {} : null;
   try {
     var res = ROTAS_GUARDADAS[acao] ? comMemoria_(acao, u, dados, function () { return rota.fn(dados, u, token); }) : rota.fn(dados, u, token);
-    var fim = oculta ? valoresDoPerfil_(acao, res, u.perfil) : res;
-    if (ROTAS_GUARDADAS[acao]) sbGuardarResposta_(acao, u, dados, fim);
-    return fim;
+    return oculta ? valoresDoPerfil_(acao, res, u.perfil) : res;
   } finally { MEMO_LEITURA = null; }
 }
 
@@ -594,7 +592,6 @@ function versaoDados_() {
   return v;
 }
 function marcarMudanca_() {
-  SB_MUDOU_ = true;
   try { CacheService.getScriptCache().put('versao_dados', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue sem memória */ }
 }
 var MEMORIA_POR_PERFIL = { 'inicio.extras': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
@@ -756,6 +753,7 @@ function login_(d) {
 
 function logout_(d, u, token) {
   CacheService.getScriptCache().remove('sessao_' + token);
+  sbSair_(token);
   registrar_(u.usuario, 'logout', '');
   return { saiu: true };
 }
@@ -936,7 +934,8 @@ function obterCliente_(d, u) {
   var lead = null;
   if (u && PERFIS[u.perfil] && PERFIS[u.perfil].usuarios) try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
   var j = jornadasClientes_()[c.id] || 'sem';
-  return { cliente: cli, processos: procs.map(limpar_), parcelas: parcelasAbertasCliente_(c.id), lead: lead, jornada: j, jornada_nome: JORNADA[j] };
+  // 8.28: os andamentos do DataJud não vão na ficha (a tela do processo busca pela rota processos.andamentos)
+  return { cliente: cli, processos: procs.map(function (p) { var x = limpar_(p); delete x.andamentos; return x; }), parcelas: parcelasAbertasCliente_(c.id), lead: lead, jornada: j, jornada_nome: JORNADA[j] };
 }
 
 /** 8.11.1 (pedido da usuária): quantas parcelas o cliente ainda deve (em vermelho na ficha e no cartão). Ignora honorário cancelado/encerrado. */
@@ -1180,6 +1179,7 @@ function vincularPastas_() {
     var cab = ESQUEMA.PastasConferir;
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, cab.length).clearContent(); marcarMudanca_();
     if (linhas.length) sh.getRange(2, 1, linhas.length, cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_();
+    try { PropertiesService.getScriptProperties().deleteProperty('SB_DIG_PastasConferir'); } catch (eD) { /* a cópia de 30 min refaz */ }
   });
   registrar_('sistema', 'pastas vinculadas', n + ' pelo nome igual, ' + aprox + ' pelo nome parecido, ' + duvidas.length + ' em dúvida');
   return n + aprox;
@@ -1976,7 +1976,7 @@ function lerTabela_(nome) {
     cab.forEach(function (k, j) { o[k] = v[j]; });
     linhas.push(o);
   });
-  return { nome: nome, aba: sh, cab: cab, linhas: linhas };
+  return { aba: sh, cab: cab, linhas: linhas, nome: nome };
 }
 
 function seguro_(v) {
@@ -1992,15 +1992,13 @@ function inserirLinha_(tab, obj) {
     obj._novo = true;
     tab.buffer.push(obj);
     tab.linhas.push(obj);
-    sbAnotar_(tab, obj);
     return;
   }
   var linha = tab.cab.map(function (k) { return seguro_(obj[k]); });
   var r = tab.aba.getLastRow() + 1;
-  tab.aba.getRange(r, 1, 1, tab.cab.length).setNumberFormat('@').setValues([linha]); marcarMudanca_();
+  tab.aba.getRange(r, 1, 1, tab.cab.length).setNumberFormat('@').setValues([linha]); marcarMudanca_(); sbMarcar_(tab, r);
   obj._linha = r;
   tab.linhas.push(obj);
-  sbAnotar_(tab, obj);
 }
 
 function atualizarLinha_(tab, linhaObj, mudancas) {
@@ -2011,8 +2009,7 @@ function atualizarLinha_(tab, linhaObj, mudancas) {
   if (linhaObj._novo) return; // ainda no lote: vai gravado no fim
   if (tab.adiar) { linhaObj._mudou = true; return; } // gravado de uma vez por regravarMudadas_
   var valores = tab.cab.map(function (k) { return seguro_(linhaObj[k]); });
-  tab.aba.getRange(linhaObj._linha, 1, 1, tab.cab.length).setValues([valores]); marcarMudanca_();
-  sbAnotar_(tab, linhaObj);
+  tab.aba.getRange(linhaObj._linha, 1, 1, tab.cab.length).setValues([valores]); marcarMudanca_(); sbMarcar_(tab, linhaObj._linha);
 }
 
 function limpar_(o) {
@@ -2042,7 +2039,7 @@ function setConfig_(chave, valor, descricao) {
 function registrar_(usuario, acao, detalhe) {
   try {
     var sh = SpreadsheetApp.getActive().getSheetByName('Log');
-    if (sh) sh.appendRow([new Date().toISOString(), seguro_(usuario), seguro_(acao), seguro_(String(detalhe || '').slice(0, 500))]);
+    if (sh) { sh.appendRow([new Date().toISOString(), seguro_(usuario), seguro_(acao), seguro_(String(detalhe || '').slice(0, 500))]); if (sbLigado_()) sbMarcar_('Log', sh.getLastRow()); }
   } catch (e) { /* o registro nunca derruba a operação */ }
 }
 
@@ -2748,13 +2745,13 @@ function estadoRobo_() {
   return r;
 }
 
-function rodarRoboGatilho() { try { rodarRoboGatilhoCorpo_(); } finally { sbDescarregar_(); } }
-function rodarRoboGatilhoCorpo_() {
+function rodarRoboGatilho() {
   // Se o código novo foi colado mas a importação do GEA ainda não rodou, ela roda aqui sozinha.
   var t0 = Date.now();
   importarGEASeguro_(false);
-  if (Date.now() - t0 > 90 * 1000) return; // a importação demorou; o robô lê os avisos na próxima rodada
+  if (Date.now() - t0 > 90 * 1000) { try { sbEnviarSujas_(); } catch (eB) { /* pendente */ } return; } // a importação demorou; o robô lê os avisos na próxima rodada
   rodarRobo_('robô (6 em 6 h)');
+  try { sbEnviarSujas_(); } catch (eB0) { /* fica pendente */ }
   // processos ainda sem área: classifica pelos avisos do Gmail no tempo que sobrar
   var resta = 300000 - (Date.now() - t0);
   if (resta > 60000) { try { classificarAreas_(Math.min(resta - 30000, 120000)); } catch (e) { /* tenta na próxima */ } }
@@ -2764,6 +2761,7 @@ function rodarRoboGatilhoCorpo_() {
   if (resta > 45000) { try { resumirIntimacoes_(Math.min(resta - 30000, 90000), 30); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
   resta = 300000 - (Date.now() - t0);
   if (resta > 40000) { try { resumirProvisoriosIA_(Math.min(resta - 25000, 60000), 10); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
+  try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
 }
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
@@ -6007,8 +6005,7 @@ function marcarAssinatura_(d, u) {
 /** Apaga de vez uma linha (fica em branco; a leitura ignora linhas vazias). Só para o que nunca deveria ter existido. */
 function apagarLinha_(tab, obj) {
   var vazio = tab.cab.map(function () { return ''; });
-  tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).setValues([vazio]); marcarMudanca_();
-  sbAnotar_(tab, obj, true);
+  tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).setValues([vazio]); marcarMudanca_(); sbApagar_(tab, obj);
   tab.linhas = tab.linhas.filter(function (x) { return x !== obj; });
 }
 /** 8.11: o cliente NÃO vai fechar (não assinou, ou foi marcado "Assinado" por engano). Arquiva a petição inicial sem número,
@@ -9113,8 +9110,7 @@ function aquecerMemoria_() {
       var rota = ROTAS[pd[0]];
       if (!rota || (rota.permissao && !PERFIS[pf][rota.permissao])) return;
       try {
-        var pronto = comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return valoresDoPerfil_(pd[0], x, pf); });
-        sbGuardarResposta_(pd[0], u, pd[1], pronto);
+        comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return valoresDoPerfil_(pd[0], x, pf); });
         n++;
       } catch (e) { /* segue */ }
     });
@@ -9130,7 +9126,6 @@ function aquecerGatilho() {
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
-  sbDescarregar_();
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -9166,6 +9161,8 @@ function arquivarLog_() {
   arq.getRange(arq.getLastRow() + 1, 1, n, 4).setNumberFormat('@').setValues(vals.slice(0, n));
   sh.deleteRows(2, n);
   marcarMudanca_();
+  delete SB_SUJAS.Log; // os números das linhas mudaram: vai a aba inteira
+  sbAbaMudouInteira_('Log'); sbAbaMudouInteira_('LogArquivo');
   return n;
 }
 
@@ -10211,7 +10208,7 @@ function atualizarAndamentos_(limiteMs, maximo) {
 function andamentosGatilho() {
   var t0 = Date.now();
   try { atualizarAndamentos_(270000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
-  sbDescarregar_();
+  try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -10436,11 +10433,12 @@ function marketingResumo_(d) {
 /** De hora em hora: lê os avisos novos do Gmail (e o DJEN, se o navegador não leu), recalcula prazos e confere se algo está parado. */
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
+  try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
   try { aquecerMemoria_(); } catch (eQ) { /* segue */ }
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
-  sbDescarregar_();
+  try { sbEnviarSujas_(); } catch (eB2) { /* fica pendente */ }
 }
 
 /** Problemas que podem fazer perder prazo. Com avisar = true, manda e-mail para a administração (no máximo 1 a cada 12 h). */
@@ -14234,20 +14232,35 @@ function extAnalisar_(d, u) {
 
 
 /* ================================================================== */
-/* 8.26 BANCO NOVO (Supabase / PostgreSQL) — passo 1: cópia automática */
+/* 8.26 / 8.28 BANCO NOVO (Supabase / PostgreSQL)                     */
 /* ================================================================== */
-// A planilha continua sendo a fonte. Cada aba vira uma tabela (supabase/esquema.sql) com as mesmas colunas + escritorio_id, _n (linha
-// da planilha) e _sinc (carimbo da cópia). A cópia só manda as abas que MUDARAM (resumo MD5 em Properties SB_DIG_<aba>), grava por
-// "upsert" em lotes de 500 e apaga do banco o que saiu da planilha (_sinc antigo). Roda de 30 em 30 min (aquecedor e robô de hora em
-// hora). Chave "service_role" SÓ nas Propriedades (SUPABASE_CHAVE), nunca na planilha nem no repositório. Status em Properties
-// SUPABASE_ULTIMA (não na planilha, para não apagar a memória das telas a cada cópia).
+// A planilha continua sendo a fonte e a reserva. Cada aba vira uma tabela (supabase/esquema.sql) com as mesmas colunas + escritorio_id,
+// _n (linha da planilha), _sinc (QUANDO a linha foi lida da planilha) e _em (quando mudou no banco).
+// 8.28 (passo 2, supabase/leitura-rapida.sql):
+//  * o painel LÊ direto do Supabase (painel/banco.js + painel/motor.js, que é este Code.gs nas rotas de leitura); gravar continua aqui;
+//  * toda gravação marca a linha (sbMarcar_ nos helpers) e, no fim do pedido/robô, sbEnviarSujas_ RELÊ aquelas linhas da planilha e
+//    manda na hora (painel_gravar só aceita linha lida DEPOIS da que está no banco: nunca grava dado velho por cima nem na linha errada);
+//  * falhou o envio → fica em Properties SB_PENDENTES, o banco é marcado "pendente" (o navegador volta para a planilha) e tenta de novo;
+//  * a cópia completa de 30 em 30 min continua (segurança) e também passa por painel_gravar/painel_apagar.
+// Chave secreta SÓ nas Propriedades (SUPABASE_CHAVE); a pública (SUPABASE_PUBLICA) vai ao navegador junto com um código de sessão
+// próprio (painel_sessoes guarda só o SHA-256). Status em Properties SUPABASE_ULTIMA (não na planilha).
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google
+var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
+// chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+// rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
+var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {
   var P = PropertiesService.getScriptProperties();
-  return { url: String(P.getProperty('SUPABASE_URL') || '').replace(/\/+$/, ''), chave: P.getProperty('SUPABASE_CHAVE') || '', esc: P.getProperty('SUPABASE_ESCRITORIO') || '' };
+  return { url: String(P.getProperty('SUPABASE_URL') || '').replace(/\/+$/, ''), chave: P.getProperty('SUPABASE_CHAVE') || '', esc: P.getProperty('SUPABASE_ESCRITORIO') || '',
+    publica: P.getProperty('SUPABASE_PUBLICA') || '', leitura: P.getProperty('SUPABASE_LEITURA') !== 'nao' };
+}
+function sbLigado_() {
+  if (SB_LIGADO_ === null) { try { var c = sbConf_(); SB_LIGADO_ = !!(c.url && c.chave); } catch (e) { SB_LIGADO_ = false; } }
+  return SB_LIGADO_;
 }
 function sbTabela_(aba) { return aba.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase(); }
-function supabase_(metodo, caminho, corpo, prefer) {
+function supabase_(metodo, caminho, corpo, prefer, cru) {
   var c = sbConf_();
   if (!c.url || !c.chave) throw falha_('O banco novo (Supabase) ainda não foi ligado: Gerenciar acessos › Banco novo.');
   // chave antiga "service_role" (eyJ…) vai também no Authorization; a nova "sb_secret_…" vai só no apikey (o Supabase recusa no Authorization)
@@ -14259,9 +14272,21 @@ function supabase_(metodo, caminho, corpo, prefer) {
   if (cod === 401 || cod === 403) throw falha_('O Supabase recusou a chave (' + cod + '). Use a chave secreta "service_role" do projeto (Project Settings › API Keys).');
   if (cod >= 400) {
     var j; try { j = JSON.parse(txt); } catch (e) { j = {}; }
-    throw falha_('Supabase: ' + (j.message || j.hint || ('erro ' + cod)) + (j.code === '42P01' || /does not exist|schema cache/i.test(j.message || '') ? ' — rode o arquivo supabase/esquema.sql no SQL Editor do Supabase.' : ''));
+    var er = falha_('Supabase: ' + (j.message || j.hint || ('erro ' + cod)) + (j.code === '42P01' || /does not exist|schema cache/i.test(j.message || '') ? ' — rode o arquivo supabase/esquema.sql (e leitura-rapida.sql) no SQL Editor do Supabase.' : ''));
+    er.codigo = j.code || String(cod); er.http = cod;
+    throw er;
   }
   try { return txt ? JSON.parse(txt) : null; } catch (e) { return null; }
+}
+/** As funções do leitura-rapida.sql existem? (senão a cópia usa o jeito antigo e o navegador continua lendo da planilha) */
+function sbTemRpc_() {
+  if (SB_RPC_ !== null) return SB_RPC_;
+  var P = PropertiesService.getScriptProperties(), x = P.getProperty('SUPABASE_RPC');
+  if (x && Date.now() - (+x.split('|')[1] || 0) < 6 * 3600000) return (SB_RPC_ = x.split('|')[0] === 'sim');
+  try { supabase_('post', 'rpc/painel_apagar', { p_tabela: 'feriados', p_escritorio: sbEscritorio_(), p_chaves: [], p_manter: null, p_ate: '' }); SB_RPC_ = true; }
+  catch (e) { SB_RPC_ = !(e.http === 404 || /PGRST202|42883/.test(e.codigo || '')); if (SB_RPC_) throw e; }
+  P.setProperty('SUPABASE_RPC', (SB_RPC_ ? 'sim' : 'nao') + '|' + Date.now());
+  return SB_RPC_;
 }
 function sbEscritorio_() {
   var P = PropertiesService.getScriptProperties(), id = P.getProperty('SUPABASE_ESCRITORIO');
@@ -14272,61 +14297,231 @@ function sbEscritorio_() {
   P.setProperty('SUPABASE_ESCRITORIO', id);
   return id;
 }
+/** Linha da planilha → linha do banco (a mesma regra na cópia completa e no envio na hora). */
+function sbLinha_(aba, cab, v, n, esc, carimbo) {
+  if (v.every(function (x) { return x === ''; })) return null;
+  var fora = SB_FORA[aba] || [], o = { escritorio_id: esc, _n: n, _sinc: carimbo };
+  cab.forEach(function (col, j) { if (fora.indexOf(col) < 0) o[col] = v[j]; });
+  if (cab.indexOf('id') >= 0 && !o.id) return null;
+  return o;
+}
+function sbChaveDe_(cab, o) { return cab.indexOf('id') >= 0 ? String(o.id) : String(o._n); }
+/** Grava no banco: painel_gravar (só a linha mais nova entra) ou, sem o leitura-rapida.sql, o upsert antigo. */
+function sbGravar_(aba, linhas) {
+  if (!linhas.length) return;
+  var cab = ESQUEMA[aba], porChave = {}, ordem = [];
+  linhas.forEach(function (o) { var k = sbChaveDe_(cab, o); if (!porChave[k]) ordem.push(k); porChave[k] = o; }); // chave repetida: fica a última
+  var lista = ordem.map(function (k) { return porChave[k]; }), rpc = sbTemRpc_();
+  for (var b = 0; b < lista.length; b += 500) {
+    if (rpc) supabase_('post', 'rpc/painel_gravar', { p_tabela: sbTabela_(aba), p_linhas: lista.slice(b, b + 500) });
+    else supabase_('post', sbTabela_(aba) + '?on_conflict=' + (cab.indexOf('id') >= 0 ? 'escritorio_id,id' : 'escritorio_id,_n'), lista.slice(b, b + 500), 'resolution=merge-duplicates,return=minimal');
+  }
+}
+
+/* ---------- envio na hora ---------- */
+function sbNomeTab_(tab) { if (!tab.nome && tab.aba) { try { tab.nome = tab.aba.getName(); } catch (e) { /* sem nome */ } } return tab.nome; }
+/** Chamado pelos helpers de gravação: anota a linha que mudou (o envio é no fim do pedido, numa ida só). */
+function sbMarcar_(tab, linha, qtd) {
+  if (!sbLigado_()) return;
+  var nome = typeof tab === 'string' ? tab : sbNomeTab_(tab);
+  if (!nome || !ESQUEMA[nome] || !linha) return;
+  var s = SB_SUJAS[nome] = SB_SUJAS[nome] || { linhas: {}, apagar: [] };
+  for (var i = 0; i < (qtd || 1); i++) s.linhas[linha + i] = 1;
+}
+function sbApagar_(tab, obj) {
+  if (!sbLigado_()) return;
+  var nome = sbNomeTab_(tab);
+  if (!nome || !ESQUEMA[nome]) return;
+  var s = SB_SUJAS[nome] = SB_SUJAS[nome] || { linhas: {}, apagar: [] };
+  if (ESQUEMA[nome].indexOf('id') >= 0) { if (obj.id) s.apagar.push(String(obj.id)); }
+  else s.linhas[obj._linha] = 1; // linha em branco: o envio apaga pelo número da linha
+}
+/** Manda ao banco, relendo da planilha, as linhas gravadas neste pedido (e as que ficaram pendentes antes). */
+function sbEnviarSujas_() {
+  if (!sbLigado_()) { SB_SUJAS = {}; return; }
+  var P = PropertiesService.getScriptProperties(), pend = {};
+  try { pend = JSON.parse(P.getProperty('SB_PENDENTES') || '{}'); } catch (e) { pend = {}; }
+  var temPend = Object.keys(pend).length > 0;
+  Object.keys(pend).forEach(function (aba) {
+    var s = SB_SUJAS[aba] = SB_SUJAS[aba] || { linhas: {}, apagar: [] };
+    (pend[aba].l || []).forEach(function (n) { s.linhas[n] = 1; });
+    (pend[aba].a || []).forEach(function (k) { s.apagar.push(k); });
+  });
+  var abas = Object.keys(SB_SUJAS);
+  if (!abas.length) return;
+  var sujas = SB_SUJAS; SB_SUJAS = {};
+  var falhou = {}, erro = '';
+  // o banco falhou há menos de 2 min: nem tenta (o Google não tem tempo limite curto e o painel ficaria esperando); guarda e segue
+  var falhouEm = +(P.getProperty('SB_FALHOU_EM') || 0), pausa = Date.now() - falhouEm < 120000;
+  try {
+    if (pausa) throw new Error('banco fora do ar há pouco: guardado para a próxima tentativa');
+    var esc = sbEscritorio_(), rpc = sbTemRpc_();
+    abas.forEach(function (aba) {
+      var s = sujas[aba], cab = ESQUEMA[aba], nums = Object.keys(s.linhas).map(Number).filter(function (n) { return n >= 2; }).sort(function (a, b) { return a - b; });
+      try {
+        var carimbo = new Date().toISOString(); // ANTES de ler: quem ler depois sempre vence
+        var sh = SpreadsheetApp.getActive().getSheetByName(aba), novas = [], vazias = [];
+        if (sh && nums.length) {
+          var min = nums[0], max = nums[nums.length - 1], ult = sh.getLastRow(), lidas = {};
+          if (max - min < 3000) {
+            var vals = min <= ult ? sh.getRange(min, 1, Math.min(max, ult) - min + 1, cab.length).getDisplayValues() : [];
+            nums.forEach(function (n) { lidas[n] = vals[n - min] || null; });
+          } else nums.forEach(function (n) { lidas[n] = n <= ult ? sh.getRange(n, 1, 1, cab.length).getDisplayValues()[0] : null; });
+          nums.forEach(function (n) {
+            var o = lidas[n] ? sbLinha_(aba, cab, lidas[n], n, esc, carimbo) : null;
+            if (o) novas.push(o); else if (cab.indexOf('id') < 0) vazias.push(String(n));
+          });
+        }
+        sbGravar_(aba, novas);
+        var apagar = s.apagar.concat(vazias);
+        if (apagar.length) {
+          if (rpc) supabase_('post', 'rpc/painel_apagar', { p_tabela: sbTabela_(aba), p_escritorio: esc, p_chaves: apagar, p_manter: null, p_ate: carimbo });
+          else supabase_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&' + (cab.indexOf('id') >= 0 ? 'id' : '_n') + '=in.(' + apagar.map(encodeURIComponent).join(',') + ')', undefined, 'return=minimal');
+        }
+      } catch (e1) { falhou[aba] = { l: nums, a: s.apagar }; erro = String(e1.message || e1); }
+    });
+  } catch (e) { abas.forEach(function (aba) { falhou[aba] = { l: Object.keys(sujas[aba].linhas).map(Number), a: sujas[aba].apagar }; }); erro = String(e.message || e); }
+  var nf = Object.keys(falhou).length;
+  if (nf) {
+    Object.keys(falhou).forEach(function (a) { falhou[a].l = falhou[a].l.slice(-3000); falhou[a].a = falhou[a].a.slice(-500); });
+    var txt = JSON.stringify(falhou);
+    if (txt.length > 8500) { // grande demais para guardar: a cópia completa refaz essas abas
+      Object.keys(falhou).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
+      txt = JSON.stringify({});
+    }
+    P.setProperty('SB_PENDENTES', txt);
+    if (!pausa) {
+      P.setProperty('SB_PENDENTE_ERRO', new Date().toISOString() + ' ' + erro.slice(0, 300));
+      P.setProperty('SB_FALHOU_EM', String(Date.now()));
+      sbEstado_('pendente', new Date().toISOString());
+    }
+  } else if (temPend) {
+    P.deleteProperty('SB_PENDENTES');
+    sbEstado_('pendente', null);
+  }
+}
+/** painel_estado (o navegador lê junto com os dados): "pendente" = alguma mudança ainda não chegou ao banco. */
+function sbEstado_(chave, valor) {
+  try {
+    var esc = sbEscritorio_();
+    if (valor === null) supabase_('delete', 'painel_estado?escritorio_id=eq.' + esc + '&chave=eq.' + encodeURIComponent(chave), undefined, 'return=minimal');
+    else supabase_('post', 'painel_estado?on_conflict=escritorio_id,chave', [{ escritorio_id: esc, chave: chave, valor: String(valor), em: new Date().toISOString() }], 'resolution=merge-duplicates,return=minimal');
+  } catch (e) { /* sem o banco: o navegador também não lê dele */ }
+}
+
+/* ---------- cópia completa (segurança, de 30 em 30 min) ---------- */
 function copiarParaSupabase_(limiteMs, forcar) {
   var c = sbConf_();
   if (!c.url || !c.chave) return { ligado: false };
-  var t0 = Date.now(), esc = sbEscritorio_(), P = PropertiesService.getScriptProperties(), feitas = [], erros = [], iguais = 0, faltam = 0;
+  try { sbEnviarSujas_(); } catch (eP) { /* segue */ }
+  var t0 = Date.now(), esc = sbEscritorio_(), P = PropertiesService.getScriptProperties(), feitas = [], erros = [], iguais = 0, faltam = 0, rpc = sbTemRpc_();
   var abas = Object.keys(ESQUEMA);
   abas.forEach(function (aba) {
     if (Date.now() - t0 > (limiteMs || 60000)) { faltam++; return; }
     try {
-      var sh = aba_(aba), cab = ESQUEMA[aba], n = sh.getLastRow() - 1;
-      var vals = n > 0 ? sh.getRange(2, 1, n, cab.length).getDisplayValues() : [];
-      var dig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(vals), Utilities.Charset.UTF_8));
-      if (!forcar && P.getProperty('SB_DIG_' + aba) === dig) { iguais++; return; }
-      var fora = SB_FORA[aba] || [], temId = cab.indexOf('id') >= 0, carimbo = new Date().toISOString(), porChave = {}, ordem = [];
-      vals.forEach(function (v, k) {
-        if (v.every(function (x) { return x === ''; })) return;
-        var o = { escritorio_id: esc, _n: k + 2, _sinc: carimbo };
-        cab.forEach(function (col, j) { if (fora.indexOf(col) < 0) o[col] = v[j]; });
-        if (temId && !o.id) return;
-        var chave = temId ? o.id : String(o._n);
-        if (!porChave[chave]) ordem.push(chave);
-        porChave[chave] = o; // id repetido na planilha: fica a última linha
-      });
-      var linhas = ordem.map(function (k) { return porChave[k]; });
-      var alvo = sbTabela_(aba) + '?on_conflict=' + (temId ? 'escritorio_id,id' : 'escritorio_id,_n');
-      for (var b = 0; b < linhas.length; b += 500) supabase_('post', alvo, linhas.slice(b, b + 500), 'resolution=merge-duplicates,return=minimal');
-      supabase_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&_sinc=lt.' + encodeURIComponent(carimbo), undefined, 'return=minimal');
-      P.setProperty('SB_DIG_' + aba, dig);
-      feitas.push(aba + ' (' + linhas.length + ')');
+      var n = sbCopiarAba_(aba, esc, rpc, forcar);
+      if (n === null) iguais++; else feitas.push(aba + ' (' + n + ')');
     } catch (e) { erros.push(aba + ': ' + (e.message || e)); }
   });
-  SB_MUDOU_ = true; // o sbDescarregar_ do fim manda a versão atual dos dados (estado)
   var r = { ligado: true, em: new Date().toISOString(), copiadas: feitas, iguais: iguais, faltam: faltam, erros: erros };
   P.setProperty('SUPABASE_ULTIMA', JSON.stringify({ em: r.em, copiadas: feitas.length, iguais: iguais, faltam: faltam, erro: erros[0] || '' }));
+  if (!erros.length && !faltam && !P.getProperty('SB_PENDENTES')) sbEstado_('pendente', null);
   return r;
 }
-/** De 30 em 30 min (chamado pelo aquecedor e pelo robô de hora em hora). */
+/** Copia uma aba inteira (devolve quantas linhas, ou null se não mudou desde a última cópia). */
+function sbCopiarAba_(aba, esc, rpc, forcar) {
+  var P = PropertiesService.getScriptProperties();
+  var carimbo = new Date().toISOString(); // ANTES de ler a aba: uma mudança enviada depois sempre vence a cópia
+  var sh = aba_(aba), cab = ESQUEMA[aba], n = sh.getLastRow() - 1;
+  var vals = n > 0 ? sh.getRange(2, 1, n, cab.length).getDisplayValues() : [];
+  var dig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(vals), Utilities.Charset.UTF_8));
+  if (!forcar && P.getProperty('SB_DIG_' + aba) === dig) return null;
+  var linhas = [];
+  vals.forEach(function (v, k) { var o = sbLinha_(aba, cab, v, k + 2, esc, carimbo); if (o) linhas.push(o); });
+  sbGravar_(aba, linhas);
+  if (rpc) supabase_('post', 'rpc/painel_apagar', { p_tabela: sbTabela_(aba), p_escritorio: esc, p_chaves: null, p_manter: linhas.map(function (o) { return sbChaveDe_(cab, o); }), p_ate: carimbo });
+  else supabase_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&_sinc=lt.' + encodeURIComponent(carimbo), undefined, 'return=minimal');
+  P.setProperty('SB_DIG_' + aba, dig);
+  return linhas.length;
+}
+/** Linhas que SUBIRAM na planilha (apagar do meio): a aba vai inteira ao banco na hora; se não der, a cópia de 30 min refaz. */
+function sbAbaMudouInteira_(aba) {
+  if (!sbLigado_()) return;
+  var P = PropertiesService.getScriptProperties();
+  P.deleteProperty('SB_DIG_' + aba);
+  try { sbCopiarAba_(aba, sbEscritorio_(), sbTemRpc_(), true); }
+  catch (e) { sbEstado_('pendente', new Date().toISOString()); P.setProperty('SB_PENDENTE_ERRO', new Date().toISOString() + ' ' + aba + ': ' + String(e.message || e).slice(0, 200)); }
+}
+/** De 30 em 30 min (chamado pelo aquecedor e pelo robô de hora em hora). As pendências vão antes, sempre. */
 function copiarSeHora_() {
   var c = sbConf_();
   if (!c.url || !c.chave) return;
+  try { sbEnviarSujas_(); } catch (eP) { /* segue */ }
   var u = {}; try { u = JSON.parse(PropertiesService.getScriptProperties().getProperty('SUPABASE_ULTIMA') || '{}'); } catch (e) { u = {}; }
   if (u.em && Date.now() - Date.parse(u.em) < 25 * 60000 && !u.faltam) return;
   copiarParaSupabase_(60000);
 }
-/** Gerenciar acessos › Banco novo (Supabase): ligar (URL + chave), testar, copiar agora, desligar. Só administração. */
+
+/* ---------- leitura pelo navegador: sessão do banco ---------- */
+function hexDe_(bytes) { return bytes.map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); }
+function sha256Hex_(txt) { return hexDe_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(txt), Utilities.Charset.UTF_8)); }
+/** O que cada perfil pode ler do banco (o Supabase confere isto em painel_ler; nada além). */
+function sbPermissoes_(u) {
+  var p = PERFIS[u.perfil] || {}, adm = !!p.usuarios, g = {};
+  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo'].forEach(function (a) { g[sbTabela_(a)] = {}; });
+  g.clientes = { mascarar: ['acesso_hash'] }; // o navegador só sabe SE o cliente tem código do Acompanhe
+  g.processos = { mascarar: ['andamentos'] }; // os andamentos (JSON grande do DataJud) ficam no banco; as listas só perguntam se tem
+  g.config = { chaves: SB_CONFIG_LIVRE };
+  // tarefas: a administração lê todas; os outros, as SUAS inteiras e as dos colegas só com o necessário para as contas (sem título,
+  // histórico nem texto: da descrição só as marcas internas). tarefas.listar usa só as da pessoa (SB_TAREFAS_FILTRADAS_OK).
+  g.tarefas = adm ? {} : { outros: { marcas: 'descricao', cols: ['id', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'situacao', 'concluida_por', 'concluida_em',
+    'criado_em', 'criado_por', 'prioridade', 'ok_por', 'ok_em'] } };
+  g.usuarios = adm ? {} : { cols: ['id', 'usuario', 'nome', 'perfil', 'ativo'] };
+  g.leads = adm ? { mascarar: ['cadastro_token'] } : { cols: ['id', 'cliente_id', 'etapa', 'telefone', 'ganho_em', 'perdido_em', 'criado_em'] };
+  if (p.financeiro) ['Honorarios', 'Parcelas', 'Pix', 'Recebimentos', 'Despesas'].forEach(function (a) { g[sbTabela_(a)] = {}; });
+  else {
+    g.honorarios = { cols: ['id', 'cliente_id', 'processo_id', 'tipo', 'situacao'] };
+    g.parcelas = { cols: ['id', 'honorario_id', 'cliente_id', 'vencimento', 'valor', 'valor_pago', 'pago_em'] };
+  }
+  if (adm) g.log = {};
+  return g;
+}
+/** Rota banco.sessao: dá ao navegador o endereço, a chave PÚBLICA e um código de sessão do banco (dura o mesmo que a sessão do painel). */
+function bancoSessao_(d, u, token) {
+  var c = sbConf_();
+  if (!c.url || !c.chave || !c.publica || !c.leitura) return { ligado: false, motivo: !c.url || !c.chave ? 'banco desligado' : !c.publica ? 'falta a chave pública' : 'leitura desligada' };
+  if (Date.now() - +(PropertiesService.getScriptProperties().getProperty('SB_FALHOU_EM') || 0) < 120000) return { ligado: false, motivo: 'o banco novo falhou há pouco; a planilha responde por enquanto' };
+  if (!sbTemRpc_()) return { ligado: false, motivo: 'falta rodar supabase/leitura-rapida.sql' };
+  var criada = Date.now();
+  try { var v = CacheService.getScriptCache().get('sessao_' + token); if (v) criada = +v.split('|')[2] || criada; } catch (e) { /* agora */ }
+  var expira = new Date(criada + SESSAO_MAX_MS).toISOString();
+  var codigo = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  var esc = sbEscritorio_(), perm = sbPermissoes_(u);
+  supabase_('delete', 'painel_sessoes?expira_em=lt.' + encodeURIComponent(new Date().toISOString()), undefined, 'return=minimal');
+  supabase_('post', 'painel_sessoes', [{ token_hash: sha256Hex_(codigo), escritorio_id: esc, usuario_id: u.id, usuario: u.usuario, perfil: u.perfil, permissoes: perm,
+    expira_em: expira, versao: String(u.sessao_versao || '0') || '0', sessao: sha256Hex_(token) }], 'return=minimal');
+  // a aba Usuarios precisa estar no banco (a sessão confere ativo/perfil/troca de senha por ela)
+  try { sbMarcar_('Usuarios', +(tabela_('Usuarios').linhas.filter(function (x) { return x.id === u.id; })[0] || {})._linha); sbEnviarSujas_(); } catch (eU) { /* segue */ }
+  var cp = {}; ESQUEMA.Usuarios.forEach(function (k) { if (k !== 'hash' && k !== 'salt') cp[k] = u[k] === undefined ? '' : u[k]; }); // o mesmo "u" que o Apps Script usa
+  return { ligado: true, url: c.url, chave: c.publica, token: codigo, expira: expira, versao: VERSAO, u: cp, asaas: !!asaasChave_(), permissoes: perm, tarefasFiltradasOk: SB_TAREFAS_FILTRADAS_OK };
+}
+/** Sair: a sessão do banco cai junto (trocar senha/perfil/desativar já derruba sozinho: painel_ler confere a aba Usuarios). */
+function sbSair_(token) {
+  if (!sbLigado_()) return;
+  try { supabase_('delete', 'painel_sessoes?sessao=eq.' + sha256Hex_(token), undefined, 'return=minimal'); } catch (e) { /* expira sozinha */ }
+}
+/** Gerenciar acessos › Banco novo (Supabase): ligar (URL + chaves), testar, copiar agora, leitura direta, desligar. Só administração. */
 function bancoConfig_(d, u) {
   var P = PropertiesService.getScriptProperties();
   if (d.desligar) {
-    ['SUPABASE_URL', 'SUPABASE_CHAVE', 'SUPABASE_ULTIMA', 'SUPABASE_PUBLICA', 'SUPABASE_FALHA'].forEach(function (k) { P.deleteProperty(k); });
+    ['SUPABASE_URL', 'SUPABASE_CHAVE', 'SUPABASE_ULTIMA', 'SUPABASE_PUBLICA', 'SUPABASE_RPC', 'SB_PENDENTES'].forEach(function (k) { P.deleteProperty(k); });
     Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
     registrar_(u.usuario, 'banco novo desligado', '');
   }
   if (d.url !== undefined && String(d.url).trim()) {
     var url = String(d.url).trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
     if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/.test(url)) throw falha_('O endereço do projeto é parecido com https://abcdefgh.supabase.co (Project Settings › API).');
-    if (url !== P.getProperty('SUPABASE_URL')) { P.deleteProperty('SUPABASE_ESCRITORIO'); Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); }); }
+    if (url !== P.getProperty('SUPABASE_URL')) { P.deleteProperty('SUPABASE_ESCRITORIO'); P.deleteProperty('SUPABASE_RPC'); Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); }); }
     P.setProperty('SUPABASE_URL', url);
   }
   if (d.chave !== undefined && String(d.chave).trim()) {
@@ -14336,18 +14531,20 @@ function bancoConfig_(d, u) {
     registrar_(u.usuario, 'banco novo: chave cadastrada', '');
   }
   if (d.publica !== undefined && String(d.publica).trim()) {
-    var pb = String(d.publica).trim();
-    if (/^sb_secret_/.test(pb)) throw falha_('Essa é a chave SECRETA. No campo da chave pública vai a "publishable" (sb_publishable_…) ou a "anon".');
-    P.setProperty('SUPABASE_PUBLICA', pb);
+    var pub = String(d.publica).trim();
+    if (/^sb_secret_/.test(pub)) throw falha_('Essa é a chave SECRETA. Aqui vai a pública: "publishable" (sb_publishable_…) ou "anon" (eyJ…).');
+    if (pub.length < 30) throw falha_('Chave pública incompleta.');
+    if (/^eyJ/.test(pub)) { try { var corpo = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pub.split('.')[1] + '==='.slice((pub.split('.')[1].length + 3) % 4))).getDataAsString()); if (corpo.role !== 'anon') throw falha_('Essa chave é a "' + corpo.role + '". Aqui vai a "anon" (pública).'); } catch (eJ) { if (eJ.publico) throw eJ; } }
+    P.setProperty('SUPABASE_PUBLICA', pub);
+    registrar_(u.usuario, 'banco novo: chave pública cadastrada', '');
   }
-  if (d.leitura !== undefined) P.setProperty('SUPABASE_LEITURA', d.leitura === 'nao' ? 'nao' : 'sim');
-  SB_LIGADO_ = undefined;
-  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '', publica: !!P.getProperty('SUPABASE_PUBLICA'), leitura: P.getProperty('SUPABASE_LEITURA') !== 'nao' };
+  if (d.leitura !== undefined) { P.setProperty('SUPABASE_LEITURA', d.leitura ? 'sim' : 'nao'); registrar_(u.usuario, 'banco novo: leitura direta ' + (d.leitura ? 'ligada' : 'desligada'), ''); }
+  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '', publica: !!c.publica, leitura: c.leitura };
   try { r.ultima = JSON.parse(P.getProperty('SUPABASE_ULTIMA') || 'null'); } catch (e) { r.ultima = null; }
-  try { r.falha = JSON.parse(P.getProperty('SUPABASE_FALHA') || 'null'); } catch (e) { r.falha = null; }
-  try { r.medicoes = JSON.parse(P.getProperty('SUPABASE_MEDICOES') || '[]'); } catch (e) { r.medicoes = []; }
+  r.pendente = P.getProperty('SB_PENDENTES') ? (P.getProperty('SB_PENDENTE_ERRO') || 'sim') : '';
+  if (r.ligado) { try { P.deleteProperty('SUPABASE_RPC'); SB_RPC_ = null; r.rpc = sbTemRpc_(); } catch (eR) { r.rpc = false; } }
   if (r.ligado && d.testar) {
-    try { supabase_('get', 'escritorios?select=id&limit=1'); r.teste = 'Conectado ao Supabase.'; }
+    try { supabase_('get', 'escritorios?select=id&limit=1'); r.teste = 'Conectado ao Supabase.' + (r.rpc ? '' : ' Falta rodar supabase/leitura-rapida.sql no SQL Editor para a leitura rápida.'); }
     catch (e2) { r.teste = '⚠ ' + e2.message; }
   }
   if (r.ligado && d.copiar) {
@@ -14356,150 +14553,4 @@ function bancoConfig_(d, u) {
     registrar_(u.usuario, 'banco novo: cópia', x.copiadas.length + ' aba(s)' + (x.erros.length ? ' · erros: ' + x.erros.length : ''));
   }
   return r;
-}
-
-
-/* ================================================================== */
-/* 8.27 BANCO NOVO — passo 2: o painel LÊ do Supabase e grava nos dois */
-/* ================================================================== */
-// Gravação: todo inserirLinha_/atualizarLinha_/regravarMudadas_/apagarLinha_ anota a linha (sbAnotar_) e, no FIM do pedido (doPost) ou do robô,
-// sbDescarregar_ manda tudo de uma vez ao Supabase (UrlFetchApp.fetchAll): linhas mudadas (upsert), linhas apagadas, as "respostas prontas"
-// e a versão dos dados (tabela estado). Falhou? A planilha já está gravada; a aba perde o resumo SB_DIG_ e a cópia de 30 em 30 min refaz.
-// Leitura: as listas grandes (ROTAS_GUARDADAS) ficam prontas na tabela "respostas", POR PERFIL (já com o filtro do RH) ou por pessoa
-// (tarefas, eu.painel), com a versão dos dados de quando foram calculadas. O navegador lê direto (login próprio de cada usuário no Supabase,
-// token de 1 h pedido ao Google pela rota banco.sessao) e só pergunta ao Google quando a versão mudou ou a resposta tem mais de 10 min.
-var SB_FILA_ = null, SB_MUDOU_ = false, SB_LIGADO_ = undefined;
-function sbLigado_() { if (SB_LIGADO_ === undefined) { try { var c = sbConf_(); SB_LIGADO_ = !!(c.url && c.chave); } catch (e) { SB_LIGADO_ = false; } } return SB_LIGADO_; }
-function sbAnotar_(tab, obj, apagado) {
-  try {
-    if (!tab || !tab.nome || !obj || !sbLigado_() || !ESQUEMA[tab.nome]) return;
-    SB_FILA_ = SB_FILA_ || { abas: {}, respostas: {} };
-    var a = SB_FILA_.abas[tab.nome] = SB_FILA_.abas[tab.nome] || { linhas: {}, apagar: {} };
-    var temId = tab.cab.indexOf('id') >= 0, chave = temId ? obj.id : String(obj._linha || '');
-    if (!chave) return;
-    if (apagado) { delete a.linhas[chave]; a.apagar[chave] = true; } else { delete a.apagar[chave]; a.linhas[chave] = obj; }
-  } catch (e) { /* nunca derruba a gravação na planilha */ }
-}
-function sbHex_(txt) {
-  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, txt, Utilities.Charset.UTF_8)
-    .map(function (b) { return ((b + 256) % 256).toString(16).replace(/^(.)$/, '0$1'); }).join('');
-}
-/** Chave igual à do navegador: rota|JSON dos parâmetros em ordem, sem os vazios. */
-function sbChaveResposta_(acao, dados) {
-  var limpo = {};
-  Object.keys(dados || {}).sort().forEach(function (k) { var v = dados[k]; if (v !== '' && v !== false && v !== null && v !== undefined) limpo[k] = v; });
-  return acao + '|' + JSON.stringify(limpo);
-}
-function sbGuardarResposta_(acao, u, dados, res) {
-  try {
-    if (!sbLigado_() || !u || !res) return;
-    var quem = MEMORIA_POR_PERFIL[acao] ? 'perfil' : String(u.id), hex = sbHex_(sbChaveResposta_(acao, dados)), v = versaoDados_();
-    var marca = 'sbr' + hex.slice(0, 24) + u.perfil + quem + v.slice(-10), cache = CacheService.getScriptCache();
-    if (cache.get(marca)) return; // esta versão já foi para o Supabase
-    cache.put(marca, '1', 900);
-    SB_FILA_ = SB_FILA_ || { abas: {}, respostas: {} };
-    SB_FILA_.respostas[u.perfil + '|' + quem + '|' + hex] = { perfil: u.perfil, quem: quem, chave: hex, rota: acao, versao: v, dados: res, atualizado_em: new Date().toISOString() };
-  } catch (e) { /* segue */ }
-}
-function sbCabecalhos_(chave) { return /^sb_/.test(chave) ? { apikey: chave } : { apikey: chave, Authorization: 'Bearer ' + chave }; }
-function sbPedido_(metodo, caminho, corpo, prefer) {
-  var c = sbConf_(), h = sbCabecalhos_(c.chave);
-  if (prefer) h.Prefer = prefer;
-  var op = { url: c.url + '/rest/v1/' + caminho, method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: h };
-  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
-  return op;
-}
-function sbDescarregar_() {
-  var f = SB_FILA_, mudou = SB_MUDOU_;
-  SB_FILA_ = null; SB_MUDOU_ = false;
-  if ((!f && !mudou) || !sbLigado_()) return;
-  f = f || { abas: {}, respostas: {} };
-  var P = PropertiesService.getScriptProperties(), esc, rotulos = [], pedidos = [], agora = new Date().toISOString();
-  try {
-    esc = sbEscritorio_();
-    Object.keys(f.abas).forEach(function (aba) {
-      var cab = ESQUEMA[aba], fora = SB_FORA[aba] || [], temId = cab.indexOf('id') >= 0, a = f.abas[aba];
-      var linhas = Object.keys(a.linhas).map(function (k) {
-        var obj = a.linhas[k], o = { escritorio_id: esc, _n: obj._linha || null, _sinc: agora };
-        cab.forEach(function (col) { if (fora.indexOf(col) < 0) o[col] = obj[col] === undefined || obj[col] === null ? '' : String(obj[col]); });
-        return o;
-      });
-      for (var b = 0; b < linhas.length; b += 500) { pedidos.push(sbPedido_('post', sbTabela_(aba) + '?on_conflict=' + (temId ? 'escritorio_id,id' : 'escritorio_id,_n'), linhas.slice(b, b + 500), 'resolution=merge-duplicates,return=minimal')); rotulos.push(aba); }
-      var ap = Object.keys(a.apagar);
-      if (ap.length) {
-        pedidos.push(sbPedido_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&' + (temId ? 'id' : '_n') + '=in.(' + ap.map(function (x) { return '"' + String(x).replace(/["\\]/g, '') + '"'; }).join(',') + ')', undefined, 'return=minimal'));
-        rotulos.push(aba);
-      }
-    });
-    var resp = Object.keys(f.respostas).map(function (k) { var r = f.respostas[k]; r.escritorio_id = esc; return r; });
-    if (resp.length) { pedidos.push(sbPedido_('post', 'respostas?on_conflict=escritorio_id,perfil,quem,chave', resp, 'resolution=merge-duplicates,return=minimal')); rotulos.push('respostas'); }
-    pedidos.push(sbPedido_('post', 'estado?on_conflict=escritorio_id', [{ escritorio_id: esc, versao: versaoDados_(), atualizado_em: agora }], 'resolution=merge-duplicates,return=minimal'));
-    rotulos.push('estado');
-    var rs = UrlFetchApp.fetchAll(pedidos), erros = [];
-    rs.forEach(function (r, i) {
-      if (r.getResponseCode() < 400) return;
-      erros.push(rotulos[i] + ' (' + r.getResponseCode() + '): ' + String(r.getContentText() || '').slice(0, 160));
-      if (ESQUEMA[rotulos[i]]) P.deleteProperty('SB_DIG_' + rotulos[i]); // a cópia de 30 em 30 min refaz esta aba inteira
-      if (rotulos[i] === 'respostas') resp.forEach(function (r2) { try { CacheService.getScriptCache().remove('sbr' + r2.chave.slice(0, 24) + r2.perfil + r2.quem + r2.versao.slice(-10)); } catch (e3) { /* ok */ } });
-    });
-    if (erros.length) P.setProperty('SUPABASE_FALHA', JSON.stringify({ em: agora, erro: erros[0], n: erros.length }));
-  } catch (e) {
-    try {
-      Object.keys(f.abas).forEach(function (aba) { P.deleteProperty('SB_DIG_' + aba); });
-      P.setProperty('SUPABASE_FALHA', JSON.stringify({ em: agora, erro: String(e.message || e).slice(0, 200), n: 1 }));
-    } catch (e2) { /* segue */ }
-  }
-}
-
-/* ---------- login de cada usuário no Supabase (Supabase Auth) ---------- */
-function sbAuth_(metodo, caminho, corpo) {
-  var c = sbConf_(), op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: sbCabecalhos_(c.chave) };
-  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
-  var r = UrlFetchApp.fetch(c.url + '/auth/v1/' + caminho, op), j;
-  try { j = JSON.parse(r.getContentText() || '{}'); } catch (e) { j = {}; }
-  return { cod: r.getResponseCode(), j: j };
-}
-/** Rota banco.sessao (todo usuário logado): devolve um token de 1 h do Supabase para ESTA pessoa (perfil e escritório no app_metadata,
- *  que só o servidor pode mudar). A senha do usuário no Supabase é aleatória e fica só nas Propriedades (SB_AUTH_<id>). */
-function sbSessaoUsuario_(d, u) {
-  var P = PropertiesService.getScriptProperties(), c = sbConf_(), pub = P.getProperty('SUPABASE_PUBLICA') || '';
-  if (!c.url || !c.chave || !pub || P.getProperty('SUPABASE_LEITURA') === 'nao') return { ligado: false };
-  var esc = sbEscritorio_(), meta = { escritorio_id: esc, perfil: u.perfil, uid: String(u.id) };
-  var email = 'p-' + String(u.id).toLowerCase().replace(/[^a-z0-9]/g, '') + '-' + esc.slice(0, 8) + '@example.com';
-  var reg = null; try { reg = JSON.parse(P.getProperty('SB_AUTH_' + u.id) || 'null'); } catch (e) { reg = null; }
-  var novaSenha = function () { return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''); };
-  if (!reg || reg.email !== email) {
-    var senha = novaSenha(), cria = sbAuth_('post', 'admin/users', { email: email, password: senha, email_confirm: true, app_metadata: meta });
-    if (cria.cod < 300 && cria.j.id) reg = { id: cria.j.id, email: email, senha: senha, perfil: u.perfil };
-    else {
-      var lista = sbAuth_('get', 'admin/users?page=1&per_page=1000'), achou = ((lista.j && lista.j.users) || []).filter(function (x) { return x.email === email; })[0];
-      if (!achou) throw falha_('Supabase: não consegui criar o acesso de ' + (u.nome || u.usuario) + ' (' + (cria.j.msg || cria.j.message || cria.cod) + ').');
-      var upd = sbAuth_('put', 'admin/users/' + achou.id, { password: senha, app_metadata: meta });
-      if (upd.cod >= 300) throw falha_('Supabase: não consegui atualizar o acesso (' + upd.cod + ').');
-      reg = { id: achou.id, email: email, senha: senha, perfil: u.perfil };
-    }
-    P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg));
-  } else if (reg.perfil !== u.perfil) {
-    sbAuth_('put', 'admin/users/' + reg.id, { app_metadata: meta });
-    reg.perfil = u.perfil; P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg));
-  }
-  var t = sbAuth_('post', 'token?grant_type=password', { email: reg.email, password: reg.senha });
-  if (t.cod >= 300 || !t.j.access_token) {
-    var s2 = novaSenha(), up2 = sbAuth_('put', 'admin/users/' + reg.id, { password: s2, app_metadata: meta });
-    if (up2.cod < 300) { reg.senha = s2; P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg)); t = sbAuth_('post', 'token?grant_type=password', { email: reg.email, password: reg.senha }); }
-    if (t.cod >= 300 || !t.j.access_token) throw falha_('Supabase: o login da leitura rápida falhou (' + (t.j.error_description || t.j.msg || t.cod) + '). O painel segue pela planilha.');
-  }
-  return { ligado: true, url: c.url, chave: pub, token: t.j.access_token, expira: Date.now() + (parseInt(t.j.expires_in, 10) || 3600) * 1000, perfil: u.perfil, uid: String(u.id) };
-}
-/** Guarda as medições de velocidade feitas no navegador (Gerenciar acessos › Banco novo › Medir velocidade). */
-function bancoMedicao_(d, u) {
-  var P = PropertiesService.getScriptProperties(), lista = [];
-  try { lista = JSON.parse(P.getProperty('SUPABASE_MEDICOES') || '[]'); } catch (e) { lista = []; }
-  if (d.medicao) {
-    var m = d.medicao, item = { em: new Date().toISOString(), por: u.nome || u.usuario, rotas: [] };
-    (m.rotas || []).slice(0, 10).forEach(function (r) { item.rotas.push({ rota: String(r.rota).slice(0, 40), planilha: Math.round(+r.planilha || 0), supabase: r.supabase === null ? null : Math.round(+r.supabase || 0) }); });
-    lista.unshift(item); lista = lista.slice(0, 10);
-    P.setProperty('SUPABASE_MEDICOES', JSON.stringify(lista));
-  }
-  return { medicoes: lista };
 }

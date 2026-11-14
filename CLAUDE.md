@@ -1075,26 +1075,41 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.26.1: aceita a chave nova "sb_secret_…" (vai só no header apikey) e a antiga "service_role" (eyJ…, também no Authorization); recusa a "publishable".
 - Próximo passo (2): o painel ler do Supabase direto pelo navegador, respeitando o perfil (RH sem totais, tarefas só da pessoa).
 
-## 8.27.0 Banco novo — passo 2: o painel LÊ do Supabase e grava nos dois (projeto jnjyzmzvwxaghunjxofz; pedido da usuária)
+## 8.28.0 Banco novo — passo 2: o painel LÊ do Supabase (pedido da usuária: "mais rápido, planilha como reserva")
 
-- Gravação: `inserirLinha_`/`atualizarLinha_`/`regravarMudadas_`/`apagarLinha_` chamam `sbAnotar_` (tabela com `nome`, desde 8.27 `lerTabela_`
-  devolve `nome`); `sbDescarregar_` manda tudo no FIM do pedido (doPost, lote, erros) e dos robôs (aquecerGatilho, roboRapidoGatilho,
-  rodarRoboGatilho → `rodarRoboGatilhoCorpo_`, andamentosGatilho) num `UrlFetchApp.fetchAll`: upsert das linhas, delete das apagadas,
-  respostas prontas e a versão dos dados (tabela `estado`, versaoDados_). Falhou → Properties SUPABASE_FALHA e apaga SB_DIG_<aba> (a cópia de
-  30 em 30 min refaz). Cada doPost zera SB_LIGADO_/SB_FILA_/SB_MUDOU_. Escrita direta na planilha sem os helpers (appendRow, setConfig_…) só
-  chega pela cópia de 30 min.
-- Respostas prontas: `rotear_` (e `aquecerMemoria_`) chamam `sbGuardarResposta_` para as ROTAS_GUARDADAS com a resposta FINAL (depois do
-  `valoresDoPerfil_`): tabela `respostas` (perfil, quem = 'perfil' ou id da pessoa como em MEMORIA_POR_PERFIL, chave = SHA-256 hex de
-  `rota|JSON dos parâmetros sem vazios` = `chaveDe` do painel, versao, dados jsonb). Uma vez por versão (CacheService 'sbr…').
-- Login por pessoa: rota `banco.sessao` (`sbSessaoUsuario_`) cria/atualiza o usuário no Supabase Auth (admin API, e-mail
-  p-<id>-<esc>@example.com, senha aleatória SÓ em Properties SB_AUTH_<id>, app_metadata {escritorio_id, perfil, uid}) e devolve um token de
-  1 h (grant_type=password). Perfil mudou → atualiza o app_metadata. O navegador nunca recebe refresh token: pede outro ao Google com a sessão.
-- Banco (supabase/esquema.sql, rodar de novo): tabelas brutas SEM política (só a service_role lê); `respostas` e `estado` com RLS pelo
-  app_metadata do token (escritório + perfil + pessoa) e `grant select … to authenticated`.
-- Painel: `SB_ROTAS` (mesmas das ROTAS_GUARDADAS) → `apiBase` tenta `sbLer` (respostas + estado em paralelo, 3,5 s de limite) antes do Google;
-  fresca = mesma versão do estado E menos de 10 min → não vai ao Google; senão mostra na hora e `conferir` no Google por trás. Erro/sem
-  login/sem lista → Google (como antes). Token em sessionStorage `sb_sessao` (apagado no `sair`). CSP: connect-src https://*.supabase.co.
-- Gerenciar acessos › Banco novo: campo da chave PÚBLICA (Config Properties SUPABASE_PUBLICA; recusa sb_secret), liga/desliga a leitura rápida
-  (SUPABASE_LEITURA), última falha e "⏱ Medir velocidade" (`medirVelocidade`: Clientes, Processos, Prazos, 3× pelo Google × 3× pelo Supabase,
-  mediana; rota `banco.medicao` guarda as 10 últimas em SUPABASE_MEDICOES).
-- Segurança pendente da usuária: Supabase › Authentication › Sign In / Providers › desligar "Allow new users to sign up".
+- Substitui a 8.27.0 de outra sessão ("respostas prontas" + login no Supabase Auth): lá a tela vinha velha depois de qualquer gravação
+  e esperava o Google; aqui o navegador refaz a conta com as linhas que acabaram de chegar. As tabelas `respostas`/`estado` e os usuários
+  criados no Supabase Auth por ela ficam sem uso (podem ser apagados).
+
+- Medição antes (da usuária): cada doPost leva 2 a 9 s (o gargalo é o Apps Script). Depois (simulador e Chromium): a conta de cada tela
+  no navegador leva 15–160 ms com volume real; a tela abre em ~0,1–0,5 s (ida ao Supabase + conta). Medir de verdade: Gerenciar acessos ›
+  Banco novo › "⏱ Medir agora" (mesmas telas pelos dois caminhos, tempo e "resultado igual?") + tabela das medidas da aba.
+- Leitura: `painel/banco.js` (window.PAINEL_BANCO) busca as linhas pela RPC `painel_ler` (supabase/leitura-rapida.sql) e roda a rota com
+  `painel/motor.js` = as funções de leitura do Code.gs, GERADO por `node .github/motor/gerar.mjs` (mudou o Code.gs? rode o gerar; ele
+  também atualiza `SB_CONFIG_LIVRE` no Code.gs). Gancho único em `chamar` (painel.js): `BANCO.lerOuPlanilha(acao, dados, …)`.
+  Rotas do motor: `ROTAS_MOTOR` no gerar.mjs. Só incremental: `_em` (quando mudou no banco) com 2 min de folga + conferência de chaves.
+- O motor nunca grava: inserir/atualizar/apagar, serviço do Google (Calendar, Gmail, Properties…), tabela/coluna não liberada ou valor
+  mascarado na resposta = a conta para e a tela vai ao Apps Script (o mesmo pedido). `comTrava_(fn)` no motor só roda fn (se tentar gravar,
+  para). Fuso do computador ≠ Brasília, Code.gs de outra versão (`versao` do motor = VERSAO) ou "pendente" → planilha.
+  Tempo limite: 4,5 s (9 s na 1ª carga; a carga continua por trás); 3 falhas seguidas → 5 min só planilha.
+- Segurança: rota `banco.sessao` (`bancoSessao_`) cria em `painel_sessoes` só o SHA-256 de um código novo, com perfil, `versao`
+  (sessao_versao) e `permissoes` (`sbPermissoes_`); o navegador recebe código + chave PÚBLICA (Properties SUPABASE_PUBLICA; a secreta nunca
+  sai do Google). `painel_ler` confere prazo (12 h total, 6 h parado), pessoa ativa, mesmo perfil e sessao_versao pela tabela usuarios
+  (trocar senha/perfil/desativar/"Desconectar agora" derruba na hora); Sair apaga (`sbSair_`). Permissões: clientes com `acesso_hash`
+  mascarado ("•"), processos com `andamentos` mascarado, Config só `SB_CONFIG_LIVRE` (nunca chave/código/Pix/conta/URL), financeiro só
+  perfis com `financeiro` (os outros: honorários/parcelas com colunas mínimas), usuarios com 5 colunas para quem não é administração,
+  Log só administração; tarefas fora da administração: as da pessoa inteiras e as dos colegas sem título/histórico/checklist e com só as
+  marcas `[…:…]` da descrição (`_meu`); tarefas.listar usa só as da pessoa (`SB_TAREFAS_FILTRADAS_OK`). Linha resumida lida em coluna
+  escondida = planilha (Proxy no banco.js). clientes.obter não manda mais `andamentos` dos processos.
+- Gravação: os helpers chamam `sbMarcar_` (linha) / `sbApagar_` (id); no fim do doPost (e dos robôs) `sbEnviarSujas_` RELÊ as linhas da
+  planilha e manda por `painel_gravar` (só entra linha com `_sinc` — hora da leitura, tirada ANTES de ler — mais nova e diferente:
+  cópia atrasada nunca passa por cima). Falhou → Properties SB_PENDENTES + `painel_estado` "pendente" (navegador lê da planilha) e
+  SB_FALHOU_EM (2 min sem tentar, para o Google não ficar esperando). Apagar linhas do meio (arquivarLog_) → `sbAbaMudouInteira_`.
+  Escrita nova direto na planilha (fora dos helpers)? Marque com `sbMarcar_(aba, linha)` ou chame `sbAbaMudouInteira_`.
+- Cópia completa de 30 em 30 min continua (segurança), agora por `sbCopiarAba_` → `painel_gravar` + `painel_apagar` (mantém só as chaves
+  da planilha; nunca apaga linha gravada depois do início da cópia). Sem o leitura-rapida.sql, volta ao upsert antigo (8.26).
+- Gerenciar acessos › Banco novo: chave pública, "Ligar/Desligar a leitura rápida" (Properties SUPABASE_LEITURA), aviso de pendência,
+  medição. CSP do painel com `https://*.supabase.co` em connect-src.
+- Testes: `.github/motor/teste/` (simulador do Google + PostgreSQL local + navegador, dados inventados; LEIA.md): 4 perfis × 30 telas
+  iguais ao Apps Script, gravação/apagar/lote/pendência/troca de senha/sair/Log. Rodou o esquema.sql de novo (aba nova)? Rode também o leitura-rapida.sql (põe a coluna _em).
+

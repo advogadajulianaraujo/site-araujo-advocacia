@@ -138,87 +138,12 @@
     }
     if (m && m.promessa) return m.promessa.then(v => JSON.parse(JSON.stringify(v)));
     const g = geracao;
-    const peloGoogle = () => chamar(acao, dados).then(v => {
+    const promessa = chamar(acao, dados).then(v => {
       if (g === geracao) { memoria.set(k, { t: Date.now(), txt: JSON.stringify(v) }); salvarMemoria(); } else memoria.delete(k);
       return JSON.parse(JSON.stringify(v));
-    });
-    // 8.27: as listas grandes vêm prontas do Supabase (0,1–0,5 s); se a versão dos dados mudou, mostra na hora e confere no Google por trás.
-    // Supabase fora do ar, sem login ou sem a lista → vai pelo Google, como antes.
-    const promessa = (SB_ROTAS.has(acao) ? sbLer(acao, dados) : Promise.resolve(null)).then(x => {
-      if (!x) return peloGoogle();
-      const txt = JSON.stringify(x.dados);
-      if (g === geracao) {
-        const m2 = { t: x.fresco ? Date.now() : 0, txt, velho: !x.fresco };
-        memoria.set(k, m2); salvarMemoria();
-        if (!x.fresco) setTimeout(() => { const atual = memoria.get(k); if (atual === m2 && !m2.promessa) conferir(k, acao, dados, m2); }, 0);
-      }
-      return JSON.parse(txt);
-    }).catch(e => { memoria.delete(k); throw e; });
+    }, e => { memoria.delete(k); throw e; });
     memoria.set(k, { promessa });
     return promessa;
-  }
-
-  /* ---------- 8.27 leitura rápida pelo Supabase ----------
-     Cada pessoa tem login próprio no Supabase (token de 1 h pedido ao Google: rota banco.sessao). O token só abre as listas prontas
-     do PERFIL dela (tabela respostas, protegida no banco) e a versão dos dados (estado). Nada de cliente fica guardado fora desta aba. */
-  const SB_ROTAS = new Set(['inicio.extras', 'eu.painel', 'clientes.listar', 'processos.listar', 'prazos.listar', 'intimacoes.listar', 'fin.honorarios', 'tarefas.listar', 'relatorio.geral']);
-  let sb = null, sbPedindo = null, sbDesligadoAte = 0;
-  try { sb = JSON.parse(sessionStorage.getItem('sb_sessao') || 'null'); } catch (e) { sb = null; }
-  function sbSair() { sb = null; sbDesligadoAte = 0; try { sessionStorage.removeItem('sb_sessao'); } catch (e) { /* ok */ } }
-  function sbToken() {
-    if (!sessao || Date.now() < sbDesligadoAte) return Promise.resolve(null);
-    if (sb && sb.uid === String(sessao.usuario.id) && sb.expira - Date.now() > 120000) return Promise.resolve(sb);
-    if (!sbPedindo) {
-      sbPedindo = chamar('banco.sessao', {}).then(r => {
-        sb = r && r.ligado ? r : null;
-        if (!sb) sbDesligadoAte = Date.now() + 15 * 60000;
-        try { if (sb) sessionStorage.setItem('sb_sessao', JSON.stringify(sb)); else sessionStorage.removeItem('sb_sessao'); } catch (e) { /* ok */ }
-        return sb;
-      }).catch(e => { sbDesligadoAte = Date.now() + (/desconhecida/i.test(e.message || '') ? 60 : 5) * 60000; return null; })
-        .finally(() => { sbPedindo = null; });
-    }
-    return sbPedindo;
-  }
-  async function sbHex(txt) {
-    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
-  }
-  /** Lê a lista pronta do Supabase. Devolve { dados, fresco } ou null (aí o painel vai pelo Google). */
-  async function sbLer(acao, dados) {
-    try {
-      if (!window.crypto || !crypto.subtle) return null;
-      const s = await sbToken(); if (!s) return null;
-      const hex = await sbHex(chaveDe(acao, dados));
-      const cab = { apikey: s.chave, Authorization: 'Bearer ' + s.token };
-      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 3500);
-      try {
-        const [r1, r2] = await Promise.all([
-          fetch(`${s.url}/rest/v1/respostas?select=dados,versao,atualizado_em&chave=eq.${hex}&perfil=eq.${encodeURIComponent(s.perfil)}&quem=in.(perfil,${encodeURIComponent(s.uid)})&limit=1`, { headers: cab, signal: ctl.signal, cache: 'no-store' }),
-          fetch(`${s.url}/rest/v1/estado?select=versao&limit=1`, { headers: cab, signal: ctl.signal, cache: 'no-store' })]);
-        if (r1.status === 401 || r2.status === 401) { sb = null; return null; }
-        if (!r1.ok || !r2.ok) return null;
-        const l1 = await r1.json(), l2 = await r2.json();
-        if (!l1.length || l1[0].dados === null) return null;
-        const x = l1[0], fresco = !!(l2.length && l2[0].versao === x.versao && Date.now() - Date.parse(x.atualizado_em) < 10 * 60000);
-        return { dados: x.dados, fresco };
-      } finally { clearTimeout(tm); }
-    } catch (e) { return null; }
-  }
-  /** Mede a velocidade: a mesma lista pelo Google (planilha) e pelo Supabase, 3 vezes cada; guarda o resultado. */
-  async function medirVelocidade(aoAndar) {
-    const rotas = [['clientes.listar', 'Clientes'], ['processos.listar', 'Processos'], ['prazos.listar', 'Prazos']], res = [];
-    const mediana = l => { const o = l.filter(x => x !== null).sort((a, b) => a - b); return o.length ? o[Math.floor(o.length / 2)] : null; };
-    for (const [rota, nome] of rotas) {
-      const g = [], s = [];
-      for (let i = 0; i < 3; i++) {
-        if (aoAndar) aoAndar(`${nome}: pela planilha (${i + 1}/3)…`);
-        let t0 = performance.now(); try { await chamarUm(rota, {}); g.push(performance.now() - t0); } catch (e) { g.push(null); }
-        if (aoAndar) aoAndar(`${nome}: pelo Supabase (${i + 1}/3)…`);
-        t0 = performance.now(); const x = await sbLer(rota, {}); s.push(x ? performance.now() - t0 : null);
-      }
-      res.push({ rota: nome, planilha: mediana(g), supabase: mediana(s) });
-    }
-    return api('banco.medicao', { medicao: { rotas: res } });
   }
 
   /** Busca direto no Google, sem usar o que está guardado (para um item recém-criado). */
@@ -268,6 +193,7 @@
     const pode = (sessao && sessao.usuario && sessao.usuario.pode) || {};
     const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['modelos.listar', {}]];
     if (pode.financeiro) lista.push(['fin.resumo'], ['fin.honorarios', {}]);
+    if (BANCO) BANCO.iniciar();
     lista.forEach(([a, d]) => api(a, d).catch(() => {}));
     setTimeout(() => lerDjenNavegador(false), 4000);
   }
@@ -414,7 +340,17 @@
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
+  /* 8.27: leitura pelo banco novo (Supabase) quando dá; se ele falhar ou demorar, a mesma leitura vai ao Google (painel/banco.js). */
+  const BANCO = window.PAINEL_BANCO || null;
+  let ultimoGoogle = Date.now();
+  if (BANCO) BANCO.configurar((a, d) => chamarUm(a, d));
   function chamar(acao, dados) {
+    if (BANCO && sessao && LEITURAS.has(acao) && BANCO.pode(acao)) return BANCO.lerOuPlanilha(acao, dados, () => chamarGoogle(acao, dados));
+    return chamarGoogle(acao, dados);
+  }
+  // a sessão do Google cai com 6 h sem uso: com as telas vindo do banco, um "oi" leve de vez em quando mantém a sessão viva
+  setInterval(() => { if (sessao && !document.hidden && Date.now() - ultimoGoogle > 20 * 60000) chamarUm('sessao', {}).catch(() => {}); }, 5 * 60000);
+  function chamarGoogle(acao, dados) {
     if (!EM_LOTE.has(acao) || loteDesligado || !sessao) return chamarUm(acao, dados);
     return new Promise((ok, falhou) => {
       filaLote.push({ acao, dados: dados || {}, ok, falhou });
@@ -425,6 +361,7 @@
   async function enviarLote() {
     const fila = filaLote; filaLote = []; loteTimer = null;
     if (!fila.length) return;
+    ultimoGoogle = Date.now();
     if (fila.length === 1) { const x = fila[0]; chamarUm(x.acao, x.dados).then(x.ok, x.falhou); return; }
     let j;
     try {
@@ -451,6 +388,7 @@
   }
   async function chamarUm(acao, dados, tentativa) {
     if (!API) throw new Error('O painel ainda não foi ligado ao Google. Veja painel-backend/INSTALAR.md.');
+    ultimoGoogle = Date.now();
     let resp;
     try {
       resp = await comLimite(API, { method: 'POST', body: JSON.stringify({ acao, token: sessao && sessao.token, dados: dados || {} }), redirect: 'follow' }, LEITURAS.has(acao) ? 90000 : 340000);
@@ -584,10 +522,10 @@
   function sair(expirou) {
     const token = sessao && sessao.token;
     sessao = null;
+    if (BANCO) BANCO.sair();
     esquecerTudo();
     try { sessionStorage.removeItem('painel_memoria'); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
-    sbSair();
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
     abasEl.hidden = true;
     quemEl.hidden = true;
@@ -2495,57 +2433,85 @@
   /** 8.26: Banco novo (Supabase) — ligar com o endereço e a chave "service_role" (vão só para as Propriedades do Google), testar, copiar agora. */
   function caixaBancoNovo() {
     const caixa = h('section', { class: 'caixa banco-caixa' }, h('h2', {}, '🗄 Banco novo (Supabase)'), h('p', { class: 'peq' }, 'Carregando…'));
+    const SQL = n => h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/supabase/' + n, target: '_blank', rel: 'noopener noreferrer' }, n);
+    const seg = ms => ms === null || ms === undefined ? '—' : (ms / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' s';
+    const NOMES = { 'clientes.listar': 'Clientes', 'processos.listar': 'Processos', 'prazos.listar': 'Intimações e prazos', 'intimacoes.listar': 'Intimações (lista)', 'tarefas.listar': 'Tarefas',
+      'eu.painel': 'Início (minha parte)', 'fin.resumo': 'Cobranças', 'fin.honorarios': 'Honorários', 'documentos.assinaturas': 'Aguardando assinatura', 'equipe.listar': 'Equipe', 'clientes.obter': 'Ficha do cliente',
+      'trabalho.aguardando': 'Aguardando o seu OK', 'resumo': 'Cartão do robô', 'inicio.acoes': 'Precisa de ação agora', 'inicio.extras': 'Início (audiências, aniversários)', 'fin.pix': 'PIX recebidos',
+      'relatorio.cumpridos': 'Prazos cumpridos', 'audiencias.listar': 'Audiências', 'fin.areceber': 'A receber', 'indicadores.mes': 'Indicadores', 'relatorio.semana': 'Semana da equipe',
+      'fluxos.processo': 'Checklist da etapa', 'prazos.memoria': 'Conta do prazo', 'feriados.listar': 'Feriados', 'fin.honorario': 'Honorário', 'fin.acaoCobranca': 'Ação de cobrança', 'fin.conferencia': 'Conferir cobranças',
+      'agenda.listar': 'Agenda', 'modelos.listar': 'Documentos', 'crm.listar': 'Funil' };
+    const porque = m => /CalendarApp/.test(m) ? 'usa o Google Agenda' : /Gmail|Properties|Session|UrlFetch/.test(m) ? 'usa dados do robô no Google' : /gravar/.test(m) ? 'precisou gravar algo' : /negada|coluna|listar:|filtrada|permiss/.test(m) ? 'precisa de dados que este perfil não recebe' : 'precisa do Google';
+    const medidor = h('div', {});
+    const resumoMedidas = () => {
+      const est = BANCO ? BANCO.estado() : null;
+      if (!est) return h('p', { class: 'peq' }, 'Este painel não carregou a leitura rápida.');
+      const por = {};
+      est.medidas.forEach(m => { const x = por[m.acao] = por[m.acao] || { banco: [], google: [], falhou: 0 }; if (m.fonte === 'banco') x.banco.push(m.ms); else if (m.fonte === 'google') x.google.push(m.ms); else x.falhou++; });
+      const med = l => l.length ? l.slice().sort((a, b) => a - b)[Math.floor(l.length / 2)] : null;
+      const linhas = Object.entries(por).sort((a, b) => (b[1].banco.length + b[1].google.length) - (a[1].banco.length + a[1].google.length)).slice(0, 14);
+      return h('div', {},
+        h('p', { class: 'nota' }, est.ligado ? h('strong', {}, '⚡ Leitura rápida ligada neste computador') : h('strong', {}, 'Leitura rápida desligada neste computador'),
+          est.motivo ? ' · ' + est.motivo : '', est.tabelas.length ? ` · ${est.tabelas.length} tabela(s) na memória desta aba` : ''),
+        linhas.length ? h('table', { class: 'tabela compacta mini-tab' }, h('thead', {}, h('tr', {}, h('th', {}, 'Tela (desde que abriu o painel)'), h('th', {}, 'Banco novo'), h('th', {}, 'Planilha (Google)'), h('th', {}, 'Voltou p/ planilha'))),
+          h('tbody', {}, linhas.map(([a, x]) => h('tr', {}, h('td', {}, NOMES[a] || a), h('td', {}, x.banco.length ? `${seg(med(x.banco))} (${x.banco.length}×)` : '—'),
+            h('td', {}, x.google.length ? `${seg(med(x.google))} (${x.google.length}×)` : '—'), h('td', {}, x.falhou ? String(x.falhou) + '×' : '—'))))) : h('p', { class: 'peq' }, 'Ainda sem medidas: use o painel um pouco e volte aqui.'),
+        est.fora.length ? h('p', { class: 'peq' }, 'Sempre pela planilha (precisam do Google ou de algo que este perfil não lê): ' + est.fora.map(([a, m]) => (NOMES[a] || a) + ' (' + porque(m) + ')').join(', ')) : null);
+    };
+    const testar = async ev => {
+      ev.target.disabled = true; ev.target.textContent = 'Medindo… (até 2 min)';
+      const pode = (sessao.usuario && sessao.usuario.pode) || {};
+      const lista = [['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['intimacoes.listar', { limite: 30, abertas: true }], ['tarefas.listar', {}], ['eu.painel', {}], ['documentos.assinaturas', {}]];
+      if (pode.financeiro) lista.push(['fin.resumo', undefined], ['fin.honorarios', {}]);
+      try {
+        const r = await BANCO.comparar(lista, (a, d) => chamarUm(a, d));
+        medidor.replaceChildren(h('table', { class: 'tabela compacta mini-tab' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Tela'), h('th', {}, 'Banco novo'), h('th', {}, 'Planilha (Google)'), h('th', {}, 'Mais rápido'), h('th', {}, 'Resultado igual?'))),
+          h('tbody', {}, r.map(x => h('tr', {}, h('td', {}, NOMES[x.acao] || x.acao), h('td', {}, seg(x.banco)), h('td', {}, seg(x.google)),
+            h('td', {}, x.banco && x.google ? (x.google / x.banco).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '×' : '—'),
+            h('td', {}, x.igual === true ? h('span', { class: 'tag ok' }, 'igual') : x.igual === false ? h('span', { class: 'tag atencao', title: x.obs }, 'diferente') : '—', x.obs ? h('div', { class: 'peq' }, x.obs) : null))))),
+          h('p', { class: 'peq' }, 'A primeira leitura do banco traz as tabelas inteiras; as seguintes só o que mudou. "Diferente" logo depois de uma gravação ou de um minuto virar pode ser só o tempo entre as duas leituras: meça de novo.'));
+      } catch (e) { medidor.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+      ev.target.disabled = false; ev.target.textContent = '⏱ Medir de novo';
+    };
     const desenhar = r => {
       const u = r.ultima;
       const status = r.ligado
-        ? h('p', { class: 'nota ' + (u && u.erro ? 'alerta' : '') }, h('strong', {}, '✓ Ligado'), ` · ${r.url}`, u ? ` · última cópia ${quando(u.em)}: ${u.copiadas} aba(s) copiada(s), ${u.iguais} sem mudança${u.faltam ? `, ${u.faltam} na próxima rodada` : ''}` : ' · ainda não copiou', u && u.erro ? h('div', {}, '⚠ ' + u.erro) : null)
+        ? h('p', { class: 'nota ' + (u && u.erro ? 'alerta' : '') }, h('strong', {}, '✓ Ligado'), ` · ${r.url}`, u ? ` · última cópia completa ${quando(u.em)}: ${u.copiadas} aba(s) copiada(s), ${u.iguais} sem mudança${u.faltam ? `, ${u.faltam} na próxima rodada` : ''}` : ' · ainda não copiou', u && u.erro ? h('div', {}, '⚠ ' + u.erro) : null,
+          r.pendente ? h('div', {}, '⚠ Alguma mudança ainda não chegou ao banco (o painel lê da planilha até chegar): ' + r.pendente) : null)
         : h('p', { class: 'nota' }, 'Desligado. A planilha continua sendo o banco do painel. Ligando aqui, o painel passa a copiar a planilha para o Supabase de 30 em 30 minutos (só o que mudou). A senha dos usuários nunca sai do Google.');
+      const passo2 = !r.ligado ? null : h('div', { class: 'nota' }, h('strong', {}, 'Leitura rápida: '),
+        !r.rpc ? h('span', {}, 'falta rodar o arquivo ', SQL('leitura-rapida.sql'), ' no Supabase › SQL Editor › New query › colar › Run (uma vez).')
+          : !r.publica ? 'falta colar a chave pública (publishable/anon) aqui embaixo.'
+            : r.leitura ? h('span', {}, '✓ ligada: as telas leem direto do Supabase; se ele falhar ou demorar, voltam sozinhas para a planilha. ', botao('Desligar a leitura rápida', async () => { desenhar(await api('banco.config', { leitura: false })); if (BANCO) BANCO.sair(); avisar('Leitura rápida desligada: tudo volta a vir da planilha.'); }, 'mini sec'))
+              : h('span', {}, 'desligada. ', botao('Ligar a leitura rápida', async () => { desenhar(await api('banco.config', { leitura: true })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Leitura rápida ligada.'); }, 'mini')));
       const f = h('form', { class: 'campos', novalidate: true },
         campo('url', 'Endereço do projeto (Project URL)', r.url || '', { dica: 'Supabase › Project Settings › API · parecido com https://abcdefgh.supabase.co', max: 120 }),
-        campo('publica', r.publica ? 'Chave pública (já cadastrada: deixe vazio para manter)' : 'Chave pública "publishable" (para as telas lerem rápido)', '', { dica: 'Project Settings › API Keys › Publishable key (sb_publishable_…) ou Legacy › anon. Pode ser vista no navegador; quem protege os dados é o login de cada pessoa.', max: 400 }),
-        campo('chave', r.ligado ? 'Chave "service_role" (já cadastrada: deixe vazio para manter)' : 'Chave "service_role" (secret)', '', { tipo: 'password', dica: 'Supabase › Project Settings › API Keys › Secret keys (sb_secret_…) ou Legacy › service_role. Fica só no Google; ninguém mais vê.' }),
+        campo('chave', r.ligado ? 'Chave secreta (já cadastrada: deixe vazio para manter)' : 'Chave secreta (secret / service_role)', '', { tipo: 'password', max: 400, dica: 'Supabase › Project Settings › API Keys › Secret keys (sb_secret_…). Fica só no Google; nunca vai ao navegador.' }),
+        campo('publica', r.publica ? 'Chave pública (já cadastrada: deixe vazio para manter)' : 'Chave pública (publishable / anon)', '', { max: 400, dica: 'Supabase › Project Settings › API Keys › Publishable key (sb_publishable_…). É pública por natureza: sozinha não lê nada.' }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, r.ligado ? 'Salvar e testar' : 'Ligar e testar'),
           r.ligado ? botao('Copiar agora', async ev => { ev.target.disabled = true; ev.target.textContent = 'Copiando (até 4 min)…'; try { const x = await api('banco.config', { copiar: true }); avisar(`Cópia feita: ${x.copia.copiadas.length} aba(s)` + (x.copia.erros.length ? ` · ${x.copia.erros.length} com erro` : '') + '.', !!x.copia.erros.length); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Copiar agora'; } }, 'sec') : null,
           r.ligado ? botao('Copiar tudo de novo', async ev => { ev.target.disabled = true; try { const x = await api('banco.config', { copiar: true, tudo: true }); avisar(`Cópia completa: ${x.copia.copiadas.length} aba(s).`); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec') : null,
-          r.ligado ? botao('Desligar', async () => { if (!confirm('Desligar a cópia para o Supabase? Os dados que já estão lá continuam lá.')) return; desenhar(await api('banco.config', { desligar: true })); avisar('Cópia desligada.'); }, 'sec') : null),
+          r.ligado ? botao('Desligar', async () => { if (!confirm('Desligar o banco novo? O painel volta a ler só da planilha. Os dados que já estão no Supabase continuam lá.')) return; desenhar(await api('banco.config', { desligar: true })); if (BANCO) BANCO.sair(); avisar('Banco novo desligado.'); }, 'sec') : null),
         h('p', { class: 'erro largo' }));
       aoEnviar(f, async fd => {
         const d = Object.fromEntries(fd.entries()); if (!d.chave) delete d.chave; if (!d.publica) delete d.publica;
         const x = await api('banco.config', Object.assign(d, { testar: true }));
-        sbSair();
+        if (BANCO && d.publica) { BANCO.sair(); BANCO.iniciar(); }
         avisar(x.teste || 'Salvo.', /⚠/.test(x.teste || '')); desenhar(x);
       });
-      const fal = r.falha && Date.now() - Date.parse(r.falha.em) < 24 * 3600e3 ? r.falha : null;
-      const andando = h('p', { class: 'peq' });
-      const med = (r.medicoes || [])[0];
-      const leitura = r.ligado ? h('div', { class: 'banco-leitura' },
-        h('h3', {}, '⚡ Leitura rápida das telas'),
-        h('p', { class: 'peq' }, r.publica ? (r.leitura ? 'Ligada: Clientes, Processos, Prazos, Intimações, Tarefas, Cobranças, Início e Relatórios abrem pelo Supabase. Cada gravação vai na hora para a planilha e para o Supabase; se o Supabase falhar, o painel lê da planilha.' : 'Desligada: tudo é lido da planilha.') : 'Falta a chave pública (campo abaixo) para as telas lerem direto do Supabase.'),
-        fal ? h('p', { class: 'nota alerta' }, `⚠ Última falha ao gravar no Supabase (${quando(fal.em)}): ${fal.erro}. A planilha está certa; a cópia de 30 em 30 min acerta o Supabase.`) : null,
-        h('div', { class: 'acoes' },
-          r.publica ? botao(r.leitura ? 'Desligar a leitura rápida' : 'Ligar a leitura rápida', async () => { sbSair(); desenhar(await api('banco.config', { leitura: r.leitura ? 'nao' : 'sim' })); }, 'sec') : null,
-          r.publica && r.leitura ? botao('⏱ Medir velocidade', async ev => {
-            ev.target.disabled = true;
-            try { const x = await medirVelocidade(t => { andando.textContent = t; }); andando.textContent = ''; r.medicoes = x.medicoes; desenhar(r); }
-            catch (e) { andando.textContent = ''; avisar(e.message, true); ev.target.disabled = false; }
-          }) : null),
-        andando,
-        med ? h('div', { class: 'rolar' }, h('table', { class: 'mini-tab banco-med' },
-          h('thead', {}, h('tr', {}, ['Lista', 'Pela planilha (Google)', 'Pelo Supabase', 'Ganho'].map(t => h('th', {}, t)))),
-          h('tbody', {}, med.rotas.map(x => h('tr', {}, h('td', {}, x.rota), h('td', { class: 'num' }, x.planilha ? (x.planilha / 1000).toFixed(1) + ' s' : '—'),
-            h('td', { class: 'num' }, x.supabase === null ? 'não achou (ainda não copiada)' : (x.supabase / 1000).toFixed(2) + ' s'),
-            h('td', { class: 'num' }, x.supabase && x.planilha ? h('b', {}, Math.round(x.planilha / x.supabase) + '× mais rápido') : '—'))))),
-          h('p', { class: 'peq' }, `Medido em ${quando(med.em)} por ${med.por} (mediana de 3 vezes, neste computador).`)) : null) : null;
-      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null, leitura,
-        h('details', { class: 'sub', open: !r.ligado }, h('summary', {}, r.ligado ? 'Trocar o endereço ou a chave' : 'Como ligar (5 minutos)'),
+      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, passo2, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
+        r.ligado && r.rpc && r.publica && r.leitura ? h('details', { class: 'sub', open: true }, h('summary', {}, '⏱ Velocidade: banco novo × planilha'),
+          resumoMedidas(), h('div', { class: 'acoes' }, botao('⏱ Medir agora (as mesmas telas pelos dois caminhos)', testar, 'sec')), medidor) : null,
+        h('details', { class: 'sub', open: !r.ligado }, h('summary', {}, r.ligado ? 'Trocar o endereço ou as chaves' : 'Como ligar (5 minutos)'),
           r.ligado ? null : h('ol', { class: 'peq' },
             h('li', {}, 'Crie a conta grátis em supabase.com e um projeto novo na região São Paulo (sa-east-1). Guarde a senha do banco num lugar seguro.'),
-            h('li', {}, 'No projeto: SQL Editor › New query › cole todo o arquivo ', h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/supabase/esquema.sql', target: '_blank', rel: 'noopener noreferrer' }, 'esquema.sql'), ' › Run.'),
-            h('li', {}, 'Project Settings › API: copie o Project URL e a chave service_role (secret) para os campos abaixo e aperte "Ligar e testar".'),
-            h('li', {}, 'Depois aperte "Copiar agora". A partir daí o painel copia sozinho de 30 em 30 minutos.')),
+            h('li', {}, 'No projeto: SQL Editor › New query › cole todo o arquivo ', SQL('esquema.sql'), ' › Run. Depois, numa query nova, ', SQL('leitura-rapida.sql'), ' › Run.'),
+            h('li', {}, 'Project Settings › API Keys: copie o Project URL, a chave secreta e a chave pública para os campos abaixo e aperte "Ligar e testar".'),
+            h('li', {}, 'Depois aperte "Copiar agora". A partir daí o painel copia sozinho de 30 em 30 minutos e as telas leem direto do banco.')),
           f));
     };
-    api('banco.config', {}).then(desenhar).catch(e => caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), h('p', { class: 'peq' }, /desconhec|não existe|rota/i.test(e.message) ? 'Cole o Code.gs novo (8.26) no Google para ligar o banco novo.' : e.message)));
+    api('banco.config', {}).then(desenhar).catch(e => caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), h('p', { class: 'peq' }, /desconhec|não existe|rota/i.test(e.message) ? 'Cole o Code.gs novo (8.27) no Google para ligar o banco novo.' : e.message)));
     return caixa;
   }
   function caixaExtensao() {
@@ -2740,7 +2706,7 @@
     aoEnviar(form, async fd => {
       if (fd.get('nova') !== fd.get('nova2')) throw new Error('As senhas novas não conferem.');
       const r = await api('senha.trocar', { atual: fd.get('atual'), nova: fd.get('nova') });
-      if (r && r.token) { sessao.token = r.token; guardar('painel_sessao', sessao); } // as outras sessões abertas caem
+      if (r && r.token) { sessao.token = r.token; guardar('painel_sessao', sessao); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } } // as outras sessões abertas caem
       avisar('Senha trocada. Se você estava logado em outro computador, entre de novo lá.');
       location.hash = '#/inicio';
     });
@@ -3036,7 +3002,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.27.0';
+  const VERSAO_PAINEL = '8.28.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
