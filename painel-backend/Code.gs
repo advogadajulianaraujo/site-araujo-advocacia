@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.25.0';
+var VERSAO = '8.26.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -413,6 +413,7 @@ var ROTAS = {
   'fin.renegociar': { permissao: 'financeiro', fn: renegociarHonorario_ },
   'fin.honorario.retirar': { permissao: 'financeiro', fn: retirarHonorario_ },
   'fin.asaas.config': { permissao: 'usuarios', fn: asaasConfig_ },
+  'banco.config': { permissao: 'usuarios', fn: bancoConfig_ },
   'indicadores.mes': { permissao: 'usuarios', fn: indicadores_ },
   'fluxos.processo': { fn: fluxoProcesso_ },
   'fin.asaas.gerar': { permissao: 'financeiro', fn: asaasGerar_ },
@@ -9113,6 +9114,7 @@ function aquecerGatilho() {
   var t0 = Date.now();
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
+  try { copiarSeHora_(); } catch (e) { /* segue */ }
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -10419,6 +10421,7 @@ function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
   try { aquecerMemoria_(); } catch (eQ) { /* segue */ }
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
+  try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
 }
 
@@ -14209,4 +14212,118 @@ function extAnalisar_(d, u) {
   var sug = String(o.sugestao || '');
   if (/R\$\s?\d|\b\d+\s?%|\bvoc[eê] (tem|ter[aá]) direito\b|\bvai ganhar\b/i.test(sug)) sug = '';
   return { novo_cliente: !!o.novo_cliente, area: o.area || '', resumo: o.resumo || '', nome: o.nome || '', proximo_passo: o.proximo_passo || '', sugestao: sug };
+}
+
+
+/* ================================================================== */
+/* 8.26 BANCO NOVO (Supabase / PostgreSQL) — passo 1: cópia automática */
+/* ================================================================== */
+// A planilha continua sendo a fonte. Cada aba vira uma tabela (supabase/esquema.sql) com as mesmas colunas + escritorio_id, _n (linha
+// da planilha) e _sinc (carimbo da cópia). A cópia só manda as abas que MUDARAM (resumo MD5 em Properties SB_DIG_<aba>), grava por
+// "upsert" em lotes de 500 e apaga do banco o que saiu da planilha (_sinc antigo). Roda de 30 em 30 min (aquecedor e robô de hora em
+// hora). Chave "service_role" SÓ nas Propriedades (SUPABASE_CHAVE), nunca na planilha nem no repositório. Status em Properties
+// SUPABASE_ULTIMA (não na planilha, para não apagar a memória das telas a cada cópia).
+var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google
+function sbConf_() {
+  var P = PropertiesService.getScriptProperties();
+  return { url: String(P.getProperty('SUPABASE_URL') || '').replace(/\/+$/, ''), chave: P.getProperty('SUPABASE_CHAVE') || '', esc: P.getProperty('SUPABASE_ESCRITORIO') || '' };
+}
+function sbTabela_(aba) { return aba.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase(); }
+function supabase_(metodo, caminho, corpo, prefer) {
+  var c = sbConf_();
+  if (!c.url || !c.chave) throw falha_('O banco novo (Supabase) ainda não foi ligado: Gerenciar acessos › Banco novo.');
+  var op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: { apikey: c.chave, Authorization: 'Bearer ' + c.chave } };
+  if (prefer) op.headers.Prefer = prefer;
+  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
+  var r = UrlFetchApp.fetch(c.url + '/rest/v1/' + caminho, op), cod = r.getResponseCode(), txt = r.getContentText() || '';
+  if (cod === 401 || cod === 403) throw falha_('O Supabase recusou a chave (' + cod + '). Use a chave secreta "service_role" do projeto (Project Settings › API Keys).');
+  if (cod >= 400) {
+    var j; try { j = JSON.parse(txt); } catch (e) { j = {}; }
+    throw falha_('Supabase: ' + (j.message || j.hint || ('erro ' + cod)) + (j.code === '42P01' || /does not exist|schema cache/i.test(j.message || '') ? ' — rode o arquivo supabase/esquema.sql no SQL Editor do Supabase.' : ''));
+  }
+  try { return txt ? JSON.parse(txt) : null; } catch (e) { return null; }
+}
+function sbEscritorio_() {
+  var P = PropertiesService.getScriptProperties(), id = P.getProperty('SUPABASE_ESCRITORIO');
+  if (id) return id;
+  var r = supabase_('post', 'escritorios', { nome: config_('ESCRITORIO_NOME') || 'Araújo Advocacia' }, 'return=representation');
+  id = r && r[0] && r[0].id;
+  if (!id) throw falha_('Não consegui criar o escritório no Supabase.');
+  P.setProperty('SUPABASE_ESCRITORIO', id);
+  return id;
+}
+function copiarParaSupabase_(limiteMs, forcar) {
+  var c = sbConf_();
+  if (!c.url || !c.chave) return { ligado: false };
+  var t0 = Date.now(), esc = sbEscritorio_(), P = PropertiesService.getScriptProperties(), feitas = [], erros = [], iguais = 0, faltam = 0;
+  var abas = Object.keys(ESQUEMA);
+  abas.forEach(function (aba) {
+    if (Date.now() - t0 > (limiteMs || 60000)) { faltam++; return; }
+    try {
+      var sh = aba_(aba), cab = ESQUEMA[aba], n = sh.getLastRow() - 1;
+      var vals = n > 0 ? sh.getRange(2, 1, n, cab.length).getDisplayValues() : [];
+      var dig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(vals), Utilities.Charset.UTF_8));
+      if (!forcar && P.getProperty('SB_DIG_' + aba) === dig) { iguais++; return; }
+      var fora = SB_FORA[aba] || [], temId = cab.indexOf('id') >= 0, carimbo = new Date().toISOString(), porChave = {}, ordem = [];
+      vals.forEach(function (v, k) {
+        if (v.every(function (x) { return x === ''; })) return;
+        var o = { escritorio_id: esc, _n: k + 2, _sinc: carimbo };
+        cab.forEach(function (col, j) { if (fora.indexOf(col) < 0) o[col] = v[j]; });
+        if (temId && !o.id) return;
+        var chave = temId ? o.id : String(o._n);
+        if (!porChave[chave]) ordem.push(chave);
+        porChave[chave] = o; // id repetido na planilha: fica a última linha
+      });
+      var linhas = ordem.map(function (k) { return porChave[k]; });
+      var alvo = sbTabela_(aba) + '?on_conflict=' + (temId ? 'escritorio_id,id' : 'escritorio_id,_n');
+      for (var b = 0; b < linhas.length; b += 500) supabase_('post', alvo, linhas.slice(b, b + 500), 'resolution=merge-duplicates,return=minimal');
+      supabase_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&_sinc=lt.' + encodeURIComponent(carimbo), undefined, 'return=minimal');
+      P.setProperty('SB_DIG_' + aba, dig);
+      feitas.push(aba + ' (' + linhas.length + ')');
+    } catch (e) { erros.push(aba + ': ' + (e.message || e)); }
+  });
+  var r = { ligado: true, em: new Date().toISOString(), copiadas: feitas, iguais: iguais, faltam: faltam, erros: erros };
+  P.setProperty('SUPABASE_ULTIMA', JSON.stringify({ em: r.em, copiadas: feitas.length, iguais: iguais, faltam: faltam, erro: erros[0] || '' }));
+  return r;
+}
+/** De 30 em 30 min (chamado pelo aquecedor e pelo robô de hora em hora). */
+function copiarSeHora_() {
+  var c = sbConf_();
+  if (!c.url || !c.chave) return;
+  var u = {}; try { u = JSON.parse(PropertiesService.getScriptProperties().getProperty('SUPABASE_ULTIMA') || '{}'); } catch (e) { u = {}; }
+  if (u.em && Date.now() - Date.parse(u.em) < 25 * 60000 && !u.faltam) return;
+  copiarParaSupabase_(60000);
+}
+/** Gerenciar acessos › Banco novo (Supabase): ligar (URL + chave), testar, copiar agora, desligar. Só administração. */
+function bancoConfig_(d, u) {
+  var P = PropertiesService.getScriptProperties();
+  if (d.desligar) {
+    ['SUPABASE_URL', 'SUPABASE_CHAVE', 'SUPABASE_ULTIMA'].forEach(function (k) { P.deleteProperty(k); });
+    Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
+    registrar_(u.usuario, 'banco novo desligado', '');
+  }
+  if (d.url !== undefined && String(d.url).trim()) {
+    var url = String(d.url).trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/.test(url)) throw falha_('O endereço do projeto é parecido com https://abcdefgh.supabase.co (Project Settings › API).');
+    if (url !== P.getProperty('SUPABASE_URL')) { P.deleteProperty('SUPABASE_ESCRITORIO'); Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); }); }
+    P.setProperty('SUPABASE_URL', url);
+  }
+  if (d.chave !== undefined && String(d.chave).trim()) {
+    var ch = String(d.chave).trim();
+    if (ch.length < 30) throw falha_('Essa não parece a chave "service_role" do Supabase (é bem comprida).');
+    P.setProperty('SUPABASE_CHAVE', ch);
+    registrar_(u.usuario, 'banco novo: chave cadastrada', '');
+  }
+  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '' };
+  try { r.ultima = JSON.parse(P.getProperty('SUPABASE_ULTIMA') || 'null'); } catch (e) { r.ultima = null; }
+  if (r.ligado && d.testar) {
+    try { supabase_('get', 'escritorios?select=id&limit=1'); r.teste = 'Conectado ao Supabase.'; }
+    catch (e2) { r.teste = '⚠ ' + e2.message; }
+  }
+  if (r.ligado && d.copiar) {
+    var x = copiarParaSupabase_(240000, !!d.tudo);
+    r.copia = x; r.ultima = { em: x.em, copiadas: x.copiadas.length, iguais: x.iguais, faltam: x.faltam, erro: x.erros[0] || '' };
+    registrar_(u.usuario, 'banco novo: cópia', x.copiadas.length + ' aba(s)' + (x.erros.length ? ' · erros: ' + x.erros.length : ''));
+  }
+  return r;
 }

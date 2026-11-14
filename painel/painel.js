@@ -2416,6 +2416,39 @@
   const PERFIS = [['rh', 'RH (usa tudo, inclusive o financeiro; não vê Relatórios, Usuários nem os totais a receber)'], ['secretario', 'Secretário (tudo, menos financeiro)'], ['advogada', 'Advogada (tudo, menos financeiro; confere prazos)'], ['estagiario', 'Estagiário (tudo, menos financeiro)'], ['administrador', 'Administrador (tudo)']];
 
   /** 8.14: assistente do WhatsApp Web (extensão do Chrome): baixar, instalar, ligar com código e desligar aparelhos. */
+  /** 8.26: Banco novo (Supabase) — ligar com o endereço e a chave "service_role" (vão só para as Propriedades do Google), testar, copiar agora. */
+  function caixaBancoNovo() {
+    const caixa = h('section', { class: 'caixa banco-caixa' }, h('h2', {}, '🗄 Banco novo (Supabase)'), h('p', { class: 'peq' }, 'Carregando…'));
+    const desenhar = r => {
+      const u = r.ultima;
+      const status = r.ligado
+        ? h('p', { class: 'nota ' + (u && u.erro ? 'alerta' : '') }, h('strong', {}, '✓ Ligado'), ` · ${r.url}`, u ? ` · última cópia ${quando(u.em)}: ${u.copiadas} aba(s) copiada(s), ${u.iguais} sem mudança${u.faltam ? `, ${u.faltam} na próxima rodada` : ''}` : ' · ainda não copiou', u && u.erro ? h('div', {}, '⚠ ' + u.erro) : null)
+        : h('p', { class: 'nota' }, 'Desligado. A planilha continua sendo o banco do painel. Ligando aqui, o painel passa a copiar a planilha para o Supabase de 30 em 30 minutos (só o que mudou). A senha dos usuários nunca sai do Google.');
+      const f = h('form', { class: 'campos', novalidate: true },
+        campo('url', 'Endereço do projeto (Project URL)', r.url || '', { dica: 'Supabase › Project Settings › API · parecido com https://abcdefgh.supabase.co', max: 120 }),
+        campo('chave', r.ligado ? 'Chave "service_role" (já cadastrada: deixe vazio para manter)' : 'Chave "service_role" (secret)', '', { tipo: 'password', dica: 'Supabase › Project Settings › API Keys › service_role / secret. Fica só no Google; ninguém mais vê.' }),
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, r.ligado ? 'Salvar e testar' : 'Ligar e testar'),
+          r.ligado ? botao('Copiar agora', async ev => { ev.target.disabled = true; ev.target.textContent = 'Copiando (até 4 min)…'; try { const x = await api('banco.config', { copiar: true }); avisar(`Cópia feita: ${x.copia.copiadas.length} aba(s)` + (x.copia.erros.length ? ` · ${x.copia.erros.length} com erro` : '') + '.', !!x.copia.erros.length); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Copiar agora'; } }, 'sec') : null,
+          r.ligado ? botao('Copiar tudo de novo', async ev => { ev.target.disabled = true; try { const x = await api('banco.config', { copiar: true, tudo: true }); avisar(`Cópia completa: ${x.copia.copiadas.length} aba(s).`); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec') : null,
+          r.ligado ? botao('Desligar', async () => { if (!confirm('Desligar a cópia para o Supabase? Os dados que já estão lá continuam lá.')) return; desenhar(await api('banco.config', { desligar: true })); avisar('Cópia desligada.'); }, 'sec') : null),
+        h('p', { class: 'erro largo' }));
+      aoEnviar(f, async fd => {
+        const d = Object.fromEntries(fd.entries()); if (!d.chave) delete d.chave;
+        const x = await api('banco.config', Object.assign(d, { testar: true }));
+        avisar(x.teste || 'Salvo.', /⚠/.test(x.teste || '')); desenhar(x);
+      });
+      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
+        h('details', { class: 'sub', open: !r.ligado }, h('summary', {}, r.ligado ? 'Trocar o endereço ou a chave' : 'Como ligar (5 minutos)'),
+          r.ligado ? null : h('ol', { class: 'peq' },
+            h('li', {}, 'Crie a conta grátis em supabase.com e um projeto novo na região São Paulo (sa-east-1). Guarde a senha do banco num lugar seguro.'),
+            h('li', {}, 'No projeto: SQL Editor › New query › cole todo o arquivo ', h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/supabase/esquema.sql', target: '_blank', rel: 'noopener noreferrer' }, 'esquema.sql'), ' › Run.'),
+            h('li', {}, 'Project Settings › API: copie o Project URL e a chave service_role (secret) para os campos abaixo e aperte "Ligar e testar".'),
+            h('li', {}, 'Depois aperte "Copiar agora". A partir daí o painel copia sozinho de 30 em 30 minutos.')),
+          f));
+    };
+    api('banco.config', {}).then(desenhar).catch(e => caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), h('p', { class: 'peq' }, /desconhec|não existe|rota/i.test(e.message) ? 'Cole o Code.gs novo (8.26) no Google para ligar o banco novo.' : e.message)));
+    return caixa;
+  }
   function caixaExtensao() {
     const lista = h('div', {}, h('p', { class: 'peq' }, 'Carregando os computadores ligados…'));
     const codigoBox = h('div', { class: 'ext-codigo', 'aria-live': 'polite' });
@@ -2478,6 +2511,7 @@
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Gerenciar acessos'), h('p', {}, 'Quem pode entrar no painel, o que cada perfil vê, senhas, bloqueios e a segurança dos dados.'))),
       caixaSeg,
       caixaExtensao(),
+      caixaBancoNovo(),
       tabela(['Nome', 'Usuário', 'Perfil', 'Situação', 'Último acesso'], lista, u => [
         h('td', { 'data-r': 'Nome' }, u.nome),
         h('td', { 'data-r': 'Usuário' }, u.usuario, u.email ? h('div', { class: 'peq' }, u.email + (u.resumo_email === 'nao' ? ' (sem resumo)' : '')) : null),
@@ -2903,7 +2937,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.25.0';
+  const VERSAO_PAINEL = '8.26.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

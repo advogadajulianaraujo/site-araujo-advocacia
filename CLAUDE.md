@@ -1058,3 +1058,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   EXATAMENTE esses 7 itens (Atendimento só administração). "Clientes" (#/clientes) e "Processos e prazos" (#/prazos) são itens separados;
   Processos e prazos › sub-abas Intimações e prazos | Processos | Tarefas. O cabeçalho da carteira (`cabCarteira`) mostra "Clientes" ou
   "Processos" conforme a tela, sem o botão "Por cliente / Por processo".
+
+## 8.26.0 Banco novo (Supabase) — passo 1: cópia automática (pedido da usuária: "deixar pronto para quando eu quiser vender")
+
+- A planilha continua sendo a fonte. `copiarParaSupabase_` copia cada aba do ESQUEMA para a tabela de mesmo nome (snake_case, `sbTabela_`)
+  em supabase/esquema.sql: colunas iguais + `escritorio_id`, `_n` (linha da planilha) e `_sinc` (carimbo). Só manda abas que MUDARAM (MD5 em
+  Properties SB_DIG_<aba>), upsert em lotes de 500 (`on_conflict` escritorio_id,id — ou escritorio_id,_n nas abas sem id; id repetido na planilha
+  fica a última linha) e depois apaga do banco o que saiu da planilha (`_sinc` antigo). `SB_FORA`: Usuarios.hash/salt NUNCA saem do Google.
+- `copiarSeHora_` (no `aquecerGatilho` e no fim do `roboRapidoGatilho`): de 30 em 30 min, limite de 60 s por rodada (o que faltar vai na próxima).
+  Status em Properties SUPABASE_ULTIMA (NÃO na planilha: gravar na planilha apagaria a memória das telas a cada cópia).
+- Ligar: Gerenciar acessos › "🗄 Banco novo (Supabase)" (`caixaBancoNovo`, rota `banco.config` só administração: url, chave, testar, copiar,
+  tudo, desligar). Chave service_role SÓ em Properties SUPABASE_CHAVE; escritório criado sozinho na 1ª cópia (SUPABASE_ESCRITORIO).
+  `supabase_` traduz 401/403 (chave errada) e tabela inexistente ("rode o esquema.sql").
+- esquema.sql pode rodar de novo (create if not exists + add column if not exists). Mudou o ESQUEMA? Gere o arquivo de novo (script do
+  simulador `tsql.js`) e rode no SQL Editor. RLS ligado em tudo; política de leitura por `escritorio_id` do JWT (para o passo 2).
+- Próximo passo (2): o painel ler do Supabase direto pelo navegador, respeitando o perfil (RH sem totais, tarefas só da pessoa).

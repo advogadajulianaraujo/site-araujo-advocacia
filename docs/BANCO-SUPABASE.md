@@ -8,6 +8,11 @@ Nada para de funcionar no meio: a planilha continua sendo a fonte até o passo 3
   e a regra de segurança (RLS) "cada escritório só vê o que é dele". Gerado do `ESQUEMA` do Code.gs.
   Mudou o ESQUEMA? Gere o arquivo de novo.
 
+## Passo 1 já pronto (8.26.0): cópia automática
+- Gerenciar acessos › "🗄 Banco novo (Supabase)": Project URL + chave service_role → "Ligar e testar" → "Copiar agora".
+- Depois o painel copia sozinho de 30 em 30 minutos (aquecedor + robô de hora em hora), só as abas que mudaram.
+- A chave fica SÓ nas Propriedades do Apps Script (SUPABASE_CHAVE). Senha dos usuários (hash/salt) nunca vai para o banco.
+
 ## O que a usuária faz (uma vez)
 1. Criar a conta grátis em supabase.com e um projeto na região **São Paulo (sa-east-1)**.
 2. Supabase › SQL Editor › colar `supabase/esquema.sql` › Run.

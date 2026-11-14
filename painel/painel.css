@@ -2240,3 +2240,4 @@ body.modo-future .barra-topo{display:none}
   button.link,.link-btn{min-height:32px}
   table.mini-tab{display:block;overflow-x:auto;max-width:100%}
 }
+.banco-caixa ol{padding-left:20px;margin:8px 0 12px}.banco-caixa ol li{margin:4px 0}
