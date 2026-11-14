@@ -2241,3 +2241,4 @@ body.modo-future .barra-topo{display:none}
   table.mini-tab{display:block;overflow-x:auto;max-width:100%}
 }
 .banco-caixa ol{padding-left:20px;margin:8px 0 12px}.banco-caixa ol li{margin:4px 0}
+.banco-leitura{border-top:1px solid var(--linha);margin-top:12px;padding-top:12px}.banco-leitura h3{font-size:16px;margin:0 0 4px}.banco-med{margin-top:8px}.banco-med td,.banco-med th{padding:6px 10px}

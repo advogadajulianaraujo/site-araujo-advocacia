@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.26.1';
+var VERSAO = '8.27.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -250,7 +250,7 @@ function regravarMudadas_(tab) {
   mud.forEach(function (o) { min = Math.min(min, o._linha); max = Math.max(max, o._linha); });
   var faixa = tab.aba.getRange(min, 1, max - min + 1, tab.cab.length);
   var vals = faixa.getDisplayValues().map(function (l) { return l.map(seguro_); });
-  mud.forEach(function (o) { vals[o._linha - min] = tab.cab.map(function (k) { return seguro_(o[k]); }); delete o._mudou; });
+  mud.forEach(function (o) { vals[o._linha - min] = tab.cab.map(function (k) { return seguro_(o[k]); }); delete o._mudou; sbAnotar_(tab, o); });
   faixa.setNumberFormat('@').setValues(vals); marcarMudanca_();
   return mud.length;
 }
@@ -294,6 +294,7 @@ function doGet() {
 }
 
 function doPost(e) {
+  SB_LIGADO_ = undefined; SB_FILA_ = null; SB_MUDOU_ = false; // cada pedido começa limpo
   var req;
   var bruto = (e && e.postData && e.postData.contents) || '{}';
   // 8.12: pedaços de áudio da transcrição (3 MB em base64) podem ser maiores; o resto continua limitado
@@ -305,10 +306,13 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, erro: 'Pedido inválido.' });
   }
-  if (req.acao === 'lote') return json_({ ok: true, dados: rotearLote_(req.token, req.dados || {}) });
+  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); sbDescarregar_(); return json_({ ok: true, dados: lote }); }
   try {
-    return json_({ ok: true, dados: rotear_(req.acao, req.token, req.dados || {}) });
+    var saida = rotear_(req.acao, req.token, req.dados || {});
+    sbDescarregar_();
+    return json_({ ok: true, dados: saida });
   } catch (err) {
+    sbDescarregar_();
     var msg = err && err.publico ? err.message : 'Erro interno. Tente de novo.';
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
     return json_({ ok: false, erro: msg, sessao: !!(err && err.sessao) });
@@ -414,6 +418,8 @@ var ROTAS = {
   'fin.honorario.retirar': { permissao: 'financeiro', fn: retirarHonorario_ },
   'fin.asaas.config': { permissao: 'usuarios', fn: asaasConfig_ },
   'banco.config': { permissao: 'usuarios', fn: bancoConfig_ },
+  'banco.sessao': { fn: sbSessaoUsuario_ },
+  'banco.medicao': { permissao: 'usuarios', fn: bancoMedicao_ },
   'indicadores.mes': { permissao: 'usuarios', fn: indicadores_ },
   'fluxos.processo': { fn: fluxoProcesso_ },
   'fin.asaas.gerar': { permissao: 'financeiro', fn: asaasGerar_ },
@@ -571,7 +577,9 @@ function rotear_(acao, token, dados) {
   MEMO_LEITURA = LEITURAS_RAPIDAS[acao] ? {} : null;
   try {
     var res = ROTAS_GUARDADAS[acao] ? comMemoria_(acao, u, dados, function () { return rota.fn(dados, u, token); }) : rota.fn(dados, u, token);
-    return oculta ? valoresDoPerfil_(acao, res, u.perfil) : res;
+    var fim = oculta ? valoresDoPerfil_(acao, res, u.perfil) : res;
+    if (ROTAS_GUARDADAS[acao]) sbGuardarResposta_(acao, u, dados, fim);
+    return fim;
   } finally { MEMO_LEITURA = null; }
 }
 
@@ -586,6 +594,7 @@ function versaoDados_() {
   return v;
 }
 function marcarMudanca_() {
+  SB_MUDOU_ = true;
   try { CacheService.getScriptCache().put('versao_dados', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue sem memória */ }
 }
 var MEMORIA_POR_PERFIL = { 'inicio.extras': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
@@ -1967,7 +1976,7 @@ function lerTabela_(nome) {
     cab.forEach(function (k, j) { o[k] = v[j]; });
     linhas.push(o);
   });
-  return { aba: sh, cab: cab, linhas: linhas };
+  return { nome: nome, aba: sh, cab: cab, linhas: linhas };
 }
 
 function seguro_(v) {
@@ -1983,6 +1992,7 @@ function inserirLinha_(tab, obj) {
     obj._novo = true;
     tab.buffer.push(obj);
     tab.linhas.push(obj);
+    sbAnotar_(tab, obj);
     return;
   }
   var linha = tab.cab.map(function (k) { return seguro_(obj[k]); });
@@ -1990,6 +2000,7 @@ function inserirLinha_(tab, obj) {
   tab.aba.getRange(r, 1, 1, tab.cab.length).setNumberFormat('@').setValues([linha]); marcarMudanca_();
   obj._linha = r;
   tab.linhas.push(obj);
+  sbAnotar_(tab, obj);
 }
 
 function atualizarLinha_(tab, linhaObj, mudancas) {
@@ -2001,6 +2012,7 @@ function atualizarLinha_(tab, linhaObj, mudancas) {
   if (tab.adiar) { linhaObj._mudou = true; return; } // gravado de uma vez por regravarMudadas_
   var valores = tab.cab.map(function (k) { return seguro_(linhaObj[k]); });
   tab.aba.getRange(linhaObj._linha, 1, 1, tab.cab.length).setValues([valores]); marcarMudanca_();
+  sbAnotar_(tab, linhaObj);
 }
 
 function limpar_(o) {
@@ -2736,7 +2748,8 @@ function estadoRobo_() {
   return r;
 }
 
-function rodarRoboGatilho() {
+function rodarRoboGatilho() { try { rodarRoboGatilhoCorpo_(); } finally { sbDescarregar_(); } }
+function rodarRoboGatilhoCorpo_() {
   // Se o código novo foi colado mas a importação do GEA ainda não rodou, ela roda aqui sozinha.
   var t0 = Date.now();
   importarGEASeguro_(false);
@@ -5995,6 +6008,7 @@ function marcarAssinatura_(d, u) {
 function apagarLinha_(tab, obj) {
   var vazio = tab.cab.map(function () { return ''; });
   tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).setValues([vazio]); marcarMudanca_();
+  sbAnotar_(tab, obj, true);
   tab.linhas = tab.linhas.filter(function (x) { return x !== obj; });
 }
 /** 8.11: o cliente NÃO vai fechar (não assinou, ou foi marcado "Assinado" por engano). Arquiva a petição inicial sem número,
@@ -9099,7 +9113,8 @@ function aquecerMemoria_() {
       var rota = ROTAS[pd[0]];
       if (!rota || (rota.permissao && !PERFIS[pf][rota.permissao])) return;
       try {
-        comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return valoresDoPerfil_(pd[0], x, pf); });
+        var pronto = comMemoria_(pd[0], u, pd[1], function () { var x = rota.fn(pd[1], u, ''); return valoresDoPerfil_(pd[0], x, pf); });
+        sbGuardarResposta_(pd[0], u, pd[1], pronto);
         n++;
       } catch (e) { /* segue */ }
     });
@@ -9115,6 +9130,7 @@ function aquecerGatilho() {
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
+  sbDescarregar_();
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -10195,6 +10211,7 @@ function atualizarAndamentos_(limiteMs, maximo) {
 function andamentosGatilho() {
   var t0 = Date.now();
   try { atualizarAndamentos_(270000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+  sbDescarregar_();
   contarTempoRobo_(Date.now() - t0);
 }
 
@@ -10423,6 +10440,7 @@ function roboRapidoGatilho() {
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
+  sbDescarregar_();
 }
 
 /** Problemas que podem fazer perder prazo. Com avisar = true, manda e-mail para a administração (no máximo 1 a cada 12 h). */
@@ -14284,6 +14302,7 @@ function copiarParaSupabase_(limiteMs, forcar) {
       feitas.push(aba + ' (' + linhas.length + ')');
     } catch (e) { erros.push(aba + ': ' + (e.message || e)); }
   });
+  SB_MUDOU_ = true; // o sbDescarregar_ do fim manda a versão atual dos dados (estado)
   var r = { ligado: true, em: new Date().toISOString(), copiadas: feitas, iguais: iguais, faltam: faltam, erros: erros };
   P.setProperty('SUPABASE_ULTIMA', JSON.stringify({ em: r.em, copiadas: feitas.length, iguais: iguais, faltam: faltam, erro: erros[0] || '' }));
   return r;
@@ -14300,7 +14319,7 @@ function copiarSeHora_() {
 function bancoConfig_(d, u) {
   var P = PropertiesService.getScriptProperties();
   if (d.desligar) {
-    ['SUPABASE_URL', 'SUPABASE_CHAVE', 'SUPABASE_ULTIMA'].forEach(function (k) { P.deleteProperty(k); });
+    ['SUPABASE_URL', 'SUPABASE_CHAVE', 'SUPABASE_ULTIMA', 'SUPABASE_PUBLICA', 'SUPABASE_FALHA'].forEach(function (k) { P.deleteProperty(k); });
     Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
     registrar_(u.usuario, 'banco novo desligado', '');
   }
@@ -14316,8 +14335,17 @@ function bancoConfig_(d, u) {
     P.setProperty('SUPABASE_CHAVE', ch);
     registrar_(u.usuario, 'banco novo: chave cadastrada', '');
   }
-  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '' };
+  if (d.publica !== undefined && String(d.publica).trim()) {
+    var pb = String(d.publica).trim();
+    if (/^sb_secret_/.test(pb)) throw falha_('Essa é a chave SECRETA. No campo da chave pública vai a "publishable" (sb_publishable_…) ou a "anon".');
+    P.setProperty('SUPABASE_PUBLICA', pb);
+  }
+  if (d.leitura !== undefined) P.setProperty('SUPABASE_LEITURA', d.leitura === 'nao' ? 'nao' : 'sim');
+  SB_LIGADO_ = undefined;
+  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '', publica: !!P.getProperty('SUPABASE_PUBLICA'), leitura: P.getProperty('SUPABASE_LEITURA') !== 'nao' };
   try { r.ultima = JSON.parse(P.getProperty('SUPABASE_ULTIMA') || 'null'); } catch (e) { r.ultima = null; }
+  try { r.falha = JSON.parse(P.getProperty('SUPABASE_FALHA') || 'null'); } catch (e) { r.falha = null; }
+  try { r.medicoes = JSON.parse(P.getProperty('SUPABASE_MEDICOES') || '[]'); } catch (e) { r.medicoes = []; }
   if (r.ligado && d.testar) {
     try { supabase_('get', 'escritorios?select=id&limit=1'); r.teste = 'Conectado ao Supabase.'; }
     catch (e2) { r.teste = '⚠ ' + e2.message; }
@@ -14328,4 +14356,150 @@ function bancoConfig_(d, u) {
     registrar_(u.usuario, 'banco novo: cópia', x.copiadas.length + ' aba(s)' + (x.erros.length ? ' · erros: ' + x.erros.length : ''));
   }
   return r;
+}
+
+
+/* ================================================================== */
+/* 8.27 BANCO NOVO — passo 2: o painel LÊ do Supabase e grava nos dois */
+/* ================================================================== */
+// Gravação: todo inserirLinha_/atualizarLinha_/regravarMudadas_/apagarLinha_ anota a linha (sbAnotar_) e, no FIM do pedido (doPost) ou do robô,
+// sbDescarregar_ manda tudo de uma vez ao Supabase (UrlFetchApp.fetchAll): linhas mudadas (upsert), linhas apagadas, as "respostas prontas"
+// e a versão dos dados (tabela estado). Falhou? A planilha já está gravada; a aba perde o resumo SB_DIG_ e a cópia de 30 em 30 min refaz.
+// Leitura: as listas grandes (ROTAS_GUARDADAS) ficam prontas na tabela "respostas", POR PERFIL (já com o filtro do RH) ou por pessoa
+// (tarefas, eu.painel), com a versão dos dados de quando foram calculadas. O navegador lê direto (login próprio de cada usuário no Supabase,
+// token de 1 h pedido ao Google pela rota banco.sessao) e só pergunta ao Google quando a versão mudou ou a resposta tem mais de 10 min.
+var SB_FILA_ = null, SB_MUDOU_ = false, SB_LIGADO_ = undefined;
+function sbLigado_() { if (SB_LIGADO_ === undefined) { try { var c = sbConf_(); SB_LIGADO_ = !!(c.url && c.chave); } catch (e) { SB_LIGADO_ = false; } } return SB_LIGADO_; }
+function sbAnotar_(tab, obj, apagado) {
+  try {
+    if (!tab || !tab.nome || !obj || !sbLigado_() || !ESQUEMA[tab.nome]) return;
+    SB_FILA_ = SB_FILA_ || { abas: {}, respostas: {} };
+    var a = SB_FILA_.abas[tab.nome] = SB_FILA_.abas[tab.nome] || { linhas: {}, apagar: {} };
+    var temId = tab.cab.indexOf('id') >= 0, chave = temId ? obj.id : String(obj._linha || '');
+    if (!chave) return;
+    if (apagado) { delete a.linhas[chave]; a.apagar[chave] = true; } else { delete a.apagar[chave]; a.linhas[chave] = obj; }
+  } catch (e) { /* nunca derruba a gravação na planilha */ }
+}
+function sbHex_(txt) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, txt, Utilities.Charset.UTF_8)
+    .map(function (b) { return ((b + 256) % 256).toString(16).replace(/^(.)$/, '0$1'); }).join('');
+}
+/** Chave igual à do navegador: rota|JSON dos parâmetros em ordem, sem os vazios. */
+function sbChaveResposta_(acao, dados) {
+  var limpo = {};
+  Object.keys(dados || {}).sort().forEach(function (k) { var v = dados[k]; if (v !== '' && v !== false && v !== null && v !== undefined) limpo[k] = v; });
+  return acao + '|' + JSON.stringify(limpo);
+}
+function sbGuardarResposta_(acao, u, dados, res) {
+  try {
+    if (!sbLigado_() || !u || !res) return;
+    var quem = MEMORIA_POR_PERFIL[acao] ? 'perfil' : String(u.id), hex = sbHex_(sbChaveResposta_(acao, dados)), v = versaoDados_();
+    var marca = 'sbr' + hex.slice(0, 24) + u.perfil + quem + v.slice(-10), cache = CacheService.getScriptCache();
+    if (cache.get(marca)) return; // esta versão já foi para o Supabase
+    cache.put(marca, '1', 900);
+    SB_FILA_ = SB_FILA_ || { abas: {}, respostas: {} };
+    SB_FILA_.respostas[u.perfil + '|' + quem + '|' + hex] = { perfil: u.perfil, quem: quem, chave: hex, rota: acao, versao: v, dados: res, atualizado_em: new Date().toISOString() };
+  } catch (e) { /* segue */ }
+}
+function sbCabecalhos_(chave) { return /^sb_/.test(chave) ? { apikey: chave } : { apikey: chave, Authorization: 'Bearer ' + chave }; }
+function sbPedido_(metodo, caminho, corpo, prefer) {
+  var c = sbConf_(), h = sbCabecalhos_(c.chave);
+  if (prefer) h.Prefer = prefer;
+  var op = { url: c.url + '/rest/v1/' + caminho, method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: h };
+  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
+  return op;
+}
+function sbDescarregar_() {
+  var f = SB_FILA_, mudou = SB_MUDOU_;
+  SB_FILA_ = null; SB_MUDOU_ = false;
+  if ((!f && !mudou) || !sbLigado_()) return;
+  f = f || { abas: {}, respostas: {} };
+  var P = PropertiesService.getScriptProperties(), esc, rotulos = [], pedidos = [], agora = new Date().toISOString();
+  try {
+    esc = sbEscritorio_();
+    Object.keys(f.abas).forEach(function (aba) {
+      var cab = ESQUEMA[aba], fora = SB_FORA[aba] || [], temId = cab.indexOf('id') >= 0, a = f.abas[aba];
+      var linhas = Object.keys(a.linhas).map(function (k) {
+        var obj = a.linhas[k], o = { escritorio_id: esc, _n: obj._linha || null, _sinc: agora };
+        cab.forEach(function (col) { if (fora.indexOf(col) < 0) o[col] = obj[col] === undefined || obj[col] === null ? '' : String(obj[col]); });
+        return o;
+      });
+      for (var b = 0; b < linhas.length; b += 500) { pedidos.push(sbPedido_('post', sbTabela_(aba) + '?on_conflict=' + (temId ? 'escritorio_id,id' : 'escritorio_id,_n'), linhas.slice(b, b + 500), 'resolution=merge-duplicates,return=minimal')); rotulos.push(aba); }
+      var ap = Object.keys(a.apagar);
+      if (ap.length) {
+        pedidos.push(sbPedido_('delete', sbTabela_(aba) + '?escritorio_id=eq.' + esc + '&' + (temId ? 'id' : '_n') + '=in.(' + ap.map(function (x) { return '"' + String(x).replace(/["\\]/g, '') + '"'; }).join(',') + ')', undefined, 'return=minimal'));
+        rotulos.push(aba);
+      }
+    });
+    var resp = Object.keys(f.respostas).map(function (k) { var r = f.respostas[k]; r.escritorio_id = esc; return r; });
+    if (resp.length) { pedidos.push(sbPedido_('post', 'respostas?on_conflict=escritorio_id,perfil,quem,chave', resp, 'resolution=merge-duplicates,return=minimal')); rotulos.push('respostas'); }
+    pedidos.push(sbPedido_('post', 'estado?on_conflict=escritorio_id', [{ escritorio_id: esc, versao: versaoDados_(), atualizado_em: agora }], 'resolution=merge-duplicates,return=minimal'));
+    rotulos.push('estado');
+    var rs = UrlFetchApp.fetchAll(pedidos), erros = [];
+    rs.forEach(function (r, i) {
+      if (r.getResponseCode() < 400) return;
+      erros.push(rotulos[i] + ' (' + r.getResponseCode() + '): ' + String(r.getContentText() || '').slice(0, 160));
+      if (ESQUEMA[rotulos[i]]) P.deleteProperty('SB_DIG_' + rotulos[i]); // a cópia de 30 em 30 min refaz esta aba inteira
+      if (rotulos[i] === 'respostas') resp.forEach(function (r2) { try { CacheService.getScriptCache().remove('sbr' + r2.chave.slice(0, 24) + r2.perfil + r2.quem + r2.versao.slice(-10)); } catch (e3) { /* ok */ } });
+    });
+    if (erros.length) P.setProperty('SUPABASE_FALHA', JSON.stringify({ em: agora, erro: erros[0], n: erros.length }));
+  } catch (e) {
+    try {
+      Object.keys(f.abas).forEach(function (aba) { P.deleteProperty('SB_DIG_' + aba); });
+      P.setProperty('SUPABASE_FALHA', JSON.stringify({ em: agora, erro: String(e.message || e).slice(0, 200), n: 1 }));
+    } catch (e2) { /* segue */ }
+  }
+}
+
+/* ---------- login de cada usuário no Supabase (Supabase Auth) ---------- */
+function sbAuth_(metodo, caminho, corpo) {
+  var c = sbConf_(), op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: sbCabecalhos_(c.chave) };
+  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
+  var r = UrlFetchApp.fetch(c.url + '/auth/v1/' + caminho, op), j;
+  try { j = JSON.parse(r.getContentText() || '{}'); } catch (e) { j = {}; }
+  return { cod: r.getResponseCode(), j: j };
+}
+/** Rota banco.sessao (todo usuário logado): devolve um token de 1 h do Supabase para ESTA pessoa (perfil e escritório no app_metadata,
+ *  que só o servidor pode mudar). A senha do usuário no Supabase é aleatória e fica só nas Propriedades (SB_AUTH_<id>). */
+function sbSessaoUsuario_(d, u) {
+  var P = PropertiesService.getScriptProperties(), c = sbConf_(), pub = P.getProperty('SUPABASE_PUBLICA') || '';
+  if (!c.url || !c.chave || !pub || P.getProperty('SUPABASE_LEITURA') === 'nao') return { ligado: false };
+  var esc = sbEscritorio_(), meta = { escritorio_id: esc, perfil: u.perfil, uid: String(u.id) };
+  var email = 'p-' + String(u.id).toLowerCase().replace(/[^a-z0-9]/g, '') + '-' + esc.slice(0, 8) + '@example.com';
+  var reg = null; try { reg = JSON.parse(P.getProperty('SB_AUTH_' + u.id) || 'null'); } catch (e) { reg = null; }
+  var novaSenha = function () { return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''); };
+  if (!reg || reg.email !== email) {
+    var senha = novaSenha(), cria = sbAuth_('post', 'admin/users', { email: email, password: senha, email_confirm: true, app_metadata: meta });
+    if (cria.cod < 300 && cria.j.id) reg = { id: cria.j.id, email: email, senha: senha, perfil: u.perfil };
+    else {
+      var lista = sbAuth_('get', 'admin/users?page=1&per_page=1000'), achou = ((lista.j && lista.j.users) || []).filter(function (x) { return x.email === email; })[0];
+      if (!achou) throw falha_('Supabase: não consegui criar o acesso de ' + (u.nome || u.usuario) + ' (' + (cria.j.msg || cria.j.message || cria.cod) + ').');
+      var upd = sbAuth_('put', 'admin/users/' + achou.id, { password: senha, app_metadata: meta });
+      if (upd.cod >= 300) throw falha_('Supabase: não consegui atualizar o acesso (' + upd.cod + ').');
+      reg = { id: achou.id, email: email, senha: senha, perfil: u.perfil };
+    }
+    P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg));
+  } else if (reg.perfil !== u.perfil) {
+    sbAuth_('put', 'admin/users/' + reg.id, { app_metadata: meta });
+    reg.perfil = u.perfil; P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg));
+  }
+  var t = sbAuth_('post', 'token?grant_type=password', { email: reg.email, password: reg.senha });
+  if (t.cod >= 300 || !t.j.access_token) {
+    var s2 = novaSenha(), up2 = sbAuth_('put', 'admin/users/' + reg.id, { password: s2, app_metadata: meta });
+    if (up2.cod < 300) { reg.senha = s2; P.setProperty('SB_AUTH_' + u.id, JSON.stringify(reg)); t = sbAuth_('post', 'token?grant_type=password', { email: reg.email, password: reg.senha }); }
+    if (t.cod >= 300 || !t.j.access_token) throw falha_('Supabase: o login da leitura rápida falhou (' + (t.j.error_description || t.j.msg || t.cod) + '). O painel segue pela planilha.');
+  }
+  return { ligado: true, url: c.url, chave: pub, token: t.j.access_token, expira: Date.now() + (parseInt(t.j.expires_in, 10) || 3600) * 1000, perfil: u.perfil, uid: String(u.id) };
+}
+/** Guarda as medições de velocidade feitas no navegador (Gerenciar acessos › Banco novo › Medir velocidade). */
+function bancoMedicao_(d, u) {
+  var P = PropertiesService.getScriptProperties(), lista = [];
+  try { lista = JSON.parse(P.getProperty('SUPABASE_MEDICOES') || '[]'); } catch (e) { lista = []; }
+  if (d.medicao) {
+    var m = d.medicao, item = { em: new Date().toISOString(), por: u.nome || u.usuario, rotas: [] };
+    (m.rotas || []).slice(0, 10).forEach(function (r) { item.rotas.push({ rota: String(r.rota).slice(0, 40), planilha: Math.round(+r.planilha || 0), supabase: r.supabase === null ? null : Math.round(+r.supabase || 0) }); });
+    lista.unshift(item); lista = lista.slice(0, 10);
+    P.setProperty('SUPABASE_MEDICOES', JSON.stringify(lista));
+  }
+  return { medicoes: lista };
 }
