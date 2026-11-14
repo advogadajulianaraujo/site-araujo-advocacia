@@ -1054,3 +1054,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Celular: `.btn.mini` com 34 px de toque; `table.mini-tab` rola dentro do cartão.
 - Banco novo: `supabase/esquema.sql` (gerado do ESQUEMA: uma tabela por aba + `escritorio_id` + RLS) e o plano em docs/BANCO-SUPABASE.md.
   Falta a usuária criar o projeto no Supabase (região São Paulo); as chaves vão por formulário seguro / Propriedades do script.
+- 8.25.1 (pedido da usuária: "a proposta era Início, Clientes, Processos e prazos, Agenda, Cobranças, Documentos e Atendimento"): o menu tem
+  EXATAMENTE esses 7 itens (Atendimento só administração). "Clientes" (#/clientes) e "Processos e prazos" (#/prazos) são itens separados;
+  Processos e prazos › sub-abas Intimações e prazos | Processos | Tarefas. O cabeçalho da carteira (`cabCarteira`) mostra "Clientes" ou
+  "Processos" conforme a tela, sem o botão "Por cliente / Por processo".

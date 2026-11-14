@@ -650,11 +650,10 @@
     recibos: 'M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 11.5h6M9 15h3'
   });
   // 8.24 (pedido da usuária, layout "C"): menu lateral CLARO com poucos itens; o resto virou sub-aba no topo (SUBABAS)
-  const ABAS = [
+  const ABAS = [ // 8.25.1 (pedido da usuária): exatamente estes 7 itens
     ['inicio', 'Início'],
-    ['clientes', 'Clientes e processos'],
-    ['prazos', 'Intimações e prazos'],
-    ['tarefas', 'Tarefas'],
+    ['clientes', 'Clientes'],
+    ['prazos', 'Processos e prazos', null, 'processos'],
     ['agenda', 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca'],
     ['modelos', 'Documentos'],
@@ -663,13 +662,14 @@
   ];
   // sub-abas da barra do topo: [rota, nome, permissão]
   const SUBABAS = {
+    prazos: [['prazos', 'Intimações e prazos'], ['processos', 'Processos'], ['tarefas', 'Tarefas']],
     agenda: [['agenda', 'Calendário'], ['audiencias', 'Audiências e perícias']],
     modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa']],
     crm: [['crm', 'Funil de atendimento', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
     relatorios: [['relatorios', 'Resumo do mês', 'usuarios'], ['relatorios?ver=equipe', 'Equipe', 'usuarios']]
   };
   const SECAO_DA_TELA = { audiencias: 'agenda', compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
-    processos: 'clientes', processo: 'clientes', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
+    processos: 'prazos', processo: 'prazos', tarefas: 'prazos', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
   ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
@@ -1190,23 +1190,21 @@
     const ir = v => { lembrarVisao(v); location.hash = '#/' + v + (o.busca ? '?busca=' + encodeURIComponent(o.busca) : ''); };
     const form = h('form', { class: 'busca-grande', role: 'search' },
       h('span', { class: 'busca-ico', 'aria-hidden': 'true' }, '⌕'),
-      h('input', { type: 'search', name: 'busca', value: o.busca || '', placeholder: 'Buscar por nome, CPF, telefone, nº do processo, parte contrária ou vara', 'aria-label': 'Buscar clientes e processos' }),
+      h('input', { type: 'search', name: 'busca', value: o.busca || '', placeholder: visao === 'clientes' ? 'Buscar cliente por nome, CPF, telefone ou nº do processo' : 'Buscar processo por número, cliente, parte contrária ou vara', 'aria-label': visao === 'clientes' ? 'Buscar clientes' : 'Buscar processos' }),
       h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); o.ir({ busca: form.busca.value.trim() }); });
-    const vis = (v, ico, rot, n) => h('button', { type: 'button', role: 'tab', class: 'visao-bt' + (visao === v ? ' ativo' : ''), 'aria-selected': String(visao === v), onclick: () => ir(v) },
-      icone(ico), h('span', {}, rot), h('span', { class: 'visao-n' }, String(n)));
+    void ir;
     return [
       h('header', { class: 'carteira-topo' },
         h('div', { class: 'carteira-tit' },
-          h('span', { class: 'carteira-kicker' }, 'Carteira do escritório'),
-          h('h1', {}, 'Clientes e processos'),
+          h('span', { class: 'carteira-kicker' }, visao === 'clientes' ? 'Carteira do escritório' : 'Processos e prazos'),
+          h('h1', {}, visao === 'clientes' ? 'Clientes' : 'Processos'),
           h('p', {}, `${o.nCli} cliente${o.nCli === 1 ? '' : 's'} · ${o.nProc} processo${o.nProc === 1 ? '' : 's'}${o.nAjuizar ? ` · ${o.nAjuizar} petição(ões) inicial(is) a fazer` : ''}`)),
         h('div', { class: 'carteira-acoes' },
-          h('button', { type: 'button', class: 'btn dourado', onclick: () => { location.hash = '#/cliente/novo'; } }, '+ Novo cliente'),
-          h('button', { type: 'button', class: 'btn sec', onclick: () => { location.hash = '#/processo/novo'; } }, '+ Novo processo'),
+          visao === 'clientes' ? h('button', { type: 'button', class: 'btn dourado', onclick: () => { location.hash = '#/cliente/novo'; } }, '+ Novo cliente') : null,
+          h('button', { type: 'button', class: visao === 'clientes' ? 'btn sec' : 'btn dourado', onclick: () => { location.hash = '#/processo/novo'; } }, '+ Novo processo'),
           h('button', { type: 'button', class: 'btn sec', title: 'Processos sem cliente e cadastros para completar', onclick: () => { location.hash = '#/organizar'; } }, '🔧 Organizar cadastros'))),
       h('section', { class: 'painel-busca carteira-busca' },
-        h('div', { class: 'visoes', role: 'tablist', 'aria-label': 'Ver por' }, vis('clientes', 'clientes', 'Por cliente', o.nCli), vis('processos', 'processos', 'Por processo', o.nProc)),
         form, o.filtros || null),
       faixaAssinaturas()
     ];
