@@ -2474,7 +2474,36 @@
       } catch (e) { medidor.replaceChildren(h('p', { class: 'erro' }, e.message)); }
       ev.target.disabled = false; ev.target.textContent = '⏱ Medir de novo';
     };
+    /* 8.29: banco PRINCIPAL — conferência planilha × banco e a chave planilha/Supabase */
+    const principal = h('div', { class: 'nota' }, h('strong', {}, 'Banco principal: '), 'carregando…');
+    const desenharPrincipal = (x, rel) => {
+      const c = x.conferencia, ehSb = x.principal === 'supabase';
+      const tabela = rel && rel.some(a => !a.ok) ? h('table', { class: 'tabela compacta mini-tab' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Aba'), h('th', {}, 'Planilha'), h('th', {}, 'Banco'), h('th', {}, 'Situação'))),
+        h('tbody', {}, rel.filter(a => !a.ok).map(a => h('tr', {}, h('td', {}, a.aba), h('td', {}, a.faltou_tempo ? '—' : String(a.planilha)), h('td', {}, a.faltou_tempo ? '—' : String(a.banco)),
+          h('td', {}, a.ok ? h('span', { class: 'tag ok' }, a.consertada ? 'igual (consertada)' : 'igual') : a.faltou_tempo ? 'fica para a próxima' : h('span', { class: 'tag atencao' }, a.erro ? 'erro' : 'diferente'),
+            !a.ok && (a.erro || (a.exemplos || []).length) ? h('div', { class: 'peq' }, a.erro || [a.faltam ? a.faltam + ' faltam no banco' : '', a.sobram ? a.sobram + ' sobram no banco' : '', a.diferentes ? a.diferentes + ' diferentes' : '', a.repetidos ? a.repetidos + ' repetidas na planilha' : ''].filter(Boolean).join(' · ') + ' — ' + a.exemplos.join('; ')) : null))))) : null;
+      const conferir = consertar => async ev => {
+        ev.target.disabled = true; ev.target.textContent = 'Conferindo todas as abas (até 4 min)…';
+        try { const y = await api('banco.conferir', { conferir: true, consertar }); desenharPrincipal(y, y.abas); avisar(`${y.resumo.iguais} de ${y.resumo.abas} abas iguais na planilha e no banco.`, !!y.resumo.diferentes.length); }
+        catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+      };
+      principal.replaceChildren(
+        h('strong', {}, 'Banco principal: '), ehSb ? (x.ativo ? '⚡ Supabase (o servidor também lê do banco; a planilha continua recebendo tudo, como reserva)' : 'Supabase escolhido, mas agora lendo da planilha (algo pendente ou o banco falhou há pouco)') : 'planilha (o servidor lê da planilha; as telas já leem do banco)',
+        h('div', { class: 'peq' }, c ? `Última conferência ${quando(c.em)}: ${c.iguais} de ${c.abas} abas iguais` + (c.diferentes.length ? ` · diferentes: ${c.diferentes.join(', ')}` : '') + '. O robô confere e conserta sozinho 1 vez por dia.' : 'Ainda não conferiu a planilha com o banco.'),
+        ehSb ? h('div', { class: 'peq' }, `Lidas do banco: ${x.tabelas_ok.filter(a => !x.so_planilha.includes(a)).length} abas. Sempre da planilha: ${x.so_planilha.join(', ')} (senhas e registros gravados direto nela).`) : null,
+        h('div', { class: 'acoes' }, botao('🔎 Conferir planilha × banco', conferir(false), 'mini sec'), botao('🔧 Conferir e consertar', conferir(true), 'mini sec'),
+          ehSb ? botao('Voltar a planilha como principal', async () => { desenharPrincipal(await api('banco.conferir', { principal: false })); avisar('A planilha voltou a ser o banco principal.'); }, 'mini sec')
+            : botao('⚡ Usar o Supabase como banco principal', async ev => {
+              if (!confirm('Usar o Supabase como banco principal? O servidor passa a ler do banco. A planilha continua recebendo todas as gravações (reserva) e dá para voltar a qualquer momento.')) return;
+              ev.target.disabled = true;
+              try { desenharPrincipal(await api('banco.conferir', { principal: true })); avisar('Pronto: o Supabase é o banco principal.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+            }, 'mini')),
+        tabela);
+    };
+    const carregarPrincipal = () => api('banco.conferir', {}).then(x => desenharPrincipal(x), e => principal.replaceChildren(h('strong', {}, 'Banco principal: '), /desconhec/i.test(e.message) ? 'cole o Code.gs novo (8.29).' : e.message));
     const desenhar = r => {
+      if (r.ligado && r.rpc) carregarPrincipal();
       const u = r.ultima;
       const status = r.ligado
         ? h('p', { class: 'nota ' + (u && u.erro ? 'alerta' : '') }, h('strong', {}, '✓ Ligado'), ` · ${r.url}`, u ? ` · última cópia completa ${quando(u.em)}: ${u.copiadas} aba(s) copiada(s), ${u.iguais} sem mudança${u.faltam ? `, ${u.faltam} na próxima rodada` : ''}` : ' · ainda não copiou', u && u.erro ? h('div', {}, '⚠ ' + u.erro) : null,
@@ -2500,7 +2529,7 @@
         if (BANCO && d.publica) { BANCO.sair(); BANCO.iniciar(); }
         avisar(x.teste || 'Salvo.', /⚠/.test(x.teste || '')); desenhar(x);
       });
-      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, passo2, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
+      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, passo2, r.ligado && r.rpc ? principal : null, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
         r.ligado && r.rpc && r.publica && r.leitura ? h('details', { class: 'sub', open: true }, h('summary', {}, '⏱ Velocidade: banco novo × planilha'),
           resumoMedidas(), h('div', { class: 'acoes' }, botao('⏱ Medir agora (as mesmas telas pelos dois caminhos)', testar, 'sec')), medidor) : null,
         h('details', { class: 'sub', open: !r.ligado }, h('summary', {}, r.ligado ? 'Trocar o endereço ou as chaves' : 'Como ligar (5 minutos)'),
@@ -3002,7 +3031,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.28.0';
+  const VERSAO_PAINEL = '8.29.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

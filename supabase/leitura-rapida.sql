@@ -1,4 +1,4 @@
--- Painel jurídico — passo 2 do banco novo (8.28): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
+-- Painel jurídico — passos 2 e 3 do banco novo (8.28 / 8.29): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
 -- Rodar UMA vez no Supabase › SQL Editor › New query › colar tudo › Run (depois do esquema.sql). Pode rodar de novo sem perder nada.
 -- Nenhum dado de cliente nem chave está neste arquivo.
 --
@@ -172,6 +172,26 @@ begin
   get diagnostics n = row_count;
   return n;
 end $$;
+
+-- 7) (8.29) LEITURA pelo servidor quando o Supabase é o banco principal: a tabela inteira do escritório, compacta
+--    (nomes das colunas uma vez + uma lista por linha, na ordem de _n), com quantas linhas e a maior _n (para conferir com a planilha).
+create or replace function painel_tabela(p_tabela text, p_escritorio uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare cols text; nomes jsonb; linhas jsonb; n bigint; maxn integer;
+begin
+  if p_tabela !~ '^[a-z_]+$' or p_tabela like 'painel\_%' then raise exception 'tabela inválida'; end if;
+  select string_agg(format('coalesce(%I::text, %L)', column_name, ''), ', ' order by ordinal_position),
+         jsonb_agg(column_name order by ordinal_position)
+    into cols, nomes
+    from information_schema.columns
+   where table_schema = 'public' and table_name = p_tabela and column_name not in ('escritorio_id', '_sinc', '_em');
+  if cols is null then raise exception 'tabela % não existe', p_tabela; end if;
+  execute format('select coalesce(jsonb_agg(jsonb_build_array(%s) order by _n), ''[]''::jsonb), count(*), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, p_tabela)
+    into linhas, n, maxn using p_escritorio;
+  return jsonb_build_object('cols', nomes, 'linhas', linhas, 'n', n, 'max_n', maxn);
+end $$;
+revoke all on function painel_tabela(text, uuid) from public, anon, authenticated;
+grant execute on function painel_tabela(text, uuid) to service_role;
 
 revoke all on function painel_gravar(text, jsonb) from public, anon, authenticated;
 revoke all on function painel_apagar(text, uuid, jsonb, jsonb, text) from public, anon, authenticated;

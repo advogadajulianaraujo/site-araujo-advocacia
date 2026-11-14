@@ -94,7 +94,7 @@ function criarGoogle() {
       base64EncodeWebSafe: b => Buffer.from(typeof b === 'string' ? b : b.map(x => x & 255)).toString('base64url'),
       base64DecodeWebSafe: s => bytes(Buffer.from(s, 'base64url')), newBlob: b => ({ getDataAsString: () => Buffer.from(b.map(x => x & 255)).toString('utf8') }) },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo', getEffectiveUser: () => ({ getEmail: () => 'dono@exemplo.test' }), getActiveUser: () => ({ getEmail: () => '' }) },
-    UrlFetchApp: { fetch: (url, op) => { if (foraDoAr) throw new Error('Supabase fora do ar (simulado)'); if (!/supabase\.(test|co)/.test(url)) throw new Error('internet bloqueada no simulador: ' + url); const r = postgrest(url, op || {}, null); return { getResponseCode: () => r.status, getContentText: () => r.txt }; } },
+    UrlFetchApp: { fetchAll: reqs => reqs.map(q => g.UrlFetchApp.fetch(q.url, q)), fetch: (url, op) => { if (foraDoAr) throw new Error('Supabase fora do ar (simulado)'); if (!/supabase\.(test|co)/.test(url)) throw new Error('internet bloqueada no simulador: ' + url); const r = postgrest(url, op || {}, null); return { getResponseCode: () => r.status, getContentText: () => r.txt }; } },
     ContentService: { createTextOutput: t => ({ setMimeType() { return this; }, getContent: () => t }), MimeType: { JSON: 'json' } },
     Logger: { log() {} }, console,
     CalendarApp: semGoogle('CalendarApp'), GmailApp: semGoogle('GmailApp'), DriveApp: semGoogle('DriveApp'), MailApp: semGoogle('MailApp'), DocumentApp: semGoogle('DocumentApp'), ScriptApp: semGoogle('ScriptApp'), HtmlService: semGoogle('HtmlService')

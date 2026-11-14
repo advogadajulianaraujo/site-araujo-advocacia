@@ -49,6 +49,10 @@ assert(cp.erros.length === 0, 'cópia completa sem erros (' + cp.copiadas.length
 assert(S.sql("select count(*) from clientes") === String(NC), NC + ' clientes no banco');
 assert(S.sql("select count(*) from clientes where acesso_hash = 'HASHSECRETO0'") === '1', 'acesso_hash copiado (só o servidor lê)');
 assert(S.sql("select count(*) from information_schema.columns where table_name='usuarios' and column_name in ('hash','salt')") === '0', 'usuarios sem hash/salt');
+if (process.env.PRINCIPAL) { // 8.29: roda tudo com o Supabase como banco principal
+  const c = C.sbConferir_(null, true); assert(c.resumo.iguais === c.resumo.abas, 'conferência antes de ligar o banco principal');
+  P.setProperty('BANCO_PRINCIPAL', 'supabase');
+}
 
 // ---------- sessões ----------
 function logar(id, versao) { const tok = require('crypto').randomBytes(48).toString('hex'); C.CacheService.getScriptCache().put('sessao_' + tok, [id, versao || '0', Date.now()].join('|')); return tok; }

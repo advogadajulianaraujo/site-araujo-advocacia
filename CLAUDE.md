@@ -1113,3 +1113,25 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Testes: `.github/motor/teste/` (simulador do Google + PostgreSQL local + navegador, dados inventados; LEIA.md): 4 perfis × 30 telas
   iguais ao Apps Script, gravação/apagar/lote/pendência/troca de senha/sair/Log. Rodou o esquema.sql de novo (aba nova)? Rode também o leitura-rapida.sql (põe a coluna _em).
 
+## 8.29.0 Banco novo — passo 3: Supabase como BANCO PRINCIPAL (pedido da usuária: "demore mas deixe tudo correto")
+
+- Chave em Gerenciar acessos › Banco novo › "Banco principal" (rota `banco.conferir`, administração; Properties BANCO_PRINCIPAL =
+  planilha|supabase). Só liga com a conferência de menos de 26 h e Clientes/Processos/Prazos/Intimacoes/Tarefas/Config iguais.
+- No modo Supabase o SERVIDOR também lê do banco: `lerTabela_` → `sbLerTabela_` (RPC `painel_tabela`, service_role, linhas compactas em
+  ordem de _n; `sbPrecarregar_` busca várias abas em paralelo com UrlFetchApp.fetchAll; cada rota lembra as abas que usa em CacheService
+  `sbrota_<acao>` — `sbAntesDaRota_`/`sbDepoisDaRota_`). Lê do banco SÓ se: aba em SB_TABELAS_OK (conferida igual), fora de `SB_SO_PLANILHA`
+  (Usuarios = senhas; Log, LogArquivo, PastasConferir, SiteCliques = gravadas direto na planilha), nada pendente/banco sem falha há 2 min,
+  aba não gravada neste pedido (`SB_ESCRITAS`), maior _n do banco = última linha da planilha e nenhuma coluna faltando. Senão: planilha
+  (`SB_LEITURAS` diz de onde veio cada aba). `sbNovaExecucao_` zera tudo no começo do doPost.
+- Gravar linha lida do banco (`tab._sb`): `atualizarLinha_` → `sbGravarConferindo_` relê a linha da planilha, confere o registro
+  (`sbConferirLinha_`: id, ou a 1ª coluna nas abas sem id, contra `_k` lido) e grava só as colunas mudadas; `regravarMudadas_` usa
+  `_cols`; `apagarLinha_` confere antes. Não confere → nada é gravado, erro "A planilha mudou enquanto você salvava… tente de novo" e a aba
+  sai de SB_TABELAS_OK (próxima leitura pela planilha).
+- A gravação continua indo à planilha E ao Supabase (8.28): a planilha segue completa como reserva; a conferência conserta copiando da
+  planilha. Conferência (`sbConferir_`/`sbConferirAba_`): linha a linha (falta, sobra, diferente, id repetido na planilha), "Conferir e
+  consertar" (`sbCopiarAba_` + confere de novo); o robô faz 1×/dia com conserto (`sbConferirSeDia_` no copiarSeHora_; Properties
+  SB_CONFERIDO_DIA/SB_CONFERENCIA). Aba com id repetido na planilha nunca entra (o banco guarda um só).
+- Testes: `.github/motor/teste/principal.js` (20 telas × 4 perfis iguais nos dois modos, gravações, linha a mais/linhas trocadas à mão,
+  banco fora do ar) e `PRINCIPAL=1 node .github/motor/teste/rodar.js` (toda a bateria da 8.28 com o banco principal).
+- Próximo passo (só depois de semanas sem diferença na conferência): parar de gravar na planilha (vira cópia noturna do banco).
+

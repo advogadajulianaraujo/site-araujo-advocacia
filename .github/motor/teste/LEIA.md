@@ -14,3 +14,9 @@ node .github/motor/teste/rodar.js      # telas (4 perfis) + gravações; ✗ = p
 N=1600 node .github/motor/teste/bench.js   # tempos com volume parecido com o real
 ```
 `navegador.js` abre o painel no Chromium (Playwright) com o Google e o Supabase simulados (servir a pasta do site em :8099).
+
+8.29 (Supabase como banco principal):
+```bash
+node .github/motor/teste/principal.js
+PRINCIPAL=1 node .github/motor/teste/rodar.js
+```

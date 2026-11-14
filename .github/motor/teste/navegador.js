@@ -41,6 +41,7 @@ C.copiarParaSupabase_(240000, true);
   await pg.screenshot({ path: require('os').tmpdir() + '/painel-clientes.png' });
   await pg.evaluate(() => { location.hash = '#/usuarios'; });
   await pg.waitForSelector('text=Velocidade: banco novo', { timeout: 30000 });
+  await pg.click('text=Conferir e consertar'); await pg.waitForSelector('text=abas iguais', { timeout: 120000 }).catch(() => {}); await pg.waitForTimeout(1500);
   await pg.click('text=Medir agora');
   await pg.waitForSelector('text=Medir de novo', { timeout: 120000 });
   const tab = await pg.$$eval('.banco-caixa table', ts => ts.map(t => t.innerText).join('\n---\n'));

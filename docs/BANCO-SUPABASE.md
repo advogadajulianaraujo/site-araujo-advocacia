@@ -24,6 +24,12 @@ Nada para de funcionar no meio: a planilha continua sendo a fonte até o passo 3
 - Medir: Gerenciar acessos › Banco novo › "⏱ Medir agora" (as mesmas telas pelos dois caminhos, com tempo e "resultado igual?").
 - Testar no computador: `.github/motor/teste/` (simulador com dados inventados; ver LEIA.md).
 
+## Passo 3 pronto (8.29.0): Supabase como banco principal
+- Gerenciar acessos › Banco novo › "Banco principal": 🔧 Conferir e consertar (planilha × banco, linha a linha) e depois
+  "⚡ Usar o Supabase como banco principal". O servidor passa a ler do banco; a planilha continua recebendo tudo (reserva).
+- Segurança: só abas conferidas iguais; gravação confere na planilha que a linha é o mesmo registro antes de gravar; qualquer
+  dúvida (pendência, banco fora, linha a mais à mão) → planilha. O robô confere e conserta 1×/dia.
+
 ## O que a usuária faz (uma vez)
 1. Criar a conta grátis em supabase.com e um projeto na região **São Paulo (sa-east-1)**.
 2. Supabase › SQL Editor › colar `supabase/esquema.sql` › Run.
