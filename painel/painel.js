@@ -2506,6 +2506,7 @@
             try { desenharPrincipal(await api('banco.conferir', { grava: 'planilha' })); avisar('A planilha voltou a gravar primeiro (recebeu tudo do banco antes).'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
           }, 'mini sec') : null,
           ehSb && x.grava !== 'supabase' ? botao('Voltar a planilha como principal', async () => { desenharPrincipal(await api('banco.conferir', { principal: false })); avisar('A planilha voltou a ser o banco principal.'); }, 'mini sec')
+            : ehSb ? null
             : botao('⚡ Usar o Supabase como banco principal', async ev => {
               if (!confirm('Usar o Supabase como banco principal? O servidor passa a ler do banco. A planilha continua recebendo todas as gravações (reserva) e dá para voltar a qualquer momento.')) return;
               ev.target.disabled = true;
