@@ -59,7 +59,7 @@
     })();
     return pedindo;
   }
-  function sair() { S = null; cache.clear(); emVoo.clear(); rotaFora.clear(); guardar('painel_banco', null); }
+  function sair() { S = null; cache.clear(); emVoo.clear(); rotaFora.clear(); edgeFora.clear(); guardar('painel_banco', null); }
 
   /* ---------- leitura das tabelas ---------- */
   async function rpc(pedidos, limiteMs) {
@@ -201,6 +201,56 @@
     throw new Error('motor: tabelas demais');
   }
 
+  /* ---------- 8.32 Etapa C: o motor do painel no Supabase (Edge Function "painel") ---------- */
+  const edgeFora = new Set(); // rotas que a função devolveu ("precisa do Google"): nesta aba vão direto ao Apps Script
+  function edgeLigada() { return !!(pronto() && S.edge && M()); }
+  async function chamarEdge(acao, dados, pedido, limiteMs) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), limiteMs);
+    const cab = { apikey: S.chave, 'Content-Type': 'application/json' };
+    if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
+    try {
+      const r = await fetch(S.edge, { method: 'POST', headers: cab, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal,
+        body: JSON.stringify({ token: S.token, acao, dados: dados || {}, pedido: pedido || null, versao: M().versao }) });
+      if (!r.ok) throw Object.assign(new Error('motor do Supabase: código ' + r.status), { rede: true });
+      return await r.json();
+    } catch (e) { if (e && e.name === 'AbortError') throw Object.assign(new Error('o motor do Supabase demorou'), { rede: true }); throw Object.assign(e, { rede: true }); }
+    finally { clearTimeout(timer); }
+  }
+  function tratarVoltar(acao, r) {
+    if (r.sessao) { S = null; guardar('painel_banco', null); } else edgeFora.add(acao);
+    medir(acao, 'supabase-voltou', 0, String(r.motivo || '').slice(0, 120));
+  }
+  /** Leitura que o navegador não calcula: tenta o motor do Supabase; precisa do Google → Apps Script. */
+  async function lerViaEdge(acao, dados, google) {
+    if (edgeLigada() && !edgeFora.has(acao)) {
+      const t0 = performance.now();
+      try {
+        const r = await chamarEdge(acao, dados, null, 15000);
+        if (r && r.voltar) tratarVoltar(acao, r);
+        else if (r && r.ok) { medir(acao, 'supabase', performance.now() - t0); return r.dados; }
+        else if (r && r.erro) throw new Error(r.erro);
+      } catch (e) { if (!e.rede) throw e; medir(acao, 'supabase-falhou', 0, String(e.message || e).slice(0, 120)); }
+    }
+    const t0 = performance.now(), r = await google();
+    medir(acao, 'google', performance.now() - t0);
+    return r;
+  }
+  /** Gravação: no motor do Supabase (tudo ou nada; o mesmo pedido nunca grava duas vezes). Sem resposta = tenta de novo com o MESMO
+   *  pedido (se já gravou, ele só devolve a resposta); nunca manda ao Apps Script depois de uma falta de resposta (gravaria duas vezes). */
+  async function gravarViaEdge(acao, dados, google) {
+    if (!edgeLigada() || edgeFora.has(acao)) return google();
+    const pedido = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10), t0 = performance.now();
+    let r = null, ultimo = null;
+    for (let vez = 0; vez < 2 && !r; vez++) {
+      try { r = await chamarEdge(acao, dados, pedido, 30000); } catch (e) { ultimo = e; }
+    }
+    if (!r) throw new Error('Sem resposta do banco de dados ao gravar (' + (ultimo && ultimo.message || '') + '). Atualize a tela e confira se ficou gravado antes de repetir.');
+    if (r.voltar) { tratarVoltar(acao, r); return google(); } // nada foi gravado no Supabase: o Apps Script faz
+    medir(acao, 'supabase', performance.now() - t0);
+    if (!r.ok) throw new Error(r.erro || 'Erro.');
+    return r.dados;
+  }
+
   /* ---------- porta de entrada usada pelo painel.js ---------- */
   function pode(acao) { return !!(M() && M().tem(acao) && !rotaFora.has(acao) && Date.now() >= desligadoAte && (pronto() || chamarApps)); }
   /** Tenta o banco; se falhar ou demorar, faz o pedido normal ao Apps Script (sem a pessoa perceber). */
@@ -222,9 +272,7 @@
         medir(acao, 'banco-falhou', 0, String(e && e.message || e).slice(0, 120));
       } finally { clearTimeout(timer); }
     }
-    const t0 = performance.now(), r = await planilha();
-    medir(acao, 'google', performance.now() - t0);
-    return r;
+    return planilha(); // (o tempo é medido lá: motor do Supabase ou Google)
   }
   /** Para a tela "Banco novo": a mesma leitura pelos dois caminhos, com tempo e se o resultado bateu. */
   async function comparar(lista, planilha) {
@@ -253,8 +301,8 @@
   }
   function estado() {
     return { ligado: pronto(), motivo: motivoOff, ate: desligadoAte > Date.now() ? desligadoAte : 0, fora: [...rotaFora.entries()],
-      tabelas: [...cache.entries()].filter(([, c]) => c.pronto).map(([t, c]) => [t, c.linhas.size]), medidas: medidas.slice() };
+      tabelas: [...cache.entries()].filter(([, c]) => c.pronto).map(([t, c]) => [t, c.linhas.size]), medidas: medidas.slice(), edge: edgeLigada(), edgeFora: [...edgeFora] };
   }
 
-  window.PAINEL_BANCO = { configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir };
+  window.PAINEL_BANCO = { configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada };
 })();

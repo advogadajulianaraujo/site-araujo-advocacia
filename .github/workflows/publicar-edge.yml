@@ -1,0 +1,22 @@
+# Publica a Edge Function "painel" (motor do painel no Supabase, 8.32) sempre que ela muda no main.
+# Precisa, uma vez: Settings › Secrets and variables › Actions › segredo SUPABASE_ACCESS_TOKEN (token sbp_ com permissão de Edge Functions)
+# e a variável SUPABASE_PROJETO (o "ref" do projeto, as letras antes de .supabase.co).
+name: Publicar a função do Supabase
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/painel/**']
+  workflow_dispatch: {}
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publicar
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJETO: ${{ vars.SUPABASE_PROJETO }}
+        run: node .github/motor/publicar-edge.mjs

@@ -19,7 +19,7 @@ function postgrest(url, op, papel) {
   try {
     if (cam.startsWith('rpc/')) {
       const fn = cam.slice(4), args = JSON.parse(corpo || '{}');
-      const lista = Object.entries(args).map(([k, v]) => `${k} := ${v === null ? 'null' : typeof v === 'object' ? lit(JSON.stringify(v)) + '::jsonb' : lit(v)}`);
+      const lista = Object.entries(args).map(([k, v]) => `${k} := ${v === null ? 'null' : k === 'p_tabelas' && Array.isArray(v) ? 'array[' + v.map(lit).join(',') + ']::text[]' : typeof v === 'object' ? lit(JSON.stringify(v)) + '::jsonb' : lit(v)}`); // (o PostgREST converte lista → text[])
       const r = sql(`select to_jsonb(${fn}(${lista.join(', ')}))`, papel);
       return { status: 200, txt: r };
     }

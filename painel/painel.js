@@ -344,9 +344,15 @@
   const BANCO = window.PAINEL_BANCO || null;
   let ultimoGoogle = Date.now();
   if (BANCO) BANCO.configurar((a, d) => chamarUm(a, d));
+  // 8.32: o que o navegador não calcula vai ao motor do Supabase (Etapa C); precisa do Google → Apps Script, sozinho
+  const SO_GOOGLE = /^(login|logout|sessao|primeiroAcesso|situacao|banco\.|usuarios\.|senha\.|ext\.|future\.)/;
   function chamar(acao, dados) {
-    if (BANCO && sessao && LEITURAS.has(acao) && BANCO.pode(acao)) return BANCO.lerOuPlanilha(acao, dados, () => chamarGoogle(acao, dados));
-    return chamarGoogle(acao, dados);
+    const google = () => chamarGoogle(acao, dados);
+    if (!BANCO || !sessao || SO_GOOGLE.test(acao)) return google();
+    const viaEdge = () => BANCO.lerViaEdge(acao, dados, google);
+    if (LEITURAS.has(acao)) return BANCO.pode(acao) ? BANCO.lerOuPlanilha(acao, dados, viaEdge) : viaEdge();
+    if (acao === 'processos.andamentos' && !(dados && dados.atualizar)) return viaEdge();
+    return BANCO.gravarViaEdge(acao, dados, google);
   }
   // a sessão do Google cai com 6 h sem uso: com as telas vindo do banco, um "oi" leve de vez em quando mantém a sessão viva
   setInterval(() => { if (sessao && !document.hidden && Date.now() - ultimoGoogle > 20 * 60000) chamarUm('sessao', {}).catch(() => {}); }, 5 * 60000);
@@ -2498,6 +2504,9 @@
         ehSb && x.grava === 'supabase' ? h('div', { class: 'peq' }, h('strong', {}, 'Login, senhas e registro de atividades: '), x.login === 'supabase'
           ? 'no Supabase (o painel entra, lê e grava mesmo com a planilha fora do ar; as senhas continuam embaralhadas e nunca vão ao navegador).'
           : 'ainda na planilha.') : null,
+        ehSb && x.login === 'supabase' ? h('div', { class: 'peq' }, h('strong', {}, 'Motor do painel: '), x.edge === 'sim'
+          ? `no Supabase${x.edge_versao ? ' (função ' + x.edge_versao + ')' : ''}: as telas e as gravações não passam mais pelo Google; documentos, Drive, Agenda, e-mail e IA continuam no Google, sozinhos.`
+          : 'no Google (Apps Script).' + (x.edge_erro ? ' Função do Supabase: ' + x.edge_erro + '.' : '')) : null,
         h('div', { class: 'acoes' }, botao('🔎 Conferir planilha × banco', conferir(false), 'mini sec'), botao('🔧 Conferir e consertar', conferir(true), 'mini sec'),
           ehSb && x.grava !== 'supabase' ? botao('⚡ Gravar primeiro no Supabase (planilha vira cópia)', async ev => {
             if (!confirm('Passar a gravar primeiro no Supabase? A planilha passa a receber a cópia do banco de 30 em 30 minutos. Dá para voltar a qualquer momento (o painel copia tudo do banco para a planilha antes de trocar).')) return;
@@ -2509,7 +2518,16 @@
             ev.target.disabled = true; ev.target.textContent = 'Levando…';
             try { desenharPrincipal(await api('banco.conferir', { login: 'supabase' })); avisar('Pronto: login e senhas no Supabase.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
           }, 'mini') : null,
-          ehSb && x.login === 'supabase' ? botao('Login e senhas de volta na planilha', async ev => {
+          ehSb && x.login === 'supabase' && x.edge !== 'sim' ? botao('🚀 Ligar o motor do Supabase', async ev => {
+            if (!confirm('Ligar o motor do Supabase? As telas e as gravações passam a ser feitas no Supabase, sem o Google. O que precisa do Google (documentos, Drive, Agenda, e-mail, IA) continua indo para lá sozinho. Dá para desligar na hora.')) return;
+            ev.target.disabled = true; ev.target.textContent = 'Conferindo a função…';
+            try { desenharPrincipal(await api('banco.conferir', { edge: 'sim' })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Pronto: o motor do Supabase está ligado.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = '🚀 Ligar o motor do Supabase'; }
+          }, 'mini') : null,
+          ehSb && x.edge === 'sim' ? botao('Desligar o motor do Supabase', async ev => {
+            ev.target.disabled = true;
+            try { desenharPrincipal(await api('banco.conferir', { edge: 'nao' })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Motor do Supabase desligado: tudo volta a passar pelo Google.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini sec') : null,
+          ehSb && x.login === 'supabase' && x.edge !== 'sim' ? botao('Login e senhas de volta na planilha', async ev => {
             ev.target.disabled = true;
             try { desenharPrincipal(await api('banco.conferir', { login: 'planilha' })); avisar('Login e senhas de volta na planilha (copiados do banco antes).'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
           }, 'mini sec') : null,
@@ -3056,7 +3074,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.31.0';
+  const VERSAO_PAINEL = '8.32.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

@@ -1,4 +1,4 @@
--- Painel jurídico — passos 2 a 5 do banco novo (8.28 / 8.29 / 8.30 / 8.31): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
+-- Painel jurídico — passos 2 a 6 do banco novo (8.28 a 8.32): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
 -- Rodar UMA vez no Supabase › SQL Editor › New query › colar tudo › Run (depois do esquema.sql). Pode rodar de novo sem perder nada.
 -- Nenhum dado de cliente nem chave está neste arquivo.
 --
@@ -223,9 +223,15 @@ begin
        where exists (select 1 from information_schema.columns c where c.table_schema = 'public' and c.table_name = t and c.column_name = k)
          and k not in ('escritorio_id', '_n', '_em', '_sinc', ch);
       if cols is null then continue; end if;
-      execute format('update public.%1$I as d set (%2$s, _sinc, _em) = (select %3$s, $3, now() from jsonb_populate_record(null::public.%1$I, $4) x) where d.escritorio_id = $1 and d.%4$I::text = $2',
-                     t, cols, vals, ch) using p_escritorio, u ->> 'k', agora, u -> 'cols';
+      -- 8.32: com "v" (o _sinc lido), só grava se ninguém mudou a linha no meio; senão erro 'conflito' (quem pediu lê de novo e refaz)
+      execute format('update public.%1$I as d set (%2$s, _sinc, _em) = (select %3$s, $3, now() from jsonb_populate_record(null::public.%1$I, $4) x) where d.escritorio_id = $1 and d.%4$I::text = $2 and ($5::text is null or coalesce(d._sinc, %5$L) = $5)',
+                     t, cols, vals, ch, '') using p_escritorio, u ->> 'k', agora, u -> 'cols', u ->> 'v';
       get diagnostics n = row_count;
+      if n = 0 and (u ->> 'v') is not null then
+        execute format('select count(*) from public.%I where escritorio_id = $1 and %I::text = $2', t, ch) into n using p_escritorio, u ->> 'k';
+        if n > 0 then raise exception 'conflito: % de % mudou enquanto era gravada', u ->> 'k', t using errcode = '40001'; end if;
+        n := 0;
+      end if;
       if n = 0 then raise exception 'A linha % de % não existe mais no banco (mudou por outro lado). Nada foi gravado.', u ->> 'k', t; end if;
     end loop;
     -- inserir (com o próximo número de linha)
@@ -242,11 +248,86 @@ begin
       execute format('insert into public.%1$I (%2$s) select %2$s from jsonb_populate_recordset(null::public.%1$I, $1)', t, cols) using novos;
       res := res || jsonb_build_object(t, (select jsonb_agg(base + g) from generate_series(1, i) g));
     end if;
+    -- 8.32: quando cada aba mudou pela última vez (a cópia banco → planilha sabe o que copiar, venha a mudança de onde vier)
+    insert into painel_estado (escritorio_id, chave, valor, em) values (p_escritorio, 'mudou:' || t, agora, now())
+      on conflict (escritorio_id, chave) do update set valor = excluded.valor, em = now();
   end loop;
   return res;
 end $$;
 revoke all on function painel_aplicar(uuid, jsonb) from public, anon, authenticated;
 grant execute on function painel_aplicar(uuid, jsonb) to service_role;
+
+-- 9) (8.32 Etapa C) o motor do painel no Supabase (Edge Function "painel", com a chave secreta só lá dentro)
+-- 9a) várias abas de uma vez, com o _sinc (versão de cada linha)
+create or replace function painel_tabelas(p_escritorio uuid, p_tabelas text[]) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t text; cols text; nomes jsonb; linhas jsonb; maxn integer; res jsonb := '{}'::jsonb;
+begin
+  foreach t in array coalesce(p_tabelas, '{}'::text[]) loop
+    if t !~ '^[a-z_]+$' or t like 'painel\_%' then raise exception 'tabela inválida: %', t; end if;
+    select string_agg(format('coalesce(%I::text, %L)', column_name, ''), ', ' order by ordinal_position), jsonb_agg(column_name order by ordinal_position)
+      into cols, nomes from information_schema.columns
+     where table_schema = 'public' and table_name = t and column_name not in ('escritorio_id', '_em');
+    if cols is null then raise exception 'tabela % não existe', t; end if;
+    execute format('select coalesce(jsonb_agg(jsonb_build_array(%s) order by _n), ''[]''::jsonb), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, t)
+      into linhas, maxn using p_escritorio;
+    res := res || jsonb_build_object(t, jsonb_build_object('cols', nomes, 'linhas', linhas, 'max_n', maxn));
+  end loop;
+  return res;
+end $$;
+-- 9b) confere a sessão do banco (as mesmas regras do painel_ler) e devolve quem é a pessoa (sem hash/salt)
+create or replace function painel_quem(p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; us jsonb; est jsonb;
+begin
+  select * into s from painel_sessoes where token_hash = encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex');
+  if not found or s.expira_em < now() or s.ultimo_uso < now() - interval '6 hours' then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  select to_jsonb(x) - 'hash' - 'salt' - 'escritorio_id' - '_sinc' - '_em' into us from usuarios x
+   where x.escritorio_id = s.escritorio_id and x.id = s.usuario_id and x.ativo = 'sim' and x.perfil = s.perfil and coalesce(nullif(x.sessao_versao, ''), '0') = s.versao;
+  if us is null then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  if s.ultimo_uso < now() - interval '1 minute' then update painel_sessoes set ultimo_uso = now() where token_hash = s.token_hash; end if;
+  select coalesce(jsonb_object_agg(e.chave, e.valor), '{}'::jsonb) into est from painel_estado e where e.escritorio_id = s.escritorio_id and e.chave in ('pendente', 'asaas', 'edge');
+  return jsonb_build_object('escritorio_id', s.escritorio_id, 'usuario', us, 'estado', est);
+end $$;
+-- 9c) pedidos já feitos (o mesmo pedido mandado de novo não grava duas vezes)
+create table if not exists painel_pedidos (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  id text not null,
+  em timestamptz not null default now(),
+  resposta jsonb,
+  primary key (escritorio_id, id)
+);
+alter table painel_pedidos enable row level security;
+create or replace function painel_aplicar_pedido(p_escritorio uuid, p_pedido text, p_ops jsonb, p_resposta jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; ja jsonb;
+begin
+  if p_pedido is not null then
+    select resposta into ja from painel_pedidos where escritorio_id = p_escritorio and id = p_pedido;
+    if found then return jsonb_build_object('repetido', true, 'resposta', ja); end if;
+  end if;
+  r := painel_aplicar(p_escritorio, p_ops);
+  if p_pedido is not null then
+    insert into painel_pedidos (escritorio_id, id, resposta) values (p_escritorio, p_pedido, p_resposta);
+    delete from painel_pedidos where escritorio_id = p_escritorio and em < now() - interval '7 days';
+  end if;
+  return jsonb_build_object('novos', r);
+end $$;
+-- 9d) abas que mudaram desde um momento (para a cópia banco → planilha)
+create or replace function painel_mudadas(p_escritorio uuid, p_desde text) returns jsonb
+language sql security definer set search_path = public as $$
+  select coalesce(jsonb_agg(substr(chave, 7)), '[]'::jsonb) from painel_estado
+   where escritorio_id = p_escritorio and chave like 'mudou:%' and (p_desde is null or valor > p_desde)
+$$;
+revoke all on function painel_tabelas(uuid, text[]) from public, anon, authenticated;
+revoke all on function painel_quem(text) from public, anon, authenticated;
+revoke all on function painel_aplicar_pedido(uuid, text, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function painel_mudadas(uuid, text) from public, anon, authenticated;
+grant execute on function painel_tabelas(uuid, text[]) to service_role;
+grant execute on function painel_quem(text) to service_role;
+grant execute on function painel_aplicar_pedido(uuid, text, jsonb, jsonb) to service_role;
+grant execute on function painel_mudadas(uuid, text) to service_role;
+revoke all on table painel_pedidos from anon, authenticated;
 
 revoke all on function painel_gravar(text, jsonb) from public, anon, authenticated;
 revoke all on function painel_apagar(text, uuid, jsonb, jsonb, text) from public, anon, authenticated;

@@ -1171,3 +1171,28 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   painel entra, lista clientes e prazos e grava tarefa; desligar volta tudo para a planilha.
 - Próximas: Etapa C (motor do painel numa Edge Function do Supabase, sem o Apps Script nas telas) e D (desligar o caminho antigo).
 
+## 8.32.0 Etapa C — o motor do painel no Supabase (Edge Function "painel"; telas e gravações sem o Google)
+
+- `supabase/functions/painel/`: `index.ts` (Deno.serve, CORS, rpc com a chave secreta do próprio Supabase: PAINEL_CHAVE, SUPABASE_SECRET_KEY ou
+  SUPABASE_SERVICE_ROLE_KEY), `servidor.js` (sem Deno: testado no Node) e `motor.js` = o Code.gs INTEIRO + trocas de dados, GERADO por
+  `node .github/motor/gerar-edge.mjs` (rode junto com o gerar.mjs sempre que mudar o Code.gs). Publicar: `.github/motor/publicar-edge.mjs`
+  (API de administração, token com edge_functions_write) ou o workflow `publicar-edge.yml` (segredo SUPABASE_ACCESS_TOKEN + variável
+  SUPABASE_PROJETO). verify_jwt = false: a pessoa é conferida no banco (`painel_quem`: mesmas regras do painel_ler).
+- `servidor.js`: pedido {token (sessão do banco), acao, dados, pedido, versao} → `painel_quem` → abas por `painel_tabelas` (várias de uma vez,
+  com `_sinc`; aprende as abas de cada rota) → `M.rodar` (rotear_ sem a sessão: permissão, valoresDoPerfil_; comTrava_/comMemoria_ só rodam;
+  sbPrimeiro_/sbLogin_ = true; gravações ficam em SB_PEND/SB_LOG e viram ops com `v` = _sinc lido) → `painel_aplicar_pedido` (tudo ou nada;
+  pedido repetido devolve a MESMA resposta sem gravar; `v` diferente = erro 'conflito' 40001 → lê de novo e refaz, até 2 vezes). Erro de
+  regra (falha_) = a mesma mensagem do Apps Script e só o Log é gravado. Qualquer serviço do Google, Propriedades, aba só da planilha,
+  versão diferente, marca `painel_estado` edge ≠ 'sim', "pendente" ou rota de `NUNCA` (login, sessão, banco.*, usuarios.*, senha.*, ext.*,
+  future.*, públicas) → { voltar: true } (NADA foi gravado) e o navegador manda o mesmo pedido ao Apps Script.
+- Navegador (`chamar` em painel.js; `SO_GOOGLE`): leitura = motor do navegador → `BANCO.lerViaEdge` → Apps Script; gravação =
+  `BANCO.gravarViaEdge` (id de pedido; sem resposta tenta de novo com o MESMO id e, se ainda falhar, avisa para conferir — nunca manda ao
+  Apps Script depois de falta de resposta, para não gravar duas vezes); rota que voltou fica em `edgeFora` na aba.
+- Apps Script: Properties BANCO_EDGE (botão "🚀 Ligar o motor do Supabase", rota `banco.conferir` edge=sim|nao: confere `sbEdgePing_` =
+  mesma VERSAO; marca painel_estado edge/asaas); `comMemoria_` desligado com o motor ligado; `bancoSessao_` devolve `edge` (endereço);
+  `sbEspelhar_` também copia as abas de `painel_mudadas` (painel_aplicar marca 'mudou:<tabela>'); asaas atualizado no copiarSeHora_.
+- SQL 8.32 (leitura-rapida.sql): `painel_tabelas`, `painel_quem`, `painel_pedidos` + `painel_aplicar_pedido`, `painel_mudadas`, `v` no painel_aplicar.
+- Testes: `.github/motor/teste/etapaC.mjs` (17 telas × 4 perfis iguais ao Apps Script; as mesmas 10 gravações nos dois escritórios →
+  planilhas iguais; pedido repetido grava uma vez; linha mudada no meio refaz sem perder; Google/login/sessão inválida/versão/desligado
+  voltam; acesso negado registrado) e `deno.mjs` (a função no DENO com relógio em Greenwich: igual ao Apps Script, gravação ~0,2 s).
+

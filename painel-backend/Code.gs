@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.31.0';
+var VERSAO = '8.32.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -610,6 +610,7 @@ function marcarMudanca_() {
 }
 var MEMORIA_POR_PERFIL = { 'inicio.extras': 1, 'clientes.listar': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1, 'relatorio.geral': 1, 'fin.honorarios': 1 };
 function comMemoria_(acao, u, dados, fn) {
+  if (sbEdge_()) return fn(); // 8.32: o motor do Supabase também grava — memória daqui poderia ficar velha
   var cache = CacheService.getScriptCache();
   var limpo = {};
   Object.keys(dados || {}).sort().forEach(function (k) { var v = dados[k]; if (v !== '' && v !== false && v !== null && v !== undefined) limpo[k] = v; });
@@ -14503,6 +14504,7 @@ function copiarSeHora_() {
   var c = sbConf_();
   if (!c.url || !c.chave) return;
   try { sbEnviarSujas_(); } catch (eP) { /* segue */ }
+  if (sbEdge_()) { try { sbEstado_('asaas', asaasChave_() ? 'sim' : 'nao'); } catch (eA) { /* segue */ } } // 8.32
   if (sbPrimeiro_()) { // 8.30: a planilha recebe a cópia do banco de 30 em 30 min
     var ue = {}; try { ue = JSON.parse(PropertiesService.getScriptProperties().getProperty('SB_ESPELHO_ULTIMA') || '{}'); } catch (eE) { ue = {}; }
     if (!ue.em || Date.now() - Date.parse(ue.em) >= 25 * 60000) { try { sbEspelhar_(90000, false); } catch (eE2) { /* tenta na próxima */ } }
@@ -14554,7 +14556,8 @@ function bancoSessao_(d, u, token) {
   // a aba Usuarios precisa estar no banco (a sessão confere ativo/perfil/troca de senha por ela)
   try { sbMarcar_('Usuarios', +(tabela_('Usuarios').linhas.filter(function (x) { return x.id === u.id; })[0] || {})._linha); sbEnviarSujas_(); } catch (eU) { /* segue */ }
   var cp = {}; ESQUEMA.Usuarios.forEach(function (k) { if (k !== 'hash' && k !== 'salt') cp[k] = u[k] === undefined ? '' : u[k]; }); // o mesmo "u" que o Apps Script usa
-  return { ligado: true, url: c.url, chave: c.publica, token: codigo, expira: expira, versao: VERSAO, u: cp, asaas: !!asaasChave_(), permissoes: perm, tarefasFiltradasOk: SB_TAREFAS_FILTRADAS_OK };
+  return { ligado: true, url: c.url, chave: c.publica, token: codigo, expira: expira, versao: VERSAO, u: cp, asaas: !!asaasChave_(), permissoes: perm, tarefasFiltradasOk: SB_TAREFAS_FILTRADAS_OK,
+    edge: sbEdge_() ? c.url + '/functions/v1/painel' : '' };
 }
 /** Sair: a sessão do banco cai junto (trocar senha/perfil/desativar já derruba sozinho: painel_ler confere a aba Usuarios). */
 function sbSair_(token) {
@@ -14620,7 +14623,7 @@ function bancoConfig_(d, u) {
 var SB_SO_PLANILHA = { Usuarios: 1, Log: 1, LogArquivo: 1, PastasConferir: 1, SiteCliques: 1 };
 var SB_PRINCIPAL_ = null, SB_EXEC = {}, SB_ESCRITAS = {}, SB_LEITURAS = {}, SB_OK_ = null, SB_USADAS = {};
 /** Começo de cada pedido (doPost): nada de um pedido vale para o outro. */
-function sbNovaExecucao_() { SB_LOGIN_ = null; SB_LOG = []; SB_P_ = null; SB_PEND = {}; SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
+function sbNovaExecucao_() { SB_EDGE_ = null; SB_LOGIN_ = null; SB_LOG = []; SB_P_ = null; SB_PEND = {}; SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
 function sbPrincipal_() {
   if (SB_PRINCIPAL_ !== null) return SB_PRINCIPAL_;
   SB_PRINCIPAL_ = false;
@@ -14807,9 +14810,23 @@ function bancoConferir_(d, u) {
       if (P.getProperty('BANCO_GRAVA') !== 'supabase') throw falha_('Ligue antes o "Gravar primeiro no Supabase".');
       sbLigarLogin_(); registrar_(u.usuario, 'banco: login e Log no Supabase', '');
     } else {
+      if (sbEdge_()) throw falha_('Antes, desligue o "motor do Supabase".');
       sbDesligarLogin_(); registrar_(u.usuario, 'banco: login e Log de volta na planilha', 'cópia completa banco → planilha feita');
     }
   }
+  if (d.edge !== undefined) { // 8.32 Etapa C
+    if (d.edge === 'sim') {
+      if (P.getProperty('BANCO_LOGIN') !== 'supabase') throw falha_('Ligue antes "Levar o login e as senhas para o Supabase".');
+      var pg = sbEdgePing_();
+      if (!pg.ok) throw falha_('A função "painel" do Supabase não respondeu (' + pg.erro + '). Ela precisa ser publicada antes.');
+      if (pg.versao !== VERSAO) throw falha_('A função do Supabase é da versão ' + pg.versao + ' e o Code.gs é ' + VERSAO + '. Publique a função de novo.');
+      sbEstado_('asaas', asaasChave_() ? 'sim' : 'nao'); sbEstado_('edge', 'sim');
+      P.setProperty('BANCO_EDGE', 'sim'); registrar_(u.usuario, 'banco: motor do Supabase ligado', pg.versao);
+    } else { sbEstado_('edge', 'nao'); P.setProperty('BANCO_EDGE', 'nao'); registrar_(u.usuario, 'banco: motor do Supabase desligado', ''); }
+    SB_EDGE_ = null;
+  }
+  r.edge = sbEdge_() ? 'sim' : 'nao';
+  if (r.edge === 'sim' || d.testarEdge) { var pg2 = sbEdgePing_(); r.edge_versao = pg2.ok ? pg2.versao : ''; r.edge_erro = pg2.ok ? '' : pg2.erro; }
   r.login = P.getProperty('BANCO_LOGIN') === 'supabase' ? 'supabase' : 'planilha';
   r.grava = P.getProperty('BANCO_GRAVA') === 'supabase' ? 'supabase' : 'planilha';
   try { r.espelho = JSON.parse(P.getProperty('SB_ESPELHO_ULTIMA') || 'null'); } catch (eE) { r.espelho = null; }
@@ -14923,6 +14940,10 @@ function sbpAplicar_() {
 function sbEspelhar_(limiteMs, tudo, so) {
   var t0 = Date.now(), P = PropertiesService.getScriptProperties(), esc = sbEscritorio_(), feitas = [], erros = [];
   var suj = {}; try { suj = JSON.parse(P.getProperty('SB_ESPELHO_SUJO') || '{}'); } catch (e) { suj = {}; }
+  try { // 8.32: as abas que mudaram no banco desde a última cópia (venha a mudança daqui ou do motor do Supabase)
+    var ue = JSON.parse(P.getProperty('SB_ESPELHO_ULTIMA') || '{}'), desde = ue.em ? new Date(Date.parse(ue.em) - 120000).toISOString() : null;
+    (supabase_('post', 'rpc/painel_mudadas', { p_escritorio: esc, p_desde: desde }) || []).forEach(function (t) { Object.keys(ESQUEMA).forEach(function (a) { if (sbTabela_(a) === t) suj[a] = 1; }); });
+  } catch (eM) { /* sem o SQL 8.32: só as marcadas aqui */ }
   Object.keys(ESQUEMA).forEach(function (aba) {
     if (sbSoPlanilha_(aba) || (so ? so.indexOf(aba) < 0 : (!tudo && !suj[aba]))) return;
     if (Date.now() - t0 > (limiteMs || 60000)) return;
@@ -15012,4 +15033,27 @@ function sbDesligarLogin_() {
     PropertiesService.getScriptProperties().setProperty('BANCO_LOGIN', 'planilha');
   });
   SB_LOGIN_ = null;
+}
+
+/* ================================================================== */
+/* 8.32 ETAPA C — o motor do painel no Supabase (Edge Function painel)  */
+/* ================================================================== */
+// supabase/functions/painel (index.ts + servidor.js + motor.js GERADO do Code.gs por .github/motor/gerar-edge.mjs). Properties BANCO_EDGE =
+// 'sim' e painel_estado edge = 'sim' (a função confere esta marca a cada pedido: desligar aqui vale na hora). O navegador manda à função
+// as gravações e as leituras que ele mesmo não calcula; ela devolve { voltar: true } quando precisa do Google e o pedido vem para cá.
+var SB_EDGE_ = null;
+function sbEdge_() {
+  if (SB_EDGE_ !== null) return SB_EDGE_;
+  try { SB_EDGE_ = PropertiesService.getScriptProperties().getProperty('BANCO_EDGE') === 'sim' && sbLogin_(); } catch (e) { SB_EDGE_ = false; }
+  return SB_EDGE_;
+}
+function sbEdgePing_() {
+  var c = sbConf_();
+  try {
+    var cab = { apikey: c.publica || c.chave }; if (/^eyJ/.test(cab.apikey)) cab.Authorization = 'Bearer ' + cab.apikey;
+    var r = UrlFetchApp.fetch(c.url + '/functions/v1/painel', { method: 'post', contentType: 'application/json', headers: cab, payload: JSON.stringify({ ping: true }), muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return { ok: false, erro: 'código ' + r.getResponseCode() + (r.getResponseCode() === 404 ? ': a função ainda não foi publicada' : '') };
+    var j = JSON.parse(r.getContentText() || '{}');
+    return j && j.ok ? { ok: true, versao: j.versao } : { ok: false, erro: 'resposta inesperada' };
+  } catch (e) { return { ok: false, erro: String(e.message || e).slice(0, 120) }; }
 }

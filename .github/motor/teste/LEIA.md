@@ -21,4 +21,6 @@ node .github/motor/teste/principal.js
 PRINCIPAL=1 node .github/motor/teste/rodar.js
 node .github/motor/teste/etapaA.js          # 8.30: Supabase grava primeiro × planilha (mesmas gravações, planilhas iguais)
 node .github/motor/teste/etapaB.js          # 8.31: login/senhas/Log no banco; painel com a planilha fora do ar
+node .github/motor/gerar-edge.mjs && node .github/motor/teste/etapaC.mjs   # 8.32: motor do painel no Supabase
+node .github/motor/teste/deno.mjs           # 8.32: a função rodando no Deno (precisa do deno instalado)
 ```

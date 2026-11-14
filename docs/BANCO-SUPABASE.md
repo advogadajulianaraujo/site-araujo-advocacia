@@ -37,8 +37,17 @@ Por etapas; cada uma testada com dados inventados contra o comportamento atual, 
 |---|---|---|
 | **A (8.30, ligada em 14/11)** | O Supabase GRAVA PRIMEIRO (tudo ou nada por pedido); a planilha vira cópia do banco de 30 em 30 min. Login, senhas e Log ainda na planilha. | Gerenciar acessos › Banco novo › "⚡ Gravar primeiro no Supabase". |
 | **B (8.31, pronta)** | Login, senhas (embaralhadas, nunca vão ao navegador) e o registro de atividades no Supabase: o painel entra, lê e grava com a planilha fora do ar. | Rodar o `leitura-rapida.sql` de novo + Code.gs novo + botão "🔐 Levar o login e as senhas para o Supabase". |
-| **C** | O motor do painel roda no Supabase (Edge Function `painel`, com o MESMO código do Code.gs nas rotas que não usam o Google): o navegador lê e grava direto, sem o Apps Script. Rotas do Google (documentos, Drive, Agenda, e-mail) seguem pelo Apps Script, que já grava no banco. | Uma vez: autorizar a publicação da função (token do Supabase com permissão de banco/funções, por formulário seguro). |
+| **C (8.32, pronta)** | O motor do painel roda no Supabase (Edge Function `painel`, com o MESMO código do Code.gs nas rotas que não usam o Google): o navegador lê e grava direto, sem o Apps Script. Rotas do Google (documentos, Drive, Agenda, e-mail) seguem pelo Apps Script, que já grava no banco. | Uma vez: autorizar a publicação da função (token do Supabase com permissão de banco/funções, por formulário seguro). |
 | **D** | Desligar o caminho antigo: o Apps Script fica só com os robôs do Google (Gmail/DJEN, Agenda, Drive) gravando no banco; a planilha só como backup. | Nada (só acompanhar a medição e a conferência por alguns dias). |
+
+## Etapa C (8.32): como publicar a função "painel"
+- Código: `supabase/functions/painel/` (`index.ts` + `servidor.js` escritos à mão; `motor.js` GERADO do Code.gs por
+  `node .github/motor/gerar-edge.mjs` — mudou o Code.gs? rode o gerar-edge junto com o gerar).
+- Publicar: token do Supabase com permissão de Edge Functions (escrita) → `node .github/motor/publicar-edge.mjs`
+  (SUPABASE_ACCESS_TOKEN + SUPABASE_PROJETO) ou o GitHub Actions `publicar-edge.yml` (segredo SUPABASE_ACCESS_TOKEN e variável
+  SUPABASE_PROJETO no repositório: publica sozinho a cada mudança da função no main). A função não confere JWT (verify_jwt false):
+  quem confere a pessoa é o banco (painel_quem, pelo código da sessão do banco).
+- Ligar: Gerenciar acessos › Banco novo › "🚀 Ligar o motor do Supabase" (confere se a função responde com a MESMA versão do Code.gs).
 
 ## O que a usuária faz (uma vez)
 1. Criar a conta grátis em supabase.com e um projeto na região **São Paulo (sa-east-1)**.
