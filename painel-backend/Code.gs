@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.26.0';
+var VERSAO = '8.26.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -14232,7 +14232,9 @@ function sbTabela_(aba) { return aba.replace(/([a-z])([A-Z])/g, '$1_$2').toLower
 function supabase_(metodo, caminho, corpo, prefer) {
   var c = sbConf_();
   if (!c.url || !c.chave) throw falha_('O banco novo (Supabase) ainda não foi ligado: Gerenciar acessos › Banco novo.');
-  var op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: { apikey: c.chave, Authorization: 'Bearer ' + c.chave } };
+  // chave antiga "service_role" (eyJ…) vai também no Authorization; a nova "sb_secret_…" vai só no apikey (o Supabase recusa no Authorization)
+  var cab = /^sb_/.test(c.chave) ? { apikey: c.chave } : { apikey: c.chave, Authorization: 'Bearer ' + c.chave };
+  var op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: cab };
   if (prefer) op.headers.Prefer = prefer;
   if (corpo !== undefined) op.payload = JSON.stringify(corpo);
   var r = UrlFetchApp.fetch(c.url + '/rest/v1/' + caminho, op), cod = r.getResponseCode(), txt = r.getContentText() || '';
@@ -14310,7 +14312,7 @@ function bancoConfig_(d, u) {
   }
   if (d.chave !== undefined && String(d.chave).trim()) {
     var ch = String(d.chave).trim();
-    if (ch.length < 30) throw falha_('Essa não parece a chave "service_role" do Supabase (é bem comprida).');
+    if (ch.length < 30 || /^sb_publishable_/.test(ch)) throw falha_('Essa não é a chave secreta. Use a "secret" (sb_secret_…) ou a "service_role" (eyJ…), não a "publishable"/"anon".');
     P.setProperty('SUPABASE_CHAVE', ch);
     registrar_(u.usuario, 'banco novo: chave cadastrada', '');
   }

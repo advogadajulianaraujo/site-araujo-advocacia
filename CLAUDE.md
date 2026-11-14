@@ -1072,4 +1072,5 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   `supabase_` traduz 401/403 (chave errada) e tabela inexistente ("rode o esquema.sql").
 - esquema.sql pode rodar de novo (create if not exists + add column if not exists). Mudou o ESQUEMA? Gere o arquivo de novo (script do
   simulador `tsql.js`) e rode no SQL Editor. RLS ligado em tudo; política de leitura por `escritorio_id` do JWT (para o passo 2).
+- 8.26.1: aceita a chave nova "sb_secret_…" (vai só no header apikey) e a antiga "service_role" (eyJ…, também no Authorization); recusa a "publishable".
 - Próximo passo (2): o painel ler do Supabase direto pelo navegador, respeitando o perfil (RH sem totais, tarefas só da pessoa).

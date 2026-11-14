@@ -2426,7 +2426,7 @@
         : h('p', { class: 'nota' }, 'Desligado. A planilha continua sendo o banco do painel. Ligando aqui, o painel passa a copiar a planilha para o Supabase de 30 em 30 minutos (só o que mudou). A senha dos usuários nunca sai do Google.');
       const f = h('form', { class: 'campos', novalidate: true },
         campo('url', 'Endereço do projeto (Project URL)', r.url || '', { dica: 'Supabase › Project Settings › API · parecido com https://abcdefgh.supabase.co', max: 120 }),
-        campo('chave', r.ligado ? 'Chave "service_role" (já cadastrada: deixe vazio para manter)' : 'Chave "service_role" (secret)', '', { tipo: 'password', dica: 'Supabase › Project Settings › API Keys › service_role / secret. Fica só no Google; ninguém mais vê.' }),
+        campo('chave', r.ligado ? 'Chave "service_role" (já cadastrada: deixe vazio para manter)' : 'Chave "service_role" (secret)', '', { tipo: 'password', dica: 'Supabase › Project Settings › API Keys › Secret keys (sb_secret_…) ou Legacy › service_role. Fica só no Google; ninguém mais vê.' }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, r.ligado ? 'Salvar e testar' : 'Ligar e testar'),
           r.ligado ? botao('Copiar agora', async ev => { ev.target.disabled = true; ev.target.textContent = 'Copiando (até 4 min)…'; try { const x = await api('banco.config', { copiar: true }); avisar(`Cópia feita: ${x.copia.copiadas.length} aba(s)` + (x.copia.erros.length ? ` · ${x.copia.erros.length} com erro` : '') + '.', !!x.copia.erros.length); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Copiar agora'; } }, 'sec') : null,
           r.ligado ? botao('Copiar tudo de novo', async ev => { ev.target.disabled = true; try { const x = await api('banco.config', { copiar: true, tudo: true }); avisar(`Cópia completa: ${x.copia.copiadas.length} aba(s).`); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec') : null,
@@ -2937,7 +2937,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.26.0';
+  const VERSAO_PAINEL = '8.26.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
