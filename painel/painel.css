@@ -439,7 +439,7 @@ details.sub > summary{cursor:pointer;font-weight:500;margin-top:10px}
 /* Intimações mais baixas: cartões menores e botões lado a lado */
 .kpi{padding:8px 12px}
 .kpi b{font-size:26px}
-.tabela.compacta .mini-acoes{flex-wrap:nowrap}
+.tabela.compacta .mini-acoes{flex-wrap:wrap;max-width:300px;margin-left:auto}
 .tabela.compacta .btn.mini{padding:5px 9px;font-size:10.5px;min-height:0}
 .tabela.compacta .tag{font-size:11px;padding:1px 7px}
 .tabela.compacta .col-fatal .data-fatal{font-size:15px}

@@ -12,6 +12,16 @@
 
   /* ---------- utilidades ---------- */
 
+  // 8.24: replaceChildren/append/prepend nunca escrevem "null"/"undefined" na tela (filhos opcionais com ? … : null)
+  ['replaceChildren', 'append', 'prepend'].forEach(nome => {
+    [Element.prototype, DocumentFragment.prototype].forEach(P => {
+      const orig = P[nome];
+      if (!orig || orig.__limpo) return;
+      const novo = function (...f) { return orig.apply(this, f.flat(Infinity).filter(x => x !== null && x !== undefined && x !== false)); };
+      novo.__limpo = true; P[nome] = novo;
+    });
+  });
+
   function h(tag, attrs, ...filhos) {
     const el = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
