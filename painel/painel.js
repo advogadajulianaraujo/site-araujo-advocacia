@@ -2492,8 +2492,20 @@
         h('strong', {}, 'Banco principal: '), ehSb ? (x.ativo ? '⚡ Supabase (o servidor também lê do banco; a planilha continua recebendo tudo, como reserva)' : 'Supabase escolhido, mas agora lendo da planilha (algo pendente ou o banco falhou há pouco)') : 'planilha (o servidor lê da planilha; as telas já leem do banco)',
         h('div', { class: 'peq' }, c ? `Última conferência ${quando(c.em)}: ${c.iguais} de ${c.abas} abas iguais` + (c.diferentes.length ? ` · diferentes: ${c.diferentes.join(', ')}` : '') + '. O robô confere e conserta sozinho 1 vez por dia.' : 'Ainda não conferiu a planilha com o banco.'),
         ehSb ? h('div', { class: 'peq' }, `Lidas do banco: ${x.tabelas_ok.filter(a => !x.so_planilha.includes(a)).length} abas. Sempre da planilha: ${x.so_planilha.join(', ')} (senhas e registros gravados direto nela).`) : null,
+        ehSb ? h('div', { class: 'peq' }, h('strong', {}, 'Quem grava primeiro: '), x.grava === 'supabase'
+          ? `o Supabase (a planilha recebe a cópia do banco de 30 em 30 min${x.espelho ? '; última cópia ' + quando(x.espelho.em) + (x.espelho.erro ? ' ⚠ ' + x.espelho.erro : '') : ''}).`
+          : 'a planilha (e o Supabase recebe na hora).') : null,
         h('div', { class: 'acoes' }, botao('🔎 Conferir planilha × banco', conferir(false), 'mini sec'), botao('🔧 Conferir e consertar', conferir(true), 'mini sec'),
-          ehSb ? botao('Voltar a planilha como principal', async () => { desenharPrincipal(await api('banco.conferir', { principal: false })); avisar('A planilha voltou a ser o banco principal.'); }, 'mini sec')
+          ehSb && x.grava !== 'supabase' ? botao('⚡ Gravar primeiro no Supabase (planilha vira cópia)', async ev => {
+            if (!confirm('Passar a gravar primeiro no Supabase? A planilha passa a receber a cópia do banco de 30 em 30 minutos. Dá para voltar a qualquer momento (o painel copia tudo do banco para a planilha antes de trocar).')) return;
+            ev.target.disabled = true;
+            try { desenharPrincipal(await api('banco.conferir', { grava: 'supabase' })); avisar('Pronto: o Supabase grava primeiro.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini') : null,
+          ehSb && x.grava === 'supabase' ? botao('Voltar a gravar primeiro na planilha', async ev => {
+            ev.target.disabled = true; ev.target.textContent = 'Copiando o banco para a planilha…';
+            try { desenharPrincipal(await api('banco.conferir', { grava: 'planilha' })); avisar('A planilha voltou a gravar primeiro (recebeu tudo do banco antes).'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini sec') : null,
+          ehSb && x.grava !== 'supabase' ? botao('Voltar a planilha como principal', async () => { desenharPrincipal(await api('banco.conferir', { principal: false })); avisar('A planilha voltou a ser o banco principal.'); }, 'mini sec')
             : botao('⚡ Usar o Supabase como banco principal', async ev => {
               if (!confirm('Usar o Supabase como banco principal? O servidor passa a ler do banco. A planilha continua recebendo todas as gravações (reserva) e dá para voltar a qualquer momento.')) return;
               ev.target.disabled = true;
@@ -3031,7 +3043,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.29.0';
+  const VERSAO_PAINEL = '8.30.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

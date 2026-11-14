@@ -1135,3 +1135,22 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   banco fora do ar) e `PRINCIPAL=1 node .github/motor/teste/rodar.js` (toda a bateria da 8.28 com o banco principal).
 - Próximo passo (só depois de semanas sem diferença na conferência): parar de gravar na planilha (vira cópia noturna do banco).
 
+## 8.30.0 Etapa A — o Supabase GRAVA PRIMEIRO; a planilha vira cópia (plano A→D em docs/BANCO-SUPABASE.md)
+
+- Pedido da usuária: sair da dependência do Google e da planilha, por etapas testadas. Etapa A: Properties BANCO_GRAVA = 'supabase'
+  (Gerenciar acessos › Banco novo › "⚡ Gravar primeiro no Supabase"; rota `banco.conferir` grava=supabase|planilha; exige o banco
+  principal ligado, todas as abas conferidas iguais e o leitura-rapida.sql 8.30 com `painel_aplicar`).
+- Abas fora de `SB_SO_PLANILHA` (Usuarios, Log, LogArquivo, PastasConferir, SiteCliques continuam na planilha até a Etapa B): `lerTabela_`
+  → `sbpTabela_` (banco + o que o pedido já mudou, `SB_PEND`); os helpers só anotam (`sbpInserir_`/`sbpAtualizar_`/`sbpApagar_`; `gravarLote_`,
+  `regravarMudadas_`, `gravarVarias_` também) e `sbpAplicar_` manda tudo numa transação (RPC `painel_aplicar`: tudo ou nada, linha nova =
+  maior _n + 1 com trava por tabela, atualização só das colunas mudadas, linha sumida = erro). Manda no fim de cada `comTrava_` (antes de
+  soltar a trava; ao ENTRAR na trava a leitura é refeita: `SB_EXEC = {}`), no fim do doPost (erro no pedido = `SB_PEND = {}`, nada gravado)
+  e no `sbEnviarSujas_` dos robôs; > 400 mudanças manda no meio. Tabela com `_sbp` tem `aba` falsa: escrita direta na planilha = erro.
+- Banco fora: gravação recusada ("O banco de dados não respondeu…"); leitura pura (rota de LEITURAS_RAPIDAS) usa a cópia da planilha.
+- Cópia inverte: `sbEspelhar_` (banco → planilha, abas em Properties SB_ESPELHO_SUJO, no `copiarSeHora_` de 30 em 30 min; SB_ESPELHO_ULTIMA);
+  `copiarParaSupabase_` pula essas abas; `sbCopiarAba_` recusa; a conferência conserta copiando do BANCO. Voltar (grava=planilha): dentro da
+  trava copia TUDO do banco para a planilha e só então troca; desligar o banco principal com grava=supabase é recusado.
+- Teste: `.github/motor/teste/etapaA.js` — dois escritórios iguais (A = planilha, B = grava primeiro) recebem as MESMAS 11 gravações (ids
+  em sequência: `Utilities.__uuid` no simulador) e as planilhas ficam IGUAIS; tudo ou nada; banco fora; navegador vê na hora; robô em lote;
+  voltar. Junto: rodar.js (45), principal.js (28), PRINCIPAL=1 rodar.js (46) sem falhas.
+

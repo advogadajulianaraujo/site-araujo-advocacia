@@ -85,7 +85,7 @@ function criarGoogle() {
       getAll: ks => Object.fromEntries(ks.filter(k => cache.has(k)).map(k => [k, cache.get(k)])), remove: k => cache.delete(k), removeAll: ks => ks.forEach(k => cache.delete(k)) }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props.has(k) ? props.get(k) : null, setProperty: (k, v) => props.set(k, String(v)), deleteProperty: k => props.delete(k), getProperties: () => Object.fromEntries(props), getKeys: () => [...props.keys()] }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock() {}, releaseLock() {}, hasLock: () => true }) },
-    Utilities: { formatDate: fmt, getUuid: () => crypto.randomUUID(), sleep() {},
+    Utilities: { formatDate: fmt, getUuid: () => (g.Utilities.__uuid !== undefined ? (String(++g.Utilities.__uuid).padStart(8, '0') + 'aa').slice(0, 8) + '-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : crypto.randomUUID()), sleep() {},
       DigestAlgorithm: { MD5: 'md5', SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, MacAlgorithm: { HMAC_SHA_256: 'sha256' },
       computeDigest: (a, s) => bytes(crypto.createHash(a).update(String(s), 'utf8').digest()),
       computeHmacSha256Signature: (s, k) => bytes(crypto.createHmac('sha256', k).update(s).digest()),

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.29.0';
+var VERSAO = '8.30.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -234,6 +234,7 @@ function importarCargaInicial_() {
 }
 
 function gravarLote_(tab) {
+  if (tab._sbp) { (tab.buffer || []).forEach(function (o) { delete o._novo; }); tab.buffer = null; tab.base = 0; return; } // 8.30: já anotadas
   if (!tab.buffer || !tab.buffer.length) { tab.buffer = null; return; }
   var linhas = tab.buffer.map(function (o) { delete o._novo; return tab.cab.map(function (k) { return seguro_(o[k]); }); });
   tab.aba.getRange(tab.buffer[0]._linha, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_(); sbMarcar_(tab, tab.buffer[0]._linha, linhas.length);
@@ -244,6 +245,7 @@ function gravarLote_(tab) {
 /** Grava numa só chamada as linhas alteradas com tab.adiar = true. */
 function regravarMudadas_(tab) {
   tab.adiar = false;
+  if (tab._sbp) { tab.linhas.forEach(function (o) { delete o._mudou; delete o._cols; }); return 0; } // 8.30: já anotadas
   var mud = tab.linhas.filter(function (o) { return o._mudou && !o._novo; });
   if (!mud.length) return 0;
   var min = Infinity, max = 0;
@@ -262,6 +264,7 @@ function regravarMudadas_(tab) {
 function gravarVarias_(nome, objs) {
   if (!objs.length) return;
   var tab = tabela_(nome);
+  if (tab._sbp) { objs.forEach(function (o) { sbpInserir_(tab, o); }); return; } // 8.30
   var linhas = objs.map(function (o) { return tab.cab.map(function (k) { return seguro_(o[k]); }); });
   var r = tab.aba.getLastRow() + 1;
   tab.aba.getRange(r, 1, linhas.length, tab.cab.length).setNumberFormat('@').setValues(linhas); marcarMudanca_(); sbMarcar_(nome, r, linhas.length);
@@ -311,12 +314,14 @@ function doPost(e) {
   }
   // 8.28: o que foi gravado neste pedido vai ao banco novo (Supabase) antes da resposta, para o painel nunca ler dado atrasado
   sbNovaExecucao_();
-  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); try { sbEnviarSujas_(); } catch (eL) { /* fica pendente */ } return json_({ ok: true, dados: lote }); }
+  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); try { if (sbPrimeiro_()) sbpAplicar_(); } catch (eLp) { /* leituras */ } try { sbEnviarSujas_(); } catch (eL) { /* fica pendente */ } return json_({ ok: true, dados: lote }); }
   try {
     var dados = rotear_(req.acao, req.token, req.dados || {});
+    if (sbPrimeiro_()) sbpAplicar_(); // 8.30: o que ficou fora de trava vai agora (erro aqui = nada gravado e a pessoa vê o erro)
     try { sbEnviarSujas_(); } catch (eS) { /* fica pendente */ }
     return json_({ ok: true, dados: dados });
   } catch (err) {
+    SB_PEND = {}; // 8.30: pedido com erro não grava nada no banco
     try { sbEnviarSujas_(); } catch (eS2) { /* fica pendente */ }
     var msg = err && err.publico ? err.message : 'Erro interno. Tente de novo.';
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
@@ -1972,8 +1977,13 @@ function tabela_(nome) {
 }
 
 function lerTabela_(nome) {
+  // 8.30: o banco grava primeiro → a aba vem dele (com o que este pedido já mudou); leitura pura com o banco fora → planilha (cópia)
+  if (sbpAba_(nome)) { try { return sbpTabela_(nome); } catch (eP) { if (!MEMO_LEITURA || sbpQtd_()) throw eP; sbNotaLeitura_(nome, 'planilha (cópia; banco fora)'); return lerTabelaPlanilha_(nome); } }
   // 8.29: com o Supabase como banco principal, a aba vem dele (conferida e alinhada com a planilha); qualquer dúvida → planilha
   if (sbPrincipal_() && sbPodeLer_(nome)) { try { var tsb = sbLerTabela_(nome); if (tsb) return tsb; } catch (eSb) { sbNotaLeitura_(nome, 'planilha (' + String(eSb.message || eSb).slice(0, 80) + ')'); } }
+  return lerTabelaPlanilha_(nome);
+}
+function lerTabelaPlanilha_(nome) {
   var sh = aba_(nome);
   var cab = ESQUEMA[nome];
   var n = sh.getLastRow() - 1;
@@ -1995,6 +2005,7 @@ function seguro_(v) {
 }
 
 function inserirLinha_(tab, obj) {
+  if (tab._sbp) { sbpInserir_(tab, obj); return; } // 8.30
   if (tab.buffer) { // modo lote (robô): grava tudo de uma vez no fim
     if (!tab.base) tab.base = tab.aba.getLastRow() + 1;
     obj._linha = tab.base + tab.buffer.length;
@@ -2015,6 +2026,7 @@ function atualizarLinha_(tab, linhaObj, mudancas) {
     if (tab.cab.indexOf(k) < 0) return;
     linhaObj[k] = mudancas[k] === null || mudancas[k] === undefined ? '' : String(mudancas[k]);
   });
+  if (tab._sbp) { if (!linhaObj._novo) sbpAtualizar_(tab, linhaObj, mudancas); return; } // 8.30
   if (linhaObj._novo) return; // ainda no lote: vai gravado no fim
   if (tab.adiar) { linhaObj._mudou = true; if (tab._sb) { linhaObj._cols = linhaObj._cols || {}; Object.keys(mudancas).forEach(function (k) { linhaObj._cols[k] = 1; }); } return; } // gravado de uma vez por regravarMudadas_
   if (tab._sb) { sbGravarConferindo_(tab, linhaObj, Object.keys(mudancas)); return; } // 8.29: confere a linha da planilha antes de gravar
@@ -2059,7 +2071,11 @@ function comTrava_(fn) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw falha_('O sistema está ocupado. Tente de novo em alguns segundos.');
   TRAVA_NIVEL_ = 1;
-  try { return fn(); } finally { TRAVA_NIVEL_ = 0; lock.releaseLock(); }
+  var sbp = sbPrimeiro_();
+  if (sbp) { if (sbpQtd_()) sbpAplicar_(); SB_EXEC = {}; MEMO_LEITURA = MEMO_LEITURA ? {} : MEMO_LEITURA; } // 8.30: dentro da trava, lê de novo
+  try { var r = fn(); if (sbp) sbpAplicar_(); return r; } // grava no banco ANTES de soltar a trava
+  catch (e) { if (sbp) SB_PEND = {}; throw e; } // deu erro: nada deste trecho é gravado
+  finally { TRAVA_NIVEL_ = 0; lock.releaseLock(); }
 }
 
 function novoId_(prefixo) {
@@ -6014,6 +6030,7 @@ function marcarAssinatura_(d, u) {
 }
 /** Apaga de vez uma linha (fica em branco; a leitura ignora linhas vazias). Só para o que nunca deveria ter existido. */
 function apagarLinha_(tab, obj) {
+  if (tab._sbp) { sbpApagar_(tab, obj); return; } // 8.30
   var vazio = tab.cab.map(function () { return ''; });
   if (tab._sb) sbConferirLinha_(tab, obj, tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).getDisplayValues()[0]); // 8.29: é mesmo esta linha?
   tab.aba.getRange(obj._linha, 1, 1, tab.cab.length).setValues([vazio]); marcarMudanca_(); sbApagar_(tab, obj);
@@ -14352,6 +14369,7 @@ function sbApagar_(tab, obj) {
 /** Manda ao banco, relendo da planilha, as linhas gravadas neste pedido (e as que ficaram pendentes antes). */
 function sbEnviarSujas_() {
   if (!sbLigado_()) { SB_SUJAS = {}; return; }
+  if (sbPrimeiro_() && sbpQtd_()) { try { sbpAplicar_(); } catch (eP) { registrar_('sistema', 'banco: gravação não feita', String(eP.message || eP).slice(0, 300)); } } // 8.30 (robôs)
   var P = PropertiesService.getScriptProperties(), pend = {};
   try { pend = JSON.parse(P.getProperty('SB_PENDENTES') || '{}'); } catch (e) { pend = {}; }
   var temPend = Object.keys(pend).length > 0;
@@ -14431,6 +14449,7 @@ function copiarParaSupabase_(limiteMs, forcar) {
   var abas = Object.keys(ESQUEMA);
   abas.forEach(function (aba) {
     if (Date.now() - t0 > (limiteMs || 60000)) { faltam++; return; }
+    if (sbpAba_(aba)) return; // 8.30: o banco grava primeiro nesta aba — a cópia é banco → planilha (sbEspelhar_)
     try {
       var n = sbCopiarAba_(aba, esc, rpc, forcar);
       if (n === null) iguais++; else feitas.push(aba + ' (' + n + ')');
@@ -14443,6 +14462,7 @@ function copiarParaSupabase_(limiteMs, forcar) {
 }
 /** Copia uma aba inteira (devolve quantas linhas, ou null se não mudou desde a última cópia). */
 function sbCopiarAba_(aba, esc, rpc, forcar) {
+  if (sbpAba_(aba)) throw falha_('Erro interno: ' + aba + ' é gravada primeiro no banco; a planilha é que recebe a cópia.'); // 8.30
   var P = PropertiesService.getScriptProperties();
   var carimbo = new Date().toISOString(); // ANTES de ler a aba: uma mudança enviada depois sempre vence a cópia
   var sh = aba_(aba), cab = ESQUEMA[aba], n = sh.getLastRow() - 1;
@@ -14470,6 +14490,10 @@ function copiarSeHora_() {
   var c = sbConf_();
   if (!c.url || !c.chave) return;
   try { sbEnviarSujas_(); } catch (eP) { /* segue */ }
+  if (sbPrimeiro_()) { // 8.30: a planilha recebe a cópia do banco de 30 em 30 min
+    var ue = {}; try { ue = JSON.parse(PropertiesService.getScriptProperties().getProperty('SB_ESPELHO_ULTIMA') || '{}'); } catch (eE) { ue = {}; }
+    if (!ue.em || Date.now() - Date.parse(ue.em) >= 25 * 60000) { try { sbEspelhar_(90000, false); } catch (eE2) { /* tenta na próxima */ } }
+  }
   var u = {}; try { u = JSON.parse(PropertiesService.getScriptProperties().getProperty('SUPABASE_ULTIMA') || '{}'); } catch (e) { u = {}; }
   if (u.em && Date.now() - Date.parse(u.em) < 25 * 60000 && !u.faltam) return;
   copiarParaSupabase_(60000);
@@ -14583,7 +14607,7 @@ function bancoConfig_(d, u) {
 var SB_SO_PLANILHA = { Usuarios: 1, Log: 1, LogArquivo: 1, PastasConferir: 1, SiteCliques: 1 };
 var SB_PRINCIPAL_ = null, SB_EXEC = {}, SB_ESCRITAS = {}, SB_LEITURAS = {}, SB_OK_ = null, SB_USADAS = {};
 /** Começo de cada pedido (doPost): nada de um pedido vale para o outro. */
-function sbNovaExecucao_() { SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
+function sbNovaExecucao_() { SB_P_ = null; SB_PEND = {}; SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
 function sbPrincipal_() {
   if (SB_PRINCIPAL_ !== null) return SB_PRINCIPAL_;
   SB_PRINCIPAL_ = false;
@@ -14604,13 +14628,14 @@ function sbPodeLer_(nome) { return !!ESQUEMA[nome] && !SB_SO_PLANILHA[nome] && !
 function sbNotaLeitura_(nome, de) { SB_LEITURAS[nome] = de; }
 function sbChaveCol_(cab) { return cab.indexOf('id') >= 0 ? 'id' : cab[0]; }
 /** Busca no banco (uma ida para várias abas juntas: UrlFetchApp.fetchAll) e guarda nesta execução. */
-function sbPrecarregar_(nomes) {
-  var faltam = (nomes || []).filter(function (n) { return !SB_EXEC[n] && sbPodeLer_(n); });
+function sbPrecarregar_(nomes, forcar) {
+  var faltam = (nomes || []).filter(function (n) { return !SB_EXEC[n] && (forcar || sbpAba_(n) || sbPodeLer_(n)); });
   if (!faltam.length) return;
   var c = sbConf_(), esc = sbEscritorio_();
   var cab = /^sb_/.test(c.chave) ? { apikey: c.chave } : { apikey: c.chave, Authorization: 'Bearer ' + c.chave };
   var pedidos = faltam.map(function (n) { return { url: c.url + '/rest/v1/rpc/painel_tabela', method: 'post', contentType: 'application/json', headers: cab, muteHttpExceptions: true, payload: JSON.stringify({ p_tabela: sbTabela_(n), p_escritorio: esc }) }; });
-  var resp = UrlFetchApp.fetchAll(pedidos);
+  var resp;
+  try { resp = UrlFetchApp.fetchAll(pedidos); } catch (eF) { faltam.forEach(function (n) { sbNotaLeitura_(n, 'planilha (banco sem resposta)'); }); return; } // 8.30: sem internet/banco fora
   resp.forEach(function (r, i) {
     var cod = r.getResponseCode();
     if (cod === 404) { PropertiesService.getScriptProperties().setProperty('SUPABASE_TABELA_RPC', 'nao|' + Date.now()); return; }
@@ -14657,11 +14682,11 @@ function sbGravarConferindo_(tab, o, cols) {
 }
 /** Lembra quais abas cada rota usa, para a próxima vez buscar tudo numa ida só. */
 function sbAntesDaRota_(acao) {
-  if (!sbPrincipal_()) return;
+  if (!sbPrincipal_() && !sbPrimeiro_()) return;
   try { var l = CacheService.getScriptCache().get('sbrota_' + acao); if (l) sbPrecarregar_(JSON.parse(l)); } catch (e) { /* busca uma a uma */ }
 }
 function sbDepoisDaRota_(acao) {
-  if (!sbPrincipal_()) return;
+  if (!sbPrincipal_() && !sbPrimeiro_()) return;
   try { var u = Object.keys(SB_USADAS).sort(); if (u.length) CacheService.getScriptCache().put('sbrota_' + acao, JSON.stringify(u), 21600); } catch (e) { /* segue */ }
 }
 
@@ -14677,7 +14702,8 @@ function sbConferir_(abas, consertar, limiteMs) {
     if (Date.now() - t0 > (limiteMs || 240000)) { res.push({ aba: aba, faltou_tempo: true }); return; }
     var r = sbConferirAba_(aba, esc);
     if (!r.ok && consertar && !r.erro) {
-      try { sbCopiarAba_(aba, esc, rpc, true); r = sbConferirAba_(aba, esc); r.consertada = true; } catch (eC) { r.erro = String(eC.message || eC); }
+      // 8.30: aba que o banco grava primeiro é consertada copiando do BANCO para a planilha; as outras, da planilha para o banco
+      try { if (sbpAba_(aba)) sbEspelhar_(60000, false, [aba]); else sbCopiarAba_(aba, esc, rpc, true); r = sbConferirAba_(aba, esc); r.consertada = true; } catch (eC) { r.erro = String(eC.message || eC); }
     }
     if (r.ok) ok[aba] = new Date().toISOString(); else delete ok[aba];
     res.push(r);
@@ -14739,9 +14765,30 @@ function bancoConferir_(d, u) {
       catch (eT) { throw falha_('Falta rodar o supabase/leitura-rapida.sql novo (8.29) no SQL Editor do Supabase.'); }
       P.setProperty('BANCO_PRINCIPAL', 'supabase');
       registrar_(u.usuario, 'banco principal: Supabase', '');
-    } else { P.setProperty('BANCO_PRINCIPAL', 'planilha'); registrar_(u.usuario, 'banco principal: planilha', ''); }
+    } else {
+      if (P.getProperty('BANCO_GRAVA') === 'supabase') throw falha_('Antes, use "Voltar a gravar primeiro na planilha" (o painel copia tudo do banco para a planilha).');
+      P.setProperty('BANCO_PRINCIPAL', 'planilha'); registrar_(u.usuario, 'banco principal: planilha', '');
+    }
     SB_PRINCIPAL_ = null;
   }
+  if (d.grava !== undefined) { // 8.30: quem grava primeiro
+    if (d.grava === 'supabase') {
+      if (!sbPrincipal_()) throw falha_('Ligue antes o "Supabase como banco principal" (e confira a planilha × banco).');
+      var okG = sbTabelasOk_(), faltaG = Object.keys(ESQUEMA).filter(function (a) { return !SB_SO_PLANILHA[a] && !okG[a]; });
+      if (faltaG.length) throw falha_('Estas abas ainda não estão iguais no banco: ' + faltaG.slice(0, 8).join(', ') + '. Use "Conferir e consertar".');
+      try { supabase_('post', 'rpc/painel_aplicar', { p_escritorio: sbEscritorio_(), p_ops: [] }); }
+      catch (eA) { throw falha_('Falta rodar o supabase/leitura-rapida.sql novo (8.30) no SQL Editor do Supabase.'); }
+      comTrava_(function () { P.setProperty('BANCO_GRAVA', 'supabase'); }); // com a trava: nenhum robô gravando na planilha no meio
+      registrar_(u.usuario, 'banco: Supabase grava primeiro', '');
+    } else {
+      comTrava_(function () { var e = sbEspelhar_(240000, true); if (e.erros.length) throw falha_('Não consegui copiar tudo do banco para a planilha (' + e.erros[0] + '). Nada mudou.'); P.setProperty('BANCO_GRAVA', 'planilha'); });
+      Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
+      registrar_(u.usuario, 'banco: planilha grava primeiro', 'cópia completa banco → planilha feita');
+    }
+    SB_P_ = null;
+  }
+  r.grava = P.getProperty('BANCO_GRAVA') === 'supabase' ? 'supabase' : 'planilha';
+  try { r.espelho = JSON.parse(P.getProperty('SB_ESPELHO_ULTIMA') || 'null'); } catch (eE) { r.espelho = null; }
   r.principal = P.getProperty('BANCO_PRINCIPAL') === 'supabase' ? 'supabase' : 'planilha';
   r.ativo = sbPrincipal_();
   try { r.conferencia = JSON.parse(P.getProperty('SB_CONFERENCIA') || 'null'); } catch (e) { r.conferencia = null; }
@@ -14756,4 +14803,118 @@ function sbConferirSeDia_() {
   P.setProperty('SB_CONFERIDO_DIA', hoje);
   var r = sbConferir_(null, true, 150000);
   if (r.resumo.diferentes.length) registrar_('sistema', 'banco: conferência com diferenças', r.resumo.diferentes.join(', '));
+}
+
+/* ================================================================== */
+/* 8.30 ETAPA A — o Supabase GRAVA PRIMEIRO; a planilha vira cópia     */
+/* ================================================================== */
+// Properties BANCO_GRAVA = 'supabase' (Gerenciar acessos › Banco novo; só com o banco principal ligado e a conferência em dia).
+// Então, fora das abas de SB_SO_PLANILHA (senhas, Log…), TODA leitura e gravação do Apps Script vai ao Supabase:
+//  * leitura: as linhas do banco (painel_tabela) + o que este pedido já mudou e ainda não mandou (SB_PEND), sempre coerentes;
+//  * gravação: inserirLinha_/atualizarLinha_/apagarLinha_/gravarLote_/regravarMudadas_/gravarVarias_ só anotam (SB_PEND) e
+//    `sbpAplicar_` manda tudo numa transação (RPC painel_aplicar: tudo ou nada; linha nova ganha o próximo _n; atualização muda só
+//    as colunas mudadas). Manda no fim de cada comTrava_ (antes de soltar a trava), no fim do doPost e dos robôs. Erro no pedido =
+//    nada é gravado. Ao entrar na trava a leitura é refeita (ninguém decide com dado de antes da trava);
+//  * a planilha recebe a cópia do banco de 30 em 30 min (`sbEspelhar_`): o sentido da cópia INVERTE (banco → planilha) para essas abas.
+// Voltar à planilha (`banco.conferir` grava='planilha'): primeiro copia tudo do banco para a planilha, depois troca.
+var SB_P_ = null, SB_PEND = {}, SB_TMP_ = 0;
+function sbPrimeiro_() {
+  if (SB_P_ !== null) return SB_P_;
+  try { SB_P_ = PropertiesService.getScriptProperties().getProperty('BANCO_GRAVA') === 'supabase' && sbLigado_(); } catch (e) { SB_P_ = false; }
+  return SB_P_;
+}
+function sbpAba_(nome) { return !!ESQUEMA[nome] && !SB_SO_PLANILHA[nome] && sbPrimeiro_(); }
+var SBP_ABA_FALSA_ = null;
+function sbpAbaFalsa_(nome) { // ninguém pode escrever direto na planilha destas abas (iria só para a cópia)
+  return { getName: function () { return nome; }, getLastRow: function () { throw falha_('Erro interno: escrita direta na planilha de ' + nome + ' com o Supabase gravando primeiro.'); },
+    getRange: function () { throw falha_('Erro interno: escrita direta na planilha de ' + nome + ' com o Supabase gravando primeiro.'); } };
+}
+function sbpChave_(cab, o) { return cab.indexOf('id') >= 0 ? String(o.id) : String(o._linha); }
+/** A aba como o painel espera ({aba, cab, linhas, nome}), lida do banco + o que este pedido já mudou. */
+function sbpTabela_(nome) {
+  if (!SB_EXEC[nome]) sbPrecarregar_([nome], true);
+  var x = SB_EXEC[nome];
+  if (!x) throw falha_('O banco de dados não respondeu agora. Tente de novo em instantes.');
+  var cab = ESQUEMA[nome], idx = {}; x.cols.forEach(function (c, j) { idx[c] = j; });
+  var faltaCol = cab.filter(function (k) { return idx[k] === undefined && (SB_FORA[nome] || []).indexOf(k) < 0; });
+  if (faltaCol.length) throw falha_('Falta a coluna ' + faltaCol[0] + ' no banco: rode o supabase/esquema.sql e o leitura-rapida.sql de novo.');
+  var p = SB_PEND[nome] || { ins: [], upd: {}, del: {} }, linhas = [];
+  x.linhas.forEach(function (r) {
+    var o = { _linha: +r[idx._n] };
+    cab.forEach(function (k) { o[k] = idx[k] === undefined ? '' : r[idx[k]]; });
+    var k = sbpChave_(cab, o);
+    if (p.del[k]) return;
+    if (p.upd[k]) Object.keys(p.upd[k]).forEach(function (c) { o[c] = p.upd[k][c]; });
+    linhas.push(o);
+  });
+  p.ins.forEach(function (o) { var c = {}; Object.keys(o).forEach(function (k) { c[k] = o[k]; }); c._pend = o; linhas.push(c); });
+  SB_USADAS[nome] = 1; sbNotaLeitura_(nome, 'supabase (grava primeiro)');
+  return { aba: sbpAbaFalsa_(nome), cab: cab, linhas: linhas, nome: nome, _sbp: true };
+}
+function sbpPend_(nome) { return (SB_PEND[nome] = SB_PEND[nome] || { ins: [], upd: {}, del: {} }); }
+function sbpInserir_(tab, obj) {
+  obj._linha = -(++SB_TMP_); // número de verdade sai do banco ao mandar
+  sbpPend_(tab.nome).ins.push(obj);
+  tab.linhas.push(obj);
+  if (sbpQtd_() > 400) sbpAplicar_();
+}
+function sbpAtualizar_(tab, o, mud) {
+  var orig = o._pend || o, p = sbpPend_(tab.nome);
+  if (p.ins.indexOf(orig) >= 0) { Object.keys(mud).forEach(function (k) { if (tab.cab.indexOf(k) >= 0) orig[k] = o[k]; }); return; } // ainda vai como linha nova
+  var k = sbpChave_(tab.cab, o), u = p.upd[k] = p.upd[k] || {};
+  Object.keys(mud).forEach(function (c) { if (tab.cab.indexOf(c) >= 0 && (SB_FORA[tab.nome] || []).indexOf(c) < 0) u[c] = o[c]; });
+  if (sbpQtd_() > 400) sbpAplicar_();
+}
+function sbpApagar_(tab, o) {
+  var orig = o._pend || o, p = sbpPend_(tab.nome), i = p.ins.indexOf(orig);
+  if (i >= 0) { p.ins.splice(i, 1); } else { var k = sbpChave_(tab.cab, o); delete p.upd[k]; p.del[k] = 1; }
+  tab.linhas = tab.linhas.filter(function (x) { return x !== o; });
+}
+function sbpQtd_() { var n = 0; Object.keys(SB_PEND).forEach(function (a) { var p = SB_PEND[a]; n += p.ins.length + Object.keys(p.upd).length + Object.keys(p.del).length; }); return n; }
+/** Manda ao banco, numa transação só, tudo o que este pedido mudou. Falhou = nada foi gravado (erro para quem pediu). */
+function sbpAplicar_() {
+  var abas = Object.keys(SB_PEND).filter(function (a) { var p = SB_PEND[a]; return p.ins.length || Object.keys(p.upd).length || Object.keys(p.del).length; });
+  if (!abas.length) { SB_PEND = {}; return; }
+  var pend = SB_PEND; SB_PEND = {};
+  var ops = abas.map(function (a) {
+    var p = pend[a], cab = ESQUEMA[a], fora = SB_FORA[a] || [];
+    return { t: sbTabela_(a), del: Object.keys(p.del),
+      upd: Object.keys(p.upd).filter(function (k) { return Object.keys(p.upd[k]).length; }).map(function (k) { return { k: k, cols: p.upd[k] }; }),
+      ins: p.ins.map(function (o) { var r = {}; cab.forEach(function (c) { if (fora.indexOf(c) < 0) r[c] = o[c] === null || o[c] === undefined ? '' : String(o[c]); }); return r; }) };
+  });
+  var res;
+  try { res = supabase_('post', 'rpc/painel_aplicar', { p_escritorio: sbEscritorio_(), p_ops: ops }) || {}; }
+  catch (e) {
+    abas.forEach(function (a) { delete SB_EXEC[a]; });
+    throw falha_('Não consegui gravar no banco de dados (' + String(e.message || e).replace(/^Supabase: /, '').slice(0, 160) + '). Nada foi gravado: tente de novo.');
+  }
+  abas.forEach(function (a) {
+    (pend[a].ins || []).forEach(function (o, i) { var n = (res[sbTabela_(a)] || [])[i]; if (n) o._linha = +n; });
+    delete SB_EXEC[a]; // a próxima leitura neste pedido busca de novo (já com o que foi gravado)
+  });
+  try { var P = PropertiesService.getScriptProperties(), suj = JSON.parse(P.getProperty('SB_ESPELHO_SUJO') || '{}'); abas.forEach(function (a) { suj[a] = 1; }); P.setProperty('SB_ESPELHO_SUJO', JSON.stringify(suj)); } catch (eS) { /* a cópia de 30 min confere tudo */ }
+  marcarMudanca_();
+}
+/** A planilha recebe a cópia do banco (abas que o banco grava primeiro). */
+function sbEspelhar_(limiteMs, tudo, so) {
+  var t0 = Date.now(), P = PropertiesService.getScriptProperties(), esc = sbEscritorio_(), feitas = [], erros = [];
+  var suj = {}; try { suj = JSON.parse(P.getProperty('SB_ESPELHO_SUJO') || '{}'); } catch (e) { suj = {}; }
+  Object.keys(ESQUEMA).forEach(function (aba) {
+    if (SB_SO_PLANILHA[aba] || (so ? so.indexOf(aba) < 0 : (!tudo && !suj[aba]))) return;
+    if (Date.now() - t0 > (limiteMs || 60000)) return;
+    try {
+      var x = supabase_('post', 'rpc/painel_tabela', { p_tabela: sbTabela_(aba), p_escritorio: esc });
+      var cab = ESQUEMA[aba], idx = {}; x.cols.forEach(function (c, j) { idx[c] = j; });
+      var maxN = Math.max(+x.max_n || 1, 1), linhas = [];
+      for (var n = 2; n <= maxN; n++) linhas.push(cab.map(function () { return ''; }));
+      x.linhas.forEach(function (r) { var n = +r[idx._n]; if (n >= 2) linhas[n - 2] = cab.map(function (k) { return idx[k] === undefined ? '' : seguro_(r[idx[k]]); }); });
+      var sh = aba_(aba), ult = sh.getLastRow();
+      if (linhas.length) sh.getRange(2, 1, linhas.length, cab.length).setNumberFormat('@').setValues(linhas);
+      if (ult > maxN) sh.getRange(maxN + 1, 1, ult - maxN, cab.length).clearContent();
+      delete suj[aba]; feitas.push(aba);
+    } catch (e) { erros.push(aba + ': ' + (e.message || e)); }
+  });
+  P.setProperty('SB_ESPELHO_SUJO', JSON.stringify(suj));
+  P.setProperty('SB_ESPELHO_ULTIMA', JSON.stringify({ em: new Date().toISOString(), abas: feitas.length, erro: erros[0] || '' }));
+  return { feitas: feitas, erros: erros };
 }

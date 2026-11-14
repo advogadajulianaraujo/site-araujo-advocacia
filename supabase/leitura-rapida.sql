@@ -1,4 +1,4 @@
--- Painel jurídico — passos 2 e 3 do banco novo (8.28 / 8.29): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
+-- Painel jurídico — passos 2, 3 e 4 do banco novo (8.28 / 8.29 / 8.30): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
 -- Rodar UMA vez no Supabase › SQL Editor › New query › colar tudo › Run (depois do esquema.sql). Pode rodar de novo sem perder nada.
 -- Nenhum dado de cliente nem chave está neste arquivo.
 --
@@ -192,6 +192,57 @@ begin
 end $$;
 revoke all on function painel_tabela(text, uuid) from public, anon, authenticated;
 grant execute on function painel_tabela(text, uuid) to service_role;
+
+-- 8) (8.30) GRAVAÇÃO com o Supabase em primeiro lugar: todas as mudanças de um pedido numa transação só (tudo ou nada).
+--    p_ops = [{t, del:[chaves], upd:[{k, cols:{coluna: valor}}], ins:[{coluna: valor}]}]. Chave = id (ou _n nas abas sem id).
+--    Linha nova ganha o próximo número (_n = maior + 1, com trava por tabela); atualização muda SÓ as colunas enviadas;
+--    atualizar uma linha que não existe mais = erro (nada é gravado). Devolve os _n das linhas novas, na ordem.
+create or replace function painel_aplicar(p_escritorio uuid, p_ops jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare op jsonb; t text; ch text; u jsonb; cols text; vals text; n integer; base integer; novos jsonb; res jsonb := '{}'::jsonb;
+        agora text := to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'); linha jsonb; i integer;
+begin
+  for op in select * from jsonb_array_elements(coalesce(p_ops, '[]'::jsonb)) loop
+    t := op ->> 't';
+    if t is null or t !~ '^[a-z_]+$' or t like 'painel\_%' or not exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = t) then
+      raise exception 'tabela inválida: %', t;
+    end if;
+    ch := painel_chave_(t);
+    -- apagar
+    if jsonb_array_length(coalesce(op -> 'del', '[]'::jsonb)) > 0 then
+      execute format('delete from public.%I where escritorio_id = $1 and %I::text in (select jsonb_array_elements_text($2))', t, ch) using p_escritorio, op -> 'del';
+    end if;
+    -- atualizar (só as colunas enviadas)
+    for u in select * from jsonb_array_elements(coalesce(op -> 'upd', '[]'::jsonb)) loop
+      select string_agg(quote_ident(k), ', '), string_agg('x.' || quote_ident(k), ', ') into cols, vals
+        from jsonb_object_keys(u -> 'cols') k
+       where exists (select 1 from information_schema.columns c where c.table_schema = 'public' and c.table_name = t and c.column_name = k)
+         and k not in ('escritorio_id', '_n', '_em', '_sinc', ch);
+      if cols is null then continue; end if;
+      execute format('update public.%1$I as d set (%2$s, _sinc, _em) = (select %3$s, $3, now() from jsonb_populate_record(null::public.%1$I, $4) x) where d.escritorio_id = $1 and d.%4$I::text = $2',
+                     t, cols, vals, ch) using p_escritorio, u ->> 'k', agora, u -> 'cols';
+      get diagnostics n = row_count;
+      if n = 0 then raise exception 'A linha % de % não existe mais no banco (mudou por outro lado). Nada foi gravado.', u ->> 'k', t; end if;
+    end loop;
+    -- inserir (com o próximo número de linha)
+    if jsonb_array_length(coalesce(op -> 'ins', '[]'::jsonb)) > 0 then
+      perform pg_advisory_xact_lock(hashtext(t || ':' || p_escritorio::text));
+      execute format('select coalesce(max(_n), 1) from public.%I where escritorio_id = $1', t) into base using p_escritorio;
+      novos := '[]'::jsonb; i := 0;
+      for linha in select * from jsonb_array_elements(op -> 'ins') loop
+        i := i + 1;
+        novos := novos || jsonb_build_array(linha || jsonb_build_object('escritorio_id', p_escritorio, '_n', base + i, '_sinc', agora));
+      end loop;
+      select string_agg(quote_ident(column_name), ', ' order by ordinal_position) into cols
+        from information_schema.columns where table_schema = 'public' and table_name = t and column_name <> '_em';
+      execute format('insert into public.%1$I (%2$s) select %2$s from jsonb_populate_recordset(null::public.%1$I, $1)', t, cols) using novos;
+      res := res || jsonb_build_object(t, (select jsonb_agg(base + g) from generate_series(1, i) g));
+    end if;
+  end loop;
+  return res;
+end $$;
+revoke all on function painel_aplicar(uuid, jsonb) from public, anon, authenticated;
+grant execute on function painel_aplicar(uuid, jsonb) to service_role;
 
 revoke all on function painel_gravar(text, jsonb) from public, anon, authenticated;
 revoke all on function painel_apagar(text, uuid, jsonb, jsonb, text) from public, anon, authenticated;

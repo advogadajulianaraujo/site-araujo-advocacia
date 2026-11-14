@@ -30,6 +30,16 @@ Nada para de funcionar no meio: a planilha continua sendo a fonte até o passo 3
 - Segurança: só abas conferidas iguais; gravação confere na planilha que a linha é o mesmo registro antes de gravar; qualquer
   dúvida (pendência, banco fora, linha a mais à mão) → planilha. O robô confere e conserta 1×/dia.
 
+## Rumo a sair do Google (pedido da usuária, 14/11/2026): o Supabase vira o banco E o motor do painel
+Por etapas; cada uma testada com dados inventados contra o comportamento atual, desligada até a usuária ligar, e com volta.
+
+| Etapa | O que muda | O que a usuária faz |
+|---|---|---|
+| **A (8.30, pronta)** | O Supabase GRAVA PRIMEIRO (tudo ou nada por pedido); a planilha vira cópia do banco de 30 em 30 min. Login, senhas e Log ainda na planilha. | Gerenciar acessos › Banco novo › "⚡ Gravar primeiro no Supabase". |
+| **B** | Login, senhas (embaralhadas) e o Log no Supabase; sessões no banco. A planilha não é mais necessária para entrar. | Nada além de um botão ("Levar o login para o banco"). |
+| **C** | O motor do painel roda no Supabase (Edge Function `painel`, com o MESMO código do Code.gs nas rotas que não usam o Google): o navegador lê e grava direto, sem o Apps Script. Rotas do Google (documentos, Drive, Agenda, e-mail) seguem pelo Apps Script, que já grava no banco. | Uma vez: autorizar a publicação da função (token do Supabase com permissão de banco/funções, por formulário seguro). |
+| **D** | Desligar o caminho antigo: o Apps Script fica só com os robôs do Google (Gmail/DJEN, Agenda, Drive) gravando no banco; a planilha só como backup. | Nada (só acompanhar a medição e a conferência por alguns dias). |
+
 ## O que a usuária faz (uma vez)
 1. Criar a conta grátis em supabase.com e um projeto na região **São Paulo (sa-east-1)**.
 2. Supabase › SQL Editor › colar `supabase/esquema.sql` › Run.

@@ -19,4 +19,5 @@ N=1600 node .github/motor/teste/bench.js   # tempos com volume parecido com o re
 ```bash
 node .github/motor/teste/principal.js
 PRINCIPAL=1 node .github/motor/teste/rodar.js
+node .github/motor/teste/etapaA.js          # 8.30: Supabase grava primeiro × planilha (mesmas gravações, planilhas iguais)
 ```
