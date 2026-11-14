@@ -29,16 +29,3 @@ Nada para de funcionar no meio: a planilha continua sendo a fonte até o passo 3
 
 ## Custo
 Plano grátis basta para um escritório. Para vender a outros escritórios: plano Pro, cerca de US$ 25 por mês.
-
-## Passo 2 pronto (8.27.0): o painel lê do Supabase e grava nos dois
-- Gravação: cada mudança vai para a planilha e, no fim do mesmo pedido, para o Supabase (linhas mudadas e apagadas).
-  Se o Supabase falhar, a planilha já está certa e a cópia de 30 em 30 minutos acerta o Supabase.
-- Leitura: as listas grandes (Clientes, Processos, Prazos, Intimações, Tarefas, Cobranças, Início, Relatórios) ficam prontas na tabela
-  `respostas`, por perfil (o RH continua sem os totais) ou por pessoa. O navegador lê direto, com o login próprio de cada pessoa no
-  Supabase (token de 1 hora, pedido ao Google com a sessão do painel). Se os dados mudaram, mostra na hora e confere no Google por trás.
-  Supabase fora do ar → lê da planilha, como antes.
-- Segurança: as tabelas brutas só o servidor lê (chave secreta). O navegador só lê `respostas` e `estado`, e o banco confere
-  escritório + perfil + pessoa no token. A senha de cada pessoa no Supabase é aleatória e fica só nas Propriedades do Google.
-- O que fazer: rodar de novo o supabase/esquema.sql (cria `respostas` e `estado`), colar a chave pública (publishable) em
-  Gerenciar acessos › Banco novo, desligar "Allow new users to sign up" em Authentication › Sign In / Providers, e apertar
-  "⏱ Medir velocidade".
