@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.30.0';
+var VERSAO = '8.31.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -314,14 +314,16 @@ function doPost(e) {
   }
   // 8.28: o que foi gravado neste pedido vai ao banco novo (Supabase) antes da resposta, para o painel nunca ler dado atrasado
   sbNovaExecucao_();
-  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); try { if (sbPrimeiro_()) sbpAplicar_(); } catch (eLp) { /* leituras */ } try { sbEnviarSujas_(); } catch (eL) { /* fica pendente */ } return json_({ ok: true, dados: lote }); }
+  if (req.acao === 'lote') { var lote = rotearLote_(req.token, req.dados || {}); try { if (sbPrimeiro_()) sbpAplicar_(); } catch (eLp) { /* leituras */ } try { sbLogAplicar_(); } catch (eLg) { /* fila */ } try { sbEnviarSujas_(); } catch (eL) { /* fica pendente */ } return json_({ ok: true, dados: lote }); }
   try {
     var dados = rotear_(req.acao, req.token, req.dados || {});
     if (sbPrimeiro_()) sbpAplicar_(); // 8.30: o que ficou fora de trava vai agora (erro aqui = nada gravado e a pessoa vê o erro)
+    try { sbLogAplicar_(); } catch (eLg2) { /* fila */ }
     try { sbEnviarSujas_(); } catch (eS) { /* fica pendente */ }
     return json_({ ok: true, dados: dados });
   } catch (err) {
     SB_PEND = {}; // 8.30: pedido com erro não grava nada no banco
+    try { sbLogAplicar_(); } catch (eLg3) { /* o Log do erro fica (ex.: login recusado) */ }
     try { sbEnviarSujas_(); } catch (eS2) { /* fica pendente */ }
     var msg = err && err.publico ? err.message : 'Erro interno. Tente de novo.';
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
@@ -749,6 +751,7 @@ function login_(d) {
         mudanca.bloqueado_ate = new Date(agora.getTime() + BLOQUEIO_MIN * 60000).toISOString();
       }
       atualizarLinha_(tab, linha, mudanca);
+      sbGravarJa_(); // 8.31: a tentativa errada fica gravada mesmo com o "tudo ou nada"
       registrar_(linha.usuario, 'login recusado', 'senha errada (' + t + ')');
       throw falha_(t >= TENTATIVAS_MAX ? 'Muitas tentativas erradas. Usuário bloqueado por ' + BLOQUEIO_MIN + ' minutos.' : generico);
     }
@@ -2059,6 +2062,7 @@ function setConfig_(chave, valor, descricao) {
 }
 
 function registrar_(usuario, acao, detalhe) {
+  try { if (sbLogin_()) { SB_LOG.push({ quando: new Date().toISOString(), usuario: String(usuario || ''), acao: String(acao || ''), detalhe: String(detalhe || '').slice(0, 500) }); return; } } catch (eB) { /* segue na planilha */ } // 8.31
   try {
     var sh = SpreadsheetApp.getActive().getSheetByName('Log');
     if (sh) { sh.appendRow([new Date().toISOString(), seguro_(usuario), seguro_(acao), seguro_(String(detalhe || '').slice(0, 500))]); if (sbLigado_()) sbMarcar_('Log', sh.getLastRow()); }
@@ -9178,6 +9182,16 @@ function tempoRoboHoje_() {
 function arquivarLog_() {
   var hoje = hojeSP_(); if (config_('LOG_ARQUIVADO_DIA') === hoje) return 0;
   setConfig_('LOG_ARQUIVADO_DIA', hoje, 'Último dia em que o robô passou o Log antigo (mais de 180 dias) para LogArquivo');
+  if (sbpAba_('Log')) { // 8.31: Log no banco — move as linhas antigas para LogArquivo pelo banco (sem linhas "subindo")
+    sbLogAplicar_();
+    var tL = tabela_('Log'); if (tL.linhas.length < 4000) return 0;
+    var lim = new Date(Date.now() - 180 * 86400000).toISOString(), velhas = tL.linhas.filter(function (l) { return String(l.quando) < lim; });
+    if (!velhas.length) return 0;
+    var tA = tabela_('LogArquivo');
+    velhas.forEach(function (l) { inserirLinha_(tA, { quando: l.quando, usuario: l.usuario, acao: l.acao, detalhe: l.detalhe }); apagarLinha_(tL, l); });
+    sbpAplicar_();
+    return velhas.length;
+  }
   var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('Log');
   if (!sh || sh.getLastRow() < 4000) return 0;
   var limite = new Date(Date.now() - 180 * 86400000).toISOString();
@@ -9623,9 +9637,7 @@ function relatorioSemana_(d) {
   var usuarios = {};
   usuarios_().forEach(function (x) { usuarios[x.usuario] = x; });
   var pessoas = {};
-  var sh = aba_('Log'), ult = sh.getLastRow();
-  var n = Math.min(Math.max(ult - 1, 0), 30000);
-  var vals = n ? sh.getRange(ult - n + 1, 1, n, 4).getDisplayValues() : [];
+  var vals = ultimasLinhasLog_(30000); // 8.31: da planilha ou do banco
   vals.forEach(function (v) {
     var dia = diaSP_(v[0]);
     if (!dia || dia < ini || dia > fim) return;
@@ -14272,7 +14284,7 @@ function extAnalisar_(d, u) {
 //  * a cópia completa de 30 em 30 min continua (segurança) e também passa por painel_gravar/painel_apagar.
 // Chave secreta SÓ nas Propriedades (SUPABASE_CHAVE); a pública (SUPABASE_PUBLICA) vai ao navegador junto com um código de sessão
 // próprio (painel_sessoes guarda só o SHA-256). Status em Properties SUPABASE_ULTIMA (não na planilha).
-var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google
+var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
 var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
@@ -14328,7 +14340,7 @@ function sbEscritorio_() {
 /** Linha da planilha → linha do banco (a mesma regra na cópia completa e no envio na hora). */
 function sbLinha_(aba, cab, v, n, esc, carimbo) {
   if (v.every(function (x) { return x === ''; })) return null;
-  var fora = SB_FORA[aba] || [], o = { escritorio_id: esc, _n: n, _sinc: carimbo };
+  var fora = sbFora_(aba) || [], o = { escritorio_id: esc, _n: n, _sinc: carimbo };
   cab.forEach(function (col, j) { if (fora.indexOf(col) < 0) o[col] = v[j]; });
   if (cab.indexOf('id') >= 0 && !o.id) return null;
   return o;
@@ -14370,6 +14382,7 @@ function sbApagar_(tab, obj) {
 function sbEnviarSujas_() {
   if (!sbLigado_()) { SB_SUJAS = {}; return; }
   if (sbPrimeiro_() && sbpQtd_()) { try { sbpAplicar_(); } catch (eP) { registrar_('sistema', 'banco: gravação não feita', String(eP.message || eP).slice(0, 300)); } } // 8.30 (robôs)
+  try { sbLogAplicar_(); } catch (eLg) { /* fila */ } // 8.31
   var P = PropertiesService.getScriptProperties(), pend = {};
   try { pend = JSON.parse(P.getProperty('SB_PENDENTES') || '{}'); } catch (e) { pend = {}; }
   var temPend = Object.keys(pend).length > 0;
@@ -14607,7 +14620,7 @@ function bancoConfig_(d, u) {
 var SB_SO_PLANILHA = { Usuarios: 1, Log: 1, LogArquivo: 1, PastasConferir: 1, SiteCliques: 1 };
 var SB_PRINCIPAL_ = null, SB_EXEC = {}, SB_ESCRITAS = {}, SB_LEITURAS = {}, SB_OK_ = null, SB_USADAS = {};
 /** Começo de cada pedido (doPost): nada de um pedido vale para o outro. */
-function sbNovaExecucao_() { SB_P_ = null; SB_PEND = {}; SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
+function sbNovaExecucao_() { SB_LOGIN_ = null; SB_LOG = []; SB_P_ = null; SB_PEND = {}; SB_PRINCIPAL_ = null; SB_LIGADO_ = null; SB_RPC_ = null; SB_OK_ = null; SB_EXEC = {}; SB_ESCRITAS = {}; SB_LEITURAS = {}; SB_USADAS = {}; SB_SUJAS = {}; }
 function sbPrincipal_() {
   if (SB_PRINCIPAL_ !== null) return SB_PRINCIPAL_;
   SB_PRINCIPAL_ = false;
@@ -14624,7 +14637,7 @@ function sbTabelasOk_() {
   if (SB_OK_ === null) { try { SB_OK_ = JSON.parse(PropertiesService.getScriptProperties().getProperty('SB_TABELAS_OK') || '{}'); } catch (e) { SB_OK_ = {}; } }
   return SB_OK_;
 }
-function sbPodeLer_(nome) { return !!ESQUEMA[nome] && !SB_SO_PLANILHA[nome] && !SB_ESCRITAS[nome] && !!sbTabelasOk_()[nome]; }
+function sbPodeLer_(nome) { return !!ESQUEMA[nome] && !sbSoPlanilha_(nome) && !SB_ESCRITAS[nome] && !!sbTabelasOk_()[nome]; }
 function sbNotaLeitura_(nome, de) { SB_LEITURAS[nome] = de; }
 function sbChaveCol_(cab) { return cab.indexOf('id') >= 0 ? 'id' : cab[0]; }
 /** Busca no banco (uma ida para várias abas juntas: UrlFetchApp.fetchAll) e guarda nesta execução. */
@@ -14652,7 +14665,7 @@ function sbLerTabela_(nome) {
   var sh = aba_(nome), cab = ESQUEMA[nome], ult = sh.getLastRow();
   if (+x.max_n !== ult && !(+x.n === 0 && ult <= 1)) { sbNotaLeitura_(nome, 'planilha (linhas diferentes: banco ' + x.max_n + ', planilha ' + ult + ')'); return null; }
   var idx = {}; x.cols.forEach(function (c, j) { idx[c] = j; });
-  var faltaCol = cab.filter(function (k) { return idx[k] === undefined && (SB_FORA[nome] || []).indexOf(k) < 0; });
+  var faltaCol = cab.filter(function (k) { return idx[k] === undefined && (sbFora_(nome) || []).indexOf(k) < 0; });
   if (faltaCol.length) { sbNotaLeitura_(nome, 'planilha (coluna nova sem o esquema.sql: ' + faltaCol[0] + ')'); return null; }
   var kc = sbChaveCol_(cab), linhas = x.linhas.map(function (r) {
     var o = { _linha: +r[idx._n] };
@@ -14697,6 +14710,7 @@ function sbConferir_(abas, consertar, limiteMs) {
   var t0 = Date.now(), esc = sbEscritorio_(), rpc = sbTemRpc_(), P = PropertiesService.getScriptProperties();
   var ok = sbTabelasOk_(), res = [], lista = abas && abas.length ? abas : Object.keys(ESQUEMA);
   try { sbEnviarSujas_(); } catch (eP) { /* segue */ }
+  if (sbPrimeiro_()) { try { sbEspelhar_(60000, false); } catch (eE) { /* confere assim mesmo */ } } // 8.31: a planilha recebe o que ainda não foi copiado
   lista.forEach(function (aba) {
     if (!ESQUEMA[aba]) return;
     if (Date.now() - t0 > (limiteMs || 240000)) { res.push({ aba: aba, faltou_tempo: true }); return; }
@@ -14716,7 +14730,7 @@ function sbConferir_(abas, consertar, limiteMs) {
   return { resumo: resumo, abas: res };
 }
 function sbConferirAba_(aba, esc) {
-  var cab = ESQUEMA[aba], fora = SB_FORA[aba] || [], temId = cab.indexOf('id') >= 0;
+  var cab = ESQUEMA[aba], fora = sbFora_(aba) || [], temId = cab.indexOf('id') >= 0;
   var r = { aba: aba, planilha: 0, banco: 0, faltam: 0, sobram: 0, diferentes: 0, repetidos: 0, exemplos: [] };
   try {
     var sh = aba_(aba), n = sh.getLastRow() - 1;
@@ -14774,26 +14788,36 @@ function bancoConferir_(d, u) {
   if (d.grava !== undefined) { // 8.30: quem grava primeiro
     if (d.grava === 'supabase') {
       if (!sbPrincipal_()) throw falha_('Ligue antes o "Supabase como banco principal" (e confira a planilha × banco).');
-      var okG = sbTabelasOk_(), faltaG = Object.keys(ESQUEMA).filter(function (a) { return !SB_SO_PLANILHA[a] && !okG[a]; });
+      var okG = sbTabelasOk_(), faltaG = Object.keys(ESQUEMA).filter(function (a) { return !sbSoPlanilha_(a) && !okG[a]; });
       if (faltaG.length) throw falha_('Estas abas ainda não estão iguais no banco: ' + faltaG.slice(0, 8).join(', ') + '. Use "Conferir e consertar".');
       try { supabase_('post', 'rpc/painel_aplicar', { p_escritorio: sbEscritorio_(), p_ops: [] }); }
       catch (eA) { throw falha_('Falta rodar o supabase/leitura-rapida.sql novo (8.30) no SQL Editor do Supabase.'); }
       comTrava_(function () { P.setProperty('BANCO_GRAVA', 'supabase'); }); // com a trava: nenhum robô gravando na planilha no meio
       registrar_(u.usuario, 'banco: Supabase grava primeiro', '');
     } else {
+      if (P.getProperty('BANCO_LOGIN') === 'supabase') throw falha_('Antes, use "Login e senhas de volta na planilha".');
       comTrava_(function () { var e = sbEspelhar_(240000, true); if (e.erros.length) throw falha_('Não consegui copiar tudo do banco para a planilha (' + e.erros[0] + '). Nada mudou.'); P.setProperty('BANCO_GRAVA', 'planilha'); });
       Object.keys(ESQUEMA).forEach(function (a) { P.deleteProperty('SB_DIG_' + a); });
       registrar_(u.usuario, 'banco: planilha grava primeiro', 'cópia completa banco → planilha feita');
     }
     SB_P_ = null;
   }
+  if (d.login !== undefined) { // 8.31 Etapa B
+    if (d.login === 'supabase') {
+      if (P.getProperty('BANCO_GRAVA') !== 'supabase') throw falha_('Ligue antes o "Gravar primeiro no Supabase".');
+      sbLigarLogin_(); registrar_(u.usuario, 'banco: login e Log no Supabase', '');
+    } else {
+      sbDesligarLogin_(); registrar_(u.usuario, 'banco: login e Log de volta na planilha', 'cópia completa banco → planilha feita');
+    }
+  }
+  r.login = P.getProperty('BANCO_LOGIN') === 'supabase' ? 'supabase' : 'planilha';
   r.grava = P.getProperty('BANCO_GRAVA') === 'supabase' ? 'supabase' : 'planilha';
   try { r.espelho = JSON.parse(P.getProperty('SB_ESPELHO_ULTIMA') || 'null'); } catch (eE) { r.espelho = null; }
   r.principal = P.getProperty('BANCO_PRINCIPAL') === 'supabase' ? 'supabase' : 'planilha';
   r.ativo = sbPrincipal_();
   try { r.conferencia = JSON.parse(P.getProperty('SB_CONFERENCIA') || 'null'); } catch (e) { r.conferencia = null; }
   r.tabelas_ok = Object.keys(sbTabelasOk_()).sort();
-  r.so_planilha = Object.keys(SB_SO_PLANILHA);
+  r.so_planilha = Object.keys(SB_SO_PLANILHA).filter(function (a) { return sbSoPlanilha_(a); });
   return r;
 }
 /** Robô: uma conferência por dia (com conserto) — no copiarSeHora_. */
@@ -14823,7 +14847,7 @@ function sbPrimeiro_() {
   try { SB_P_ = PropertiesService.getScriptProperties().getProperty('BANCO_GRAVA') === 'supabase' && sbLigado_(); } catch (e) { SB_P_ = false; }
   return SB_P_;
 }
-function sbpAba_(nome) { return !!ESQUEMA[nome] && !SB_SO_PLANILHA[nome] && sbPrimeiro_(); }
+function sbpAba_(nome) { return !!ESQUEMA[nome] && !sbSoPlanilha_(nome) && sbPrimeiro_(); }
 var SBP_ABA_FALSA_ = null;
 function sbpAbaFalsa_(nome) { // ninguém pode escrever direto na planilha destas abas (iria só para a cópia)
   return { getName: function () { return nome; }, getLastRow: function () { throw falha_('Erro interno: escrita direta na planilha de ' + nome + ' com o Supabase gravando primeiro.'); },
@@ -14836,7 +14860,7 @@ function sbpTabela_(nome) {
   var x = SB_EXEC[nome];
   if (!x) throw falha_('O banco de dados não respondeu agora. Tente de novo em instantes.');
   var cab = ESQUEMA[nome], idx = {}; x.cols.forEach(function (c, j) { idx[c] = j; });
-  var faltaCol = cab.filter(function (k) { return idx[k] === undefined && (SB_FORA[nome] || []).indexOf(k) < 0; });
+  var faltaCol = cab.filter(function (k) { return idx[k] === undefined && (sbFora_(nome) || []).indexOf(k) < 0; });
   if (faltaCol.length) throw falha_('Falta a coluna ' + faltaCol[0] + ' no banco: rode o supabase/esquema.sql e o leitura-rapida.sql de novo.');
   var p = SB_PEND[nome] || { ins: [], upd: {}, del: {} }, linhas = [];
   x.linhas.forEach(function (r) {
@@ -14862,7 +14886,7 @@ function sbpAtualizar_(tab, o, mud) {
   var orig = o._pend || o, p = sbpPend_(tab.nome);
   if (p.ins.indexOf(orig) >= 0) { Object.keys(mud).forEach(function (k) { if (tab.cab.indexOf(k) >= 0) orig[k] = o[k]; }); return; } // ainda vai como linha nova
   var k = sbpChave_(tab.cab, o), u = p.upd[k] = p.upd[k] || {};
-  Object.keys(mud).forEach(function (c) { if (tab.cab.indexOf(c) >= 0 && (SB_FORA[tab.nome] || []).indexOf(c) < 0) u[c] = o[c]; });
+  Object.keys(mud).forEach(function (c) { if (tab.cab.indexOf(c) >= 0 && (sbFora_(tab.nome) || []).indexOf(c) < 0) u[c] = o[c]; });
   if (sbpQtd_() > 400) sbpAplicar_();
 }
 function sbpApagar_(tab, o) {
@@ -14877,7 +14901,7 @@ function sbpAplicar_() {
   if (!abas.length) { SB_PEND = {}; return; }
   var pend = SB_PEND; SB_PEND = {};
   var ops = abas.map(function (a) {
-    var p = pend[a], cab = ESQUEMA[a], fora = SB_FORA[a] || [];
+    var p = pend[a], cab = ESQUEMA[a], fora = sbFora_(a) || [];
     return { t: sbTabela_(a), del: Object.keys(p.del),
       upd: Object.keys(p.upd).filter(function (k) { return Object.keys(p.upd[k]).length; }).map(function (k) { return { k: k, cols: p.upd[k] }; }),
       ins: p.ins.map(function (o) { var r = {}; cab.forEach(function (c) { if (fora.indexOf(c) < 0) r[c] = o[c] === null || o[c] === undefined ? '' : String(o[c]); }); return r; }) };
@@ -14900,7 +14924,7 @@ function sbEspelhar_(limiteMs, tudo, so) {
   var t0 = Date.now(), P = PropertiesService.getScriptProperties(), esc = sbEscritorio_(), feitas = [], erros = [];
   var suj = {}; try { suj = JSON.parse(P.getProperty('SB_ESPELHO_SUJO') || '{}'); } catch (e) { suj = {}; }
   Object.keys(ESQUEMA).forEach(function (aba) {
-    if (SB_SO_PLANILHA[aba] || (so ? so.indexOf(aba) < 0 : (!tudo && !suj[aba]))) return;
+    if (sbSoPlanilha_(aba) || (so ? so.indexOf(aba) < 0 : (!tudo && !suj[aba]))) return;
     if (Date.now() - t0 > (limiteMs || 60000)) return;
     try {
       var x = supabase_('post', 'rpc/painel_tabela', { p_tabela: sbTabela_(aba), p_escritorio: esc });
@@ -14917,4 +14941,75 @@ function sbEspelhar_(limiteMs, tudo, so) {
   P.setProperty('SB_ESPELHO_SUJO', JSON.stringify(suj));
   P.setProperty('SB_ESPELHO_ULTIMA', JSON.stringify({ em: new Date().toISOString(), abas: feitas.length, erro: erros[0] || '' }));
   return { feitas: feitas, erros: erros };
+}
+
+/* ================================================================== */
+/* 8.31 ETAPA B — login, senhas e o Log também no Supabase            */
+/* ================================================================== */
+// Properties BANCO_LOGIN = 'supabase' (só com BANCO_GRAVA = 'supabase'). Então Usuarios (com hash/salt — painel_ler NUNCA entrega essas
+// duas colunas ao navegador), Log e LogArquivo passam a ser gravadas primeiro no banco, como as outras: o painel entra, lê e grava mesmo
+// com a planilha fora do ar. O Log vai por uma fila própria (SB_LOG) que nunca é descartada (nem quando o pedido dá erro: "login recusado"
+// tem de ficar). As tentativas de senha errada são gravadas na hora (sbGravarJa_), senão o "tudo ou nada" apagaria o bloqueio.
+// Continuam só na planilha: PastasConferir e SiteCliques (robô do Drive e cliques do site; copiadas ao banco como antes).
+var SB_LOGIN_ = null, SB_LOG = [];
+function sbLogin_() {
+  if (SB_LOGIN_ !== null) return SB_LOGIN_;
+  try { SB_LOGIN_ = PropertiesService.getScriptProperties().getProperty('BANCO_LOGIN') === 'supabase' && sbPrimeiro_(); } catch (e) { SB_LOGIN_ = false; }
+  return SB_LOGIN_;
+}
+var SB_ETAPA_B_ = { Usuarios: 1, Log: 1, LogArquivo: 1 };
+function sbSoPlanilha_(aba) { return !!SB_SO_PLANILHA[aba] && !(SB_ETAPA_B_[aba] && sbLogin_()); }
+function sbFora_(aba) { return aba === 'Usuarios' && sbLogin_() ? [] : SB_FORA[aba]; }
+/** Grava já (ex.: tentativa de senha errada antes de recusar o login). */
+function sbGravarJa_() { if (sbPrimeiro_() && sbpQtd_()) sbpAplicar_(); }
+/** Fila do Log: vai ao banco no fim do pedido/robô, dê certo ou não. */
+function sbLogAplicar_() {
+  if (!SB_LOG.length) return;
+  var lote = SB_LOG; SB_LOG = [];
+  var P = PropertiesService.getScriptProperties(), antes = [];
+  try { antes = JSON.parse(P.getProperty('SB_LOG_PEND') || '[]'); } catch (e) { antes = []; }
+  var todos = antes.concat(lote);
+  try {
+    supabase_('post', 'rpc/painel_aplicar', { p_escritorio: sbEscritorio_(), p_ops: [{ t: 'log', ins: todos }] });
+    if (antes.length) P.deleteProperty('SB_LOG_PEND');
+    try { var suj = JSON.parse(P.getProperty('SB_ESPELHO_SUJO') || '{}'); suj.Log = 1; P.setProperty('SB_ESPELHO_SUJO', JSON.stringify(suj)); } catch (eS) { /* a cópia confere */ }
+  } catch (e) { P.setProperty('SB_LOG_PEND', JSON.stringify(todos.slice(-300))); } // tenta de novo no próximo pedido
+}
+/** As últimas n linhas do Log como [quando, usuario, acao, detalhe] (planilha ou banco). */
+function ultimasLinhasLog_(n) {
+  if (sbpAba_('Log')) return tabela_('Log').linhas.slice(-n).map(function (l) { return [l.quando, l.usuario, l.acao, l.detalhe]; });
+  var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n);
+  return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : [];
+}
+/** Etapa B ligar: dentro da trava leva Usuarios (com as senhas embaralhadas), Log e LogArquivo inteiros da planilha para o banco. */
+function sbLigarLogin_() {
+  var P = PropertiesService.getScriptProperties(), esc = sbEscritorio_();
+  var x = supabase_('post', 'rpc/painel_tabela', { p_tabela: 'usuarios', p_escritorio: esc });
+  if (x.cols.indexOf('hash') < 0 || x.cols.indexOf('salt') < 0) throw falha_('Falta rodar o supabase/leitura-rapida.sql novo (8.31) no SQL Editor do Supabase.');
+  comTrava_(function () {
+    ['Usuarios', 'Log', 'LogArquivo'].forEach(function (aba) {
+      var carimbo = new Date().toISOString(), cab = ESQUEMA[aba], sh = aba_(aba), n = sh.getLastRow() - 1, linhas = [];
+      (n > 0 ? sh.getRange(2, 1, n, cab.length).getDisplayValues() : []).forEach(function (v, k) {
+        if (v.every(function (c) { return c === ''; })) return;
+        var o = { escritorio_id: esc, _n: k + 2, _sinc: carimbo };
+        cab.forEach(function (c, j) { o[c] = v[j]; });
+        if (cab.indexOf('id') >= 0 && !o.id) return;
+        linhas.push(o);
+      });
+      sbGravar_(aba, linhas);
+      supabase_('post', 'rpc/painel_apagar', { p_tabela: sbTabela_(aba), p_escritorio: esc, p_chaves: null, p_manter: linhas.map(function (o) { return sbChaveDe_(cab, o); }), p_ate: carimbo });
+    });
+    P.setProperty('BANCO_LOGIN', 'supabase');
+  });
+  SB_LOGIN_ = null;
+}
+/** Etapa B desligar: copia as três do banco para a planilha e só então volta. */
+function sbDesligarLogin_() {
+  comTrava_(function () {
+    sbLogAplicar_();
+    var e = sbEspelhar_(240000, false, ['Usuarios', 'Log', 'LogArquivo']);
+    if (e.erros.length) throw falha_('Não consegui copiar do banco para a planilha (' + e.erros[0] + '). Nada mudou.');
+    PropertiesService.getScriptProperties().setProperty('BANCO_LOGIN', 'planilha');
+  });
+  SB_LOGIN_ = null;
 }

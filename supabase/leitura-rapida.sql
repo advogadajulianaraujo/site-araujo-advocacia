@@ -1,4 +1,4 @@
--- Painel jurídico — passos 2, 3 e 4 do banco novo (8.28 / 8.29 / 8.30): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
+-- Painel jurídico — passos 2 a 5 do banco novo (8.28 / 8.29 / 8.30 / 8.31): o painel LÊ direto do Supabase; gravar continua pelo Apps Script.
 -- Rodar UMA vez no Supabase › SQL Editor › New query › colar tudo › Run (depois do esquema.sql). Pode rodar de novo sem perder nada.
 -- Nenhum dado de cliente nem chave está neste arquivo.
 --
@@ -22,6 +22,10 @@ begin
     execute format('create index if not exists %I on public.%I (escritorio_id, _em)', t || '_em_idx', t);
   end loop;
 end $$;
+
+-- 1b) (8.31) senhas embaralhadas no banco (só o servidor lê; painel_ler nunca entrega hash/salt)
+alter table usuarios add column if not exists hash text;
+alter table usuarios add column if not exists salt text;
 
 -- 2) sessões do banco (uma por login; só o Apps Script cria e apaga)
 create table if not exists painel_sessoes (
@@ -105,7 +109,7 @@ begin
            || case when (g -> 'outros') is not null then ', ' || meu || ' as _meu' else '' end into cols
       from information_schema.columns
      where table_schema = 'public' and table_name = t
-       and column_name not in ('escritorio_id', '_sinc')
+       and column_name not in ('escritorio_id', '_sinc', 'hash', 'salt') -- 8.31: senha embaralhada NUNCA vai ao navegador
        and (column_name in ('_n', '_em')
             or ((g -> 'cols') is null or (g -> 'cols') ? column_name)
                and not coalesce((g -> 'fora') ? column_name, false));

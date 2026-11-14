@@ -1154,3 +1154,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   em sequência: `Utilities.__uuid` no simulador) e as planilhas ficam IGUAIS; tudo ou nada; banco fora; navegador vê na hora; robô em lote;
   voltar. Junto: rodar.js (45), principal.js (28), PRINCIPAL=1 rodar.js (46) sem falhas.
 
+## 8.31.0 Etapa B — login, senhas e Log também no Supabase (medição real de 14/11: telas 5× a 21× mais rápidas, todas "igual")
+
+- Properties BANCO_LOGIN = 'supabase' (botão "🔐 Levar o login e as senhas para o Supabase"; rota `banco.conferir` login=supabase|planilha;
+  exige BANCO_GRAVA = supabase e o leitura-rapida.sql 8.31: colunas `hash`/`salt` em usuarios e `painel_ler` que NUNCA devolve essas duas).
+  `sbLigarLogin_` (dentro da trava) copia Usuarios COM hash/salt, Log e LogArquivo inteiros; `sbDesligarLogin_` espelha as três e volta.
+- Então `sbSoPlanilha_(aba)` tira Usuarios/Log/LogArquivo de SB_SO_PLANILHA (`SB_ETAPA_B_`) e `sbFora_('Usuarios')` = [] (as funções do
+  banco usam sbSoPlanilha_/sbFora_, nunca SB_SO_PLANILHA/SB_FORA direto). PastasConferir e SiteCliques continuam só na planilha.
+- `registrar_` → fila `SB_LOG` (nunca descartada, nem com erro no pedido) → `sbLogAplicar_` no fim do doPost (sucesso e erro) e no
+  `sbEnviarSujas_`; falhou → Properties SB_LOG_PEND (até 300) e tenta no próximo pedido. Login com senha errada grava a tentativa NA HORA
+  (`sbGravarJa_`), senão o "tudo ou nada" apagaria o bloqueio de 5 erros. `relatorioSemana_` lê `ultimasLinhasLog_` (planilha ou banco;
+  no motor é trocada pela leitura da aba falsa). `arquivarLog_` no banco move as linhas antigas para LogArquivo sem linhas "subindo".
+- A conferência leva antes a cópia banco → planilha das abas pendentes (`sbEspelhar_`), para não acusar diferença de momento.
+- Teste `.github/motor/teste/etapaB.js`: login certo, 5 erros + bloqueio, pessoa inexistente, usuário novo, tarefa, troca de senha — mesmas
+  respostas e planilhas iguais nos dois escritórios; o navegador nunca recebe hash/salt; COM A PLANILHA FORA DO AR (`S.planilhaFora`) o
+  painel entra, lista clientes e prazos e grava tarefa; desligar volta tudo para a planilha.
+- Próximas: Etapa C (motor do painel numa Edge Function do Supabase, sem o Apps Script nas telas) e D (desligar o caminho antigo).
+

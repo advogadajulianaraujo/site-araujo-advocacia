@@ -2495,13 +2495,25 @@
         ehSb ? h('div', { class: 'peq' }, h('strong', {}, 'Quem grava primeiro: '), x.grava === 'supabase'
           ? `o Supabase (a planilha recebe a cópia do banco de 30 em 30 min${x.espelho ? '; última cópia ' + quando(x.espelho.em) + (x.espelho.erro ? ' ⚠ ' + x.espelho.erro : '') : ''}).`
           : 'a planilha (e o Supabase recebe na hora).') : null,
+        ehSb && x.grava === 'supabase' ? h('div', { class: 'peq' }, h('strong', {}, 'Login, senhas e registro de atividades: '), x.login === 'supabase'
+          ? 'no Supabase (o painel entra, lê e grava mesmo com a planilha fora do ar; as senhas continuam embaralhadas e nunca vão ao navegador).'
+          : 'ainda na planilha.') : null,
         h('div', { class: 'acoes' }, botao('🔎 Conferir planilha × banco', conferir(false), 'mini sec'), botao('🔧 Conferir e consertar', conferir(true), 'mini sec'),
           ehSb && x.grava !== 'supabase' ? botao('⚡ Gravar primeiro no Supabase (planilha vira cópia)', async ev => {
             if (!confirm('Passar a gravar primeiro no Supabase? A planilha passa a receber a cópia do banco de 30 em 30 minutos. Dá para voltar a qualquer momento (o painel copia tudo do banco para a planilha antes de trocar).')) return;
             ev.target.disabled = true;
             try { desenharPrincipal(await api('banco.conferir', { grava: 'supabase' })); avisar('Pronto: o Supabase grava primeiro.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
           }, 'mini') : null,
-          ehSb && x.grava === 'supabase' ? botao('Voltar a gravar primeiro na planilha', async ev => {
+          ehSb && x.grava === 'supabase' && x.login !== 'supabase' ? botao('🔐 Levar o login e as senhas para o Supabase', async ev => {
+            if (!confirm('Levar o login, as senhas (embaralhadas) e o registro de atividades para o Supabase? Depois disso o painel funciona mesmo se a planilha cair. Dá para voltar.')) return;
+            ev.target.disabled = true; ev.target.textContent = 'Levando…';
+            try { desenharPrincipal(await api('banco.conferir', { login: 'supabase' })); avisar('Pronto: login e senhas no Supabase.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini') : null,
+          ehSb && x.login === 'supabase' ? botao('Login e senhas de volta na planilha', async ev => {
+            ev.target.disabled = true;
+            try { desenharPrincipal(await api('banco.conferir', { login: 'planilha' })); avisar('Login e senhas de volta na planilha (copiados do banco antes).'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini sec') : null,
+          ehSb && x.grava === 'supabase' && x.login !== 'supabase' ? botao('Voltar a gravar primeiro na planilha', async ev => {
             ev.target.disabled = true; ev.target.textContent = 'Copiando o banco para a planilha…';
             try { desenharPrincipal(await api('banco.conferir', { grava: 'planilha' })); avisar('A planilha voltou a gravar primeiro (recebeu tudo do banco antes).'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
           }, 'mini sec') : null,
@@ -3044,7 +3056,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.30.0';
+  const VERSAO_PAINEL = '8.31.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

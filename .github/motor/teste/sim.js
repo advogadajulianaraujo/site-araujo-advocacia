@@ -10,7 +10,7 @@ function sql(q, papel) {
   catch (e) { const m = /ERROR:\s+([^\n]*)/.exec(String(e.stderr)); throw Object.assign(new Error(m ? m[1] : String(e.stderr)), { pg: true }); }
 }
 const lit = s => "'" + String(s).replace(/'/g, "''") + "'";
-let contaFetch = 0, foraDoAr = false;
+let contaFetch = 0, foraDoAr = false, planilhaFora = false;
 // ---------- mini PostgREST (só o que o Code.gs e o banco.js usam) ----------
 function postgrest(url, op, papel) {
   contaFetch++;
@@ -68,7 +68,7 @@ function criarGoogle() {
     };
     abas.set(nome, sh); return sh;
   }
-  const ss = { getSheetByName: n => abas.get(n) || null, insertSheet: n => aba(n), toast() {}, getId: () => 'planilha', getSheets: () => [...abas.values()] };
+  const ss = { getSheetByName: n => { if (planilhaFora && !g.__semPlanilhaFora) throw new Error('Planilha fora do ar (simulado)'); return abas.get(n) || null; }, insertSheet: n => aba(n), toast() {}, getId: () => 'planilha', getSheets: () => [...abas.values()] };
   const fmt = (d, tz, f) => { // implementação independente da do motor: Brasília = UTC−3 fixo
     d = new Date(d); const b = new Date(d.getTime() - 3 * 3600000), p = n => String(n).padStart(2, '0');
     const dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
@@ -117,4 +117,4 @@ function criarNavegador() {
   vm.runInContext(fs.readFileSync(REPO + '/painel/banco.js', 'utf8'), ctx, { filename: 'banco.js' });
   return ctx;
 }
-module.exports = { foraDoAr: v => { foraDoAr = v; }, criarGoogle, criarNavegador, sql, postgrest, contas: () => contaFetch };
+module.exports = { planilhaFora: v => { planilhaFora = v; }, foraDoAr: v => { foraDoAr = v; }, criarGoogle, criarNavegador, sql, postgrest, contas: () => contaFetch };

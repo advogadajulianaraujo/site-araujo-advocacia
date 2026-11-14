@@ -35,8 +35,8 @@ Por etapas; cada uma testada com dados inventados contra o comportamento atual, 
 
 | Etapa | O que muda | O que a usuária faz |
 |---|---|---|
-| **A (8.30, pronta)** | O Supabase GRAVA PRIMEIRO (tudo ou nada por pedido); a planilha vira cópia do banco de 30 em 30 min. Login, senhas e Log ainda na planilha. | Gerenciar acessos › Banco novo › "⚡ Gravar primeiro no Supabase". |
-| **B** | Login, senhas (embaralhadas) e o Log no Supabase; sessões no banco. A planilha não é mais necessária para entrar. | Nada além de um botão ("Levar o login para o banco"). |
+| **A (8.30, ligada em 14/11)** | O Supabase GRAVA PRIMEIRO (tudo ou nada por pedido); a planilha vira cópia do banco de 30 em 30 min. Login, senhas e Log ainda na planilha. | Gerenciar acessos › Banco novo › "⚡ Gravar primeiro no Supabase". |
+| **B (8.31, pronta)** | Login, senhas (embaralhadas, nunca vão ao navegador) e o registro de atividades no Supabase: o painel entra, lê e grava com a planilha fora do ar. | Rodar o `leitura-rapida.sql` de novo + Code.gs novo + botão "🔐 Levar o login e as senhas para o Supabase". |
 | **C** | O motor do painel roda no Supabase (Edge Function `painel`, com o MESMO código do Code.gs nas rotas que não usam o Google): o navegador lê e grava direto, sem o Apps Script. Rotas do Google (documentos, Drive, Agenda, e-mail) seguem pelo Apps Script, que já grava no banco. | Uma vez: autorizar a publicação da função (token do Supabase com permissão de banco/funções, por formulário seguro). |
 | **D** | Desligar o caminho antigo: o Apps Script fica só com os robôs do Google (Gmail/DJEN, Agenda, Drive) gravando no banco; a planilha só como backup. | Nada (só acompanhar a medição e a conferência por alguns dias). |
 

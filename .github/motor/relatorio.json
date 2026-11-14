@@ -1,5 +1,5 @@
 {
- "versao": "8.30.0",
+ "versao": "8.31.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -194,7 +194,6 @@
     "Avisos",
     "Clientes",
     "Intimacoes",
-    "Log",
     "Prazos",
     "Processos",
     "Tarefas",
@@ -343,7 +342,6 @@
    "tabelas": [
     "Clientes",
     "Intimacoes",
-    "Log",
     "Prazos",
     "Processos",
     "Tarefas",
