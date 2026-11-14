@@ -1,0 +1,371 @@
+{
+ "versao": "8.28.0",
+ "configLivre": [
+  "ACAO_COB_IGNORADOS",
+  "AGENDAS",
+  "AGENDA_SINC",
+  "ALERTA_ROBO_EM",
+  "ASSIN_ANTIGAS",
+  "DATAJUD_ERRO",
+  "DATAJUD_OK",
+  "DATAJUD_ULTIMA",
+  "DJEN_NAVEGADOR_ERRO",
+  "DJEN_NAVEGADOR_ULTIMA",
+  "FUTURE_USUARIOS",
+  "IA_ERRO",
+  "IA_LIGADA",
+  "IA_ULTIMA",
+  "LINK_AVALIACAO",
+  "PIX_TOLERANCIA_JUROS",
+  "PIX_ULTIMA",
+  "RESP_EPROC",
+  "RESP_INICIAL",
+  "RESP_PADRAO",
+  "RESP_PJE",
+  "RESP_SECRETARIA",
+  "RESUMO_EMAIL_DIA",
+  "ROBO_GMAIL_OK",
+  "ROBO_ULTIMA_EXECUCAO",
+  "ROBO_ULTIMO_RESULTADO"
+ ],
+ "rotas": {
+  "resumo": {
+   "tabelas": [
+    "Clientes",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "GmailApp",
+    "PropertiesService",
+    "Session",
+    "Utilities"
+   ],
+   "funcoes": 30
+  },
+  "clientes.listar": {
+   "tabelas": [
+    "Assinaturas",
+    "Clientes",
+    "Honorarios",
+    "Leads",
+    "Parcelas",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 16
+  },
+  "clientes.obter": {
+   "tabelas": [
+    "Assinaturas",
+    "Clientes",
+    "Honorarios",
+    "Leads",
+    "ObsArquivo",
+    "Parcelas",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 19
+  },
+  "processos.listar": {
+   "tabelas": [
+    "Clientes",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 13
+  },
+  "prazos.listar": {
+   "tabelas": [
+    "Clientes",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 19
+  },
+  "intimacoes.listar": {
+   "tabelas": [
+    "Clientes",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 10
+  },
+  "tarefas.listar": {
+   "tabelas": [
+    "Avisos",
+    "Clientes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 28
+  },
+  "feriados.listar": {
+   "tabelas": [
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 8
+  },
+  "equipe.listar": {
+   "tabelas": [
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 9
+  },
+  "trabalho.aguardando": {
+   "tabelas": [
+    "Clientes",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 11
+  },
+  "inicio.acoes": {
+   "tabelas": [
+    "Audiencias",
+    "Clientes",
+    "Eventos",
+    "Feriados",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "CacheService",
+    "CalendarApp",
+    "Utilities"
+   ],
+   "funcoes": 42
+  },
+  "audiencias.listar": {
+   "tabelas": [
+    "Audiencias",
+    "Clientes",
+    "Eventos",
+    "Feriados",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "CacheService",
+    "CalendarApp",
+    "Utilities"
+   ],
+   "funcoes": 36
+  },
+  "eu.painel": {
+   "tabelas": [
+    "Avisos",
+    "Clientes",
+    "Intimacoes",
+    "Log",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 32
+  },
+  "documentos.assinaturas": {
+   "tabelas": [
+    "Assinaturas",
+    "Clientes",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 16
+  },
+  "fluxos.processo": {
+   "tabelas": [
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 17
+  },
+  "prazos.memoria": {
+   "tabelas": [
+    "Feriados",
+    "Prazos",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 24
+  },
+  "fin.resumo": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 26
+  },
+  "fin.honorarios": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 15
+  },
+  "fin.honorario": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Recebimentos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 17
+  },
+  "fin.areceber": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 17
+  },
+  "fin.pix": {
+   "tabelas": [
+    "Clientes",
+    "Parcelas",
+    "Pix",
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 9
+  },
+  "fin.acaoCobranca": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 18
+  },
+  "fin.conferencia": {
+   "tabelas": [
+    "Clientes",
+    "Honorarios",
+    "Parcelas",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 18
+  },
+  "indicadores.mes": {
+   "tabelas": [
+    "Assinaturas",
+    "Clientes",
+    "Honorarios",
+    "Intimacoes",
+    "Parcelas",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 21
+  },
+  "relatorio.semana": {
+   "tabelas": [
+    "Clientes",
+    "Intimacoes",
+    "Log",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 15
+  },
+  "relatorio.cumpridos": {
+   "tabelas": [
+    "Clientes",
+    "Prazos",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 13
+  }
+ },
+ "funcoes": 122
+}
