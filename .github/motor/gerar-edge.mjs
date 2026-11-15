@@ -70,6 +70,7 @@ function sbAntesDaRota_() {} function sbDepoisDaRota_() {}
 function comTrava_(fn) { return fn(); }
 function comMemoria_(acao, u, dados, fn) { return fn(); }
 function marcarMudanca_() {}
+function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function garantirGatilho_() {} // 8.33: os gatilhos dos robôs são do Apps Script (ele confere sozinho)
 function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function ultimasLinhasLog_(n) { return tabela_('Log').linhas.slice(-n).map(function (l) { return [l.quando, l.usuario, l.acao, l.detalhe]; }); }

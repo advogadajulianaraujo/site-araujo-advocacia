@@ -1503,3 +1503,35 @@ alter table despesas enable row level security;
 drop policy if exists "despesas: só o próprio escritório" on despesas;
 create policy "despesas: só o próprio escritório" on despesas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
 
+-- 8.35: cópia do Google Agenda (um evento por linha; o Apps Script atualiza de 10 em 10 min)
+create table if not exists agenda_eventos (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "mes" text,
+  "agenda" text,
+  "ev_id" text,
+  "titulo" text,
+  "local" text,
+  "descricao" text,
+  "dia_todo" text,
+  "inicio" text,
+  "fim" text,
+  "dia" text,
+  primary key (escritorio_id, "id")
+);
+alter table agenda_eventos add column if not exists "id" text;
+alter table agenda_eventos add column if not exists "mes" text;
+alter table agenda_eventos add column if not exists "agenda" text;
+alter table agenda_eventos add column if not exists "ev_id" text;
+alter table agenda_eventos add column if not exists "titulo" text;
+alter table agenda_eventos add column if not exists "local" text;
+alter table agenda_eventos add column if not exists "descricao" text;
+alter table agenda_eventos add column if not exists "dia_todo" text;
+alter table agenda_eventos add column if not exists "inicio" text;
+alter table agenda_eventos add column if not exists "fim" text;
+alter table agenda_eventos add column if not exists "dia" text;
+alter table agenda_eventos enable row level security;
+drop policy if exists "agenda_eventos: só o próprio escritório" on agenda_eventos;
+create policy "agenda_eventos: só o próprio escritório" on agenda_eventos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);

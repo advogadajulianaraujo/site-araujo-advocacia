@@ -1,8 +1,9 @@
 {
- "versao": "8.34.0",
+ "versao": "8.35.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
+  "AGENDA_COPIA",
   "AGENDA_SINC",
   "ALERTA_ROBO_EM",
   "ASSIN_ANTIGAS",
@@ -157,6 +158,7 @@
   },
   "inicio.acoes": {
    "tabelas": [
+    "AgendaEventos",
     "Audiencias",
     "Clientes",
     "Eventos",
@@ -172,10 +174,11 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 42
+   "funcoes": 47
   },
   "audiencias.listar": {
    "tabelas": [
+    "AgendaEventos",
     "Audiencias",
     "Clientes",
     "Eventos",
@@ -189,7 +192,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 36
+   "funcoes": 41
   },
   "eu.painel": {
    "tabelas": [
@@ -365,7 +368,44 @@
     "Utilities"
    ],
    "funcoes": 13
+  },
+  "agenda.listar": {
+   "tabelas": [
+    "AgendaEventos",
+    "Clientes",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "CacheService",
+    "CalendarApp",
+    "Utilities"
+   ],
+   "funcoes": 30
+  },
+  "inicio.extras": {
+   "tabelas": [
+    "AgendaEventos",
+    "Audiencias",
+    "Avisos",
+    "Clientes",
+    "Eventos",
+    "Feriados",
+    "Honorarios",
+    "Parcelas",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "CacheService",
+    "CalendarApp",
+    "Utilities"
+   ],
+   "funcoes": 45
   }
  },
- "funcoes": 123
+ "funcoes": 131
 }

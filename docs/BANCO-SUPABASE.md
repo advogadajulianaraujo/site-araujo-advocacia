@@ -49,6 +49,10 @@ Por etapas; cada uma testada com dados inventados contra o comportamento atual, 
   quem confere a pessoa é o banco (painel_quem, pelo código da sessão do banco).
 - Ligar: Gerenciar acessos › Banco novo › "🚀 Ligar o motor do Supabase" (confere se a função responde com a MESMA versão do Code.gs).
 
+## 8.35: Agenda no banco
+- O Google copia a agenda (mês passado a +3 meses) para a tabela agenda_eventos de 10 em 10 min; Agenda, Audiências e o Início leem a cópia.
+  Mudança pelo painel, ↻ ou cópia velha (> 3 h) → a tela lê do Google.
+
 ## 8.34: atualização automática
 - O push no main é a publicação: o Apps Script confere o GitHub de 10 em 10 min e instala sozinho (Supabase primeiro, com a chave de
   publicação em Properties SUPABASE_GESTAO; depois o Google). Detalhes em CLAUDE.md (8.34.0) e painel-backend/INSTALAR.md.

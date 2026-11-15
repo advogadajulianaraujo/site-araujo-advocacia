@@ -110,7 +110,7 @@ export function criarServidor({ rpc, base }) {
     const esc = quem.escritorio_id, u = quem.usuario;
     const precisa = new Set(['config', 'usuarios'].concat(aprendidas.get(acao) || []));
     let raw = {}, conflitos = 0, forcar = false;
-    for (let volta = 0; volta < 10; volta++) {
+    for (let volta = 0; volta < 25; volta++) { // cada volta pode descobrir uma tabela que a tela usa (a próxima vez já busca todas juntas)
       const faltam = [...precisa].filter(t => !raw[t]);
       if (faltam.length) Object.assign(raw, await carregar(esc, faltam, forcar));
       const amb = criarAmb(abasDe(raw), { asaas: est.asaas === 'sim' });

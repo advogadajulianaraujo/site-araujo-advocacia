@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.34.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.34.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.35.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.35.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.34.0';
+var VERSAO = '8.35.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -136,6 +136,7 @@ var ESQUEMA = {
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
   Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
+  AgendaEventos: ['id', 'mes', 'agenda', 'ev_id', 'titulo', 'local', 'descricao', 'dia_todo', 'inicio', 'fim', 'dia'], // 8.35: cópia do Google Agenda
   Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
     'processo_id', 'lembretes', 'lembrete_em', 'pasta_url', 'honorarios', 'honorarios_lancados'],
@@ -3744,13 +3745,17 @@ function agendas_() {
 /* 8.25 (pedido da usuária: "a agenda trava muito"): os eventos do Google ficam guardados por MÊS na memória do servidor (10 min);
    o aquecedor deixa prontos o mês passado, o atual e o próximo. Mudança feita pelo painel (compromisso, ato, prazo, WhatsApp) troca a
    versão (`mudouAgenda_`) e a próxima leitura vai ao Google; mudança feita direto no Google aparece em até 10 min. */
-function mudouAgenda_() { try { CacheService.getScriptCache().put('versao_agenda', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue */ } }
+function mudouAgenda_() {
+  try { CacheService.getScriptCache().put('versao_agenda', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) { /* segue */ }
+  try { if (config_('AGENDA_COPIA')) setConfig_('AGENDA_COPIA', '', 'Cópia da Agenda do Google para o banco (o painel lê daqui)'); } catch (e2) { /* segue */ } // 8.35: até refazer, as telas leem do Google
+}
 function versaoAgenda_() {
   var c = CacheService.getScriptCache(), v = c.get('versao_agenda');
   if (!v) { v = String(Date.now()); c.put('versao_agenda', v, 21600); }
   return v;
 }
 function eventosDoMes_(mes, forcar) {
+  if (semGoogle_()) return eventosDaCopia_(mes, forcar); // 8.35: no navegador e no Supabase, a cópia da agenda (AgendaEventos)
   var cache = CacheService.getScriptCache(), k = 'agm' + versaoAgenda_().slice(-12) + mes;
   if (!forcar) {
     try {
@@ -3774,7 +3779,7 @@ function eventosDoMes_(mes, forcar) {
       eventos.push({
         id: ev.getId(), agenda: nome, titulo: ev.getTitle(), local: ev.getLocation() || '',
         descricao: String(ev.getDescription() || '').replace(/<[^>]+>/g, ' ').slice(0, 500),
-        diaTodo: ev.isAllDayEvent(), inicio: dataHora_(ev.getStartTime()), fim: dataHora_(ev.getEndTime())
+        diaTodo: ev.isAllDayEvent(), inicio: dataHora_(ev.getStartTime()), fim: dataHora_(ev.getEndTime()), dia: diaDoEvento_(ev, cal)
       });
     });
   });
@@ -3786,10 +3791,65 @@ function eventosDoMes_(mes, forcar) {
   return r;
 }
 function aquecerAgenda_() {
-  var hoje = hojeSP_(), m = hoje.slice(0, 7);
-  var ant = Utilities.formatDate(new Date(new Date(m + '-01T12:00:00-03:00').getTime() - 5 * 864e5), TZ, 'yyyy-MM');
-  var prox = Utilities.formatDate(new Date(new Date(m + '-01T12:00:00-03:00').getTime() + 35 * 864e5), TZ, 'yyyy-MM');
-  [m, prox, ant].forEach(function (x) { try { eventosDoMes_(x); } catch (e) { /* segue */ } });
+  // 8.35: do mês passado até 3 meses à frente (as audiências olham 90 dias); depois copia tudo para o banco (AgendaEventos)
+  var m = hojeSP_().slice(0, 7), meses = [mesAntes_(m), m], dados = {};
+  for (var i = 0; i < 3; i++) meses.push(mesDepois_(meses[meses.length - 1]));
+  meses.forEach(function (x) { try { dados[x] = eventosDoMes_(x); } catch (e) { /* esse mês fica no Google */ } });
+  try { if (sbLigado_() && sbTemTabela_('agenda_eventos')) agendaCopiar_(dados); } catch (eC) { /* tenta na próxima */ }
+}
+function mesDepois_(m) { var a = +m.slice(0, 4), n = +m.slice(5, 7); return n === 12 ? (a + 1) + '-01' : a + '-' + ('0' + (n + 1)).slice(-2); }
+function mesAntes_(m) { var a = +m.slice(0, 4), n = +m.slice(5, 7); return n === 1 ? (a - 1) + '-12' : a + '-' + ('0' + (n - 1)).slice(-2); }
+/* 8.35 (pedido da usuária: Agenda e Audiências abrindo na hora): a agenda do Google copiada para a aba/tabela AgendaEventos, um evento
+   por linha (id = agenda|evento|início). Grava só o que mudou. Config AGENDA_COPIA = { em, meses, avisos }: quais meses estão copiados.
+   Os motores (navegador e função do Supabase) só usam a cópia se o mês estiver lá e ela tiver menos de 3 h; senão a tela vai ao Google.
+   Mudança feita pelo painel (mudouAgenda_) apaga a marca: até a próxima cópia (≤ 10 min), a agenda vem do Google. */
+/** A tabela existe no banco? (lembra 6 h; sem ela, nada é copiado e as telas continuam lendo do Google) */
+function sbTemTabela_(t) {
+  var c = CacheService.getScriptCache(), k = 'sbtab_' + t, v = c.get(k);
+  if (v) return v === 'sim';
+  var ok = false; try { supabase_('get', t + '?select=_n&limit=1'); ok = true; } catch (e) { ok = false; }
+  c.put(k, ok ? 'sim' : 'nao', ok ? 21600 : 600);
+  return ok;
+}
+function semGoogle_() { return false; } // os motores (painel/motor.js e a função "painel") trocam por true
+function agendaCopiar_(dados) {
+  var meses = Object.keys(dados).sort();
+  if (!meses.length) return { meses: 0 };
+  return comTrava_(function () {
+    var tab = tabela_('AgendaEventos'), atuais = {}, vistos = {}, mudou = 0, avisos = [];
+    tab.linhas.forEach(function (r) { if (r.id) atuais[r.id] = r; });
+    meses.forEach(function (mes) {
+      (dados[mes].avisos || []).forEach(function (a) { if (avisos.indexOf(a) < 0) avisos.push(a); });
+      (dados[mes].eventos || []).forEach(function (ev) {
+        var id = String(ev.agenda + '|' + ev.id + '|' + ev.inicio).slice(0, 400);
+        if (vistos[id]) return; // evento que passa de um mês para outro aparece nos dois
+        vistos[id] = 1;
+        var o = { id: id, mes: mes, agenda: ev.agenda, ev_id: ev.id, titulo: ev.titulo || '', local: ev.local || '', descricao: ev.descricao || '',
+          dia_todo: ev.diaTodo ? 'sim' : '', inicio: ev.inicio, fim: ev.fim, dia: ev.dia || String(ev.inicio).slice(0, 10) };
+        var a = atuais[id];
+        if (!a) { inserirLinha_(tab, o); mudou++; return; }
+        var dif = {}; Object.keys(o).forEach(function (c) { if (c !== 'mes' && String(a[c] || '') !== String(o[c] || '')) dif[c] = o[c]; });
+        if (Object.keys(dif).length) { atualizarLinha_(tab, a, dif); mudou++; }
+      });
+    });
+    tab.linhas.slice().forEach(function (r) { if (r.id && !vistos[r.id]) { apagarLinha_(tab, r); mudou++; } });
+    var c = null; try { c = JSON.parse(config_('AGENDA_COPIA') || 'null'); } catch (e) { c = null; }
+    if (mudou || !c || (c.meses || []).join() !== meses.join() || JSON.stringify(c.avisos || []) !== JSON.stringify(avisos) || Date.now() - Date.parse(c.em) > 3600000) {
+      setConfig_('AGENDA_COPIA', JSON.stringify({ em: new Date().toISOString(), meses: meses, avisos: avisos }), 'Cópia da Agenda do Google para o banco (o painel lê daqui)');
+    }
+    return { meses: meses.length, mudou: mudou };
+  });
+}
+/** Nos motores: os eventos do mês a partir da cópia (mesmo formato do eventosDoMes_ do Google). Sem cópia boa → a tela vai ao Google. */
+function eventosDaCopia_(mes, forcar) {
+  var c = null; try { c = JSON.parse(config_('AGENDA_COPIA') || 'null'); } catch (e) { c = null; }
+  if (forcar || !c || (c.meses || []).indexOf(mes) < 0 || !(Date.now() - Date.parse(c.em) < 3 * 3600000)) return CalendarApp.getDefaultCalendar(); // (nos motores, isto devolve a tela ao Google)
+  var ini = mes + '-01T00:00', prox = mesDepois_(mes) + '-01T00:00', ordem = {};
+  NOMES_AGENDAS.forEach(function (n, i) { ordem[n] = i; });
+  var eventos = tabela_('AgendaEventos').linhas.filter(function (r) { return r.id && r.inicio < prox && (r.fim > ini || (r.fim === r.inicio && r.inicio >= ini)); })
+    .sort(function (a, b) { return (ordem[a.agenda] - ordem[b.agenda]) || (a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0); })
+    .map(function (r) { return { id: r.ev_id, agenda: r.agenda, titulo: r.titulo, local: r.local, descricao: r.descricao, diaTodo: r.dia_todo === 'sim', inicio: r.inicio, fim: r.fim, dia: r.dia }; });
+  return { eventos: eventos, avisos: c.avisos || [] };
 }
 
 function listarAgenda_(d) {
@@ -5371,30 +5431,34 @@ function diaDoLembrete_(data, feriados) {
  * Audiências e perícias de hoje até "ate": aba Eventos + as lançadas direto no Google Agenda (AUDIÊNCIA CONCILIAÇÃO / INSTRUÇÃO / PERÍCIAS).
  * Cada uma: { chave, tipo, nome, data, hora, numero, local, titulo, ev (linha de Eventos, quando houver) }.
  */
-function atosDaAgenda_(hoje, ate, eventos) {
+function atosDaAgenda_(hoje, ate, eventos, fresco) {
   var atos = [];
   eventos.linhas.forEach(function (e) {
     if (!e.data || e.data < hoje || e.data > ate || /^apagado/.test(e.evento_id || '')) return;
     atos.push({ chave: 'E:' + e.numero + ':' + e.data + ':' + tipoAtoDe_(e.tipo), tipo: tipoAtoDe_(e.tipo), nome: e.tipo, data: e.data, hora: e.hora || '', numero: e.numero, local: '', ev: e });
   });
   try {
-    var ids = agendas_(), fim = new Date(somarDias_(ate, 1) + 'T00:00:00-03:00');
-    ['AUDIÊNCIA CONCILIAÇÃO', 'AUDIÊNCIA INSTRUÇÃO', 'PERÍCIAS'].forEach(function (ag) {
-      var cal = ids[ag] && CalendarApp.getCalendarById(ids[ag]);
-      if (!cal) return;
-      cal.getEvents(new Date(hoje + 'T00:00:00-03:00'), fim).forEach(function (ev) {
-        var txt = ev.getTitle() + ' ' + (ev.getDescription() || '');
-        var num = (RE_CNJ.exec(txt) || [])[1] || '';
-        var ini = ev.getStartTime(), data = diaDoEvento_(ev, cal);
-        if (data < hoje || data > ate) return;
-        var tipo = ag === 'PERÍCIAS' ? 'pericia' : ag === 'AUDIÊNCIA INSTRUÇÃO' ? 'instrucao' : 'conciliacao';
-        var evId = ev.getId();
-        if (atos.some(function (a) { return (a.ev && a.ev.evento_id === evId) || (num && a.numero === num && a.data === data && a.tipo === tipo); })) return;
-        atos.push({ chave: 'G:' + evId.slice(0, 40) + ':' + data, tipo: tipo, nome: tipo === 'pericia' ? 'perícia' : tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação',
-          data: data, hora: ev.isAllDayEvent() ? '' : Utilities.formatDate(ini, TZ, 'HH:mm'), numero: num, local: ev.getLocation ? (ev.getLocation() || '') : '', titulo: ev.getTitle() });
+    // 8.35: pelos eventos de cada mês (eventosDoMes_: Google com memória de 10 min; nos motores, a cópia AgendaEventos)
+    var TIPO_AG = { 'AUDIÊNCIA CONCILIAÇÃO': 'conciliacao', 'AUDIÊNCIA INSTRUÇÃO': 'instrucao', 'PERÍCIAS': 'pericia' }, ORDEM_AG = { conciliacao: 0, instrucao: 1, pericia: 2 };
+    var lista = [], vistos = {};
+    for (var mes = hoje.slice(0, 7), q = 0; mes <= ate.slice(0, 7) && q < 13; mes = mesDepois_(mes), q++) {
+      eventosDoMes_(mes, !!fresco).eventos.forEach(function (ev) {
+        var k = ev.agenda + '|' + ev.id + '|' + ev.inicio;
+        if (TIPO_AG[ev.agenda] && !vistos[k]) { vistos[k] = 1; lista.push(ev); }
       });
+    }
+    lista.sort(function (a, b) { return (ORDEM_AG[TIPO_AG[a.agenda]] - ORDEM_AG[TIPO_AG[b.agenda]]) || (a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0); });
+    lista.forEach(function (ev) {
+      var txt = ev.titulo + ' ' + (ev.descricao || '');
+      var num = (RE_CNJ.exec(txt) || [])[1] || '';
+      var data = ev.dia || String(ev.inicio).slice(0, 10);
+      if (data < hoje || data > ate) return;
+      var tipo = TIPO_AG[ev.agenda], evId = String(ev.id);
+      if (atos.some(function (a) { return (a.ev && a.ev.evento_id === evId) || (num && a.numero === num && a.data === data && a.tipo === tipo); })) return;
+      atos.push({ chave: 'G:' + evId.slice(0, 40) + ':' + data, tipo: tipo, nome: tipo === 'pericia' ? 'perícia' : tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação',
+        data: data, hora: ev.diaTodo ? '' : String(ev.inicio).slice(11, 16), numero: num, local: ev.local || '', titulo: ev.titulo });
     });
-  } catch (e) { /* sem acesso à agenda: segue com a aba Eventos */ }
+  } catch (e) { if (e && e.motor) throw e; /* sem acesso à agenda: segue com a aba Eventos */ }
   return atos.sort(function (a, b) { return (a.data + a.hora) < (b.data + b.hora) ? -1 : 1; });
 }
 
@@ -5498,7 +5562,7 @@ function lembrarAudiencias_(ctx) {
   var tAv = tarefasDeAviso_(tabT), fichas = fichasAtos_();
   var porNumero = {};
   ctx.procs.linhas.forEach(function (p) { if (p.numero) porNumero[p.numero] = p; });
-  var atos = atosDaAgenda_(hoje, somarDias_(hoje, 10), ctx.eventos || tabela_('Eventos'));
+  var atos = atosDaAgenda_(hoje, somarDias_(hoje, 10), ctx.eventos || tabela_('Eventos'), true); // o robô lê o Google na hora
   var feitos = 0, agora = new Date().toISOString();
   atos.forEach(function (a) {
     var av = estadoAvisosAto_(a, tAv, fichas);
@@ -14358,7 +14422,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {
@@ -14591,7 +14655,7 @@ function sha256Hex_(txt) { return hexDe_(Utilities.computeDigest(Utilities.Diges
 /** O que cada perfil pode ler do banco (o Supabase confere isto em painel_ler; nada além). */
 function sbPermissoes_(u) {
   var p = PERFIS[u.perfil] || {}, adm = !!p.usuarios, g = {};
-  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo'].forEach(function (a) { g[sbTabela_(a)] = {}; });
+  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo', 'AgendaEventos'].forEach(function (a) { g[sbTabela_(a)] = {}; });
   g.clientes = { mascarar: ['acesso_hash'] }; // o navegador só sabe SE o cliente tem código do Acompanhe
   g.processos = { mascarar: ['andamentos'] }; // os andamentos (JSON grande do DataJud) ficam no banco; as listas só perguntam se tem
   g.config = { chaves: SB_CONFIG_LIVRE };
@@ -15400,6 +15464,7 @@ function sbAntesDaRota_() {} function sbDepoisDaRota_() {}
 function comTrava_(fn) { return fn(); }
 function comMemoria_(acao, u, dados, fn) { return fn(); }
 function marcarMudanca_() {}
+function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function garantirGatilho_() {} // 8.33: os gatilhos dos robôs são do Apps Script (ele confere sozinho)
 function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function ultimasLinhasLog_(n) { return tabela_('Log').linhas.slice(-n).map(function (l) { return [l.quando, l.usuario, l.acao, l.detalhe]; }); }

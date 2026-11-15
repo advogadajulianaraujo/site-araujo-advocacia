@@ -22,7 +22,7 @@ const texto = d => linhas.slice(d.ini, d.fim + 1).join('\n');
 const ROTAS_MOTOR = ['resumo', 'clientes.listar', 'clientes.obter', 'processos.listar', 'prazos.listar', 'intimacoes.listar', 'tarefas.listar',
   'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'eu.painel', 'documentos.assinaturas',
   'fluxos.processo', 'prazos.memoria', 'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'fin.pix', 'fin.acaoCobranca',
-  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos'];
+  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras'];
 const blocoRotas = texto(decl.get('ROTAS'));
 const rotas = {};
 for (const r of ROTAS_MOTOR) {
@@ -34,7 +34,7 @@ for (const r of ROTAS_MOTOR) {
 // 3) o que o navegador troca por versões próprias (leitura do Supabase; gravar = volta ao Apps Script)
 const TROCADAS = new Set(['tabela_', 'lerTabela_', 'aba_', 'inserirLinha_', 'atualizarLinha_', 'apagarLinha_', 'gravarLote_', 'regravarMudadas_',
   'gravarVarias_', 'setConfig_', 'config_', 'registrar_', 'comTrava_', 'marcarMudanca_', 'comMemoria_', 'versaoDados_', 'rotear_', 'rotearLote_',
-  'doPost', 'doGet', 'json_', 'usuarioDaSessao_', 'sbMarcar_', 'sbApagar_', 'sbLigado_', 'sbEnviarSujas_', 'asaasChave_', 'ultimasLinhasLog_']);
+  'doPost', 'doGet', 'json_', 'usuarioDaSessao_', 'sbMarcar_', 'sbApagar_', 'sbLigado_', 'sbEnviarSujas_', 'asaasChave_', 'ultimasLinhasLog_', 'semGoogle_']);
 const SERVICOS = ['SpreadsheetApp', 'DriveApp', 'CalendarApp', 'GmailApp', 'MailApp', 'UrlFetchApp', 'DocumentApp', 'LockService', 'ScriptApp',
   'PropertiesService', 'CacheService', 'Utilities', 'Session', 'ContentService', 'HtmlService', 'Logger', 'Drive', 'Calendar', 'XmlService', 'Charts'];
 
@@ -139,6 +139,7 @@ function marcarMudanca_() { return foraDoNavegador_('gravar'); }
 function comTrava_(fn) { return fn(); } // só leitura passa; se a função tentar gravar, os helpers acima param a conta
 function registrar_() { /* o registro é só do servidor */ }
 function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
+function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
 ${corpo}

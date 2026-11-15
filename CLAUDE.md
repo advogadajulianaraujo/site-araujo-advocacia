@@ -1239,3 +1239,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Teste `.github/motor/teste/etapaAuto.mjs` (identidade verdadeira/falsa/outro repo/outro robô/outro ramo/vencida/alterada; atualização:
   instala, mesma versão, mais velha, erro de escrita, permissão nova, não respondeu → volta, espera 1 h, botão força, ordem Supabase →
   Google, chave do Supabase vencida).
+
+## 8.35.0 Agenda no banco (pedido da usuária: Agenda, Audiências e Início abrindo na hora)
+
+- Aba/tabela nova AgendaEventos (id = agenda|evento|início, mes, agenda, ev_id, titulo, local, descricao, dia_todo, inicio, fim, dia). O
+  `aquecerAgenda_` (10 em 10 min + robô de hora em hora) lê do mês passado a +3 meses (`mesAntes_`/`mesDepois_` — NÃO confundir com o
+  `mesSeguinte_(iso, dia)` das parcelas) e `agendaCopiar_` grava só o que mudou e apaga o que saiu; Config AGENDA_COPIA = {em, meses, avisos}
+  (regravada só se mudou ou a cada 1 h). Só copia se a tabela existir no banco (`sbTemTabela_`).
+- `semGoogle_()` = false no Apps Script e true nos motores (gerar.mjs TROCADAS; gerar-edge trocas). `eventosDoMes_` nos motores →
+  `eventosDaCopia_` (mesmo formato, eventos que tocam o mês, ordem por agenda + início); mês fora da cópia, cópia com mais de 3 h, `atualizar`
+  (↻) ou marca apagada → CalendarApp → a tela vai ao Google. `mudouAgenda_` apaga a marca (mudança feita pelo painel nunca mostra agenda velha).
+- `atosDaAgenda_(hoje, ate, eventos, fresco)` lê os eventos pelo `eventosDoMes_` (Google com memória de 10 min; o robô dos avisos passa
+  fresco = true e lê na hora). Eventos ganharam o campo `dia` (dia do evento de dia inteiro no fuso da agenda).
+- ROTAS_MOTOR ganhou agenda.listar e inicio.extras; a função do Supabase descobre até 25 tabelas por tela (antes 10: inicio.extras usa 11).
+- Teste `.github/motor/teste/etapaAgenda.mjs` (Google Agenda simulado: 6 telas × 4 perfis iguais no navegador e 6 na função; dia inteiro,
+  evento que atravessa o mês, ↻, mudança pelo painel, evento apagado/mudado/novo, cópia velha, mês fora, robô lê na hora).
