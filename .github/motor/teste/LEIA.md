@@ -23,4 +23,13 @@ node .github/motor/teste/etapaA.js          # 8.30: Supabase grava primeiro × p
 node .github/motor/teste/etapaB.js          # 8.31: login/senhas/Log no banco; painel com a planilha fora do ar
 node .github/motor/gerar-edge.mjs && node .github/motor/teste/etapaC.mjs   # 8.32: motor do painel no Supabase
 node .github/motor/teste/deno.mjs           # 8.32: a função rodando no Deno (precisa do deno instalado)
+node .github/motor/teste/etapaD.mjs          # 8.33: entrar pelo Supabase (precisa do vault falso abaixo)
+```
+Vault falso (no Supabase de verdade ele já existe):
+```sql
+create schema if not exists vault;
+create table if not exists vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, secret text, description text);
+create or replace function vault.create_secret(s text, n text default null, d text default '') returns uuid language sql as $$ insert into vault.secrets(name, secret, description) values (n, s, d) returning id $$;
+create or replace function vault.update_secret(i uuid, s text) returns void language sql as $$ update vault.secrets set secret = s where id = i $$;
+create or replace view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
 ```

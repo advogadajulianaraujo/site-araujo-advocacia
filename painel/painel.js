@@ -193,7 +193,7 @@
     const pode = (sessao && sessao.usuario && sessao.usuario.pode) || {};
     const lista = [['resumo'], ['clientes.listar', {}], ['processos.listar', {}], ['prazos.listar', {}], ['modelos.listar', {}]];
     if (pode.financeiro) lista.push(['fin.resumo'], ['fin.honorarios', {}]);
-    if (BANCO) BANCO.iniciar();
+    if (BANCO) { BANCO.acordar(); BANCO.iniciar(); }
     lista.forEach(([a, d]) => api(a, d).catch(() => {}));
     setTimeout(() => lerDjenNavegador(false), 4000);
   }
@@ -356,6 +356,8 @@
   }
   // a sessão do Google cai com 6 h sem uso: com as telas vindo do banco, um "oi" leve de vez em quando mantém a sessão viva
   setInterval(() => { if (sessao && !document.hidden && Date.now() - ultimoGoogle > 20 * 60000) chamarUm('sessao', {}).catch(() => {}); }, 5 * 60000);
+  // 8.33: mantém a função do Supabase acordada enquanto o painel está aberto e à vista (a 1ª chamada depois de parada demora mais)
+  if (BANCO) { BANCO.acordar(); setInterval(() => { if (!document.hidden) BANCO.acordar(); }, 4 * 60000); }
   function chamarGoogle(acao, dados) {
     if (!EM_LOTE.has(acao) || loteDesligado || !sessao) return chamarUm(acao, dados);
     return new Promise((ok, falhou) => {
@@ -528,7 +530,7 @@
   function sair(expirou) {
     const token = sessao && sessao.token;
     sessao = null;
-    if (BANCO) BANCO.sair();
+    if (BANCO) BANCO.sair(!expirou);
     esquecerTudo();
     try { sessionStorage.removeItem('painel_memoria'); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
@@ -800,7 +802,8 @@
     mostrar(form);
     if (lembrado) { form.usuario.value = lembrado; form.senha.focus(); } else form.querySelector('input').focus();
     aoEnviar(form, async fd => {
-      const r = await api('login', { usuario: fd.get('usuario'), senha: fd.get('senha') });
+      const dl = { usuario: fd.get('usuario'), senha: fd.get('senha') };
+      const r = (BANCO && await BANCO.entrarViaEdge(dl)) || await api('login', dl); // 8.33: pelo Supabase; se não der, pelo Google
       try { if (fd.get('lembrar')) localStorage.setItem('painel_usuario', fd.get('usuario')); else localStorage.removeItem('painel_usuario'); } catch (e) { /* navegação privada */ }
       // pede ao navegador para guardar usuário e senha no gerenciador de senhas (Chrome/Edge)
       try { if (window.PasswordCredential && navigator.credentials) await navigator.credentials.store(new PasswordCredential({ id: fd.get('usuario'), password: fd.get('senha'), name: r.usuario.nome })); } catch (e) { /* o navegador recusou */ }
@@ -819,6 +822,7 @@
           h('a', { href: '#/primeiro-acesso' }, 'Primeiro acesso: criar o administrador'));
       }
     } catch (e) {
+      if (BANCO && BANCO.temEdge()) return; // 8.33: o Google não respondeu, mas dá para entrar pelo Supabase
       document.getElementById('primeiro').replaceChildren(
         h('p', { class: 'erro' }, e.message),
         h('a', { href: '#/primeiro-acesso' }, 'Primeiro acesso: criar o administrador'));
@@ -852,14 +856,14 @@
     carregando();
     const hoje = hojeISO();
     const secretaria = ['secretario', 'rh'].includes(sessao.usuario.perfil);
-    // o que não é essencial tem 25 s: se o Google demorar, o Início abre sem aquele bloco em vez de ficar carregando
-    let pExtras = null;
-    const ate = (p, vazio) => Promise.race([p.catch(() => vazio), new Promise(ok => setTimeout(() => ok(vazio), 25000))]);
+    // 8.33: o que não é essencial espera no máximo 1,5 s; o Início abre com o que já tem e se redesenha sozinho quando o resto chegar
+    // (antes esperava até 25 s pela agenda e pelos blocos extras do Google antes de aparecer)
+    const tardes = [], SEM = {};
+    const ate = (p, vazio) => { const x = p.catch(() => vazio); return Promise.race([x, new Promise(ok => setTimeout(() => ok(SEM), 1500))]).then(v => v === SEM ? (tardes.push(x), vazio) : v); };
     const [r, ag, meu, aguarda, extras] = await Promise.all([api('resumo'), ate(api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }), null),
       ate(api('eu.painel'), null), sessao.usuario.pode.usuarios ? ate(api('trabalho.aguardando'), []) : Promise.resolve([]),
-      secretaria || sessao.usuario.pode.usuarios ? ate(pExtras = api('inicio.extras', { dia: hoje }), null) : Promise.resolve(null)]);
-    // o Google demorou mais que 25 s: abre sem os blocos e redesenha sozinho quando chegarem (antes ficavam vazios)
-    if (!extras && pExtras) { const n0 = rotaN; pExtras.then(x => { if (x && n0 === rotaN && /^#?\/?$/.test(location.hash.replace('#', '')) ) rota(); }).catch(() => {}); }
+      secretaria || sessao.usuario.pode.usuarios ? ate(api('inicio.extras', { dia: hoje }), null) : Promise.resolve(null)]);
+    if (tardes.length) { const n0 = rotaN; Promise.all(tardes).then(() => { if (n0 === rotaN && !sujo && /^\/?(inicio)?(\?|$)/.test(location.hash.replace('#', ''))) rota(); }); }
     const procsIni = [];
     const t = r.totais, pode = sessao.usuario.pode;
     const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
@@ -912,7 +916,7 @@
       .sort((a, b) => (a.data + a.hora) < (b.data + b.hora) ? -1 : 1).slice(0, 6)
       .map(x => item(x.ir, selo(x.data, x.data === hoje ? 'faixa-hoje' : ''), x.tit, x.sub, x.data === hoje ? h('span', { class: 'tag urgente' }, 'hoje') : etiquetaDias(x.data)));
     const blocoAgenda = bloco('Agenda', '#/agenda?visao=semana', 'ver semana',
-      agenda.length ? h('ul', { class: 'ini-lista' }, agenda) : vazio(ag ? 'Nada marcado para os próximos 14 dias.' : 'Agenda indisponível no momento.'));
+      agenda.length ? h('ul', { class: 'ini-lista' }, agenda) : vazio(ag ? 'Nada marcado para os próximos 14 dias.' : tardes.length ? 'Carregando a agenda…' : 'Agenda indisponível no momento.'));
 
     // dois gráficos redondos: prazos em aberto e processos por área
     const ativosIni = (procsIni || []).filter(p => p.status !== 'arquivado' && p.fase !== 'extinto');
@@ -2507,6 +2511,9 @@
         ehSb && x.login === 'supabase' ? h('div', { class: 'peq' }, h('strong', {}, 'Motor do painel: '), x.edge === 'sim'
           ? `no Supabase${x.edge_versao ? ' (função ' + x.edge_versao + ')' : ''}: as telas e as gravações não passam mais pelo Google; documentos, Drive, Agenda, e-mail e IA continuam no Google, sozinhos.`
           : 'no Google (Apps Script).' + (x.edge_erro ? ' Função do Supabase: ' + x.edge_erro + '.' : '')) : null,
+        ehSb && x.edge === 'sim' ? h('div', { class: 'peq' }, h('strong', {}, 'Entrar no painel: '), x.entrar === 'sim'
+          ? 'pelo Supabase: dá para entrar e trabalhar mesmo com o Google fora do ar (o Google fica só com os robôs, documentos, Drive, Agenda, e-mail e IA). A planilha é só cópia de segurança.'
+          : 'pelo Google (Apps Script).') : null,
         h('div', { class: 'acoes' }, botao('🔎 Conferir planilha × banco', conferir(false), 'mini sec'), botao('🔧 Conferir e consertar', conferir(true), 'mini sec'),
           ehSb && x.grava !== 'supabase' ? botao('⚡ Gravar primeiro no Supabase (planilha vira cópia)', async ev => {
             if (!confirm('Passar a gravar primeiro no Supabase? A planilha passa a receber a cópia do banco de 30 em 30 minutos. Dá para voltar a qualquer momento (o painel copia tudo do banco para a planilha antes de trocar).')) return;
@@ -2523,6 +2530,15 @@
             ev.target.disabled = true; ev.target.textContent = 'Conferindo a função…';
             try { desenharPrincipal(await api('banco.conferir', { edge: 'sim' })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Pronto: o motor do Supabase está ligado.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = '🚀 Ligar o motor do Supabase'; }
           }, 'mini') : null,
+          ehSb && x.edge === 'sim' && x.entrar !== 'sim' ? botao('🔑 Entrar pelo Supabase (Etapa D)', async ev => {
+            if (!confirm('Entrar no painel pelo Supabase? Usuário, senha e as mesmas travas continuam iguais; a chave das senhas vai para o cofre criptografado do Supabase. Dá para desligar na hora.')) return;
+            ev.target.disabled = true; ev.target.textContent = 'Conferindo…';
+            try { desenharPrincipal(await api('banco.conferir', { entrar: 'sim' })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Pronto: a próxima entrada no painel já é pelo Supabase.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = '🔑 Entrar pelo Supabase (Etapa D)'; }
+          }, 'mini') : null,
+          ehSb && x.entrar === 'sim' ? botao('Entrar pelo Google de novo', async ev => {
+            ev.target.disabled = true;
+            try { desenharPrincipal(await api('banco.conferir', { entrar: 'nao' })); avisar('Pronto: as próximas entradas voltam a ser pelo Google.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+          }, 'mini sec') : null,
           ehSb && x.edge === 'sim' ? botao('Desligar o motor do Supabase', async ev => {
             ev.target.disabled = true;
             try { desenharPrincipal(await api('banco.conferir', { edge: 'nao' })); if (BANCO) { BANCO.sair(); BANCO.iniciar(); } avisar('Motor do Supabase desligado: tudo volta a passar pelo Google.'); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
@@ -3074,7 +3090,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.32.0';
+  const VERSAO_PAINEL = '8.33.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

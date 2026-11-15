@@ -17,7 +17,7 @@ async function rpc(nome: string, args: unknown) {
   return j;
 }
 
-const S = criarServidor({ rpc, base: { createHash, createHmac, randomUUID, b64: (u: Uint8Array, w: boolean) => Buffer.from(u).toString(w ? 'base64url' : 'base64') } });
+const S = criarServidor({ rpc, base: { url: URL_BANCO, createHash, createHmac, randomUUID, b64: (u: Uint8Array, w: boolean) => Buffer.from(u).toString(w ? 'base64url' : 'base64') } });
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 
 Deno.serve(async (req: Request) => {

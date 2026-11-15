@@ -23,6 +23,12 @@ try {
   let t0 = Date.now(); const l = await chamar({ token: ses.token, acao: 'clientes.listar', dados: {}, versao: C.VERSAO });
   const g = rodarServidor('clientes.listar', logar('U1', '0'), {});
   assert(l.ok && JSON.stringify(l.dados) === JSON.stringify(g.dados), `Deno (relógio em Greenwich): lista de clientes igual ao Apps Script (${Date.now() - t0} ms)`);
+  t0 = Date.now(); const l2 = await chamar({ token: ses.token, acao: 'clientes.listar', dados: {}, versao: C.VERSAO });
+  assert(l2.ok && JSON.stringify(l2.dados) === JSON.stringify(g.dados), `Deno: 2ª vez, com as tabelas na memória da função (${Date.now() - t0} ms)`);
+  S.sql("update clientes set nome = nome || ' (mudou)' where id = 'C2'"); // mudança feita por fora (robô do Google): a função percebe e busca de novo
+  const l3 = await chamar({ token: ses.token, acao: 'clientes.listar', dados: {}, versao: C.VERSAO });
+  assert(l3.ok && JSON.stringify(l3.dados).includes('(mudou)'), 'Deno: tabela que mudou no banco é buscada de novo (nada velho)');
+  S.sql("update clientes set nome = replace(nome, ' (mudou)', '') where id = 'C2'");
   const pr = await chamar({ token: ses.token, acao: 'prazos.listar', dados: {}, versao: C.VERSAO }); const gp = rodarServidor('prazos.listar', logar('U1', '0'), {});
   assert(pr.ok && JSON.stringify(pr.dados) === JSON.stringify(gp.dados), 'Deno: intimações e prazos iguais ao Apps Script');
   t0 = Date.now(); const w = await chamar({ token: ses.token, acao: 'tarefas.salvar', dados: { tarefa: { titulo: 'Gravada pelo Deno', responsavel: 'admin' } }, pedido: 'deno-1', versao: C.VERSAO });

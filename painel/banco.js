@@ -14,6 +14,16 @@
   let chamarApps = null;   // (acao, dados) → Promise, do painel.js
   let falhasSeguidas = 0, desligadoAte = 0, motivoOff = '';
   const rotaFora = new Map();  // rota → motivo (esta aba vai sempre ao Apps Script para ela)
+  /* 8.33 velocidade: o que cada tela precisa do Google fica lembrado NESTE computador por 12 h (por perfil e versão), para não
+     tentar o caminho que não dá a cada F5 ou aba nova (antes: navegador → função do Supabase → Google, um depois do outro).
+     Guarda só nomes de telas; nenhum dado. */
+  const FORA_MS = 12 * 3600e3;
+  function chaveFora() { return 'banco_fora_' + ((S && S.u && S.u.perfil) || '') + '_' + (M() ? M().versao : ''); }
+  function lerFora() { try { return JSON.parse(localStorage.getItem(chaveFora()) || '{}'); } catch (e) { return {}; } }
+  function lembrarFora(tipo, acao) { try { const x = lerFora(); x[tipo + ':' + acao] = Date.now(); localStorage.setItem(chaveFora(), JSON.stringify(x)); } catch (e) { /* privado */ } }
+  function foraLembrado(tipo, acao) { const t = lerFora()[tipo + ':' + acao]; return !!t && Date.now() - t < FORA_MS; }
+  // motivos que passam sozinhos (não vale lembrar): mudança chegando, desligado, versão, sessão, erro de momento
+  const PASSAGEIRO = /^(há mudança|motor do Supabase desligado|versões|abas demais|erro|sessão|entrar)/;
   const cache = new Map();     // tabela → { linhas: Map(chave → linha), desde, pronto, n, em }
   const emVoo = new Map();     // sincronizações em andamento (várias telas pedem a mesma tabela juntas)
   const medidas = [];          // { acao, fonte: 'banco'|'google', ms, quando, obs }
@@ -48,18 +58,56 @@
     if (!M()) { motivoOff = 'motor não carregou'; return null; }
     if (!fusoOk()) { motivoOff = 'o relógio do computador não está no horário de Brasília'; return null; }
     const salvo = lerS('painel_banco');
-    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && salvo.versao === M().versao) { S = salvo; return S; }
+    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && salvo.versao === M().versao) { S = salvo; lembrarEdge(S); return S; }
     pedindo = (async () => {
       try {
         const r = await chamarApps('banco.sessao', {});
         if (!r || !r.ligado) { motivoOff = (r && r.motivo) || 'desligado'; return null; }
         if (r.versao !== M().versao) { motivoOff = 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes'; return null; }
-        S = r; motivoOff = ''; guardar('painel_banco', r); return S;
+        S = r; motivoOff = ''; guardar('painel_banco', r); lembrarEdge(r); acordar(); return S;
       } catch (e) { motivoOff = String(e.message || e); return null; } finally { pedindo = null; }
     })();
     return pedindo;
   }
-  function sair() { S = null; cache.clear(); emVoo.clear(); rotaFora.clear(); edgeFora.clear(); guardar('painel_banco', null); }
+  /** saindo = a pessoa apertou Sair: a sessão do banco é apagada também no Supabase (funciona mesmo com o Google fora do ar). */
+  function sair(saindo) {
+    if (saindo && S && S.edge && S.token) {
+      const cab = { apikey: S.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
+      try { fetch(S.edge, { method: 'POST', headers: cab, credentials: 'omit', keepalive: true, body: JSON.stringify({ acao: 'logout', sair: true, token: S.token }) }).catch(() => {}); } catch (e) { /* expira sozinha */ }
+    }
+    S = null; cache.clear(); emVoo.clear(); rotaFora.clear(); edgeFora.clear(); guardar('painel_banco', null);
+  }
+  /* 8.33 Etapa D: entrar no painel pelo Supabase. O endereço da função e a chave PÚBLICA (nada secreto) ficam lembrados neste
+     computador depois da primeira entrada; o Supabase só aceita se o escritório ligou "Entrar pelo Supabase". */
+  function lembrarEdge(s) { try { if (s && s.edge && s.chave) localStorage.setItem('painel_edge', JSON.stringify({ edge: s.edge, chave: s.chave })); } catch (e) { /* privado */ } }
+  /** Acorda a função do Supabase (a primeira chamada depois de um tempo parada demora mais): ao abrir e de 4 em 4 min. */
+  function acordar() {
+    const c = S && S.edge ? { edge: S.edge, chave: S.chave } : cfgEdge();
+    if (!c) return;
+    const cab = { apikey: c.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.chave)) cab.Authorization = 'Bearer ' + c.chave;
+    try { fetch(c.edge, { method: 'POST', headers: cab, credentials: 'omit', cache: 'no-store', body: '{"ping":true}' }).catch(() => {}); } catch (e) { /* tanto faz */ }
+  }
+  function cfgEdge() { try { const c = JSON.parse(localStorage.getItem('painel_edge') || 'null'); return c && c.edge && c.chave ? c : null; } catch (e) { return null; } }
+  /** Devolve { token, usuario } (como o login do Apps Script) ou null = entrar pelo Google. Senha errada etc. = erro com a mensagem. */
+  async function entrarViaEdge(dados) {
+    const c = cfgEdge();
+    if (!c || !M() || !fusoOk()) return null;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000), t0 = performance.now();
+    const cab = { apikey: c.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.chave)) cab.Authorization = 'Bearer ' + c.chave;
+    let r;
+    try {
+      const x = await fetch(c.edge, { method: 'POST', headers: cab, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal,
+        body: JSON.stringify({ acao: 'login', entrar: true, dados, versao: M().versao }) });
+      if (!x.ok) return null;
+      r = await x.json();
+    } catch (e) { return null; } finally { clearTimeout(timer); }
+    if (!r || r.voltar) return null;
+    if (!r.ok) throw new Error(r.erro || 'Não foi possível entrar.');
+    const d = r.dados, b = d.banco; delete d.banco;
+    if (b && b.token && b.versao === M().versao) { S = b; motivoOff = ''; guardar('painel_banco', b); lembrarEdge(b); }
+    medir('login', 'supabase', performance.now() - t0);
+    return d;
+  }
 
   /* ---------- leitura das tabelas ---------- */
   async function rpc(pedidos, limiteMs) {
@@ -195,7 +243,7 @@
       if (m.startsWith('falta:')) { precisa = [...new Set(precisa.concat([m.slice(6)], [...usadas]))]; continue; }
       // precisa de algo que só o Google tem (agenda, Gmail…), de gravar, ou de algo que este perfil não lê: esta rota vai sempre ao Apps Script
       // (precisar gravar é de vez em quando: o Apps Script grava agora e na próxima vez a conta já roda aqui)
-      if (m && !/gravar/.test(m)) rotaFora.set(acao, m);
+      if (m && !/gravar/.test(m)) { rotaFora.set(acao, m); lembrarFora('m', acao); }
       throw erro || new Error('motor: ' + m);
     }
     throw new Error('motor: tabelas demais');
@@ -217,15 +265,16 @@
     finally { clearTimeout(timer); }
   }
   function tratarVoltar(acao, r) {
-    if (r.sessao) { S = null; guardar('painel_banco', null); } else edgeFora.add(acao);
+    if (r.sessao) { S = null; guardar('painel_banco', null); }
+    else if (!PASSAGEIRO.test(String(r.motivo || ''))) { edgeFora.add(acao); lembrarFora('e', acao); }
     medir(acao, 'supabase-voltou', 0, String(r.motivo || '').slice(0, 120));
   }
   /** Leitura que o navegador não calcula: tenta o motor do Supabase; precisa do Google → Apps Script. */
   async function lerViaEdge(acao, dados, google) {
-    if (edgeLigada() && !edgeFora.has(acao)) {
+    if (edgeLigada() && !edgeFora.has(acao) && !foraLembrado('e', acao)) {
       const t0 = performance.now();
       try {
-        const r = await chamarEdge(acao, dados, null, 15000);
+        const r = await chamarEdge(acao, dados, null, 10000);
         if (r && r.voltar) tratarVoltar(acao, r);
         else if (r && r.ok) { medir(acao, 'supabase', performance.now() - t0); return r.dados; }
         else if (r && r.erro) throw new Error(r.erro);
@@ -238,7 +287,7 @@
   /** Gravação: no motor do Supabase (tudo ou nada; o mesmo pedido nunca grava duas vezes). Sem resposta = tenta de novo com o MESMO
    *  pedido (se já gravou, ele só devolve a resposta); nunca manda ao Apps Script depois de uma falta de resposta (gravaria duas vezes). */
   async function gravarViaEdge(acao, dados, google) {
-    if (!edgeLigada() || edgeFora.has(acao)) return google();
+    if (!edgeLigada() || edgeFora.has(acao) || foraLembrado('e', acao)) return google();
     const pedido = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10), t0 = performance.now();
     let r = null, ultimo = null;
     for (let vez = 0; vez < 2 && !r; vez++) {
@@ -252,7 +301,7 @@
   }
 
   /* ---------- porta de entrada usada pelo painel.js ---------- */
-  function pode(acao) { return !!(M() && M().tem(acao) && !rotaFora.has(acao) && Date.now() >= desligadoAte && (pronto() || chamarApps)); }
+  function pode(acao) { return !!(M() && M().tem(acao) && !rotaFora.has(acao) && !foraLembrado('m', acao) && Date.now() >= desligadoAte && (pronto() || chamarApps)); }
   /** Tenta o banco; se falhar ou demorar, faz o pedido normal ao Apps Script (sem a pessoa perceber). */
   async function lerOuPlanilha(acao, dados, planilha) {
     if (pode(acao)) {
@@ -304,5 +353,5 @@
       tabelas: [...cache.entries()].filter(([, c]) => c.pronto).map(([t, c]) => [t, c.linhas.size]), medidas: medidas.slice(), edge: edgeLigada(), edgeFora: [...edgeFora] };
   }
 
-  window.PAINEL_BANCO = { configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada };
+  window.PAINEL_BANCO = { configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
 })();

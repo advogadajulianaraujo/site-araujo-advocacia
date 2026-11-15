@@ -9,6 +9,7 @@ function difs(a, b, cam, acc) {
   if (Array.isArray(a) && a.length !== b.length) { acc.push(cam + ': ' + a.length + ' ≠ ' + b.length); return acc; }
   new Set(Object.keys(a).concat(Object.keys(b))).forEach(k => difs(a[k], b[k], cam ? cam + '.' + k : k, acc)); return acc;
 }
+C.roboExtrasAtualizar_(); C.sbEnviarSujas_(); // a "foto" do estado do robô (no escritório, o Apps Script tira de 10 em 10 min)
 (async () => {
   for (const [uid, ver, nome] of [['U1', '0', 'administrador'], ['U2', '0', 'estagiário'], ['U3', '2', 'RH'], ['U4', '0', 'advogada']]) {
     console.log('\n===== perfil', nome, '=====');

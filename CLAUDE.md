@@ -1196,3 +1196,21 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   planilhas iguais; pedido repetido grava uma vez; linha mudada no meio refaz sem perder; Google/login/sessão inválida/versão/desligado
   voltam; acesso negado registrado) e `deno.mjs` (a função no DENO com relógio em Greenwich: igual ao Apps Script, gravação ~0,2 s).
 
+## 8.33.0 Etapa D — entrar sem o Google + velocidade (pedido da usuária: "está travando; deixe bem melhor")
+
+- Login pela função "painel" (`entrar` em servidor.js → `M.entrar` = o login_ do Code.gs com PropertiesService falso só para CHAVE_SENHAS):
+  mesmas travas e mensagens (5 erros por pessoa, contador geral em painel_estado login_falhas via `painel_login_falha`). A chave das senhas
+  fica no COFRE do Supabase (Vault, `painel_segredo_gravar`/`painel_login_info`; nunca em tabela comum). Devolve { token, usuario } + `banco`
+  (a sessão do banco pronta: `painel_sessao_nova`). O Apps Script aceita a sessão criada pela função (`sbSessaoDoBanco_` em usuarioDaSessao_:
+  confere painel_sessoes.sessao = sha256 do token, expira, 6 h parado, sessao_versao). Sair apaga também pela função (`painel_sessao_sair`).
+- Ligar: Gerenciar acessos › Banco novo › "🔑 Entrar pelo Supabase (Etapa D)" (`banco.conferir` entrar=sim|nao; Properties BANCO_ENTRAR;
+  painel_estado login_edge e publica); exige o motor do Supabase; desligar o motor desliga a entrada. O navegador lembra o endereço da função e
+  a chave PÚBLICA em localStorage `painel_edge` e tenta entrar por ela; não deu → login pelo Google.
+- Velocidade: a função guarda as tabelas na memória entre pedidos (`carregar` + `painel_assinaturas`; trigger `painel_em` marca _em em toda
+  mudança); o navegador lembra 12 h o que precisa do Google (`banco_fora_<perfil>_<versão>`, `foraLembrado`; motivos passageiros não contam);
+  `BANCO.acordar()` ao abrir e de 4 em 4 min; leitura pela função espera 10 s (antes 15). Início: agenda/extras/eu.painel/aguardando esperam
+  1,5 s e a tela se redesenha quando chegam (antes até 25 s; o redesenho não funcionava em #/inicio). `estadoExtras_` lê a foto Config
+  ROBO_EXTRAS (`roboExtrasAtualizar_` no aquecerGatilho e no robô de hora em hora; grava só se mudou) → o "resumo" sai do navegador.
+- Teste: `.github/motor/teste/etapaD.mjs` (login igual ao Apps Script, bloqueio, contador, sessões, planilha fora, Sair, desligar) e deno.mjs
+  (2ª chamada com as tabelas na memória ~0,1 s; mudança feita direto no banco é percebida). O banco de teste precisa de um "vault" falso
+  (LEIA.md).

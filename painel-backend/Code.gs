@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.32.0';
+var VERSAO = '8.33.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -779,6 +779,7 @@ function usuarioDaSessao_(token) {
   var cache = CacheService.getScriptCache();
   if (!/^[0-9a-f]{96}$/.test(token)) throw falha_('Sua sessão terminou. Entre de novo.', true);
   var valor = cache.get('sessao_' + token);
+  if (!valor) valor = sbSessaoDoBanco_(token); // 8.33: quem entrou pelo Supabase (o Google ainda faz documentos, Drive, Agenda…)
   if (!valor) throw falha_('Sua sessão terminou. Entre de novo.', true);
   var partes = valor.split('|');
   var id = partes[0], versao = partes[1], criada = +partes[2] || 0;
@@ -9151,11 +9152,20 @@ function aquecerMemoria_() {
   return n;
 }
 /** 8.12: só no horário do escritório (seg–sex 7h–19h, sáb 8h–13h): fora dele ninguém abre o painel e o Google conta cada minuto de robô. */
+/** 8.33: a "foto" do que só o Google sabe para o cartão do robô (grava só se mudou). */
+function roboExtrasAtualizar_() {
+  var g = { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(),
+    ia: (function () { try { return !!chaveIA_(); } catch (e) { return false; } })() };
+  var txt = JSON.stringify(g);
+  try { if (txt !== config_('ROBO_EXTRAS')) setConfig_('ROBO_EXTRAS', txt, 'Estado do robô para as telas (atualizado sozinho de 10 em 10 min)'); } catch (eS) { /* tenta na próxima */ }
+  return g;
+}
 function aquecerGatilho() {
   var agora = new Date(), hora = +Utilities.formatDate(agora, TZ, 'H'), dsem = +Utilities.formatDate(agora, TZ, 'u'); // 1 = segunda … 7 = domingo
   var util = (dsem <= 5 && hora >= 7 && hora < 19) || (dsem === 6 && hora >= 8 && hora < 13);
   if (!util) return;
   var t0 = Date.now();
+  try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
@@ -10273,8 +10283,12 @@ function andamentosProcesso_(d, u) {
 }
 
 function estadoExtras_() {
-  return { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
-    ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
+  // 8.33 velocidade: o que só o Google sabe (tempo de robô do dia, alertas do vigia, chave da IA) vem da "foto" que o Apps Script
+  // guarda em Config ROBO_EXTRAS de 10 em 10 min (roboExtrasAtualizar_). Assim o Início abre pelo Supabase, sem esperar o Google.
+  var g = null; try { g = JSON.parse(config_('ROBO_EXTRAS') || 'null'); } catch (eJ) { g = null; }
+  if (!g) g = roboExtrasAtualizar_();
+  return { tempoRobo: g.tempoRobo || null, alertas: g.alertas || [], datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
+    ia: { ligada: !!g.ia && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO, agenda: config_('AGENDA_SINC') || '' };
 }
 
@@ -10479,6 +10493,7 @@ function roboRapidoGatilho() {
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
+  try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   try { sbEnviarSujas_(); } catch (eB2) { /* fica pendente */ }
 }
 
@@ -14288,7 +14303,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {
@@ -14822,9 +14837,25 @@ function bancoConferir_(d, u) {
       if (pg.versao !== VERSAO) throw falha_('A função do Supabase é da versão ' + pg.versao + ' e o Code.gs é ' + VERSAO + '. Publique a função de novo.');
       sbEstado_('asaas', asaasChave_() ? 'sim' : 'nao'); sbEstado_('edge', 'sim');
       P.setProperty('BANCO_EDGE', 'sim'); registrar_(u.usuario, 'banco: motor do Supabase ligado', pg.versao);
-    } else { sbEstado_('edge', 'nao'); P.setProperty('BANCO_EDGE', 'nao'); registrar_(u.usuario, 'banco: motor do Supabase desligado', ''); }
+    } else { sbEntrarDesligar_(); sbEstado_('edge', 'nao'); P.setProperty('BANCO_EDGE', 'nao'); registrar_(u.usuario, 'banco: motor do Supabase desligado', ''); }
     SB_EDGE_ = null;
   }
+  if (d.entrar !== undefined) { // 8.33 Etapa D: entrar no painel pelo Supabase (sem o Google)
+    if (d.entrar === 'sim') {
+      if (!sbEdge_()) throw falha_('Ligue antes o "motor do Supabase".');
+      var c3 = sbConf_(), esc3 = sbEscritorio_();
+      if (!c3.publica) throw falha_('Falta a chave pública do Supabase (Gerenciar acessos › Banco novo).');
+      supabase_('post', 'rpc/painel_segredo_gravar', { p_escritorio: esc3, p_valor: chaveSecreta_() }); // vai para o cofre (Vault)
+      sbEstado_('publica', c3.publica); sbEstado_('login_edge', 'sim');
+      var pe = sbEdgePing_(true);
+      if (!pe.ok || !pe.entrar || pe.versao !== VERSAO) {
+        sbEntrarDesligar_();
+        throw falha_('A função do Supabase não conseguiu conferir as senhas (' + (pe.erro || (pe.versao && pe.versao !== VERSAO ? 'versão ' + pe.versao + ' × ' + VERSAO : 'rode o leitura-rapida.sql 8.33')) + '). Nada mudou.');
+      }
+      P.setProperty('BANCO_ENTRAR', 'sim'); registrar_(u.usuario, 'banco: entrar pelo Supabase ligado', pe.versao);
+    } else { sbEntrarDesligar_(); registrar_(u.usuario, 'banco: entrar pelo Supabase desligado', ''); }
+  }
+  r.entrar = P.getProperty('BANCO_ENTRAR') === 'sim' && sbEdge_() ? 'sim' : 'nao';
   r.edge = sbEdge_() ? 'sim' : 'nao';
   if (r.edge === 'sim' || d.testarEdge) { var pg2 = sbEdgePing_(); r.edge_versao = pg2.ok ? pg2.versao : ''; r.edge_erro = pg2.ok ? '' : pg2.erro; }
   r.login = P.getProperty('BANCO_LOGIN') === 'supabase' ? 'supabase' : 'planilha';
@@ -15047,13 +15078,37 @@ function sbEdge_() {
   try { SB_EDGE_ = PropertiesService.getScriptProperties().getProperty('BANCO_EDGE') === 'sim' && sbLogin_(); } catch (e) { SB_EDGE_ = false; }
   return SB_EDGE_;
 }
-function sbEdgePing_() {
+function sbEdgePing_(entrar) {
   var c = sbConf_();
   try {
     var cab = { apikey: c.publica || c.chave }; if (/^eyJ/.test(cab.apikey)) cab.Authorization = 'Bearer ' + cab.apikey;
-    var r = UrlFetchApp.fetch(c.url + '/functions/v1/painel', { method: 'post', contentType: 'application/json', headers: cab, payload: JSON.stringify({ ping: true }), muteHttpExceptions: true });
+    var r = UrlFetchApp.fetch(c.url + '/functions/v1/painel', { method: 'post', contentType: 'application/json', headers: cab, payload: JSON.stringify({ ping: true, entrar: !!entrar }), muteHttpExceptions: true });
     if (r.getResponseCode() !== 200) return { ok: false, erro: 'código ' + r.getResponseCode() + (r.getResponseCode() === 404 ? ': a função ainda não foi publicada' : '') };
     var j = JSON.parse(r.getContentText() || '{}');
-    return j && j.ok ? { ok: true, versao: j.versao } : { ok: false, erro: 'resposta inesperada' };
+    return j && j.ok ? { ok: true, versao: j.versao, entrar: !!j.entrar, erro: j.erro || '' } : { ok: false, erro: 'resposta inesperada' };
   } catch (e) { return { ok: false, erro: String(e.message || e).slice(0, 120) }; }
+}
+
+/* ================================================================== */
+/* 8.33 ETAPA D — entrar no painel sem o Google                         */
+/* ================================================================== */
+// A função "painel" do Supabase faz o login (o mesmo login_ deste arquivo, gerado em motor.js) com a chave das senhas guardada no
+// cofre do Supabase (Vault). A sessão que ela cria vale aqui também: quando o painel pede algo que só o Google faz (documentos,
+// Drive, Agenda, IA…), o código da sessão não está na memória do Google e é conferido na tabela painel_sessoes.
+function sbSessaoDoBanco_(token) {
+  try {
+    if (!sbLogin_()) return null;
+    var x = supabase_('get', 'painel_sessoes?escritorio_id=eq.' + sbEscritorio_() + '&sessao=eq.' + sha256Hex_(token) + '&select=usuario_id,versao,criado_em,expira_em,ultimo_uso');
+    var s = x && x[0];
+    if (!s || Date.parse(s.expira_em) < Date.now() || Date.parse(s.ultimo_uso) < Date.now() - SESSAO_SEG * 1000) return null;
+    var valor = [s.usuario_id, s.versao || '0', Date.parse(s.criado_em) || Date.now()].join('|');
+    CacheService.getScriptCache().put('sessao_' + token, valor, SESSAO_SEG);
+    return valor;
+  } catch (e) { return null; }
+}
+function sbEntrarDesligar_() {
+  var P = PropertiesService.getScriptProperties();
+  sbEstado_('login_edge', 'nao');
+  try { supabase_('post', 'rpc/painel_segredo_gravar', { p_escritorio: sbEscritorio_(), p_valor: '' }); } catch (e) { /* sem o SQL 8.33: nada guardado */ }
+  P.setProperty('BANCO_ENTRAR', 'nao');
 }

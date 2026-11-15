@@ -339,4 +339,116 @@ revoke all on function painel_ler(text, jsonb) from public;
 grant execute on function painel_ler(text, jsonb) to anon, authenticated, service_role;
 revoke all on table painel_sessoes from anon, authenticated;
 revoke all on table painel_estado from anon, authenticated;
+
+-- ====================================================================================================================
+-- 8.33 ETAPA D — entrar no painel sem o Google. A função "painel" confere usuário e senha (mesmo cálculo do Apps Script),
+-- cria as duas sessões e devolve tudo ao navegador. A chave das senhas fica no COFRE do Supabase (Vault: guardada
+-- criptografada; só estas funções do servidor leem). Só vale quando o escritório liga (painel_estado login_edge = sim).
+-- ====================================================================================================================
+create or replace function painel_segredo_gravar(p_escritorio uuid, p_valor text) returns void
+language plpgsql security definer set search_path = public, vault as $$
+declare nome text := 'painel_senhas_' || p_escritorio::text; sid uuid;
+begin
+  select id into sid from vault.secrets where name = nome;
+  if coalesce(p_valor, '') = '' then
+    if sid is not null then delete from vault.secrets where id = sid; end if;
+    return;
+  end if;
+  if sid is null then perform vault.create_secret(p_valor, nome, 'chave das senhas do painel (não compartilhar)');
+  else perform vault.update_secret(sid, p_valor); end if;
+end $$;
+
+-- contador geral de senhas erradas (15 min), como o "login_falhas" do Apps Script
+create or replace function painel_login_falhas_(p_valor text) returns integer language sql immutable as $$
+  select case when nullif(split_part(coalesce(p_valor, ''), '|', 2), '') is null
+               or split_part(p_valor, '|', 2)::timestamptz < now() - interval '15 minutes' then 0
+              else coalesce(nullif(split_part(p_valor, '|', 1), '')::integer, 0) end
+$$;
+create or replace function painel_login_falha(p_escritorio uuid) returns integer
+language plpgsql security definer set search_path = public as $$
+declare v text; n integer; desde text;
+begin
+  select valor into v from painel_estado where escritorio_id = p_escritorio and chave = 'login_falhas' for update;
+  n := painel_login_falhas_(v);
+  desde := case when n = 0 then now()::text else split_part(v, '|', 2) end;
+  n := n + 1;
+  insert into painel_estado (escritorio_id, chave, valor, em) values (p_escritorio, 'login_falhas', n || '|' || desde, now())
+    on conflict (escritorio_id, chave) do update set valor = excluded.valor, em = now();
+  return n;
+end $$;
+
+-- o que a função precisa para conferir a senha (o escritório que ligou "Entrar pelo Supabase")
+create or replace function painel_login_info() returns jsonb
+language plpgsql security definer set search_path = public, vault as $$
+declare escs uuid[]; esc uuid; seg text; est jsonb;
+begin
+  select array_agg(escritorio_id) into escs from painel_estado where chave = 'login_edge' and valor = 'sim';
+  if coalesce(array_length(escs, 1), 0) <> 1 then return null; end if;
+  esc := escs[1];
+  select decrypted_secret into seg from vault.decrypted_secrets where name = 'painel_senhas_' || esc::text;
+  if coalesce(seg, '') = '' then return null; end if;
+  select coalesce(jsonb_object_agg(e.chave, e.valor), '{}'::jsonb) into est from painel_estado e
+   where e.escritorio_id = esc and e.chave in ('pendente', 'asaas', 'edge', 'publica');
+  return jsonb_build_object('escritorio_id', esc, 'segredo', seg, 'estado', est,
+    'falhas', painel_login_falhas_((select valor from painel_estado where escritorio_id = esc and chave = 'login_falhas')));
+end $$;
+
+-- cria a sessão do banco no login feito pela função (o mesmo que o Apps Script faz em banco.sessao)
+create or replace function painel_sessao_nova(p_escritorio uuid, p_token_hash text, p_usuario_id text, p_usuario text, p_perfil text,
+  p_permissoes jsonb, p_expira timestamptz, p_versao text, p_sessao text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from painel_sessoes where expira_em < now();
+  insert into painel_sessoes (token_hash, escritorio_id, usuario_id, usuario, perfil, permissoes, expira_em, versao, sessao)
+  values (p_token_hash, p_escritorio, p_usuario_id, p_usuario, p_perfil, coalesce(p_permissoes, '{}'::jsonb), p_expira, coalesce(nullif(p_versao, ''), '0'), p_sessao);
+end $$;
+
+-- Sair (pelo código da sessão do banco): apaga a sessão
+create or replace function painel_sessao_sair(p_token text) returns void
+language sql security definer set search_path = public as $$
+  delete from painel_sessoes where token_hash = encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex')
+$$;
+
+revoke all on function painel_segredo_gravar(uuid, text) from public, anon, authenticated;
+revoke all on function painel_login_falha(uuid) from public, anon, authenticated;
+revoke all on function painel_login_info() from public, anon, authenticated;
+revoke all on function painel_sessao_nova(uuid, text, text, text, text, jsonb, timestamptz, text, text) from public, anon, authenticated;
+revoke all on function painel_sessao_sair(text) from public, anon, authenticated;
+grant execute on function painel_segredo_gravar(uuid, text) to service_role;
+grant execute on function painel_login_falha(uuid) to service_role;
+grant execute on function painel_login_info() to service_role;
+grant execute on function painel_sessao_nova(uuid, text, text, text, text, jsonb, timestamptz, text, text) to service_role;
+grant execute on function painel_sessao_sair(text) to service_role;
+
+-- 8.33 (velocidade): "assinatura" de cada tabela (quantas linhas + última mudança + maior _n). A função "painel" guarda as tabelas
+-- na memória entre um pedido e outro e só busca de novo a que mudou (antes buscava até 6 MB a cada pedido).
+create or replace function painel_assinaturas(p_escritorio uuid, p_tabelas text[]) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t text; a text; res jsonb := '{}'::jsonb;
+begin
+  foreach t in array coalesce(p_tabelas, '{}'::text[]) loop
+    if t !~ '^[a-z_]+$' or t like 'painel\_%' then raise exception 'tabela inválida: %', t; end if;
+    execute format('select count(*) || %L || coalesce(max(_em)::text, %L) || %L || coalesce(max(_n), 0) from public.%I where escritorio_id = $1', '|', '', '|', t)
+      into a using p_escritorio;
+    res := res || jsonb_build_object(t, a);
+  end loop;
+  return res;
+end $$;
+revoke all on function painel_assinaturas(uuid, text[]) from public, anon, authenticated;
+grant execute on function painel_assinaturas(uuid, text[]) to service_role;
+
+-- 8.33: qualquer mudança numa linha (venha de onde vier) marca _em = agora. O navegador e a função "painel" usam _em para saber o que
+-- mudou; sem esta regra, uma mudança feita direto no banco ficaria invisível para eles.
+create or replace function painel_marcar_em_() returns trigger language plpgsql as $$
+begin new._em := now(); return new; end $$;
+do $$
+declare t text;
+begin
+  for t in select c.table_name from information_schema.columns c join information_schema.tables x on x.table_schema = c.table_schema and x.table_name = c.table_name
+            where c.table_schema = 'public' and c.column_name = '_em' and x.table_type = 'BASE TABLE' loop
+    execute format('drop trigger if exists painel_em on public.%I', t);
+    execute format('create trigger painel_em before update on public.%I for each row execute function painel_marcar_em_()', t);
+  end loop;
+end $$;
+
 notify pgrst, 'reload schema';

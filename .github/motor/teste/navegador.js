@@ -12,6 +12,7 @@ C.copiarParaSupabase_(240000, true);
   const google = [], banco = [], erros = [];
   pg.on('console', m => { if (m.type() === 'error') erros.push(m.text()); });
   pg.on('pageerror', e => erros.push(String(e)));
+  pg.on('requestfailed', q => console.log('   (sem rede no teste:', q.url().slice(0, 70) + ')'));
   await pg.route('https://script.google.com/**', async r => {
     if (r.request().method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     const corpo = r.request().postData(); const j = JSON.parse(corpo);

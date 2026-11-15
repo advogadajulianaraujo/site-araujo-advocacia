@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.32.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.33.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.32.0';
+var MOTOR_VERSAO = '8.33.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -78,7 +78,7 @@ function registrar_() { /* o registro é só do servidor */ }
 function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.32.0';
+var VERSAO = '8.33.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -1509,6 +1509,13 @@ function meuPainel_(d, u) {
 }
 
 /** "Eu faço": a pessoa pega o prazo, a intimação ou a petição inicial; aparece nas Tarefas dela. */
+function roboExtrasAtualizar_() {
+  var g = { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(),
+    ia: (function () { try { return !!chaveIA_(); } catch (e) { return false; } })() };
+  var txt = JSON.stringify(g);
+  try { if (txt !== config_('ROBO_EXTRAS')) setConfig_('ROBO_EXTRAS', txt, 'Estado do robô para as telas (atualizado sozinho de 10 em 10 min)'); } catch (eS) { /* tenta na próxima */ }
+  return g;
+}
 function tempoRoboHoje_() {
   try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
   catch (e) { return { min: 0, vezes: 0 }; }
@@ -1634,8 +1641,12 @@ function chaveIA_() { return PropertiesService.getScriptProperties().getProperty
 var ESTADUAIS_DATAJUD = ['', 'tjac', 'tjal', 'tjap', 'tjam', 'tjba', 'tjce', 'tjdft', 'tjes', 'tjgo', 'tjma', 'tjmt', 'tjms', 'tjmg', 'tjpa', 'tjpb', 'tjpr',
   'tjpe', 'tjpi', 'tjrj', 'tjrn', 'tjrs', 'tjro', 'tjrr', 'tjsc', 'tjse', 'tjsp', 'tjto'];
 function estadoExtras_() {
-  return { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(), datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
-    ia: { ligada: !!chaveIA_() && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
+  // 8.33 velocidade: o que só o Google sabe (tempo de robô do dia, alertas do vigia, chave da IA) vem da "foto" que o Apps Script
+  // guarda em Config ROBO_EXTRAS de 10 em 10 min (roboExtrasAtualizar_). Assim o Início abre pelo Supabase, sem esperar o Google.
+  var g = null; try { g = JSON.parse(config_('ROBO_EXTRAS') || 'null'); } catch (eJ) { g = null; }
+  if (!g) g = roboExtrasAtualizar_();
+  return { tempoRobo: g.tempoRobo || null, alertas: g.alertas || [], datajud: { ultima: config_('DATAJUD_ULTIMA'), erro: config_('DATAJUD_ERRO'), ok: config_('DATAJUD_OK') || '' },
+    ia: { ligada: !!g.ia && config_('IA_LIGADA') !== 'nao', ultima: config_('IA_ULTIMA'), erro: config_('IA_ERRO') },
     email: { ultimo: config_('RESUMO_EMAIL_DIA') }, versao: VERSAO, agenda: config_('AGENDA_SINC') || '' };
 }
 
@@ -1746,7 +1757,7 @@ var ROTAS_MOTOR = {
 window.PAINEL_MOTOR = {
   versao: MOTOR_VERSAO,
   esquema: ESQUEMA,
-  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
+  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
   tabelasDaRota: {"resumo":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["Audiencias","Clientes","Eventos","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["Audiencias","Clientes","Eventos","Feriados","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"]},
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },
   /** Roda a rota como o Apps Script faria (rotear_): permissão do perfil, a conta e os valores escondidos do RH. */

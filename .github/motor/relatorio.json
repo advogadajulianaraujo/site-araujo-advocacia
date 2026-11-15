@@ -1,5 +1,5 @@
 {
- "versao": "8.32.0",
+ "versao": "8.33.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -24,6 +24,7 @@
   "RESP_PJE",
   "RESP_SECRETARIA",
   "RESUMO_EMAIL_DIA",
+  "ROBO_EXTRAS",
   "ROBO_GMAIL_OK",
   "ROBO_ULTIMA_EXECUCAO",
   "ROBO_ULTIMO_RESULTADO"
@@ -44,7 +45,7 @@
     "Session",
     "Utilities"
    ],
-   "funcoes": 30
+   "funcoes": 31
   },
   "clientes.listar": {
    "tabelas": [
@@ -365,5 +366,5 @@
    "funcoes": 13
   }
  },
- "funcoes": 122
+ "funcoes": 123
 }

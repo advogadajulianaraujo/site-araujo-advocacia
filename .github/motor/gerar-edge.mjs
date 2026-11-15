@@ -16,7 +16,7 @@ export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome, ok) { return new Proxy({}, { get: function (_, p) { if (ok && ok[p] !== undefined) return ok[p]; return foraDoNavegador_(nome + '.' + String(p)); } }); }
-var CACHE_ = {};
+var CACHE_ = {}, PROPS_ = null; // PROPS_: só no login (a chave das senhas, vinda do cofre do Supabase)
 function bytes_(b) { return Array.prototype.map.call(b, function (x) { return x > 127 ? x - 256 : x; }); }
 function sem_(b) { return Uint8Array.from(b.map(function (x) { return x & 255; })); }
 var UTIL_ = {
@@ -32,7 +32,7 @@ var UTIL_ = {
 };
 var SpreadsheetApp = servico_('SpreadsheetApp'), DriveApp = servico_('DriveApp'), CalendarApp = servico_('CalendarApp'), GmailApp = servico_('GmailApp'),
   MailApp = servico_('MailApp'), UrlFetchApp = servico_('UrlFetchApp'), DocumentApp = servico_('DocumentApp'), LockService = servico_('LockService'),
-  ScriptApp = servico_('ScriptApp'), PropertiesService = servico_('PropertiesService'), ContentService = servico_('ContentService'), HtmlService = servico_('HtmlService'),
+  ScriptApp = servico_('ScriptApp'), PropertiesService = servico_('PropertiesService', { getScriptProperties: function () { return servico_('Propriedades', { getProperty: function (k) { if (PROPS_ && PROPS_[k] !== undefined) return PROPS_[k]; return foraDoNavegador_('Propriedades.' + k); } }); } }), ContentService = servico_('ContentService'), HtmlService = servico_('HtmlService'),
   Drive = servico_('Drive'), Calendar = servico_('Calendar'), XmlService = servico_('XmlService'), Charts = servico_('Charts'),
   Session = servico_('Session', { getScriptTimeZone: function () { return 'America/Sao_Paulo'; } }),
   Utilities = servico_('Utilities', UTIL_), Logger = servico_('Logger', { log: function () {} }),
@@ -70,6 +70,7 @@ function sbAntesDaRota_() {} function sbDepoisDaRota_() {}
 function comTrava_(fn) { return fn(); }
 function comMemoria_(acao, u, dados, fn) { return fn(); }
 function marcarMudanca_() {}
+function garantirGatilho_() {} // 8.33: os gatilhos dos robôs são do Apps Script (ele confere sozinho)
 function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function ultimasLinhasLog_(n) { return tabela_('Log').linhas.slice(-n).map(function (l) { return [l.quando, l.usuario, l.acao, l.detalhe]; }); }
 function montarOps_() {
@@ -87,6 +88,22 @@ function montarOps_() {
 }
 return {
   rotas: ROTAS, perfis: PERFIS, esquema: ESQUEMA, leituras: LEITURAS_RAPIDAS, tabelaDe: sbTabela_,
+  /** 8.33 Etapa D: o login_ do Code.gs (mesmas travas e mensagens). amb.segredo = chave das senhas; amb.falhas = contador geral. */
+  entrar: function (dados, amb) {
+    AMB = amb; SB_PEND = {}; SB_EXEC = {}; SB_LOG = []; SB_TMP_ = 0; SB_LEITURAS = {}; SB_USADAS = {}; SB_ESCRITAS = {}; MEMO_LEITURA = null;
+    CACHE_ = { login_falhas: String(amb.falhas || 0) }; PROPS_ = { CHAVE_SENHAS: String(amb.segredo || '') };
+    var antes = CACHE_.login_falhas;
+    try {
+      if (!PROPS_.CHAVE_SENHAS) foraDoNavegador_('sem a chave das senhas');
+      var res = login_(dados || {});
+      var linha = tabela_('Usuarios').linhas.filter(function (x) { return x.id === res.usuario.id; })[0];
+      var sess = String(CACHE_['sessao_' + res.token] || '').split('|');
+      var cp = {}; ESQUEMA.Usuarios.forEach(function (k) { if (k !== 'hash' && k !== 'salt') cp[k] = linha[k] === undefined || linha[k] === null ? '' : linha[k]; });
+      return { res: res, ops: montarOps_(), falhou: CACHE_.login_falhas !== antes, perm: sbPermissoes_(linha), u: cp, versao: sess[1] || '0',
+        maxMs: SESSAO_MAX_MS, tarefasOk: SB_TAREFAS_FILTRADAS_OK };
+    } catch (e) { e.ops = e.publico ? montarOps_() : []; e.falhou = CACHE_.login_falhas !== antes; throw e; }
+    finally { PROPS_ = null; AMB = null; }
+  },
   /** Roda a rota como o rotear_ do Apps Script (sem a sessão: a pessoa já foi conferida no banco). */
   rodar: function (acao, dados, u, amb) {
     var rota = ROTAS[acao];
