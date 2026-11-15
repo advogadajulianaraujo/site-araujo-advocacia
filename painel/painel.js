@@ -684,13 +684,13 @@
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
     ['modelos', 'Documentos', null, null, 'Gestão'],
-    ['crm', 'Atendimento', 'usuarios', 'conversas', 'Gestão'],
+    ['crm', 'CRM', 'usuarios', 'conversas', 'Gestão'],
     ['relatorios', 'Relatórios', 'usuarios', null, 'Gestão']
   ];
   // sub-abas da barra do topo: [rota, nome, permissão]
   const SUBABAS = {
     modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa']],
-    crm: [['crm', 'Funil de atendimento', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
+    crm: [['crm', 'Funil', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
     relatorios: [['relatorios', 'Resumo do mês', 'usuarios'], ['relatorios?ver=equipe', 'Equipe', 'usuarios']]
   };
   const SECAO_DA_TELA = { compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
@@ -763,6 +763,7 @@
   function marcarAba(id) {
     if (modoFuture()) { const c = (location.hash.slice(2).split('?')[0]).replace(/^future\/unidade\/.*/, 'future/unidades'); abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === c)); desenharSubabas(''); return; }
     const tela = id;
+    document.body.dataset.tela = tela; // 8.37: telas com busca própria escondem a barra do topo
     id = SECAO_DA_TELA[id] || id;
     abasEl.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.dataset.aba === id));
     desenharSubabas(id, tela);
@@ -2422,23 +2423,63 @@
           [['', 'Todos'], ['com', 'Com cliente cadastrado'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
         h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
         (sit !== 'todos' || trib || cli || ato || area || busca || fase) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null);
-    const principal = h('div', { class: 'col-principal' },
-      etapasProc,
-      visao === 'quadro' ? comSetas(quadroProc) : compacta(tabela(['Processo', 'Fase', 'Cliente', 'Tribunal', 'Órgão', 'Próximo ato'], lista, p => [
-        h('td', { class: 'num', 'data-r': 'Processo' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null, h('div', {}, acessoTribunal(p.numero))),
-        h('td', { 'data-r': 'Fase' }, etiquetaFase(p.fase), p.responsavel ? h('div', { class: 'peq' }, '👤 ' + p.responsavel) : null),
+    const tabelaLista = () => compacta(tabela(['Processo', 'Etapa', 'Cliente', 'Área · tribunal', 'Próximo ato'], lista, p => [
+        h('td', { class: 'num', 'data-r': 'Processo', title: p.orgao || '' }, p.numero || '(a ajuizar)', p.status === 'arquivado' ? h('span', { class: 'tag mini-tag' }, 'arquivado') : null),
+        h('td', { 'data-r': 'Etapa' }, etiquetaFase(p.fase)),
         h('td', { 'data-r': 'Cliente' }, p.cliente_id ? p.cliente_nome : h('span', { class: 'tag atencao' }, p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome + ' (sem cadastro)' : 'a identificar')),
-        h('td', { 'data-r': 'Tribunal' }, p.tribunal, p.sistema ? h('span', { class: 'peq' }, ' · ' + p.sistema) : null),
-        h('td', { 'data-r': 'Órgão' }, p.orgao),
+        h('td', { 'data-r': 'Área · tribunal' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
         h('td', { 'data-r': 'Próximo ato' }, p.proximo_ato
-          ? h('div', { class: 'ato-linha' }, h('span', {}, atoComData(p.proximo_ato, p.proximo_ato_data)), p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : null)
+          ? h('span', { class: 'ato-linha', title: atoComData(p.proximo_ato, p.proximo_ato_data) }, String(p.proximo_ato).replace(/^Audiência de /i, '').replace(/^./, x => x.toUpperCase()).slice(0, 22) + (p.proximo_ato_data ? ' ' + p.proximo_ato_data.slice(8, 10) + '/' + p.proximo_ato_data.slice(5, 7) : ''), p.proximo_ato_data ? etiquetaDias(p.proximo_ato_data) : null)
           : h('span', { class: 'peq' }, p.ultimo_movimento_em ? 'últ. mov. ' + new Date(p.ultimo_movimento_em).toLocaleDateString('pt-BR') : '—'))
-      ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.')));
+      ], p => { location.hash = '#/processo/' + p.id; }, 'Nenhum processo encontrado.'));
+    // 8.37 (pedido da usuária: "mais futurista"): título + busca numa linha, uma linha reta, gráfico das ÁREAS, as ETAPAS e os filtros à DIREITA
+    const formBusca = h('form', { class: 'px-busca', role: 'search' }, h('span', { 'aria-hidden': 'true' }, '⌕'),
+      h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar processo: número, cliente, parte contrária ou vara', 'aria-label': 'Buscar processos' }),
+      h('button', { type: 'submit', class: 'btn mini' }, 'Buscar'));
+    formBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: formBusca.busca.value.trim() }); });
+    const maxArea = Math.max(1, ...areas.map(a => porArea[a]));
+    const graficoAreas = h('div', { class: 'px-areas', role: 'group', 'aria-label': 'Processos por área' },
+      areas.map((a, i) => { const el = h('button', { type: 'button', class: 'px-area' + (area === a ? ' ativo' : ''), 'aria-pressed': String(area === a), onclick: () => ir({ area: area === a ? '' : a }) },
+        h('span', { class: 'px-area-n' }, String(porArea[a])), h('span', { class: 'px-area-nome' }, a),
+        h('span', { class: 'px-area-trilho' }, (() => { const f = h('i'); f.style.setProperty('width', Math.max(4, porArea[a] * 100 / maxArea) + '%'); f.style.setProperty('background', CORES_GRAF[i % CORES_GRAF.length]); return f; })()));
+        return el; }));
+    const totFases = Object.keys(FASES).reduce((t, f) => t + (porFaseArea[f] || 0), 0) || 1;
+    const etapas = h('div', { class: 'px-etapas' },
+      h('div', { class: 'px-pipe', 'aria-hidden': 'true' }, Object.keys(FASES).filter(f => porFaseArea[f]).map(f => { const seg = h('i', { title: `${FASES[f]}: ${porFaseArea[f]}` }); seg.style.setProperty('flex', String(porFaseArea[f] / totFases)); seg.style.setProperty('background', CORES_FASE[f] || '#9aa0aa'); return seg; })),
+      h('div', { class: 'px-fases', role: 'group', 'aria-label': 'Etapas' },
+        h('button', { type: 'button', class: 'px-fase' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) }, 'Todas', h('b', {}, String(todos.filter(p => !area || nomeArea(p) === area).length))),
+        Object.keys(FASES).map(f => { const b = h('button', { type: 'button', class: 'px-fase' + (fase === f ? ' ativo' : '') + (porFaseArea[f] ? '' : ' vazia'), onclick: () => ir({ fase: fase === f ? '' : f }) }, h('i', { 'aria-hidden': 'true' }), FASES[f], h('b', {}, String(porFaseArea[f] || 0))); b.style.setProperty('--cor', CORES_FASE[f] || '#9aa0aa'); return b; })));
+    const lado = h('aside', { class: 'px-lado' },
+      h('h3', {}, 'Filtros'),
+      h('label', {}, 'Andamento', h('select', { onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value, area: '' }) },
+        [['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`], ['todos', `Todos (${todosSit.length})`]].map(([v, t]) => h('option', { value: v, selected: sit === v }, t)))),
+      h('label', {}, 'Tribunal', h('select', { onchange: e => ir({ trib: e.target.value, area: '' }) },
+        h('option', { value: '' }, 'Todos'), tribunais.map(t => h('option', { value: t, selected: trib === t }, `${t} (${porTrib[t] || 0})`)))),
+      h('label', {}, 'Cliente', h('select', { onchange: e => ir({ cli: e.target.value }) },
+        [['', 'Todos'], ['com', 'Com cadastro'], ['sem', 'Sem cliente (a identificar)']].map(([v, t]) => h('option', { value: v, selected: cli === v }, t)))),
+      h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: ato, onchange: e => ir({ ato: e.target.checked ? '1' : '' }) }), 'Só com audiência/ato marcado'),
+      h('div', { class: 'px-visao' }, h('span', {}, 'Ver como'),
+        h('div', { class: 'alternar', role: 'group' },
+          h('button', { type: 'button', class: visao === 'lista' ? 'ativo' : '', onclick: () => { localStorageSet('proc_visao', 'lista'); ir({ visao: 'lista' }); } }, 'Lista'),
+          h('button', { type: 'button', class: visao === 'quadro' ? 'ativo' : '', onclick: () => { localStorageSet('proc_visao', 'quadro'); ir({ visao: 'quadro', fase: '' }); } }, 'Quadro'))),
+      (sit !== 'ativo' || trib || cli || ato || area || busca || fase) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/processos'; } }, 'Limpar filtros') : null,
+      h('hr'),
+      h('a', { class: 'btn sec mini', href: '#/organizar' }, '🔧 Organizar cadastros'));
     mostrar(
-      ...cabCarteira('processos', { busca, ir, filtros: filtrosProc, nCli: nClientes, nProc: totalProc, nAjuizar: todosSit.filter(p => p.fase === 'contratado' && p.status !== 'arquivado').length }),
-      h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''} · ${sit === 'arquivado' ? 'arquivados ou baixados' : sit === 'todos' ? 'em andamento e arquivados' : 'em andamento'}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
-      principal);
-    document.querySelectorAll('.barrinha').forEach(el => { el.style.setProperty('--w', el.dataset.w + '%'); });
+      h('header', { class: 'px-topo' },
+        h('div', { class: 'px-tit' }, h('h1', {}, 'Processos'), h('span', {}, `${nAtivos} em andamento · ${totalProc} no total`)),
+        formBusca,
+        h('a', { class: 'btn dourado', href: '#/processo/novo' }, '+ Novo processo')),
+      h('hr', { class: 'px-linha' }),
+      faixaAssinaturas(),
+      graficoAreas,
+      etapas,
+      h('div', { class: 'px-corpo' },
+        h('div', { class: 'px-main' },
+          h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''}${fase ? ' · ' + FASES[fase] : ''}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
+          visao === 'quadro' ? [h('p', { class: 'peq quadro-dica' }, 'Arraste o cartão para a próxima etapa (ou use "Concluir etapa →").'), comSetas(quadroProc)] : tabelaLista()),
+        lado));
+    void etapasProc; void filtrosProc;
   }
 
   async function telaProcesso(id, params) {
@@ -4335,7 +4376,39 @@
     const abas = h('div', { class: 'cb-abas', role: 'tablist' }, [['atrasadas', 'Atrasadas'], ['mes', 'Este mês'], ['proximas', 'Próximas'], ['pagas', 'Pagas no mês']].map(([id, rot]) =>
       h('button', { type: 'button', role: 'tab', class: 'cb-aba' + (aba === id ? ' on' : ''), 'aria-selected': String(aba === id), onclick: () => ir({ ver: id }) }, rot, listas[id].length ? h('span', { class: 'cb-n' }, String(listas[id].length)) : null)));
     const VAZIO = { atrasadas: 'Ninguém atrasado. 🎉', mes: 'Nada mais vence neste mês.', proximas: 'Nada vencendo nos próximos 30 dias.', pagas: 'Nada recebido neste mês ainda.' };
-    mostrar(cab, numeros, avisoPix, h('section', { class: 'cb-corpo' }, abas, linhasCobranca(listas[aba], recarregar, VAZIO[aba])));
+    // 8.37 (pedido da usuária: "mais futurista, com percentual e gráficos, como o Asaas, sem exagero"): painel do mês para quem vê valores
+    const painelCob = rh ? numeros : (() => {
+      const prev = +m.previsto || 0, rec = +t.recebidoMes || 0, falta = +(m.falta != null ? m.falta : 0), atr = +t.atrasado || 0;
+      const pct = prev ? Math.min(100, Math.round(rec * 100 / prev)) : (rec ? 100 : 0);
+      const barra = (v, cls) => { const b = h('span', { class: 'cbx-barra' }, h('i', { class: cls || '' })); b.firstChild.style.setProperty('width', Math.max(0, Math.min(100, v)) + '%'); return b; };
+      const kpi = (rot, val, sub, cls, alvo, extra) => h('a', { class: 'cbx-kpi ' + (cls || ''), href: '#/financeiro?ver=' + alvo }, h('small', {}, rot), h('b', {}, val), sub ? h('span', {}, sub) : null, extra || null);
+      const inad = h('span', {}, `${t.clientesAtrasados || 0} cliente(s)`);
+      const kpis = h('div', { class: 'cbx-kpis' },
+        kpi('Recebido em ' + nomeMes, reais(rec), `${pct}% do previsto (${reais(prev)})`, 'ok', 'pagas', barra(pct, 'ok')),
+        kpi('Falta receber em ' + nomeMes, reais(falta), `${Math.max(0, (m.qtd || 0) - (m.pagas || 0))} parcela(s) em aberto no mês`, '', 'mes', barra(prev ? falta * 100 / prev : 0)),
+        kpi('Em atraso', reais(atr), null, atr ? 'ruim' : '', 'atrasadas', inad),
+        kpi('Próximos 30 dias', reais(+t.aReceber30 || 0), `${r.proximas.length} parcela(s)`, '', 'proximas'));
+      const roscaMes = h('div', { class: 'cbx-card' }, h('h3', {}, 'Situação de ' + nomeMes), grafRosca([
+        { nome: 'Recebido', valor: rec, cor: '#3D7A55', ir: () => ir({ ver: 'pagas' }) },
+        { nome: 'A receber', valor: falta, cor: '#C9A46A', ir: () => ir({ ver: 'mes' }) },
+        { nome: 'Em atraso', valor: atr, cor: '#B42318', ir: () => ir({ ver: 'atrasadas' }) }], { dinheiro: true, rotulo: 'no mês', centro: pct + '%', titulo: 'Situação do mês', vazio: 'Nada previsto no mês.' }));
+      const faixasCard = h('div', { class: 'cbx-card' }, h('h3', {}, 'Atraso por tempo'),
+        (r.faixas || []).some(f => f.valor) ? grafBarras((r.faixas || []).map(f => ({ nome: f.nome, valor: +f.valor || 0, extra: `${f.qtd} parcela(s)` })), { dinheiro: true }) : h('p', { class: 'peq' }, 'Ninguém atrasado. 🎉'));
+      const meses = h('div', { class: 'cbx-card cbx-largo' }, h('h3', {}, 'Recebido nos últimos 6 meses'), h('p', { class: 'peq' }, 'Carregando…'));
+      api('fin.painel', {}).then(fp => {
+        const fl = ((fp && fp.fluxo) || []).filter(x => x.mes <= hoje.slice(0, 7)).slice(-6);
+        const max = Math.max(1, ...fl.map(x => +x.entradas || 0));
+        meses.replaceChildren(h('h3', {}, 'Recebido nos últimos 6 meses'),
+          fl.length ? h('div', { class: 'cbx-colunas' }, fl.map(x => { const c = h('div', { class: 'cbx-col' + (x.mes === hoje.slice(0, 7) ? ' atual' : ''), title: reais(+x.entradas || 0) },
+            h('span', { class: 'cbx-col-v' }, reais(+x.entradas || 0).replace(/,\d\d$/, '')), h('span', { class: 'cbx-col-b' }, h('i')),
+            h('span', { class: 'cbx-col-m' }, new Date(x.mes + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'short', timeZone: 'UTC' }).replace('.', '')));
+            c.querySelector('i').style.setProperty('height', Math.max(3, (+x.entradas || 0) * 100 / max) + '%'); return c; })) : h('p', { class: 'peq' }, 'Sem dados ainda.'),
+          fp && fp.kpis ? h('p', { class: 'peq cbx-rodape' }, `Média dos 3 meses anteriores: ${reais(fp.kpis.media3 || 0)} · inadimplência (90 dias): ${fp.kpis.inadimplencia || 0}%`) : null);
+        if (fp && fp.kpis) inad.textContent = `${t.clientesAtrasados || 0} cliente(s) · inadimplência ${fp.kpis.inadimplencia || 0}%`;
+      }).catch(() => meses.remove());
+      return h('section', { class: 'cbx' }, kpis, h('div', { class: 'cbx-graficos' }, meses, roscaMes, faixasCard));
+    })();
+    mostrar(cab, painelCob, avisoPix, h('section', { class: 'cb-corpo' }, abas, linhasCobranca(listas[aba], recarregar, VAZIO[aba])));
   }
 
   /** 8.24: uma linha por parcela — nome, parcela, vencimento, situação, valor, UM botão e o ⋯. */
@@ -4837,7 +4910,7 @@
   /** Gráfico de rosca (redondo) com legenda clicável. itens: [{ nome, valor, cor?, ir? }] */
   const CORES_FASE = { contratado: '#7a4fc0', ajuizado: '#2f6fd0', conciliacao: '#2a9fd6', andamento: '#1d8a8a', pericia: '#8a6a37', instrucao: '#1d5fa8',
     sentenca: '#c98a12', acordo: '#e0a23a', homologacao: '#b08d57', recurso: '#d0602d', execucao: '#1f8a4c', extinto: '#9aa0aa' };
-  const CORES_GRAF = ['#2b2d33', '#b08d57', '#2f6fd0', '#1d8a8a', '#7a4fc0', '#d0602d', '#1f8a4c', '#c98a12', '#5b6ee1', '#9aa0aa'];
+  const CORES_GRAF = ['#2A2622', '#C9A46A', '#3D6B8C', '#4F7F6A', '#8C5A7A', '#B5653C', '#6E7F3A', '#8A6A38', '#5A6B8C', '#9aa0aa'];
   function grafRosca(itens, opc) {
     opc = opc || {};
     const lista = itens.filter(x => x.valor > 0);
@@ -5399,6 +5472,7 @@
     }).catch(e => box.replaceChildren(h('p', { class: 'erro' }, e.message)));
     return box;
   }
+  const pode_usuarios = () => !!(sessao && sessao.usuario.pode.usuarios);
   async function telaRelatorios(params) {
     carregando();
     const mesSel = params && /^\d{4}-\d{2}$/.test(params.get('mes') || '') ? params.get('mes') : '';
@@ -5453,6 +5527,35 @@
         n('Contratos fechados', String((r.contratosFechados || [])[iMes] || 0), r.contratosFechados ? comp(r.contratosFechados) : ''),
         n('Prazos cumpridos no prazo', r.prazosEntregues[iMes] ? pctMes[iMes] + '%' : '—', `${r.prazosEntregues[iMes] || 0} entregue(s)` + (r.prazosVencidosAbertos ? ` · ${r.prazosVencidosAbertos} vencido(s) sem baixa` : ''), r.prazosEntregues[iMes] && pctMes[iMes] < 90 ? 'ruim' : ''),
         n('Processos ativos', String(ativos), `${soma(r.processosNovos)} novos em 12 meses`)),
+      // 8.37 (pedido da usuária: "desempenho de cada pessoa, recebido do mês, funil"): equipe do mês e funil do CRM, em gráficos
+      (() => {
+        const box = h('div', { class: 'rel-grade rel-dois' });
+        const eq = cartaoG('Desempenho de cada pessoa', 'Mês atual · o que cada um registrou (conferidos, prazos, tarefas, avisos, documentos).', h('p', { class: 'peq' }, 'Carregando…'));
+        const fu = cartaoG('Funil do CRM', 'Onde estão os contatos agora · entraram e fecharam no mês.', h('p', { class: 'peq' }, 'Carregando…'));
+        box.append(eq, fu);
+        api('relatorio.semana', { per: 'mes' }).then(rs => {
+          const ps = (rs.pessoas || []).filter(x => x.total).slice(0, 10);
+          const cat = id => ((rs.categorias || []).find(c => c.id === id) || {}).nome || id;
+          eq.replaceChildren(h('h2', {}, 'Desempenho de cada pessoa'), h('p', { class: 'peq' }, 'Mês atual · o que cada um registrou no painel.'),
+            ps.length ? grafBarras(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${v} ${cat(k)}`.toLowerCase()).join(' · ') })))
+              : h('p', { class: 'peq' }, 'Ninguém registrou trabalho neste mês ainda.'),
+            h('a', { class: 'md-mais', href: '#/relatorios?ver=equipe' }, 'ver por semana e por dia →'));
+        }).catch(() => eq.remove());
+        api('crm.listar', {}).then(cr => {
+          const leads = cr.leads || [], et = cr.etapas || [], mesA = hojeISO().slice(0, 7);
+          const conta = {}; leads.forEach(l => { conta[l.etapa] = (conta[l.etapa] || 0) + 1; });
+          const novos = leads.filter(l => String(l.criado_em || '').slice(0, 7) === mesA).length;
+          const ganhos = leads.filter(l => l.etapa === 'ganho' && String(l.atualizado_em || '').slice(0, 7) === mesA).length;
+          const max = Math.max(1, ...et.map(e => conta[e[0]] || 0));
+          fu.replaceChildren(h('h2', {}, 'Funil do CRM'),
+            h('div', { class: 'rel-funil-nums' }, h('span', {}, h('b', {}, String(novos)), ' contatos novos no mês'), h('span', {}, h('b', {}, String(ganhos)), ' contratos fechados no mês'),
+              cr.metricas && cr.metricas.conversao != null ? h('span', {}, h('b', {}, cr.metricas.conversao + '%'), ' de fechamento (180 dias)') : null),
+            h('ul', { class: 'rel-funil' }, et.map(([id, nome]) => { const li = h('li', {}, h('span', {}, nome), h('i', {}, h('em')), h('b', {}, String(conta[id] || 0)));
+              li.querySelector('em').style.setProperty('width', Math.max(2, (conta[id] || 0) * 100 / max) + '%'); li.querySelector('em').style.setProperty('background', id === 'ganho' ? '#3D7A55' : id === 'perdido' ? '#B9B1A4' : '#C9A46A'); return li; })),
+            h('a', { class: 'md-mais', href: '#/crm' }, 'abrir o CRM →'));
+        }).catch(() => fu.remove());
+        return pode_usuarios() ? box : null;
+      })(),
       h('div', { class: 'rel-grade rel-dois' },
         cartaoG('Entradas × saídas', 'Últimos 12 meses.', grafColunas(r.meses, [{ nome: 'Entradas', valores: r.entradas, cor: 'c-verde' }, { nome: 'Saídas', valores: r.saidas, cor: 'c-vermelho' }], { dinheiro: true })),
         cartaoG('Clientes novos e contratos fechados', 'Últimos 12 meses.', grafColunas(r.meses, [{ nome: 'Clientes novos', valores: r.clientesNovos, cor: 'c-azul' }].concat(r.contratosFechados ? [{ nome: 'Contratos fechados', valores: r.contratosFechados, cor: 'c-verde' }] : [])))),

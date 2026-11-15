@@ -208,7 +208,7 @@
     fBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ q: fBusca.q.value.trim() }); });
     const sinal = m.atrasados ? h('div', { class: 'nota alerta crm-alerta' }, `⚠ ${m.atrasados} contato(s) com a próxima ação atrasada`, m.parados ? ` e ${m.parados} parado(s) há 7 dias ou mais` : '', '. Quem responde primeiro fecha mais: comece por eles.') : null;
     mostrar(
-      topo('Relacionamento', 'CRM · Funil de atendimento', 'Do primeiro contato ao contrato assinado: cada pessoa que procura o escritório, a próxima ação e onde estamos perdendo clientes.',
+      topo('Relacionamento', 'CRM', 'Do primeiro contato ao contrato assinado.',
         botao('+ Novo contato', () => dialogoLead(null, r, equipe, recarregar), 'dourado'),
         botao('Proposta de honorários', () => dialogoProposta(null, recarregar), 'sec')),
       h('section', { class: 'fin-nums crm-nums' },

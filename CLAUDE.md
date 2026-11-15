@@ -1273,3 +1273,17 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   administração: "Equipe nesta semana" (barras) + rosca de prazos.
 - Agenda: SEM prazos fatais (filtro "Prazos fatais" saiu; prazos ficam em Intimações). Documentos: cartão "Honorários" (Editar honorário → Cobranças ›
   Honorários; Fazer proposta).
+
+## 8.35.2 Painel "mais futurista" (só painel; Code.gs continua 8.35.0) — pedido da usuária
+
+- PÁGINA INTEIRA: `.app` sem largura máxima em todas as telas. `marcarAba` grava `body[data-tela]` (CSS por tela).
+- Processos (`telaProcessos`): no topo "Processos" + busca própria + "+ Novo processo" numa linha (a barra de busca geral some nesta tela),
+  uma LINHA reta, gráfico das ÁREAS (cartões com número e barrinha, clicar filtra), ETAPAS (barra segmentada + chips com contagem) e FILTROS
+  À DIREITA (`px-lado`: andamento, tribunal, cliente, só com ato, Lista/Quadro, organizar). Lista em UMA linha por processo (Processo · Etapa ·
+  Cliente · Área·tribunal · Próximo ato curto). Classes `px-*`.
+- Intimações: tabela de prazos e intimações recebidas em linha reta e mais juntas (só CSS, `body[data-tela="prazos"]`, `.item-intim` em grade).
+- Cobranças: painel do mês (`cbx-*`) — 4 números com % do previsto e barras (recebido, falta receber, em atraso + inadimplência, próximos 30
+  dias), "Recebido nos últimos 6 meses" (colunas, `fin.painel`), rosca da situação do mês e atraso por tempo. RH continua só com contagens.
+- "Atendimento" virou "CRM" (sub-aba "Funil"); topo do CRM mais curto, instruções escondidas.
+- Relatórios: "Desempenho de cada pessoa" (mês, `relatorio.semana` per=mes) e "Funil do CRM" (etapas, novos e fechados no mês, % de fechamento).
+- Paleta dos gráficos (`CORES_GRAF`, `.c-verde/.c-azul/...`) no grafite + dourado.
