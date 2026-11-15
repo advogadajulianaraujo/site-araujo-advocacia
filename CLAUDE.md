@@ -1254,3 +1254,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - ROTAS_MOTOR ganhou agenda.listar e inicio.extras; a função do Supabase descobre até 25 tabelas por tela (antes 10: inicio.extras usa 11).
 - Teste `.github/motor/teste/etapaAgenda.mjs` (Google Agenda simulado: 6 telas × 4 perfis iguais no navegador e 6 na função; dia inteiro,
   evento que atravessa o mês, ↻, mudança pelo painel, evento apagado/mudado/novo, cópia velha, mês fora, robô lê na hora).
+
+## 8.36.0 Documentos sem esperar o Drive (relatório de velocidade: "Agenda, Documentos, audiências/aniversários e Precisa de ação agora ainda lentas")
+
+- Agenda, Audiências e Início (extras e "Precisa de ação agora") já saíram do Google na 8.35 (cópia AgendaEventos); faltava Documentos.
+- `modelosDriveFoto_` (aquecerGatilho e robô de hora em hora) guarda a lista da pasta de modelos do escritório em Config MODELOS_DRIVE_FOTO
+  ({em, lista}; grava só se mudou). Nos motores (`semGoogle_()`), `modelosDriveTodos_` lê a foto; sem foto, cai no Drive e a tela vai ao Google.
+  `modelos.listar` entrou em ROTAS_MOTOR (gerar.mjs). Modelo novo posto na pasta aparece em até 10 min (no horário do escritório).

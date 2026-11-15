@@ -22,7 +22,7 @@ const texto = d => linhas.slice(d.ini, d.fim + 1).join('\n');
 const ROTAS_MOTOR = ['resumo', 'clientes.listar', 'clientes.obter', 'processos.listar', 'prazos.listar', 'intimacoes.listar', 'tarefas.listar',
   'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'eu.painel', 'documentos.assinaturas',
   'fluxos.processo', 'prazos.memoria', 'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'fin.pix', 'fin.acaoCobranca',
-  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras'];
+  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras', 'modelos.listar'];
 const blocoRotas = texto(decl.get('ROTAS'));
 const rotas = {};
 for (const r of ROTAS_MOTOR) {

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.35.0';
+var VERSAO = '8.36.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -7071,6 +7071,10 @@ function modelosDrive_() {
 }
 
 function modelosDriveTodos_() {
+  if (semGoogle_()) { // 8.36: no navegador e no Supabase, a foto da pasta que o Apps Script guarda de 10 em 10 min (modelosDriveFoto_)
+    var foto = null; try { foto = JSON.parse(config_('MODELOS_DRIVE_FOTO') || 'null'); } catch (eF) { foto = null; }
+    if (foto && foto.lista) return foto.lista; // sem a foto, segue abaixo: o Drive para a conta e a tela vai ao Google
+  }
   var cache = CacheService.getScriptCache();
   var guardado = cache.get('modelos_drive');
   if (guardado) return JSON.parse(guardado);
@@ -7083,6 +7087,22 @@ function modelosDriveTodos_() {
   lista.sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
   cache.put('modelos_drive', JSON.stringify(lista), 600);
   return lista;
+}
+
+/** 8.36: foto da pasta de modelos em Config MODELOS_DRIVE_FOTO (aquecerGatilho e robô de hora em hora; grava só se mudou), para a tela
+    Documentos abrir pelo Supabase sem esperar o Drive. Modelo novo posto na pasta aparece em até 10 min. */
+function modelosDriveFoto_() {
+  var lista = [];
+  var pasta = DriveApp.getFolderById(config_('MODELOS_ESCRITORIO_PASTA') || PASTA_MODELOS_ESCRITORIO); // erro: não troca a foto antiga
+  var it = pasta.getFilesByType(MimeType.GOOGLE_DOCS);
+  while (it.hasNext()) { var f = it.next(); lista.push({ id: f.getId(), nome: f.getName() }); }
+  lista.sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
+  var antes = null; try { antes = JSON.parse(config_('MODELOS_DRIVE_FOTO') || 'null'); } catch (e) { antes = null; }
+  if (!antes || JSON.stringify(antes.lista) !== JSON.stringify(lista)) {
+    setConfig_('MODELOS_DRIVE_FOTO', JSON.stringify({ em: new Date().toISOString(), lista: lista }), 'Modelos da pasta do Drive (atualizado sozinho de 10 em 10 min)');
+    try { CacheService.getScriptCache().remove('modelos_drive'); } catch (eC) { /* passa em 10 min */ }
+  }
+  return lista.length;
 }
 
 /** "05. Emenda à petição inicial — Cível — Araújo Advocacia" → "Emenda à petição inicial — Cível". */
@@ -9234,6 +9254,7 @@ function aquecerGatilho() {
   try { autoAtualizar_(false); } catch (eU) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
+  try { modelosDriveFoto_(); } catch (eM) { /* segue */ }
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
@@ -10562,6 +10583,7 @@ function roboRapidoGatilho() {
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
+  try { modelosDriveFoto_(); } catch (eM) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { sbEnviarSujas_(); } catch (eB2) { /* fica pendente */ }
   try { autoAtualizar_(false); } catch (eU) { /* tenta na próxima */ }
