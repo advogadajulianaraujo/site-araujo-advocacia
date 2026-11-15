@@ -65,8 +65,11 @@ async function djen(url) {
     await enviar(true);
     console.log(`DJEN lido: ${total} comunicação(ões), ${novas} nova(s), ${prazos} prazo(s) novo(s).`);
   } catch (e) {
-    console.log('Falhou: ' + e.message);
-    try { await painel({ erro: e.message }); } catch (e2) { /* sem painel */ }
-    process.exitCode = 1;
+    // 8.34: o CNJ recusa os servidores do GitHub (403), como recusa os do Google: não é defeito do robô. O motivo vai para o cartão do
+    // robô no painel e o GitHub não marca falha (senão mandaria e-mail de erro a cada 2 h). Quem lê o DJEN é o painel aberto no escritório.
+    const bloqueio = /CNJ respondeu 403/.test(e.message);
+    console.log((bloqueio ? 'O CNJ recusou o servidor do GitHub (bloqueio do próprio CNJ): o DJEN continua sendo lido pelo painel aberto no escritório. ' : 'Falhou: ') + e.message);
+    try { await painel({ erro: bloqueio ? 'o CNJ recusa os servidores do GitHub (403); o DJEN é lido pelo painel aberto no computador do escritório' : e.message }); } catch (e2) { /* sem painel */ }
+    if (!bloqueio) process.exitCode = 1;
   }
 })();
