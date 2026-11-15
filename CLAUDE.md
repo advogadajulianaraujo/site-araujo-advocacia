@@ -1254,3 +1254,22 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - ROTAS_MOTOR ganhou agenda.listar e inicio.extras; a função do Supabase descobre até 25 tabelas por tela (antes 10: inicio.extras usa 11).
 - Teste `.github/motor/teste/etapaAgenda.mjs` (Google Agenda simulado: 6 telas × 4 perfis iguais no navegador e 6 na função; dia inteiro,
   evento que atravessa o mês, ↻, mudança pelo painel, evento apagado/mudado/novo, cópia velha, mês fora, robô lê na hora).
+
+## 8.35.1 Visual novo do painel (só painel; Code.gs continua 8.35.0) — pedido da usuária: "poluído, cores não combinam, menu grande"
+
+- Tema GRAFITE + DOURADO (cores da logo; bloco "8.36 — tema GRAFITE + DOURADO" no fim do painel.css): menu lateral grafite #171513 estreito
+  (212 px), dourado #C9A46A na seleção, fundo #F4F2EE, botões grafite, letras menores (corpo 13,5 px). Não voltar ao verde-petróleo nem ao menu claro.
+- Menu da esquerda com grupos e mais abas (`ABAS` = [rota, nome, permissão, ícone, grupo]): Escritório (Início, Clientes, Processos, Intimações,
+  Tarefas) · Agenda (Agenda, Audiências) · Gestão (Cobranças, Documentos, Atendimento, Relatórios). "Prazos" virou "Intimações" (pedido da usuária).
+  Sub-abas do topo só em Documentos, Atendimento e Relatórios.
+- Clientes em TABELA (Cliente · Área · Etapa · Processos · Próximo ato · Financeiro), filtros numa linha (grupo, etapa, área, cadastros a completar);
+  observações e chips de processo saíram da lista.
+- Ficha do cliente: topo com avatar, selos e WhatsApp / Gerar documentos / Editar / ⋯; aba "Visão geral" = processos, anotações (anotação
+  rápida), dados do cliente, financeiro, onde o atendimento está.
+- Tela do processo em abas (Visão geral · Prazos · Andamentos e linha do tempo · Editar); Visão geral = Agora (próximo ato, prazos abertos,
+  última movimentação), detalhes do processo e, ao lado, o CLIENTE com TODAS as observações (mais novas primeiro) e anotação rápida.
+- Intimações: filas, sistema e filtros numa barra só; na linha só Avisar / Conferido / Confirmar — o resto no ⋯; "Nada esperando o seu OK" não aparece mais.
+- Início: números logo abaixo da faixa escura; "Seu dia" para TODOS os perfis (para fazer hoje, compromissos de hoje, a sua semana em gráfico);
+  administração: "Equipe nesta semana" (barras) + rosca de prazos.
+- Agenda: SEM prazos fatais (filtro "Prazos fatais" saiu; prazos ficam em Intimações). Documentos: cartão "Honorários" (Editar honorário → Cobranças ›
+  Honorários; Fazer proposta).
