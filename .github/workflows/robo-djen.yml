@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write   # 8.34: identidade assinada pelo GitHub (o painel confere; não precisa de segredo)
 
 concurrency:
   group: robo-djen

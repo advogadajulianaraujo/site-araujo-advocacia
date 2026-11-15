@@ -1,5 +1,16 @@
 # Como ligar o painel ao Google (uma vez só, cerca de 10 minutos)
 
+> **Desde a 8.34 o painel se atualiza sozinho.** Depois da instalação abaixo (ou, num painel que já existe, depois de colar UMA vez
+> o Code.gs e o appsscript.json da 8.34), ninguém precisa mais colar nada: de 10 em 10 minutos o próprio Apps Script confere o
+> GitHub e instala a versão nova (Supabase primeiro, depois o Google; se a versão nova não responder, volta sozinho à anterior).
+> Para isso, uma vez só:
+> 1. Abra **script.google.com/home/usersettings** e ligue **"API do Google Apps Script"**.
+> 2. No Apps Script, escolha a função **autorizar** e clique em **Executar**; aceite as permissões. Ela já publica a versão (não precisa
+>    "Implantar › Nova versão").
+> 3. (Para o Supabase também se atualizar sozinho) supabase.com › Account › Access Tokens › gere um token **sem vencimento** e cole em
+>    Gerenciar acessos › Banco novo › "Chave de publicação".
+
+
 Estes passos podem ser feitos por uma sessão local do Claude com a extensão Claude in Chrome,
 no computador onde a conta Google está aberta (veja docs/PLANO-PAINEL.md).
 

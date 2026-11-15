@@ -2577,18 +2577,31 @@
         campo('url', 'Endereço do projeto (Project URL)', r.url || '', { dica: 'Supabase › Project Settings › API · parecido com https://abcdefgh.supabase.co', max: 120 }),
         campo('chave', r.ligado ? 'Chave secreta (já cadastrada: deixe vazio para manter)' : 'Chave secreta (secret / service_role)', '', { tipo: 'password', max: 400, dica: 'Supabase › Project Settings › API Keys › Secret keys (sb_secret_…). Fica só no Google; nunca vai ao navegador.' }),
         campo('publica', r.publica ? 'Chave pública (já cadastrada: deixe vazio para manter)' : 'Chave pública (publishable / anon)', '', { max: 400, dica: 'Supabase › Project Settings › API Keys › Publishable key (sb_publishable_…). É pública por natureza: sozinha não lê nada.' }),
+        campo('gestao', r.gestao ? 'Chave de publicação (já cadastrada: deixe vazio para manter)' : 'Chave de publicação do Supabase (sbp_…) — para atualizar sozinho', '', { tipo: 'password', max: 200, dica: 'supabase.com › ícone da conta › Account preferences › Access Tokens › Generate new token (vencimento: nunca). Fica só no Google; serve para o painel atualizar o banco e a função sozinho.' }),
         h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, r.ligado ? 'Salvar e testar' : 'Ligar e testar'),
           r.ligado ? botao('Copiar agora', async ev => { ev.target.disabled = true; ev.target.textContent = 'Copiando (até 4 min)…'; try { const x = await api('banco.config', { copiar: true }); avisar(`Cópia feita: ${x.copia.copiadas.length} aba(s)` + (x.copia.erros.length ? ` · ${x.copia.erros.length} com erro` : '') + '.', !!x.copia.erros.length); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; ev.target.textContent = 'Copiar agora'; } }, 'sec') : null,
           r.ligado ? botao('Copiar tudo de novo', async ev => { ev.target.disabled = true; try { const x = await api('banco.config', { copiar: true, tudo: true }); avisar(`Cópia completa: ${x.copia.copiadas.length} aba(s).`); desenhar(x); } catch (e) { avisar(e.message, true); ev.target.disabled = false; } }, 'sec') : null,
           r.ligado ? botao('Desligar', async () => { if (!confirm('Desligar o banco novo? O painel volta a ler só da planilha. Os dados que já estão no Supabase continuam lá.')) return; desenhar(await api('banco.config', { desligar: true })); if (BANCO) BANCO.sair(); avisar('Banco novo desligado.'); }, 'sec') : null),
         h('p', { class: 'erro largo' }));
       aoEnviar(f, async fd => {
-        const d = Object.fromEntries(fd.entries()); if (!d.chave) delete d.chave; if (!d.publica) delete d.publica;
+        const d = Object.fromEntries(fd.entries()); if (!d.chave) delete d.chave; if (!d.publica) delete d.publica; if (!d.gestao) delete d.gestao;
         const x = await api('banco.config', Object.assign(d, { testar: true }));
         if (BANCO && d.publica) { BANCO.sair(); BANCO.iniciar(); }
         avisar(x.teste || 'Salvo.', /⚠/.test(x.teste || '')); desenhar(x);
       });
-      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), status, passo2, r.ligado && r.rpc ? principal : null, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
+      const au = r.auto || {};
+      const auto = h('div', { class: 'nota' + (au.erro ? ' alerta' : '') }, h('strong', {}, '🔄 Atualização automática: '),
+        au.erro ? '⚠ ' + au.erro : au.ultimo ? '✓ última versão instalada sozinha: ' + au.ultimo : `ligada (versão ${au.versao || VERSAO_PAINEL}). De 10 em 10 minutos o painel confere o GitHub e se atualiza sozinho.`,
+        r.ligado && !r.gestao ? h('div', {}, 'Para atualizar também o banco e a função do Supabase sozinho, cole a "chave de publicação" no campo abaixo (uma vez só).') : null,
+        ' ', botao('Atualizar agora', async ev => {
+          ev.target.disabled = true; ev.target.textContent = 'Conferindo o GitHub (até 2 min)…';
+          try {
+            const x = await api('sistema.atualizar', {});
+            avisar(x.atualizado ? `Pronto: versão ${x.atualizado} instalada. Aperte F5.` : x.erro ? x.erro : `Já está na versão mais nova (${x.atual}).`, !!x.erro);
+          } catch (e) { avisar(e.message, true); }
+          ev.target.disabled = false; ev.target.textContent = 'Atualizar agora';
+        }, 'mini sec'));
+      caixa.replaceChildren(h('h2', {}, '🗄 Banco novo (Supabase)'), auto, status, passo2, r.ligado && r.rpc ? principal : null, r.teste ? h('p', { class: /⚠/.test(r.teste) ? 'erro' : 'peq' }, r.teste) : null,
         r.ligado && r.rpc && r.publica && r.leitura ? h('details', { class: 'sub', open: true }, h('summary', {}, '⏱ Velocidade: banco novo × planilha'),
           resumoMedidas(), h('div', { class: 'acoes' }, botao('⏱ Medir agora (as mesmas telas pelos dois caminhos)', testar, 'sec')), medidor) : null,
         h('details', { class: 'sub', open: !r.ligado }, h('summary', {}, r.ligado ? 'Trocar o endereço ou as chaves' : 'Como ligar (5 minutos)'),
@@ -3090,7 +3103,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.33.0';
+  const VERSAO_PAINEL = '8.34.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

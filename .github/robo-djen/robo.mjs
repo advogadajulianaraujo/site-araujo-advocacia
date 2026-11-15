@@ -1,13 +1,28 @@
 // Robô do DJEN na nuvem (8.23): lê as comunicações do DJEN (CNJ) para as OABs do escritório e manda para o painel,
 // de 2 em 2 horas, mesmo com o painel fechado. Segredos do repositório: PAINEL_URL (endereço /exec do Apps Script) e DJEN_ROBO_CHAVE
 // (gerada no painel: Intimações e prazos › Robô do DJEN na nuvem). Nenhum dado de cliente fica no repositório: tudo vai direto ao painel.
-const URL_PAINEL = process.env.PAINEL_URL, CHAVE = process.env.DJEN_ROBO_CHAVE;
+// 8.34: não precisa mais de segredo. O endereço vem do próprio site (painel/config.js) e o robô se identifica com a identidade
+// assinada pelo GitHub (OIDC: só este robô, deste repositório, no main, consegue uma). Os segredos antigos, se existirem, são limpos
+// (espaços, aspas, quebra de linha) e usados só como reserva.
+import { readFileSync } from 'node:fs';
+const limpar = v => String(v || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+let URL_PAINEL = limpar(process.env.PAINEL_URL);
+if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(URL_PAINEL)) {
+  const m = /PAINEL_API_URL\s*=\s*'([^']+)'/.exec(readFileSync(new URL('../../painel/config.js', import.meta.url), 'utf8'));
+  URL_PAINEL = m ? m[1] : '';
+}
+const CHAVE = limpar(process.env.DJEN_ROBO_CHAVE);
 const DJEN = 'https://comunicaapi.pje.jus.br/api/v1/comunicacao';
-if (!URL_PAINEL || !CHAVE) { console.log('Robô do DJEN desligado: faltam os segredos PAINEL_URL e DJEN_ROBO_CHAVE.'); process.exit(0); }
+if (!URL_PAINEL) { console.log('Robô do DJEN: não achei o endereço do painel em painel/config.js.'); process.exit(1); }
+async function identidade() {
+  const u = process.env.ACTIONS_ID_TOKEN_REQUEST_URL, t = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  if (!u || !t) return '';
+  try { const r = await fetch(u + '&audience=painel-araujo-djen', { headers: { Authorization: 'Bearer ' + t } }); return (await r.json()).value || ''; } catch (e) { return ''; }
+}
 const espera = ms => new Promise(r => setTimeout(r, ms));
 const somaDias = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
 async function painel(dados) {
-  const r = await fetch(URL_PAINEL, { method: 'POST', body: JSON.stringify({ acao: 'djen.robo', dados: Object.assign({ chave: CHAVE }, dados) }), redirect: 'follow' });
+  const r = await fetch(URL_PAINEL, { method: 'POST', body: JSON.stringify({ acao: 'djen.robo', dados: Object.assign({ chave: CHAVE, oidc: await identidade() }, dados) }), redirect: 'follow' });
   const j = await r.json().catch(() => ({ ok: false, erro: 'resposta inválida do painel (' + r.status + ')' }));
   if (!j.ok) throw new Error('painel: ' + j.erro);
   return j.dados;

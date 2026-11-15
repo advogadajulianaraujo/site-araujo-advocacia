@@ -92,7 +92,7 @@ function criarGoogle() {
       computeHmacSignature: (a, s, k) => bytes(crypto.createHmac('sha256', k).update(s).digest()),
       base64Encode: b => Buffer.from(typeof b === 'string' ? b : b.map(x => x & 255)).toString('base64'),
       base64EncodeWebSafe: b => Buffer.from(typeof b === 'string' ? b : b.map(x => x & 255)).toString('base64url'),
-      base64DecodeWebSafe: s => bytes(Buffer.from(s, 'base64url')), newBlob: b => ({ getDataAsString: () => Buffer.from(b.map(x => x & 255)).toString('utf8') }) },
+      base64DecodeWebSafe: s => bytes(Buffer.from(s, 'base64url')), newBlob: b => { const buf = typeof b === 'string' ? Buffer.from(b, 'utf8') : Buffer.from(b.map(x => x & 255)); return { getDataAsString: () => buf.toString('utf8'), getBytes: () => bytes(buf) }; } },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo', getEffectiveUser: () => ({ getEmail: () => 'dono@exemplo.test' }), getActiveUser: () => ({ getEmail: () => '' }) },
     UrlFetchApp: { fetchAll: reqs => reqs.map(q => g.UrlFetchApp.fetch(q.url, q)), fetch: (url, op) => { if (foraDoAr) throw new Error('Supabase fora do ar (simulado)'); if (!/supabase\.(test|co)/.test(url)) throw new Error('internet bloqueada no simulador: ' + url); const r = postgrest(url, op || {}, null); return { getResponseCode: () => r.status, getContentText: () => r.txt }; } },
     ContentService: { createTextOutput: t => ({ setMimeType() { return this; }, getContent: () => t }), MimeType: { JSON: 'json' } },

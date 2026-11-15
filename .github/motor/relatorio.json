@@ -1,11 +1,12 @@
 {
- "versao": "8.33.0",
+ "versao": "8.34.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
   "AGENDA_SINC",
   "ALERTA_ROBO_EM",
   "ASSIN_ANTIGAS",
+  "AUTO_ATUALIZAR_ERRO",
   "DATAJUD_ERRO",
   "DATAJUD_OK",
   "DATAJUD_ULTIMA",

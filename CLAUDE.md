@@ -1214,3 +1214,28 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Teste: `.github/motor/teste/etapaD.mjs` (login igual ao Apps Script, bloqueio, contador, sessões, planilha fora, Sair, desligar) e deno.mjs
   (2ª chamada com as tabelas na memória ~0,1 s; mudança feita direto no banco é percebida). O banco de teste precisa de um "vault" falso
   (LEIA.md).
+
+## 8.34.0 Tudo automático (pedido da usuária: "não quero precisar ficar fazendo sempre")
+
+- ATUALIZAÇÃO AUTOMÁTICA (`autoAtualizar_`, no aquecerGatilho de 10 em 10 min e no fim do roboRapidoGatilho): lê o Code.gs do main (raw do
+  GitHub); VERSAO mais nova → confere (tamanho, doPost, `new Function` = sem erro de escrita) → appsscript.json com permissão NOVA = não
+  instala e avisa → `supabasePublicar_` (com Properties SUPABASE_GESTAO = token sbp_ da Management API: roda esquema.sql + leitura-rapida.sql
+  e publica a função "painel" em multipart; espera o ping com a versão nova) → PUT content (API do Apps Script, `apiScript_` com
+  ScriptApp.getOAuthToken) → versão nova → implantação do web app (`idImplantacao_` = id do PAINEL_API_URL de painel/config.js) →
+  confere `situacao` (devolve `versao`) e, se não responder com a nova, VOLTA o código e a implantação. Falha → Config AUTO_ATUALIZAR_ERRO
+  (cartão + vigia) e espera 1 h para a mesma versão (AUTO_FALHOU); sucesso → Config AUTO_ATUALIZADO. Nunca volta para versão mais velha.
+  Properties AUTO_ATUALIZAR = nao desliga. Rota `sistema.atualizar` (administração; botão "Atualizar agora" em Gerenciar acessos › Banco novo).
+  appsscript.json ganhou script.projects e script.deployments. UMA vez: API do Apps Script ligada (script.google.com/home/usersettings) e
+  rodar `autorizar()` no editor (pede as permissões, publica a versão colada, religa gatilhos e já confere o GitHub).
+  REGRA para quem mexe no código: subir a VERSAO do Code.gs junto com a VERSAO_PAINEL e rodar gerar.mjs + gerar-edge.mjs ANTES do push no main:
+  o push no main É a publicação (o Apps Script instala sozinho em até 10 min). Permissão nova no appsscript.json exige a usuária rodar
+  `autorizar` de novo (o painel avisa) — evite.
+- "Entrar pelo Supabase" liga sozinho (`sbAutoEntrar_`, no aquecedor e no robô) quando o motor do Supabase está ligado e ninguém
+  escolheu no botão (Properties BANCO_ENTRAR ainda vazia); `sbLigarEntrar_` é a função comum do botão e do automático.
+- Robô do DJEN na nuvem SEM segredo: o workflow tem `id-token: write`; robo.mjs pede a identidade OIDC do GitHub (audience
+  painel-araujo-djen) e pega o endereço do painel em painel/config.js (o segredo PAINEL_URL salvo errado — "Failed to parse URL" — é ignorado;
+  segredos antigos são limpos de espaços/aspas e servem só de reserva). `oidcGithubValido_` confere a assinatura RS256 (BigInt) com as chaves
+  públicas do GitHub (cache 6 h) + emissor, audience, validade, repositório, ref main e workflow robo-djen.yml.
+- Teste `.github/motor/teste/etapaAuto.mjs` (identidade verdadeira/falsa/outro repo/outro robô/outro ramo/vencida/alterada; atualização:
+  instala, mesma versão, mais velha, erro de escrita, permissão nova, não respondeu → volta, espera 1 h, botão força, ordem Supabase →
+  Google, chave do Supabase vencida).

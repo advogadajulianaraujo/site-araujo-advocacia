@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.33.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.33.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.34.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.34.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.33.0';
+var VERSAO = '8.34.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -403,7 +403,8 @@ function falha_(msg, sessao) {
 }
 
 var ROTAS = {
-  'situacao': { publica: true, fn: function () { return { precisaPrimeiroAcesso: usuarios_().length === 0 }; } },
+  'situacao': { publica: true, fn: function () { var r = { versao: VERSAO }; try { r.precisaPrimeiroAcesso = usuarios_().length === 0; } catch (e) { r.precisaPrimeiroAcesso = false; } return r; } },
+  'sistema.atualizar': { permissao: 'usuarios', fn: function (d, u) { registrar_(u.usuario, 'atualização automática pedida', ''); return autoAtualizar_(true); } },
   'primeiroAcesso': { publica: true, fn: primeiroAcesso_ },
   'login': { publica: true, fn: login_ },
   'logout': { fn: logout_ },
@@ -3366,7 +3367,8 @@ function djenRoboChave_(d, u) {
 }
 function djenRoboNuvem_(d) {
   var h = PropertiesService.getScriptProperties().getProperty('DJEN_ROBO_HASH');
-  if (!h || !d.chave || !iguais_(Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(d.chave))), h)) throw falha_('Chave do robô inválida.');
+  var porChave = !!(h && d.chave && iguais_(Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(d.chave).trim())), h));
+  if (!porChave && !(d.oidc && oidcGithubValido_(d.oidc))) throw falha_('Chave do robô inválida.'); // 8.34: o robô do GitHub entra pela identidade dele (sem segredo)
   if (d.acao === 'config') return djenConfig_();
   if (d.erro) { setConfig_('DJEN_NUVEM_ERRO', String(d.erro).slice(0, 300) + ' (' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ')', 'Último erro do robô do DJEN na nuvem'); return { ok: true }; }
   var r = djenImportar_(d, { usuario: 'robô DJEN (nuvem)', nome: 'robô DJEN (nuvem)', perfil: 'administrador' });
@@ -9212,6 +9214,8 @@ function aquecerGatilho() {
   var util = (dsem <= 5 && hora >= 7 && hora < 19) || (dsem === 6 && hora >= 8 && hora < 13);
   if (!util) return;
   var t0 = Date.now();
+  try { autoAtualizar_(false); } catch (eU) { /* segue */ }
+  try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   try { aquecerMemoria_(); } catch (e) { /* segue */ }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
@@ -10541,7 +10545,9 @@ function roboRapidoGatilho() {
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
+  try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { sbEnviarSujas_(); } catch (eB2) { /* fica pendente */ }
+  try { autoAtualizar_(false); } catch (eU) { /* tenta na próxima */ }
 }
 
 /** Problemas que podem fazer perder prazo. Com avisar = true, manda e-mail para a administração (no máximo 1 a cada 12 h). */
@@ -10552,6 +10558,8 @@ function vigiaRobo_(avisar) {
   var dj = config_('DJEN_NAVEGADOR_ULTIMA');
   var dsem = new Date(hojeSP_() + 'T12:00:00Z').getUTCDay();
   if (dsem >= 1 && dsem <= 5 && (!dj || agora - Date.parse(dj) > 26 * 3600000)) alertas.push('O DJEN não é lido desde ' + (dj ? Utilities.formatDate(new Date(dj), TZ, 'dd/MM HH:mm') : 'nunca') + '. O CNJ só deixa ler pelo computador do escritório: deixe o painel aberto lá (ele lê de 2 em 2 horas).');
+  var auErro = config_('AUTO_ATUALIZAR_ERRO'); // 8.34
+  if (auErro) alertas.push('A atualização automática do painel parou: ' + auErro + '. Gerenciar acessos › Banco novo › "Atualizar agora" tenta de novo.');
   var pend = 0, diverg = [];
   try {
     tabela_('Prazos').linhas.forEach(function (z) {
@@ -14350,7 +14358,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {
@@ -14654,8 +14662,17 @@ function bancoConfig_(d, u) {
     P.setProperty('SUPABASE_PUBLICA', pub);
     registrar_(u.usuario, 'banco novo: chave pública cadastrada', '');
   }
+  if (d.gestao !== undefined && String(d.gestao).trim()) { // 8.34: chave de publicação (token sbp_): atualização automática do banco e da função
+    var gt = String(d.gestao).trim();
+    if (!/^sbp_[A-Za-z0-9]{20,}$/.test(gt)) throw falha_('A chave de publicação começa com "sbp_" (Supabase › Account › Access Tokens).');
+    var refG = (/^https:\/\/([a-z0-9]+)\.supabase\./.exec(sbConf_().url) || [])[1];
+    var tg = UrlFetchApp.fetch('https://api.supabase.com/v1/projects/' + refG, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + gt } });
+    if (tg.getResponseCode() !== 200) throw falha_('O Supabase recusou essa chave (' + tg.getResponseCode() + '). Gere outra em Account › Access Tokens.');
+    P.setProperty('SUPABASE_GESTAO', gt); registrar_(u.usuario, 'banco novo: chave de publicação cadastrada', '');
+  }
   if (d.leitura !== undefined) { P.setProperty('SUPABASE_LEITURA', d.leitura ? 'sim' : 'nao'); registrar_(u.usuario, 'banco novo: leitura direta ' + (d.leitura ? 'ligada' : 'desligada'), ''); }
-  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '', publica: !!c.publica, leitura: c.leitura };
+  var c = sbConf_(), r = { ligado: !!(c.url && c.chave), url: c.url, escritorio: c.esc ? 'criado' : '', publica: !!c.publica, leitura: c.leitura,
+    gestao: !!P.getProperty('SUPABASE_GESTAO'), auto: { versao: VERSAO, ultimo: config_('AUTO_ATUALIZADO') || '', erro: config_('AUTO_ATUALIZAR_ERRO') || '', desligado: P.getProperty('AUTO_ATUALIZAR') === 'nao' } };
   try { r.ultima = JSON.parse(P.getProperty('SUPABASE_ULTIMA') || 'null'); } catch (e) { r.ultima = null; }
   r.pendente = P.getProperty('SB_PENDENTES') ? (P.getProperty('SB_PENDENTE_ERRO') || 'sim') : '';
   if (r.ligado) { try { P.deleteProperty('SUPABASE_RPC'); SB_RPC_ = null; r.rpc = sbTemRpc_(); } catch (eR) { r.rpc = false; } }
@@ -14889,17 +14906,7 @@ function bancoConferir_(d, u) {
   }
   if (d.entrar !== undefined) { // 8.33 Etapa D: entrar no painel pelo Supabase (sem o Google)
     if (d.entrar === 'sim') {
-      if (!sbEdge_()) throw falha_('Ligue antes o "motor do Supabase".');
-      var c3 = sbConf_(), esc3 = sbEscritorio_();
-      if (!c3.publica) throw falha_('Falta a chave pública do Supabase (Gerenciar acessos › Banco novo).');
-      supabase_('post', 'rpc/painel_segredo_gravar', { p_escritorio: esc3, p_valor: chaveSecreta_() }); // vai para o cofre (Vault)
-      sbEstado_('publica', c3.publica); sbEstado_('login_edge', 'sim');
-      var pe = sbEdgePing_(true);
-      if (!pe.ok || !pe.entrar || pe.versao !== VERSAO) {
-        sbEntrarDesligar_();
-        throw falha_('A função do Supabase não conseguiu conferir as senhas (' + (pe.erro || (pe.versao && pe.versao !== VERSAO ? 'versão ' + pe.versao + ' × ' + VERSAO : 'rode o leitura-rapida.sql 8.33')) + '). Nada mudou.');
-      }
-      P.setProperty('BANCO_ENTRAR', 'sim'); registrar_(u.usuario, 'banco: entrar pelo Supabase ligado', pe.versao);
+      registrar_(u.usuario, 'banco: entrar pelo Supabase ligado', sbLigarEntrar_());
     } else { sbEntrarDesligar_(); registrar_(u.usuario, 'banco: entrar pelo Supabase desligado', ''); }
   }
   r.entrar = P.getProperty('BANCO_ENTRAR') === 'sim' && sbEdge_() ? 'sim' : 'nao';
@@ -15158,6 +15165,227 @@ function sbEntrarDesligar_() {
   sbEstado_('login_edge', 'nao');
   try { supabase_('post', 'rpc/painel_segredo_gravar', { p_escritorio: sbEscritorio_(), p_valor: '' }); } catch (e) { /* sem o SQL 8.33: nada guardado */ }
   P.setProperty('BANCO_ENTRAR', 'nao');
+}
+
+/* ================================================================== */
+/* 8.34 ATUALIZAÇÃO AUTOMÁTICA (pedido da usuária: "não quero precisar colar nada")                     */
+/* ================================================================== */
+// De 10 em 10 min (aquecerGatilho) e de hora em hora (robô): se o GitHub (main) tem um Code.gs com VERSAO mais nova, o próprio Apps
+// Script: 1) confere que o código novo não tem erro de escrita; 2) com a chave de publicação do Supabase (Properties SUPABASE_GESTAO),
+// roda o esquema.sql e o leitura-rapida.sql e publica a função "painel"; 3) troca o Code.gs (e o appsscript.json, se não pedir
+// permissão nova) pela API do Apps Script; 4) cria a versão e aponta a implantação do web app para ela; 5) confere que o painel responde
+// com a versão nova — se não responder, volta sozinho à anterior. Precisa, uma vez: API do Apps Script ligada (script.google.com/home/
+// usersettings) e as permissões script.projects/script.deployments autorizadas. Config AUTO_ATUALIZADO / AUTO_ATUALIZAR_ERRO.
+var REPO_GH_ = 'advogadajulianaraujo/site-araujo-advocacia';
+var RAW_GH_ = 'https://raw.githubusercontent.com/' + REPO_GH_ + '/main/';
+function cmpVersao_(a, b) {
+  var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0 ? 1 : -1; }
+  return 0;
+}
+function rawGithub_(caminho, inicio) {
+  var cab = { 'Cache-Control': 'no-cache' }; if (inicio) cab.Range = 'bytes=0-' + (inicio - 1); // só o começo (para ver a versão)
+  var r = UrlFetchApp.fetch(RAW_GH_ + caminho + '?t=' + Date.now(), { muteHttpExceptions: true, headers: cab });
+  if (r.getResponseCode() !== 200 && r.getResponseCode() !== 206) throw new Error('GitHub respondeu ' + r.getResponseCode() + ' para ' + caminho);
+  return r.getContentText();
+}
+function apiScript_(metodo, caminho, corpo) {
+  var op = { method: metodo, muteHttpExceptions: true, contentType: 'application/json', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } };
+  if (corpo !== undefined) op.payload = JSON.stringify(corpo);
+  var r = UrlFetchApp.fetch('https://script.googleapis.com/v1' + caminho, op), txt = r.getContentText() || '';
+  if (r.getResponseCode() >= 300) {
+    if (/has not been used|is disabled|not enabled|SERVICE_DISABLED|User has not enabled the Apps Script API/i.test(txt)) throw new Error('falta ligar a "API do Google Apps Script" em script.google.com/home/usersettings (uma vez só)');
+    if (r.getResponseCode() === 403 || /insufficient|scope/i.test(txt)) throw new Error('falta autorizar a atualização automática: abra o Apps Script, escolha a função "autorizar" e clique em Executar (uma vez só)');
+    throw new Error('API do Apps Script ' + r.getResponseCode() + ': ' + txt.slice(0, 200));
+  }
+  return txt ? JSON.parse(txt) : null;
+}
+/** Para rodar UMA vez no editor (Executar › autorizar): o Google pede as permissões novas da atualização automática. */
+function autorizar() {
+  var id = ScriptApp.getScriptId(), dep = idImplantacao_(), r = {};
+  // publica o que está colado agora (esta é a última vez que alguém precisa implantar à mão)
+  var v = apiScript_('post', '/projects/' + id + '/versions', { description: 'autorizar ' + VERSAO }).versionNumber;
+  if (dep) apiScript_('put', '/projects/' + id + '/deployments/' + dep, { deploymentConfig: { scriptId: id, versionNumber: v, manifestFileName: 'appsscript', description: VERSAO } });
+  r.publicado = { versao: VERSAO, numero: v, implantacao: dep || '(não achei o web app)' };
+  try { garantirGatilho_(); } catch (eG) { /* segue */ }
+  r.atualizacao = autoAtualizar_(true);
+  try { sbAutoEntrar_(); sbEnviarSujas_(); } catch (eE) { /* segue */ }
+  Logger.log('Pronto: ' + JSON.stringify(r));
+  return r;
+}
+function idImplantacao_() {
+  // o endereço que o site usa (painel/config.js no GitHub) é o da implantação que precisa ser atualizada
+  var P = PropertiesService.getScriptProperties(), g = P.getProperty('IMPLANTACAO_ID');
+  if (g) return g;
+  try {
+    var alvo = (/PAINEL_API_URL\s*=\s*'([^']+)'/.exec(rawGithub_('painel/config.js')) || [])[1] || '';
+    var m1 = /\/s\/([^/]+)\/exec/.exec(alvo);
+    if (m1) { P.setProperty('IMPLANTACAO_ID', m1[1]); return m1[1]; }
+  } catch (e) { /* usa o do serviço */ }
+  var m = /\/s\/([^/]+)\/exec/.exec(ScriptApp.getService().getUrl() || '');
+  return m ? m[1] : '';
+}
+function autoAtualizar_(forcar) {
+  var P = PropertiesService.getScriptProperties(), cache = CacheService.getScriptCache();
+  if (P.getProperty('AUTO_ATUALIZAR') === 'nao' && !forcar) return { desligado: true };
+  if (!forcar && cache.get('auto_atualizar_visto')) return { cedo: true };
+  cache.put('auto_atualizar_visto', '1', 540);
+  var fonte, nova;
+  try { fonte = rawGithub_('painel-backend/Code.gs', 16384); } catch (eG) { return { erro: String(eG.message || eG) }; } // só o começo
+  nova = (/^var VERSAO = '([^']+)'/m.exec(fonte) || [])[1];
+  if (!nova || cmpVersao_(nova, VERSAO) <= 0) return { atual: VERSAO, github: nova || '?' };
+  try { fonte = rawGithub_('painel-backend/Code.gs'); } catch (eG2) { return { erro: String(eG2.message || eG2) }; }
+  if ((/^var VERSAO = '([^']+)'/m.exec(fonte) || [])[1] !== nova) return { erro: 'o GitHub mudou no meio da leitura; tento de novo em 10 min' };
+  var falhou = String(P.getProperty('AUTO_FALHOU') || '').split('|');
+  if (!forcar && falhou[0] === nova && Date.now() - +falhou[1] < 3600000) return { esperando: nova };
+  var erro = function (m) { P.setProperty('AUTO_FALHOU', nova + '|' + Date.now()); try { setConfig_('AUTO_ATUALIZAR_ERRO', m + ' (' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ')', 'Atualização automática: último problema'); sbEnviarSujas_(); } catch (eC) { /* segue */ } return { erro: m, nova: nova }; };
+  // 1) o código novo não pode ter erro de escrita (senão o robô pararia a si mesmo)
+  if (fonte.length < 200000 || !/function doPost\(/.test(fonte) || !/function autoAtualizar_\(/.test(fonte)) return erro('o Code.gs do GitHub parece incompleto');
+  try { new Function(fonte); } catch (eS) { if (eS instanceof SyntaxError) return erro('o Code.gs ' + nova + ' tem erro de escrita: ' + eS.message); }
+  var id = ScriptApp.getScriptId(), cont, man, manAtual, arq;
+  try {
+    cont = apiScript_('get', '/projects/' + id + '/content');
+    man = JSON.parse(rawGithub_('painel-backend/appsscript.json'));
+  } catch (eA) { return erro(String(eA.message || eA)); }
+  arq = cont.files || [];
+  var fMan = arq.filter(function (f) { return f.type === 'JSON'; })[0], fCod = arq.filter(function (f) { return f.type === 'SERVER_JS' && /^code$/i.test(f.name); })[0] || arq.filter(function (f) { return f.type === 'SERVER_JS'; })[0];
+  if (!fCod || !fMan) return erro('não achei o Code.gs no projeto do Apps Script');
+  try { manAtual = JSON.parse(fMan.source); } catch (eM) { manAtual = {}; }
+  var novas = (man.oauthScopes || []).filter(function (s) { return (manAtual.oauthScopes || []).indexOf(s) < 0; });
+  if (novas.length) return erro('a versão ' + nova + ' pede uma permissão nova do Google (' + novas.join(', ') + '): abra o Apps Script, cole o appsscript.json do GitHub e rode a função "autorizar" (uma vez só)');
+  // 2) Supabase primeiro (o banco e a função precisam estar prontos quando o código novo chegar)
+  var sb = { feito: false };
+  try { sb = supabasePublicar_(nova); } catch (eSb) { return erro('Supabase: ' + String(eSb.message || eSb)); }
+  // 3) troca o código (e o manifesto, se mudou sem permissão nova)
+  var antigo = arq.map(function (f) { return { name: f.name, type: f.type, source: f.source }; });
+  var novo = antigo.map(function (f) {
+    if (f.name === fCod.name && f.type === 'SERVER_JS') return { name: f.name, type: f.type, source: fonte };
+    if (f.type === 'JSON') return { name: f.name, type: f.type, source: JSON.stringify(man, null, 2) };
+    return f;
+  });
+  var dep = idImplantacao_(), verAntiga = null;
+  try {
+    if (dep) { var d0 = apiScript_('get', '/projects/' + id + '/deployments/' + dep); verAntiga = d0 && d0.deploymentConfig && d0.deploymentConfig.versionNumber; }
+    apiScript_('put', '/projects/' + id + '/content', { files: novo });
+  } catch (eP) { return erro(String(eP.message || eP)); }
+  // 4) versão nova + implantação do web app
+  var verNova = null;
+  try {
+    verNova = apiScript_('post', '/projects/' + id + '/versions', { description: 'automático ' + nova }).versionNumber;
+    if (dep) apiScript_('put', '/projects/' + id + '/deployments/' + dep, { deploymentConfig: { scriptId: id, versionNumber: verNova, manifestFileName: 'appsscript', description: 'automático ' + nova } });
+  } catch (eV) {
+    try { apiScript_('put', '/projects/' + id + '/content', { files: antigo }); } catch (eR) { /* fica o novo nos gatilhos */ }
+    return erro('não consegui publicar a versão: ' + String(eV.message || eV));
+  }
+  // 5) o painel responde com a versão nova? Senão, volta à anterior
+  var ok = false;
+  for (var t = 0; t < 3 && !ok; t++) {
+    try {
+      Utilities.sleep(t ? 5000 : 2000);
+      var url = ScriptApp.getService().getUrl();
+      var rr = UrlFetchApp.fetch(url, { method: 'post', payload: JSON.stringify({ acao: 'situacao' }), muteHttpExceptions: true, followRedirects: true });
+      var jj = JSON.parse(rr.getContentText() || '{}');
+      ok = !!(jj && jj.ok && jj.dados && jj.dados.versao === nova);
+    } catch (eT) { ok = false; }
+  }
+  if (!ok && dep) {
+    try {
+      apiScript_('put', '/projects/' + id + '/content', { files: antigo });
+      if (verAntiga) apiScript_('put', '/projects/' + id + '/deployments/' + dep, { deploymentConfig: { scriptId: id, versionNumber: verAntiga, manifestFileName: 'appsscript', description: 'volta automática (' + nova + ' não respondeu)' } });
+    } catch (eB) { /* segue com o aviso */ }
+    return erro('a versão ' + nova + ' não respondeu depois de publicada; voltei para a ' + VERSAO);
+  }
+  P.deleteProperty('AUTO_FALHOU');
+  try {
+    setConfig_('AUTO_ATUALIZADO', nova + ' em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + (sb.feito ? ' (com o Supabase)' : ''), 'Atualização automática: última versão instalada');
+    setConfig_('AUTO_ATUALIZAR_ERRO', '', 'Atualização automática: último problema');
+    registrar_('sistema', 'atualização automática', VERSAO + ' → ' + nova + (sb.feito ? ' · Supabase atualizado' : ''));
+    sbEnviarSujas_();
+  } catch (eF) { /* segue */ }
+  return { atualizado: nova, de: VERSAO, versao: verNova, supabase: sb };
+}
+
+/** Banco e função "painel" do Supabase na versão nova (chave de publicação em Properties SUPABASE_GESTAO; sem ela, pula). */
+function supabasePublicar_(nova) {
+  var P = PropertiesService.getScriptProperties(), tk = P.getProperty('SUPABASE_GESTAO'), c = sbConf_();
+  if (!tk || !c.url) return { feito: false, motivo: !tk ? 'sem a chave de publicação' : 'banco desligado' };
+  var ref = (/^https:\/\/([a-z0-9]+)\.supabase\./.exec(c.url) || [])[1];
+  if (!ref) throw new Error('endereço do Supabase estranho');
+  var api = function (metodo, caminho, corpo, tipo) {
+    var op = { method: metodo, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tk } };
+    if (corpo !== undefined) { op.payload = corpo; op.contentType = tipo || 'application/json'; }
+    var r = UrlFetchApp.fetch('https://api.supabase.com/v1/projects/' + ref + caminho, op);
+    if (r.getResponseCode() === 401) throw new Error('a chave de publicação do Supabase venceu ou foi apagada: gere outra (Account › Access Tokens, sem vencimento) e cole em Gerenciar acessos › Banco novo');
+    if (r.getResponseCode() >= 300) throw new Error(caminho.split('?')[0] + ' ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 200));
+    return r.getContentText();
+  };
+  // banco: os dois arquivos podem rodar de novo (create if not exists / or replace)
+  ['supabase/esquema.sql', 'supabase/leitura-rapida.sql'].forEach(function (f) { api('post', '/database/query', JSON.stringify({ query: rawGithub_(f) })); });
+  // função: index.ts + servidor.js + motor.js (multipart montado à mão: são 3 arquivos com o mesmo nome de campo)
+  var b = 'painel' + Utilities.getUuid().replace(/-/g, ''), partes = [];
+  var parte = function (cab, conteudo) { partes.push(Utilities.newBlob('--' + b + '\r\n' + cab + '\r\n\r\n').getBytes(), Utilities.newBlob(conteudo).getBytes(), Utilities.newBlob('\r\n').getBytes()); };
+  parte('Content-Disposition: form-data; name="metadata"', JSON.stringify({ entrypoint_path: 'index.ts', name: 'painel', verify_jwt: false }));
+  ['index.ts', 'servidor.js', 'motor.js'].forEach(function (f) {
+    parte('Content-Disposition: form-data; name="file"; filename="' + f + '"\r\nContent-Type: ' + (/\.ts$/.test(f) ? 'application/typescript' : 'application/javascript'), rawGithub_('supabase/functions/painel/' + f));
+  });
+  partes.push(Utilities.newBlob('--' + b + '--\r\n').getBytes());
+  var tudo = []; partes.forEach(function (p) { for (var i = 0; i < p.length; i++) tudo.push(p[i]); });
+  api('post', '/functions/deploy?slug=painel', tudo, 'multipart/form-data; boundary=' + b);
+  // espera a função nova responder (até ~30 s)
+  for (var t = 0; t < 6; t++) { Utilities.sleep(5000); var pg = sbEdgePing_(); if (pg.ok && pg.versao === nova) return { feito: true }; }
+  return { feito: true, aviso: 'a função ainda não respondeu com a versão ' + nova };
+}
+
+/* ---------- 8.34: liga "Entrar pelo Supabase" sozinho (a não ser que alguém tenha desligado no botão) ---------- */
+function sbLigarEntrar_() {
+  var P = PropertiesService.getScriptProperties(), c3 = sbConf_(), esc3 = sbEscritorio_();
+  if (!sbEdge_()) throw falha_('Ligue antes o "motor do Supabase".');
+  if (!c3.publica) throw falha_('Falta a chave pública do Supabase (Gerenciar acessos › Banco novo).');
+  supabase_('post', 'rpc/painel_segredo_gravar', { p_escritorio: esc3, p_valor: chaveSecreta_() }); // vai para o cofre (Vault)
+  sbEstado_('publica', c3.publica); sbEstado_('login_edge', 'sim');
+  var pe = sbEdgePing_(true);
+  if (!pe.ok || !pe.entrar || pe.versao !== VERSAO) {
+    sbEntrarDesligar_();
+    throw falha_('A função do Supabase não conseguiu conferir as senhas (' + (pe.erro || (pe.versao && pe.versao !== VERSAO ? 'versão ' + pe.versao + ' × ' + VERSAO : 'rode o leitura-rapida.sql 8.33')) + '). Nada mudou.');
+  }
+  P.setProperty('BANCO_ENTRAR', 'sim');
+  return pe.versao;
+}
+function sbAutoEntrar_() {
+  var P = PropertiesService.getScriptProperties();
+  if (P.getProperty('BANCO_ENTRAR') !== null || !sbEdge_()) return;
+  try { sbLigarEntrar_(); registrar_('sistema', 'banco: entrar pelo Supabase ligado sozinho', VERSAO); } catch (e) { /* tenta na próxima */ }
+}
+
+/* ---------- 8.34: robô do DJEN na nuvem entra sem segredo (identidade OIDC do GitHub Actions, assinada pelo GitHub) ---------- */
+var OIDC_AUD_ = 'painel-araujo-djen';
+function b64urlBytes_(s) { s = String(s || ''); return Utilities.base64DecodeWebSafe(s + '===='.slice(0, (4 - s.length % 4) % 4)); }
+function hexBytes_(b) { var h = ''; for (var i = 0; i < b.length; i++) h += ((b[i] + 256) % 256).toString(16).padStart(2, '0'); return h; }
+function oidcGithubValido_(jwt) {
+  try {
+    var p = String(jwt || '').split('.');
+    if (p.length !== 3) return false;
+    var cab = JSON.parse(Utilities.newBlob(b64urlBytes_(p[0])).getDataAsString()), c = JSON.parse(Utilities.newBlob(b64urlBytes_(p[1])).getDataAsString());
+    if (cab.alg !== 'RS256' || c.iss !== 'https://token.actions.githubusercontent.com' || c.aud !== OIDC_AUD_) return false;
+    var agora = Date.now() / 1000;
+    if (!(c.exp > agora) || (c.nbf && c.nbf > agora + 60)) return false;
+    if (c.repository !== REPO_GH_ || c.ref !== 'refs/heads/main' || String(c.workflow_ref || '').indexOf(REPO_GH_ + '/.github/workflows/robo-djen.yml@') !== 0) return false;
+    var chave = null, cache = CacheService.getScriptCache();
+    for (var vez = 0; vez < 2 && !chave; vez++) {
+      var txt = vez ? null : cache.get('gh_jwks');
+      if (!txt) { txt = UrlFetchApp.fetch('https://token.actions.githubusercontent.com/.well-known/jwks', { muteHttpExceptions: true }).getContentText(); cache.put('gh_jwks', txt, 21600); }
+      chave = (JSON.parse(txt).keys || []).filter(function (k) { return k.kid === cab.kid && k.kty === 'RSA'; })[0] || null;
+    }
+    if (!chave) return false;
+    var n = BigInt('0x' + hexBytes_(b64urlBytes_(chave.n))), e = BigInt('0x' + hexBytes_(b64urlBytes_(chave.e))), s = BigInt('0x' + hexBytes_(b64urlBytes_(p[2])));
+    var m = BigInt(1), base = s % n, ex = e;
+    while (ex > BigInt(0)) { if (ex & BigInt(1)) m = (m * base) % n; base = (base * base) % n; ex >>= BigInt(1); }
+    var k = hexBytes_(b64urlBytes_(chave.n)).replace(/^(00)+/, '').length / 2;
+    var em = m.toString(16).padStart(k * 2, '0');
+    var hash = hexBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, p[0] + '.' + p[1], Utilities.Charset.UTF_8));
+    var esperado = '0001' + 'ff'.repeat(k - 3 - 19 - 32) + '00' + '3031300d060960864801650304020105000420' + hash;
+    return em === esperado;
+  } catch (e) { return false; }
 }
 
 // ===================== trocas para o Supabase =====================
