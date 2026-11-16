@@ -1340,4 +1340,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   tela; as anotações antigas de agenda/início/audiências são apagadas ao abrir); função do Supabase que responde "desligado" não é mais
   perguntada por 30 min. Medido no painel REAL (Luis, 16/11 ~15h50 UTC): todas as telas 0,5 s; Início 11 s só na 1ª entrada; login pelo
   Google 8–38 s (o Apps Script está lento: tempo de robô 57/90 min no dia).
+- 8.35.8 (fim, 16/11 ~16h UTC): a função "painel" do Supabase NÃO tinha erro (functions.combined-stats do dia: 0 erros 5xx); os 500 vistos no
+  navegador eram o `painel_ler` cortado pelo statement_timeout do papel `anon` (3 s). `alter role anon set statement_timeout = '15s'` (só tempo;
+  as tabelas seguem fechadas por RLS) e a função foi RELIGADA (painel_estado edge/login_edge = sim). Medido no painel real: 1ª entrada 7 s
+  (Google), da 2ª em diante 1,8 s pela função; Início pronto em ~7 s; telas 0,5 s; nenhum erro. Registros da função: Management API
+  `analytics/endpoints/functions.combined-stats?function_id=…&interval=1day` (as tabelas function_logs/edge_logs não existem mais no endpoint logs).
 
