@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.4';
+var VERSAO = '8.36.6';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -326,7 +326,8 @@ function doPost(e) {
     SB_PEND = {}; // 8.30: pedido com erro não grava nada no banco
     try { sbLogAplicar_(); } catch (eLg3) { /* o Log do erro fica (ex.: login recusado) */ }
     try { sbEnviarSujas_(); } catch (eS2) { /* fica pendente */ }
-    var msg = err && err.publico ? err.message : 'Erro interno. Tente de novo.';
+    // 8.36.6: o motivo técnico vai junto (curto), para a equipe mandar o print e o problema ser achado na hora
+    var msg = err && err.publico ? err.message : 'Erro interno (' + String(err && err.message || err).slice(0, 180) + '). Tente de novo.';
     if (!(err && err.publico)) registrar_('?', 'erro', String(err && err.stack || err));
     return json_({ ok: false, erro: msg, sessao: !!(err && err.sessao) });
   }
@@ -340,7 +341,7 @@ function rotearLote_(token, d) {
       if (!pd || typeof pd.acao !== 'string' || !LEITURAS_RAPIDAS[pd.acao]) throw falha_('Só leituras podem vir em lote.');
       return { ok: true, dados: rotear_(pd.acao, token, pd.dados || {}) };
     } catch (err) {
-      return { ok: false, erro: err && err.publico ? err.message : 'Erro interno. Tente de novo.', sessao: !!(err && err.sessao) };
+      return { ok: false, erro: err && err.publico ? err.message : 'Erro interno (' + String(err && err.message || err).slice(0, 180) + '). Tente de novo.', sessao: !!(err && err.sessao) };
     }
   });
 }
