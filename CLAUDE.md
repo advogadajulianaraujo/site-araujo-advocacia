@@ -1308,4 +1308,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   em QUADROS (`px-etapa-cards`/`px-et`: número + nome, borda na cor da fase, rolagem com as setas ‹ ›, "Todas as etapas" primeiro); os filtros
   (andamento, tribunal, cliente, só com ato, Lista/Quadro, organizar) ficam escondidos no botão "⚙ Filtros" (`details.px-filtros`, com o número
   de filtros ligados; fecha ao clicar fora). Lista na largura toda.
+- 8.35.5 (pedido da usuária): Processos abre SEMPRE no QUADRO com todas as etapas em colunas (como no CRM; Lista só pelo botão Filtros ›
+  Ver como); os quadros de etapa para clicar saíram; gráfico das áreas compacto (alto 110).
+- Modelo do contrato estragado (16/11/2026): em 11/11 alguém editou o MODELO do contrato de honorários no Drive (MODELO10_CONTRATO_ID) com os
+  dados da VANESSA; todo contrato gerado depois saiu com o nome dela. O modelo foi restaurado com os campos {{…}}. Em Modelos o link virou
+  "editar o MODELO (vale para todos)" e pede confirmação avisando para não pôr dados de cliente.
 

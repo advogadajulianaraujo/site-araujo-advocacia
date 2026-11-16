@@ -2390,7 +2390,7 @@
     const cli = params.get('cli') || '';
     const ato = params.get('ato') === '1';
     const fase = params.get('fase') || '';
-    const visao = params.get('visao') === 'lista' ? 'lista' : params.get('visao') === 'quadro' ? 'quadro' : params.get('fase') ? 'lista' : (localStorageGet('proc_visao') || 'quadro');
+    const visao = params.get('visao') === 'lista' || (params.get('fase') && params.get('visao') !== 'quadro') ? 'lista' : 'quadro'; // 8.35.5 (pedido da usuária): abre sempre no quadro com TODAS as etapas, como no CRM
     lembrarVisao('processos');
     const [todosSit, nClientes] = await Promise.all([api('processos.listar', { busca, semCliente }), api('clientes.listar', {}).then(l => l.length).catch(() => 0)]);
     const totalProc = busca || semCliente ? (await api('processos.listar', {}).catch(() => todosSit)).length : todosSit.length;
@@ -2489,7 +2489,7 @@
       h('button', { type: 'submit', class: 'btn mini' }, 'Buscar'));
     formBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: formBusca.busca.value.trim() }); });
     const graficoAreas = h('div', { class: 'px-areas-g pc-escuro' }, h('div', { class: 'px-g-tit' }, h('h3', {}, 'Processos por área'), area ? h('button', { type: 'button', class: 'link', onclick: () => ir({ area: '' }) }, 'ver todas') : null),
-      grafCols(areas.map((a, i) => ({ nome: a, valor: porArea[a], cor: CORES_GRAF[1 + i % (CORES_GRAF.length - 1)], ativo: area === a, ir: () => ir({ area: area === a ? '' : a }) })), { alto: 210 }));
+      grafCols(areas.map((a, i) => ({ nome: a, valor: porArea[a], cor: CORES_GRAF[1 + i % (CORES_GRAF.length - 1)], ativo: area === a, ir: () => ir({ area: area === a ? '' : a }) })), { alto: 110 }));
     // 8.37 (pedido da usuária: "etapas como antes: cada etapa um quadro, que passa um para o outro")
     const etapas = comSetas(h('div', { class: 'px-etapa-cards', role: 'group', 'aria-label': 'Etapas' },
       h('button', { type: 'button', class: 'px-et todas' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) },
@@ -2520,12 +2520,11 @@
       h('hr', { class: 'px-linha' }),
       faixaAssinaturas(),
       graficoAreas,
-      etapas,
       h('div', { class: 'px-barra-lista' },
         h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''}${fase ? ' · ' + FASES[fase] : ''}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
         h('details', { class: 'px-filtros' }, h('summary', { class: 'btn sec' }, '⚙ Filtros', nFiltros ? h('span', { class: 'cb-n' }, String(nFiltros)) : null, ' ▾'), lado)),
-      visao === 'quadro' ? [h('p', { class: 'peq quadro-dica' }, 'Arraste o cartão para a próxima etapa (ou use "Concluir etapa →").'), comSetas(quadroProc)] : h('div', { class: 'px-main' }, tabelaLista()));
-    void etapasProc; void filtrosProc;
+      visao === 'quadro' ? comSetas(quadroProc) : h('div', { class: 'px-main' }, tabelaLista()));
+    void etapasProc; void filtrosProc; void etapas;
   }
 
   async function telaProcesso(id, params) {
@@ -4892,7 +4891,7 @@
         blocoLiberarModelos(),
         h('p', { class: 'peq' }, 'Para mudar o texto, abra o modelo no Google Docs e edite. Mantenha os campos entre chaves duplas, como {{nome}}, {{qualificacao_resto}}, {{advogado_nome}}, {{numero_processo}}, {{objeto}} e {{clausula_honorarios}}; o painel preenche sozinho. Padrão visual: EB Garamond 12, justificado, logo no topo e rodapé do escritório.'),
         h('div', { class: 'modelos-grade' }, Object.keys(grupos).map(g => h('div', {}, h('h4', {}, g),
-          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', m.url ? h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, 'editar no Google Docs') : h('span', { class: 'peq' }, 'montado pelo painel a partir das parcelas (não tem modelo para editar)')))))))), false),
+          h('ul', { class: 'lista-int' }, grupos[g].map(m => h('li', {}, m.nome, ' · ', m.url ? h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => { if (!confirm('ATENÇÃO: este é o MODELO usado para TODOS os clientes.\n\nNão coloque nome, CPF ou dados de nenhum cliente aqui — só mude o texto geral e mantenha os campos entre chaves, como {{nome}}.\n\nPara mudar o documento de um cliente, abra o arquivo gerado na pasta dele.\n\nAbrir o modelo mesmo assim?')) ev.preventDefault(); } }, 'editar o MODELO (vale para todos)') : h('span', { class: 'peq' }, 'montado pelo painel a partir das parcelas (não tem modelo para editar)')))))))), false),
       secao('Tipos de ação', () => h('div', {},
         h('p', { class: 'peq' }, 'Cada tipo preenche a finalidade da procuração e acrescenta os poderes específicos daquela ação (por exemplo, perícias e Meu INSS na previdenciária, prisão civil na pensão alimentícia, art. 44 do CPP na queixa-crime).'),
         h('div', { class: 'chips' }, info.tipos.map(t => h('span', { class: 'chip-filtro' }, t.nome)))), false),

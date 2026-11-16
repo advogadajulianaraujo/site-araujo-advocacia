@@ -2698,3 +2698,14 @@ body[data-tela="clientes"] .cli-filtros select{max-width:190px}
 .px-filtros[open]>summary{border-color:var(--acento);background:var(--acento-f2)}
 .px-filtros .px-lado{position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:260px;box-shadow:0 18px 40px -16px rgba(23,21,19,.45)}
 body[data-tela="processos"] .px-main{overflow-x:auto}
+/* 8.35.5 Processos: gráfico compacto + quadro com todas as etapas (como no CRM) */
+.px-areas-g{padding:10px 14px 8px}
+.px-areas-g .px-g-tit h3{font-size:11px;margin:0 0 4px}
+.px-areas-g .gcol-b{max-width:40px}
+.px-areas-g .gcol-n{font-size:11px}.px-areas-g .gcol-v{font-size:12px}
+body[data-tela="processos"] .quadro-proc{display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding-bottom:8px}
+body[data-tela="processos"] .quadro-proc .coluna-cli{flex:0 0 250px;min-width:250px;background:#E2DDD4;border-radius:10px;padding:10px;border-top:4px solid var(--cor-et,#2A2622)}
+body[data-tela="processos"] .quadro-proc .coluna-cli h2{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:0 0 8px}
+body[data-tela="processos"] .quadro-proc .cartao-proc{background:#fff;border-radius:8px;margin-bottom:8px}
+body[data-tela="processos"] .quadro-proc .coluna-cli{flex-basis:228px;min-width:228px}
+body[data-tela="processos"] .quadro-proc .coluna-cli h2{font-size:11.5px;letter-spacing:.04em}
