@@ -21,6 +21,7 @@
   function chaveFora() { return 'banco_fora_' + ((S && S.u && S.u.perfil) || '') + '_' + (M() ? M().versao : ''); }
   function lerFora() { try { return JSON.parse(localStorage.getItem(chaveFora()) || '{}'); } catch (e) { return {}; } }
   function lembrarFora(tipo, acao) { try { const x = lerFora(); x[tipo + ':' + acao] = Date.now(); localStorage.setItem(chaveFora(), JSON.stringify(x)); } catch (e) { /* privado */ } }
+  try { Object.keys(localStorage).filter(k => /^banco_fora_/.test(k)).forEach(k => { const o = JSON.parse(localStorage.getItem(k) || '{}'); let mud = false; ['m:agenda.listar', 'm:inicio.extras', 'm:inicio.acoes', 'm:audiencias.listar'].forEach(c => { if (c in o) { delete o[c]; mud = true; } }); if (mud) localStorage.setItem(k, JSON.stringify(o)); }); } catch (e) { /* ok */ }
   function foraLembrado(tipo, acao) { const t = lerFora()[tipo + ':' + acao]; return !!t && Date.now() - t < FORA_MS; }
   // motivos que passam sozinhos (não vale lembrar): mudança chegando, desligado, versão, sessão, erro de momento
   const PASSAGEIRO = /^(há mudança|motor do Supabase desligado|versões|abas demais|erro|sessão|entrar)/;
@@ -157,6 +158,14 @@
   }
   function chaveDaLinha(t, o) { return t.cols.has('id') ? String(o.id) : String(o._n); }
   /** Busca só o que mudou desde a última vez (e confere se alguma linha sumiu). */
+  // 8.35.8: no máximo 3 leituras ao banco ao mesmo tempo (com 10+ juntas o Supabase cortava por tempo: "statement timeout")
+  let ativos = 0; const filaRpc = [];
+  function naFila(fn) {
+    return new Promise((ok, nao) => {
+      const vai = () => { ativos++; fn().then(ok, nao).finally(() => { ativos--; const prox = filaRpc.shift(); if (prox) prox(); }); };
+      if (ativos < 3) vai(); else filaRpc.push(vai);
+    });
+  }
   async function sincronizar(tabelas, limiteMs) {
     const agora = Date.now(), pedir = [], esperar = [];
     tabelas.forEach(t => {
@@ -201,7 +210,7 @@
           });
         }
       };
-      const ps = grupos.map(g => { const p = umGrupo(g, 0); g.forEach(t => emVoo.set(t, p)); return [g, p]; });
+      const ps = grupos.map(g => { const p = naFila(() => umGrupo(g, 0)); g.forEach(t => emVoo.set(t, p)); return [g, p]; });
       try { await Promise.all(ps.map(x => x[1])); }
       finally { ps.forEach(([g, p]) => g.forEach(t => { if (emVoo.get(t) === p) emVoo.delete(t); })); }
     }
@@ -281,7 +290,9 @@
       if (m.startsWith('falta:')) { precisa = [...new Set(precisa.concat([m.slice(6)], [...usadas]))]; continue; }
       // precisa de algo que só o Google tem (agenda, Gmail…), de gravar, ou de algo que este perfil não lê: esta rota vai sempre ao Apps Script
       // (precisar gravar é de vez em quando: o Apps Script grava agora e na próxima vez a conta já roda aqui)
-      if (m && !/gravar/.test(m)) { rotaFora.set(acao, m); lembrarFora('m', acao); }
+      // 8.35.8: agenda sem cópia boa no momento (CalendarApp) é passageiro: tenta o banco de novo em 5 min (antes ficava 12 h no Google, 60 s por tela)
+      if (m && /CalendarApp|Calendar/.test(m)) { rotaFora.set(acao, m); setTimeout(() => { if (rotaFora.get(acao) === m) rotaFora.delete(acao); }, 5 * 60000); }
+      else if (m && !/gravar/.test(m)) { rotaFora.set(acao, m); lembrarFora('m', acao); }
       throw erro || new Error('motor: ' + m);
     }
     throw new Error('motor: tabelas demais');
@@ -304,6 +315,8 @@
     finally { clearTimeout(timer); }
   }
   function tratarVoltar(acao, r) {
+    // 8.35.8: o escritório desligou o motor do Supabase → não pergunta mais a ele por 30 min (cada pergunta custava ~1 s por tela)
+    if (/motor do Supabase desligado|desligad/i.test(String(r.motivo || ''))) edgeOffAte = Date.now() + 30 * 60000;
     if (r.sessao) { S = null; guardar('painel_banco', null); }
     else if (!PASSAGEIRO.test(String(r.motivo || ''))) { edgeFora.add(acao); lembrarFora('e', acao); }
     medir(acao, 'supabase-voltou', 0, String(r.motivo || '').slice(0, 120));

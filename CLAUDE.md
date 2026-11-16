@@ -1335,4 +1335,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Não sei. Não depositado = 8% × salário × meses × (1 + 1/12 do 13º + 1/36 do 1/3 de férias), no máximo os últimos 60 meses (STF, Tema 608);
   o saldo estimado da conta conta só os meses depositados; bloco próprio "FGTS não pago — o que a empresa deve (separado da multa)":
   depósitos que faltaram, multa de 40%/20% sobre eles e o total.
+- 8.35.8 (cont.): no máximo 3 leituras ao banco ao mesmo tempo (`naFila`: com 10+ juntas o Supabase cortava por "statement timeout");
+  agenda que caiu no Google por falta de cópia (CalendarApp) tenta o banco de novo em 5 min (antes ficava 12 h em `banco_fora_*`, 60 s por
+  tela; as anotações antigas de agenda/início/audiências são apagadas ao abrir); função do Supabase que responde "desligado" não é mais
+  perguntada por 30 min. Medido no painel REAL (Luis, 16/11 ~15h50 UTC): todas as telas 0,5 s; Início 11 s só na 1ª entrada; login pelo
+  Google 8–38 s (o Apps Script está lento: tempo de robô 57/90 min no dia).
 
