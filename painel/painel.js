@@ -2436,31 +2436,35 @@
     };
     const ordemCol = COLUNAS_PROC.map(c => c[0]);
     const colDe = f => (COLUNAS_PROC.find(c => c[1].includes(f)) || ['andamento'])[0];
-    const quadroProc = h('div', { class: 'quadro-cli quadro-proc' }, COLUNAS_PROC.map(([col, fasesCol]) => {
+    // 8.35.6 (pedido da usuária, com a foto do CRM): quadro de processos IGUAL ao do CRM — colunas com bolinha, nome e número; cartões limpos
+    const iniciais = n => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+    const quadroProc = h('div', { class: 'crm-quadro quadro-proc' }, COLUNAS_PROC.map(([col, fasesCol]) => {
       const daFase = lista.filter(p => fasesCol.includes(p.fase || 'andamento'))
         .sort((a, b) => ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1));
-      const sec = corEt(h('section', { class: 'coluna-cli', 'data-cor': CORES_FASE[col] || '', 'data-fase': col,
-        ondragover: ev => { ev.preventDefault(); sec.classList.add('sobre'); }, ondragleave: () => sec.classList.remove('sobre'),
-        ondrop: ev => { ev.preventDefault(); sec.classList.remove('sobre'); const id = ev.dataTransfer.getData('text/plain'); const p = lista.find(x => x.id === id); if (p && colDe(p.fase) !== col) moverFase(p, col); } },
-        h('h2', {}, h('span', {}, NOME_COLUNA[col] || FASES[col]), h('span', { class: 'seg-n' }, String(daFase.length))),
-        daFase.slice(0, 40).map(p => {
-          const i = ordemCol.indexOf(col);
-          const card = h('article', { class: 'cartao-cli cartao-proc', draggable: 'true', tabindex: 0,
-            ondragstart: ev => { ev.dataTransfer.setData('text/plain', p.id); card.classList.add('arrastando'); }, ondragend: () => card.classList.remove('arrastando'),
-            onclick: () => { location.hash = '#/processo/' + p.id; }, onkeydown: ev => { if (ev.key === 'Enter') card.click(); } },
-            h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar')),
-            h('span', { class: 'peq num' }, p.numero || '(a ajuizar)'),
-            h('span', { class: 'peq' }, [p.area, p.tribunal].filter(Boolean).join(' · ') || '—'),
-            p.responsavel ? h('span', { class: 'peq' }, '👤 ' + p.responsavel) : null,
-            p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('span', { class: 'cartao-ato' }, atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null,
-            h('div', { class: 'cartao-proc-pe', onclick: ev => ev.stopPropagation() },
-              i > 0 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1], card) }, '←') : h('span'),
-              col === 'contratado' ? h('span', { class: 'barra' }, botaoNaoFechou(p), botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →'))
-                : i < ordemCol.length - 1 ? h('button', { type: 'button', class: 'btn mini', title: 'Concluir etapa e passar para ' + (NOME_COLUNA[ordemCol[i + 1]] || FASES[ordemCol[i + 1]]), onclick: () => moverFase(p, ordemCol[i + 1], card) }, 'Concluir etapa →') : null));
-          return card;
-        }),
-        daFase.length > 40 ? h('a', { class: 'peq', href: '#/processos?visao=lista&fase=' + col }, `+ ${daFase.length - 40} — ver na lista`) : null,
-        !daFase.length ? h('p', { class: 'peq vazio-t' }, 'Arraste um processo para cá.') : null));
+      const i = ordemCol.indexOf(col);
+      const cartao = p => {
+        const card = h('article', { class: 'crm-card proc-card', draggable: 'true', tabindex: 0,
+          ondragstart: ev => { ev.dataTransfer.setData('text/plain', p.id); card.classList.add('arrastando'); }, ondragend: () => card.classList.remove('arrastando'),
+          onclick: () => { location.hash = '#/processo/' + p.id; }, onkeydown: ev => { if (ev.key === 'Enter') card.click(); } },
+          h('div', { class: 'crm-card-topo' }, h('strong', {}, p.cliente_id ? p.cliente_nome : (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : 'Cliente a identificar'))),
+          h('div', { class: 'crm-tags' }, p.area ? h('span', { class: 'tag' }, p.area) : null, p.tribunal ? h('span', { class: 'tag sec' }, p.tribunal) : null),
+          h('p', { class: 'peq proc-card-num' }, p.numero || '(a ajuizar)'),
+          p.proximo_ato_data && p.proximo_ato_data >= hojeISO() ? h('p', { class: 'crm-prox' }, '→ ', atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data), ' ', etiquetaDias(p.proximo_ato_data)) : null,
+          h('div', { class: 'crm-card-pe', onclick: ev => ev.stopPropagation() },
+            h('span', { class: 'crm-quem' }, h('span', { class: 'crm-av', title: p.responsavel ? 'Com ' + p.responsavel : 'Sem responsável' }, p.responsavel ? iniciais(p.responsavel) : '—')),
+            h('span', { class: 'crm-bts' },
+              i > 0 && col !== 'contratado' ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1], card) }, '←') : null,
+              col === 'contratado' ? [botaoNaoFechou(p), botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →')]
+                : i < ordemCol.length - 1 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Concluir etapa e passar para ' + (NOME_COLUNA[ordemCol[i + 1]] || FASES[ordemCol[i + 1]]), onclick: () => moverFase(p, ordemCol[i + 1], card) }, '→') : null)));
+        return card;
+      };
+      const sec = h('section', { class: 'crm-col', 'data-fase': col,
+        ondragover: ev => { ev.preventDefault(); sec.classList.add('alvo'); }, ondragleave: () => sec.classList.remove('alvo'),
+        ondrop: ev => { ev.preventDefault(); sec.classList.remove('alvo'); const id = ev.dataTransfer.getData('text/plain'); const p = lista.find(x => x.id === id); if (p && colDe(p.fase) !== col) moverFase(p, col); } },
+        h('header', {}, h('span', { class: 'crm-ponto' }), h('strong', {}, NOME_COLUNA[col] || FASES[col]), h('span', { class: 'visao-n' }, String(daFase.length))),
+        h('div', { class: 'crm-col-corpo' }, daFase.length ? daFase.slice(0, 40).map(cartao) : h('p', { class: 'peq crm-vazio' }, 'Arraste um processo para cá'),
+          daFase.length > 40 ? h('a', { class: 'peq', href: '#/processos?visao=lista&fase=' + col }, `+ ${daFase.length - 40} — ver na lista`) : null));
+      sec.style.setProperty('--cor', CORES_FASE[col] || '#9aa0aa');
       return sec;
     }));
     const filtrosProc = h('div', { class: 'filtros-proc' },

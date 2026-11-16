@@ -1313,4 +1313,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Modelo do contrato estragado (16/11/2026): em 11/11 alguém editou o MODELO do contrato de honorários no Drive (MODELO10_CONTRATO_ID) com os
   dados da VANESSA; todo contrato gerado depois saiu com o nome dela. O modelo foi restaurado com os campos {{…}}. Em Modelos o link virou
   "editar o MODELO (vale para todos)" e pede confirmação avisando para não pôr dados de cliente.
+- 8.35.6 (pedido da usuária, com a foto do CRM): o quadro de Processos usa a MESMA aparência do CRM (`crm-quadro`/`crm-col`/`crm-card`:
+  bolinha da cor da etapa, nome e número no topo da coluna, cartão com cliente, área/tribunal, nº e próximo ato; ← / → / Inicial feita aparecem
+  ao passar o mouse).
 
