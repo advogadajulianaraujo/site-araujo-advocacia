@@ -514,11 +514,30 @@
     } else if (extra.area) {
       input = h('textarea', { id, name: nome }, valor || '');
     } else {
-      input = h('input', { id, name: nome, type: extra.tipo || 'text', value: valor || '', autocomplete: extra.auto || 'off',
-        required: extra.obrigatorio, inputmode: extra.modo, maxlength: extra.max || 300, placeholder: extra.dica });
+      const moeda = extra.modo === 'decimal' && /R\$/.test(rotulo); // 8.36.1: valor em reais se preenche sozinho (320000 → 3.200,00)
+      input = h('input', { id, name: nome, type: extra.tipo || 'text', value: moeda ? formatarMoeda(valor) : (valor || ''), autocomplete: extra.auto || 'off',
+        required: extra.obrigatorio, inputmode: extra.modo, maxlength: extra.max || 300, placeholder: moeda ? '0,00' : extra.dica, 'data-moeda': moeda ? '1' : null });
+      if (moeda && extra.dica) input.title = extra.dica;
     }
     return h('div', { class: extra.largo ? 'largo' : '' }, h('label', { for: id }, rotulo + (extra.obrigatorio ? ' *' : '')), input);
   }
+
+  /* 8.36.1 (pedido da usuária): todo campo de valor em reais funciona como maquininha — os números entram pelos centavos:
+     digitar 320000 mostra 3.200,00. Vale para os campos do painel com "R$" no nome (data-moeda) e para os campos soltos com "R$" na dica. */
+  function formatarMoeda(v) {
+    if (v === null || v === undefined || v === '') return '';
+    let n;
+    if (typeof v === 'number') n = v;
+    else { const t = String(v).replace(/[R$\s]/g, ''); n = /,/.test(t) ? parseFloat(t.replace(/\./g, '').replace(',', '.')) : parseFloat(t); }
+    return isNaN(n) ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const ehCampoMoeda = el => el && el.tagName === 'INPUT' && (el.dataset.moeda === '1' || (el.getAttribute('inputmode') === 'decimal' && /R\$/.test((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + ((el.labels && el.labels[0] && el.labels[0].textContent) || ''))));
+  document.addEventListener('input', ev => {
+    const el = ev.target; if (!ehCampoMoeda(el)) return;
+    const dig = el.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 13);
+    el.value = dig ? (parseInt(dig, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* ok */ }
+  }, true);
 
   /** Troca o conteúdo da tela, ignorando partes vazias (null). */
   function mostrar(...itens) { app.replaceChildren(...itens.filter(x => x !== null && x !== undefined && x !== false)); }
@@ -745,10 +764,10 @@
     document.getElementById('quem-nome').textContent = nome;
     document.getElementById('quem-perfil').textContent = sessao.usuario.perfilNome;
     document.getElementById('quem-avatar').textContent = String(nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
-    const mUs = document.getElementById('menu-usuarios'); mUs.textContent = 'Gerenciar acessos'; mUs.hidden = !pode.usuarios;
-    const mRel = document.getElementById('menu-relatorios'); mRel.hidden = !pode.usuarios;
-    const mDist = document.getElementById('menu-distribuicao'); if (mDist) mDist.hidden = !pode.usuarios;
-    const mEq = document.getElementById('menu-equipe'); if (mEq) mEq.hidden = !pode.usuarios;
+    const mUs = document.getElementById('menu-usuarios'); mUs.textContent = 'Gerenciar acessos'; mUs.hidden = true;
+    const mRel = document.getElementById('menu-relatorios'); mRel.hidden = true;
+    const mDist = document.getElementById('menu-distribuicao'); if (mDist) mDist.hidden = true;
+    const mEq = document.getElementById('menu-equipe'); if (mEq) mEq.hidden = true;
     document.body.classList.remove('sem-sessao');
     abasEl.hidden = false;
     quemEl.hidden = false;
@@ -773,7 +792,7 @@
         if (p.financeiro) {
           const r = await apiFresco('fin.pix', { dias: 2 });
           (r.lista || []).forEach(x => { if (vistos.has('pix:' + x.id)) return; vistos.add('pix:' + x.id);
-            const v = x.valor === null || x.valor === undefined || x.valor === '' ? '' : (isNaN(+String(x.valor).replace(/\./g, '').replace(',', '.')) ? 'R$ ' + x.valor : reais(+String(x.valor).replace(/\./g, '').replace(',', '.')));
+            const v = x.valor === null || x.valor === undefined || x.valor === '' ? '' : 'R$ ' + formatarMoeda(x.valor);
             novos.push({ ico: '💰', tit: `PIX ${v ? 'de ' + v + ' ' : ''}recebido`, sub: [primeiroNome(x.pagador || ''), x.situacao === 'baixado' ? 'baixado ✓' : x.situacao === 'a conferir' ? 'conferir' : x.situacao].filter(Boolean).join(' · '), ir: '#/financeiro?ver=pix', cls: x.situacao === 'baixado' ? 'ok' : 'atencao' }); });
         }
         if (admin) {
@@ -803,30 +822,7 @@
     setTimeout(fechar, 12000);
   }
 
-  /* ---------- 8.36 Atalhos de teclado (como nos sistemas grandes): "?" mostra a lista ---------- */
-  (function atalhosTeclado() {
-    const IR = { i: ['#/inicio', 'Início'], c: ['#/clientes', 'Clientes'], p: ['#/processos', 'Processos'], n: ['#/prazos', 'Intimações'], t: ['#/tarefas', 'Tarefas'],
-      a: ['#/agenda', 'Agenda'], u: ['#/audiencias', 'Audiências'], f: ['#/financeiro', 'Cobranças'], d: ['#/modelos', 'Documentos'], r: ['#/crm', 'CRM'] };
-    const NOVO = { c: ['#/cliente/novo', 'Novo cliente'], p: ['#/processo/novo', 'Novo processo'], z: ['#/prazo/novo', 'Novo prazo'], a: ['#/compromisso/novo', 'Novo compromisso'] };
-    let prefixo = '', prefTimer = null;
-    const ajuda = () => {
-      const lin = (k, t) => h('tr', {}, h('td', {}, h('kbd', {}, k)), h('td', {}, t));
-      const d = h('dialog', { class: 'dialogo atalhos-dlg' }, h('h2', {}, '⌨ Atalhos de teclado'),
-        h('table', { class: 'tabela' }, h('tbody', {}, lin('Ctrl + K', 'Buscar cliente, CPF, telefone ou processo'),
-          ...Object.entries(IR).map(([k, [, t]]) => lin('g ' + k, 'Ir para ' + t)), ...Object.entries(NOVO).map(([k, [, t]]) => lin('n ' + k, t)), lin('?', 'Mostrar esta lista'), lin('Esc', 'Fechar janela'))),
-        h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); d.remove(); } }, 'Fechar')));
-      document.body.append(d); d.showModal();
-    };
-    document.addEventListener('keydown', ev => {
-      if (ev.ctrlKey || ev.metaKey || ev.altKey || !sessao) return;
-      const alvo = ev.target, tag = (alvo && alvo.tagName) || '';
-      if (/INPUT|TEXTAREA|SELECT/.test(tag) || (alvo && alvo.isContentEditable) || document.querySelector('dialog[open]')) return;
-      const k = ev.key.toLowerCase();
-      if (ev.key === '?') { ev.preventDefault(); ajuda(); return; }
-      if (prefixo) { const mapa = prefixo === 'g' ? IR : NOVO, dest = mapa[k]; prefixo = ''; clearTimeout(prefTimer); if (dest) { ev.preventDefault(); location.hash = dest[0]; } return; }
-      if (k === 'g' || k === 'n') { prefixo = k; prefTimer = setTimeout(() => { prefixo = ''; }, 1200); }
-    });
-  })();
+  // 8.36.1: atalhos de teclado (g/n/?) retirados a pedido da usuária; fica só o Ctrl+K da busca
 
   // celular: o menu lateral abre por cima da tela
   const lateralEl = document.getElementById('lateral'), fundoEl = document.getElementById('lateral-fundo'), menuCel = document.getElementById('menu-cel');
@@ -3252,6 +3248,35 @@
   }
 
   /** Painel da administração: o que a equipe conferiu e espera o OK. */
+  /* ---------- 8.36.1 Configurações (pedido da usuária: "quando clicar no nome, aparece só Configurações, organizado por tópicos") ---------- */
+  function telaConfiguracoes() {
+    const p = sessao.usuario.pode, admin = !!p.usuarios;
+    const item = (ico, tit, txt, alvo) => h(typeof alvo === 'string' ? 'a' : 'button', Object.assign({ class: 'cfg-item' }, typeof alvo === 'string' ? { href: alvo } : { type: 'button', onclick: alvo }),
+      h('span', { class: 'cfg-ico', 'aria-hidden': 'true' }, ico), h('span', { class: 'cfg-txt' }, h('b', {}, tit), h('small', {}, txt)), h('span', { class: 'cfg-seta', 'aria-hidden': 'true' }, '›'));
+    const grupo = (tit, ...itens) => h('section', { class: 'cfg-grupo' }, h('h2', {}, tit), h('div', { class: 'cfg-lista' }, itens.filter(Boolean)));
+    const whats = () => { const b = document.getElementById('btn-whats'); if (b) b.click(); };
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Configurações'), h('p', {}, 'Tudo o que se ajusta no painel, separado por assunto.'))),
+      h('div', { class: 'cfg-grade' },
+        grupo('👤 Minha conta',
+          item('🔑', 'Trocar minha senha', 'Senha de entrada no painel', '#/senha'),
+          celular ? null : item('💬', 'WhatsApp neste computador', 'Abrir no aplicativo ou no WhatsApp Web', whats),
+          item('🌐', 'Ver o site do escritório', 'araujoadvocaciasc.com.br', '/')),
+        admin ? grupo('👥 Equipe',
+          item('🧑‍🤝‍🧑', 'Pessoas e acessos', 'Quem entra no painel, perfis, senhas e bloqueios', '#/usuarios'),
+          item('🗂', 'Quem faz o quê', 'Distribuição automática de prazos, petições e secretaria', '#/distribuicao'),
+          item('📈', 'O que cada um fez', 'Produtividade da equipe na semana e no mês', '#/relatorios?ver=equipe')) : null,
+        admin && p.financeiro ? grupo('💳 Cobrança',
+          item('⚡', 'Boleto e Pix automático', 'Cobrança que dá baixa sozinha quando o cliente paga', '#/financeiro?ver=asaas'),
+          item('💰', 'PIX recebidos', 'O que o robô leu do banco e o que falta conferir', '#/financeiro?ver=pix'),
+          item('🧾', 'Recibos', 'Recibos gerados das parcelas pagas', '#/financeiro?ver=recibos')) : null,
+        admin ? grupo('🤖 Robôs e sistema',
+          item('🚦', 'Situação dos robôs', 'Gmail, DJEN, andamentos, agenda e IA', '#/prazos'),
+          item('🗄', 'Banco de dados e atualização', 'Supabase, velocidade e atualização automática', '#/usuarios?ver=banco'),
+          item('🤖', 'Chatbot do WhatsApp', 'Atendimento automático e conversas', '#/conversas'),
+          item('📣', 'Marketing', 'Investimento, origem dos clientes e Google Ads', '#/marketing')) : null,
+        p.future ? grupo('🏢 Edifício Future', item('🏢', 'Painel do prédio', 'Apartamentos, cobranças, contratos e configurações', '#/future')) : null));
+  }
+
   /* ---------- 8.36 Quem faz o quê (distribuição automática por área e tipo de trabalho) ---------- */
   const AREAS_DIST = [['trabalhista', 'Trabalhista'], ['civel', 'Cível e consumidor'], ['familia', 'Família'], ['previdenciario', 'Previdenciário (INSS)'], ['criminal', 'Criminal'], ['outros', 'Outras áreas']];
   async function telaDistribuicao() {
@@ -3469,7 +3494,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.36.0';
+  const VERSAO_PAINEL = '8.36.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4344,7 +4369,7 @@
         h('a', { class: 'fh-card vermelho', href: '#/financeiro?ver=atraso' }, h('span', { class: 'fh-rot' }, 'Em atraso'), h('b', {}, rh ? String(t.parcelasAtrasadas) : reais(t.atrasado)), h('span', { class: 'fh-sub' }, `${t.parcelasAtrasadas} parcela(s) · ${t.clientesAtrasados} cliente(s)`)),
         h('a', { class: 'fh-card dourado', href: '#/financeiro?ver=proximas' }, h('span', { class: 'fh-rot' }, 'A receber · 30 dias'), h('b', {}, rh ? String(r.proximas.length) : reais(t.aReceber30)), h('span', { class: 'fh-sub' }, `${r.proximas.length} parcela(s)`)),
         h('a', { class: 'fh-card azul' + (nPix ? ' alerta' : ''), href: '#/financeiro?ver=pix' }, h('span', { class: 'fh-rot' }, 'PIX para conferir'), h('b', {}, String(nPix)), h('span', { class: 'fh-sub' }, nPix ? 'o robô não teve certeza' : 'tudo conciliado')),
-        h('a', { class: 'fh-card verde' + (r.asaas ? '' : ' apagado'), href: '#/financeiro?ver=' + (sessao.usuario.pode.usuarios ? 'asaas' : 'proximas') }, h('span', { class: 'fh-rot' }, 'Boleto/Pix automático'), h('b', {}, r.asaas ? 'ligado' : 'desligado'), h('span', { class: 'fh-sub' }, r.asaas ? 'baixa sozinha quando pagam' : 'ligar com o Asaas'))));
+        h('a', { class: 'fh-card verde' + (r.asaas ? '' : ' apagado'), href: '#/financeiro?ver=' + (sessao.usuario.pode.usuarios ? 'asaas' : 'proximas') }, h('span', { class: 'fh-rot' }, 'Boleto/Pix automático'), h('b', {}, r.asaas ? 'ligado' : 'desligado'), h('span', { class: 'fh-sub' }, r.asaas ? 'baixa sozinha quando pagam' : 'ligar em Configurações'))));
   }
   function reguaCobranca(r, rh) {
     const em7 = r.proximas.filter(p => p.vencimento <= isoSoma(hojeISO(), 7));
@@ -4443,9 +4468,9 @@
     // 8.22 cobrança automática (Asaas): link do boleto/Pix ou "Gerar boleto/Pix"
     if (p.asaas_link && !/CANCEL/i.test(p.asaas_status || '')) {
       caixa.append(h('a', { class: 'btn mini sec', href: p.asaas_link, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation(), title: 'Página de pagamento do cliente (boleto, Pix ou cartão)' }, '🔗 Boleto/Pix'),
-        h('button', { type: 'button', class: 'btn mini sec', title: 'Cancela a cobrança no Asaas', onclick: parar(async () => { if (!confirm('Cancelar o boleto/Pix desta parcela no Asaas?')) return; await api('fin.asaas.cancelar', { id: p.id }); avisar('Cobrança cancelada no Asaas.'); depois(); }) }, '✕'));
+        h('button', { type: 'button', class: 'btn mini sec', title: 'Cancela o boleto/Pix desta parcela', onclick: parar(async () => { if (!confirm('Cancelar o boleto/Pix desta parcela?')) return; await api('fin.asaas.cancelar', { id: p.id }); avisar('Cobrança cancelada.'); depois(); }) }, '✕'));
     } else if (ASAAS_LIGADO) {
-      caixa.append(h('button', { type: 'button', class: 'btn mini sec', title: 'Gera boleto + Pix no Asaas; o link vai junto na mensagem do WhatsApp', onclick: parar(async ev => {
+      caixa.append(h('button', { type: 'button', class: 'btn mini sec', title: 'Gera boleto + Pix; o link vai junto na mensagem do WhatsApp', onclick: parar(async ev => {
         ev.target.disabled = true; ev.target.textContent = 'Gerando…';
         try { const r = await api('fin.asaas.gerar', { id: p.id }); avisar('Boleto/Pix gerado' + (r.vencimento ? ' (vence ' + dataBR(r.vencimento) + ')' : '') + '. O link já vai na mensagem do WhatsApp.'); depois(); }
         catch (e) { ev.target.disabled = false; ev.target.textContent = 'Gerar boleto/Pix'; throw e; }
@@ -4564,7 +4589,7 @@
      Ferramentas (honorários, ação de cobrança, PIX, alvarás, recibos, conferir, sistema antigo, boleto/Pix, entradas e saídas)
      ficam no botão "Ferramentas"; cada uma abre com "← Cobranças". */
   const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['pix', 'PIX recebidos'], ['acao', 'Ação de cobrança'], ['levantar', 'Alvarás e RPV a levantar'],
-    ['recibos', 'Recibos'], ['conferir', 'Conferir cobranças'], ['antigos', 'Do sistema antigo'], ['asaas', 'Boleto/Pix automático (Asaas)', 'usuarios'], ['painel', 'Entradas e saídas do mês', 'usuarios']];
+    ['recibos', 'Recibos'], ['conferir', 'Conferir cobranças'], ['antigos', 'Do sistema antigo'], ['asaas', 'Boleto e Pix automático', 'usuarios'], ['painel', 'Entradas e saídas do mês', 'usuarios']];
   async function telaFinanceiro(params) {
     carregando();
     const busca = params.get('busca') || '';
@@ -4742,7 +4767,7 @@
     const desenhar = r => {
       const f = h('form', { class: 'caixa', novalidate: true },
         h('div', { class: 'campos' },
-          campo('chave', r.ligado ? 'Chave da API (já cadastrada — deixe vazio para manter)' : 'Chave da API do Asaas', '', { tipo: 'password', dica: 'começa com $aact_ · Asaas › Integrações › Chave de API' }),
+          campo('chave', r.ligado ? 'Chave da API (já cadastrada — deixe vazio para manter)' : 'Chave da API da plataforma de cobrança', '', { tipo: 'password', dica: 'começa com $aact_ · Integrações › Chave de API' }),
           campo('ambiente', 'Conta', r.ambiente, { opcoes: [['producao', 'Produção (cobranças de verdade)'], ['sandbox', 'Teste (sandbox)']] }),
           campo('auto', 'Gerar sozinho', r.auto ? 'sim' : 'nao', { opcoes: [['nao', 'Não — só quando eu apertar "Gerar boleto/Pix"'], ['sim', 'Sim — o robô gera antes do vencimento']] }),
           campo('dias', 'Quantos dias antes do vencimento', String(r.dias), { modo: 'numeric' }),
@@ -4759,13 +4784,13 @@
       caixa.replaceChildren(
         h('div', { class: 'nota' + (r.ligado ? ' ok' : '') }, h('strong', {}, r.ligado ? `Ligado (${r.ambiente === 'sandbox' ? 'conta de teste' : 'produção'})` : 'Desligado'),
           r.teste ? ' · ' + r.teste : '', r.ultima ? h('div', { class: 'peq' }, 'Última conferência: ' + new Date(r.ultima.split(' · ')[0]).toLocaleString('pt-BR') + ' · ' + (r.ultima.split(' · ')[1] || '')) : null),
-        h('p', { class: 'peq fin-dica' }, 'Como funciona: cada parcela ganha uma página de pagamento (boleto, Pix ou cartão — o cliente escolhe). O link vai junto na mensagem de cobrança do WhatsApp e aparece no Acompanhe do cliente. Quando o cliente paga, o robô dá baixa sozinho na parcela (de hora em hora) e o recibo sai. Com "Gerar sozinho", o robô cria as cobranças das parcelas que vencem nos próximos dias (clientes com CPF; atrasadas só pelo botão). Lembretes por e-mail/SMS ficam a cargo do Asaas (Configurações › Notificações de lá).'),
+        h('p', { class: 'peq fin-dica' }, 'Como funciona: cada parcela ganha uma página de pagamento (boleto, Pix ou cartão — o cliente escolhe). O link vai junto na mensagem de cobrança do WhatsApp e aparece no Acompanhe do cliente. Quando o cliente paga, o robô dá baixa sozinho na parcela (de hora em hora) e o recibo sai. Com "Gerar sozinho", o robô cria as cobranças das parcelas que vencem nos próximos dias (clientes com CPF; atrasadas só pelo botão). Lembretes por e-mail/SMS são configurados na própria plataforma de cobrança (Configurações › Notificações de lá).'),
         h('details', { class: 'reneg' }, h('summary', {}, 'Passo a passo para ligar'),
-          h('ol', {}, h('li', {}, 'Crie a conta no Asaas (asaas.com) com o CNPJ do escritório e conclua a validação.'),
-            h('li', {}, 'No Asaas: Integrações › Chave de API › Gerar chave. Copie (começa com $aact_).'),
+          h('ol', {}, h('li', {}, 'Crie a conta da plataforma de cobrança (asaas.com) com o CNPJ do escritório e conclua a validação.'),
+            h('li', {}, 'Lá dentro: Integrações › Chave de API › Gerar chave. Copie (começa com $aact_).'),
             h('li', {}, 'Cole aqui em "Chave da API", escolha "Produção" e Salvar. Deve aparecer "Conectado".'),
             h('li', {}, 'Teste numa parcela: "Gerar boleto/Pix" → abra o link. Depois ligue "Gerar sozinho", se quiser.'),
-            h('li', {}, 'As taxas do Asaas (por boleto/Pix pago) são cobradas pelo próprio Asaas, conforme o plano da conta.'))),
+            h('li', {}, 'As taxas (por boleto/Pix pago) são cobradas pela própria plataforma de cobrança, conforme o plano da conta.'))),
         f);
     };
     api('fin.asaas.config', {}).then(desenhar).catch(e => caixa.replaceChildren(h('p', { class: 'erro' }, e.message)));
@@ -4977,6 +5002,28 @@
         aoEnviar(fDia, async fd => { const r = await api('fin.honorario.dia', { id: x.id, dia: fd.get('dia'), desde: fd.get('desde') }); avisar(`${r.parcelas} parcela(s) passaram para o dia ${fd.get('dia')}.`); recarregar(); });
         extras.push(h('div', { class: 'caixa' }, h('h3', {}, '📝 Notas promissórias'), h('p', { class: 'peq' }, `Gera uma nota por parcela em aberto (${abertasH.length}), duas por folha, para o cliente assinar. Vão para a pasta do cliente › DOCUMENTOS PARA ASSINAR.`),
           h('a', { class: 'btn sec', href: '#/modelos?cliente=' + x.cliente_id + '&docs=promissoria&honorario=' + x.id }, 'Gerar as notas promissórias')));
+        // 8.36.1 (pedido da usuária: "quero editar as parcelas"): valor e vencimento de cada parcela em aberto, ou o mesmo valor para todas
+        const linhasEd = abertasH.map(p => ({ p, venc: h('input', { type: 'date', value: p.vencimento || '', 'aria-label': 'Vencimento da parcela ' + p.numero }),
+          valor: h('input', { inputmode: 'decimal', 'data-moeda': '1', value: formatarMoeda(p.valor), placeholder: '0,00', 'aria-label': 'Valor da parcela ' + p.numero, size: 10 }) }));
+        const todas = h('input', { inputmode: 'decimal', 'data-moeda': '1', placeholder: '0,00', 'aria-label': 'Mesmo valor para todas', size: 10 });
+        const salvarEd = botao('Salvar as parcelas', async ev => {
+          const mud = linhasEd.filter(l => l.venc.value !== (l.p.vencimento || '') || Math.abs((parseFloat(l.valor.value.replace(/\./g, '').replace(',', '.')) || 0) - (+l.p.valor || 0)) > 0.004);
+          if (!mud.length) { avisar('Nada mudou.'); return; }
+          if (mud.some(l => !(parseFloat(l.valor.value.replace(/\./g, '').replace(',', '.')) > 0) || !l.venc.value)) { avisar('Confira: toda parcela precisa de vencimento e valor.', true); return; }
+          ev.target.disabled = true;
+          try {
+            for (const l of mud) await api('fin.parcela.salvar', { parcela: { id: l.p.id, vencimento: l.venc.value, valor: l.valor.value } });
+            const soma = dados.parcelas.reduce((t, p) => { const l = linhasEd.find(z => z.p.id === p.id); return t + (l ? parseFloat(l.valor.value.replace(/\./g, '').replace(',', '.')) || 0 : +p.valor || 0); }, 0);
+            if (x.tipo === 'parcelado') await api('fin.honorario.salvar', { honorario: { id: x.id, cliente_id: x.cliente_id, processo_id: x.processo_id, tipo: x.tipo, descricao: x.descricao, valor_total: soma.toFixed(2), percentual: x.percentual, valor_mensal: x.valor_mensal, dia_vencimento: x.dia_vencimento, inicio: x.inicio, situacao: x.situacao, observacoes: x.observacoes } });
+            avisar(`${mud.length} parcela(s) corrigida(s).` + (x.tipo === 'parcelado' ? ' Total do honorário: ' + soma.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + '.' : '')); recarregar();
+          } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        });
+        extras.push(h('div', { class: 'caixa ed-parcelas' }, h('h3', {}, '✎ Corrigir parcelas em aberto'),
+          h('p', { class: 'peq' }, 'Mude o valor ou o vencimento e aperte "Salvar as parcelas". O total do honorário é atualizado sozinho. Os valores entram pelos centavos: digitar 40000 vira 400,00.'),
+          h('div', { class: 'barra' }, h('label', {}, 'Mesmo valor para todas: ', todas), botao('Aplicar', () => { if (!todas.value) return; linhasEd.forEach(l => { l.valor.value = todas.value; }); }, 'sec mini')),
+          h('table', { class: 'tabela compacta' }, h('thead', {}, h('tr', {}, h('th', {}, 'Parcela'), h('th', {}, 'Vencimento'), h('th', {}, 'Valor (R$)'))),
+            h('tbody', {}, linhasEd.map(l => h('tr', {}, h('td', {}, (l.p.numero || '') + 'ª'), h('td', {}, l.venc), h('td', {}, l.valor))))),
+          h('div', { class: 'acoes' }, salvarEd)));
         extras.push(h('div', { class: 'caixa' }, h('h3', {}, '📅 Dia de pagamento'), h('p', { class: 'peq' }, `${abertasH.length} parcela(s) em aberto. Mês sem o dia (ex.: 31 em fevereiro) fica no último dia do mês.`), fDia));
       }
       if (!/^(retirado|cancelado)/.test(x.situacao || '')) extras.push(h('details', { class: 'reneg' }, h('summary', {}, '🗑 Retirar este honorário da cobrança'),
@@ -6243,8 +6290,9 @@ function main() {
         case 'modelos': await telaModelos(params); break;
         case 'processos': await telaProcessos(params); break;
         case 'processo': await telaProcesso(id, params); break;
-        case 'usuarios': await telaUsuarios(); break;
+        case 'usuarios': await telaUsuarios(); if (params.get('ver') === 'banco') setTimeout(() => { const t = [...document.querySelectorAll('.app h2')].find(x => /Banco novo/.test(x.textContent)); if (t) t.scrollIntoView({ behavior: 'smooth' }); }, 1800); break;
         case 'distribuicao': await telaDistribuicao(); break;
+        case 'configuracoes': telaConfiguracoes(); break;
         case 'senha': telaSenha(); break;
         case 'agenda': await telaAgenda(params); break;
         case 'audiencias': await telaAudiencias(params); break;

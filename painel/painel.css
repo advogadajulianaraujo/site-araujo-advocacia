@@ -2771,3 +2771,14 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 .atalhos-dlg kbd{display:inline-block;background:#F2EEE7;border:1px solid var(--linha);border-bottom-width:2px;border-radius:6px;padding:1px 7px;font:600 12px/1.6 ui-monospace,monospace;color:var(--tinta)}
 .atalhos-dlg td{padding:6px 10px}
 @media (prefers-reduced-motion:reduce){.notif{animation:none}}
+/* 8.36.1 Configurações */
+.cfg-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start}
+.cfg-grupo{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:14px 14px 8px}
+.cfg-grupo h2{font-size:15px;margin:2px 4px 10px}
+.cfg-lista{display:flex;flex-direction:column}
+.cfg-item{display:grid;grid-template-columns:36px 1fr 14px;gap:10px;align-items:center;padding:10px 6px;border-top:1px solid var(--linha);text-decoration:none;color:var(--tinta);background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;text-align:left;cursor:pointer;border-radius:8px}
+.cfg-item:hover{background:#F6F3EE}
+.cfg-ico{width:34px;height:34px;border-radius:10px;background:#F2EEE7;display:grid;place-items:center;font-size:17px}
+.cfg-txt{display:flex;flex-direction:column;gap:1px}.cfg-txt b{font-size:13.5px}.cfg-txt small{font-size:12px;color:var(--mudo)}
+.cfg-seta{color:var(--mudo);font-size:18px}
+.ed-parcelas table input{width:150px}

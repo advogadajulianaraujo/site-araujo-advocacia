@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.36.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.36.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.0';
+var VERSAO = '8.36.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3907,6 +3907,7 @@ function dinheiro_(v) {
   if (typeof v === 'number') return Math.round(v * 100) / 100;
   var t = String(v).replace(/[R$\s]/g, '');
   if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); // 1.234,56
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, ''); // 8.36.1: "3.200" é três mil e duzentos (antes virava 3,2 → parcelas de R$ 0,40)
   var n = parseFloat(t);
   return isNaN(n) ? 0 : Math.round(n * 100) / 100;
 }

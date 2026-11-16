@@ -13,13 +13,13 @@
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="dns-prefetch" href="https://script.googleusercontent.com">
 <link rel="preload" href="/assets/jost-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/painel/painel.css?v=101">
+<link rel="stylesheet" href="/painel/painel.css?v=102">
 <script src="/painel/config.js?v=2" defer></script>
-<script src="/painel/future.js?v=13" defer></script>
+<script src="/painel/future.js?v=14" defer></script>
 <script src="/painel/gestao.js?v=18" defer></script>
-<script src="/painel/motor.js?v=9.35.0" defer></script>
+<script src="/painel/motor.js?v=10.35.0" defer></script>
 <script src="/painel/banco.js?v=7" defer></script>
-<script src="/painel/painel.js?v=128" defer></script>
+<script src="/painel/painel.js?v=129" defer></script>
 </head>
 <body class="com-lateral">
 <header class="barra-cel" id="barra-cel">
@@ -33,15 +33,10 @@
     <button type="button" class="quem-btn" id="quem-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="quem-menu">
       <span class="quem-avatar" id="quem-avatar" aria-hidden="true"></span><span class="quem-txt"><span id="quem-nome"></span><small id="quem-perfil"></small></span><span class="quem-seta" aria-hidden="true">▴</span></button>
     <div class="quem-menu" id="quem-menu" role="menu" hidden>
-      <a href="#/relatorios" id="menu-relatorios" role="menuitem" hidden>Relatórios</a>
-      <a href="#/relatorios?ver=equipe" id="menu-equipe" role="menuitem" hidden>Equipe: o que cada um fez</a>
-      <a href="#/distribuicao" id="menu-distribuicao" role="menuitem" hidden>Quem faz o quê</a>
-      <a href="#/usuarios" id="menu-usuarios" role="menuitem" hidden>Gerenciar acessos</a>
-      <a href="/" role="menuitem">Ver o site</a>
-      <button type="button" id="btn-whats-abrir" role="menuitem">Abrir o WhatsApp Web do painel</button>
-      <button type="button" id="btn-whats" role="menuitem">WhatsApp: automático</button>
-      <button type="button" id="btn-senha" role="menuitem">Trocar senha</button>
+      <a href="#/configuracoes" id="menu-config" role="menuitem">⚙ Configurações</a>
       <button type="button" id="btn-sair" role="menuitem">Sair</button>
+      <span hidden><a id="menu-relatorios"></a><a id="menu-equipe"></a><a id="menu-distribuicao"></a><a id="menu-usuarios"></a>
+      <button type="button" id="btn-whats-abrir"></button><button type="button" id="btn-whats"></button><button type="button" id="btn-senha"></button></span>
     </div>
   </div>
 </aside>

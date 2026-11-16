@@ -38,6 +38,15 @@
     out.hidden = false; out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
+  // Valores em reais entram pelos centavos (como maquininha): digitar 250000 mostra 2.500,00
+  document.querySelectorAll('.calc input[inputmode="decimal"], form input[inputmode="decimal"]').forEach(el => {
+    el.addEventListener('input', () => {
+      const d = el.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 11);
+      el.value = d ? (parseInt(d, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    });
+    if (!el.placeholder || /Ex\./.test(el.placeholder)) el.placeholder = '0,00';
+  });
+
   // ---------- 2) Estimativa de verbas rescisórias ----------
   const fr = $('#calc-rescisao');
   if (fr) {

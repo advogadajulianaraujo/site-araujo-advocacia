@@ -211,7 +211,7 @@
       campo('aluguel', 'Aluguel (R$)', u.aluguel, { modo: 'decimal' }),
       campo('taxas', 'IPTU / lixo / taxas (R$)', u.taxas, { modo: 'decimal' }),
       campo('garantia', 'Garantia', u.garantia, { dica: 'caução, avalista…' }),
-      campo('caucao', 'Valor da caução (R$)', u.caucao, { modo: 'decimal' }),
+      campo('caucao', 'Valor da caução (R$)', u.caucao, { modo: 'decimal', dica: 'normalmente R$ 1.750,00 ou R$ 3.500,00' }),
       campo('cobra_energia', 'Energia na cobrança', u.cobra_energia || (/^SALA/.test(u.id) ? 'nao' : 'sim'), { opcoes: [['sim', 'Cobrar a energia do mês anterior'], ['nao', 'Não cobrar (paga a própria energia)']] }),
       campo('moeda', 'Mostrar também em dólar', u.moeda || '', { opcoes: [['', 'Não'], ['dolar', 'Sim (cotação em Configurações)']] }),
       campo('energia_resp', 'Energia (titular/responsável)', u.energia_resp),
@@ -788,7 +788,8 @@
       h('div', { class: 'largo fut-garantia' }, h('div', { class: 'fut-chips', role: 'radiogroup' },
         h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'com', checked: !base || base.garantia !== 'sem caução' }), h('span', {}, 'Com caução')),
         h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'sem', checked: !!base && base.garantia === 'sem caução' }), h('span', {}, 'Sem caução')))),
-      campo('caucao', 'Valor da caução (R$)', '', { modo: 'decimal', dica: 'até 11 meses: 1 aluguel · 12 meses ou mais: 2 aluguéis (pode mudar)' }),
+      campo('caucao', 'Valor da caução (R$)', '1.750,00', { modo: 'decimal', dica: 'R$ 1.750,00 ou R$ 3.500,00, conforme a pessoa (ou digite outro valor)' }),
+      h('div', { class: 'fut-chips fut-caucao-rapida' }, ['1.750,00', '3.500,00'].map(v => h('button', { type: 'button', class: 'fut-chip', onclick: ev => { const i = ev.currentTarget.closest('form').querySelector('[name="caucao"]'); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); } }, 'R$ ' + v))),
       campo('lancar_caucao', 'Caução recebida?', 'nao', { opcoes: [['nao', 'Ainda não (lanço depois no caixa)'], ['sim', 'Sim, lançar hoje no caixa do prédio']] }),
       h('h3', { class: 'largo fut-passo' }, '3. Locatário(a)'),
       campo('nome', 'Nome completo', base ? base.nome : '', { max: 120 }),
@@ -844,11 +845,12 @@
       const n = meses(), al = num(q('aluguel').value), ini = q('inicio').value, com = (f.querySelector('[name="garantia"]:checked') || {}).value !== 'sem';
       const fim = ini && n ? somarMesesJS(ini, n) : '';
       q('fim').value = fim ? dataBR(fim) : '—';
-      if (!caucaoMexida) q('caucao').value = al ? String(((n >= 12 ? 2 : 1) * al).toFixed(2)).replace('.', ',') : '';
-      q('caucao').parentElement.hidden = !com; q('lancar_caucao').parentElement.hidden = !com;
+      // 8.36.1 (pedido da usuária): a caução do prédio é R$ 1.750,00 ou R$ 3.500,00, conforme a pessoa (não depende do aluguel)
+      if (!caucaoMexida && !q('caucao').value) q('caucao').value = '1.750,00';
+      q('caucao').parentElement.hidden = !com; q('lancar_caucao').parentElement.hidden = !com; f.querySelector('.fut-caucao-rapida').hidden = !com;
       const res = f.querySelector('.fut-resumo');
       res.replaceChildren(u && n && ini && al ? h('p', {}, h('b', {}, `${u.id}: ${n} meses, de ${dataBR(ini)} a ${dataBR(fim)}`), ` · aluguel ${reais(al)} todo dia ${q('dia_venc').value}`,
-        com ? ` · caução ${reais(num(q('caucao').value))} (${n >= 12 ? '2 aluguéis' : '1 aluguel'})` : ' · sem caução',
+        com ? ` · caução ${reais(num(q('caucao').value))}` : ' · sem caução',
         h('br'), h('span', { class: 'peq' }, `A pasta "${(q('nome').value || 'NOME').toUpperCase()}" será criada em APARTAMENTOS › ${u.id}, com o contrato e o laudo (Google Docs para ajustar + PDF).`)) : h('p', { class: 'peq' }, 'Escolha o apartamento, o prazo, o início e o aluguel.'));
     };
     f.addEventListener('input', ev => atualizar(ev.target.name === 'unidade' ? 'troca' : false));

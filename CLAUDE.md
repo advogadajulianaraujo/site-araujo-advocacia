@@ -1367,3 +1367,19 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Audiências, Cobranças, Documentos, CRM; n c/p/z/a = novo cliente/processo/prazo/compromisso; Ctrl+K busca (não age dentro de campos).
 - Motor anterior guardado em painel/motor-8.35.0.js.
 
+
+## 8.36.1 Configurações, valores em reais, parcelas editáveis (pedidos da usuária, 16/11/2026)
+
+- Atalhos de teclado RETIRADOS (pedido da usuária: "bem feios"); Ctrl+K da busca continua.
+- Menu do NOME: só "⚙ Configurações" e Sair. Tela #/configuracoes (`telaConfiguracoes`) em tópicos: Minha conta (senha, WhatsApp neste
+  computador, ver o site) · Equipe (Gerenciar acessos, Quem faz o quê, o que cada um fez; administração) · Cobrança (Boleto e Pix automático,
+  PIX, recibos) · Robôs e sistema (central dos robôs, banco novo, chatbot, marketing) · Edifício Future. Os ids antigos do menu ficam escondidos
+  em index.html (o código que os usa continua funcionando).
+- O nome da plataforma de cobrança NÃO aparece na tela: "Boleto e Pix automático" / "plataforma de cobrança" (o código interno segue asaas_*).
+- Valores em reais como maquininha: todo campo de R$ (`data-moeda`, ou inputmode decimal com R$ no rótulo/placeholder) — digitar 320000
+  mostra 3.200,00 (ouvinte global em painel.js; `formatarMoeda`). Calculadoras do site também. No servidor `dinheiro_` lê "3.200" como três mil
+  e duzentos (antes 3,2).
+- Honorário: "✎ Corrigir parcelas em aberto" (data e valor de cada parcela, "Mesmo valor para todas", salva e acerta o valor total). Em 16/11 os
+  honorários do Aílton e do Leandro de Souza tinham parcelas de R$ 0,40 → corrigidas para R$ 400,00 (total R$ 3.200,00).
+- Edifício Future: caução é R$ 1.750,00 ou R$ 3.500,00 (conforme a pessoa) — botões rápidos no contrato, padrão 1.750,00.
+- Motor anterior guardado em painel/motor-8.36.0.js.

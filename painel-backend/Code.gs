@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.0';
+var VERSAO = '8.36.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3860,6 +3860,7 @@ function dinheiro_(v) {
   if (typeof v === 'number') return Math.round(v * 100) / 100;
   var t = String(v).replace(/[R$\s]/g, '');
   if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); // 1.234,56
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, ''); // 8.36.1: "3.200" é três mil e duzentos (antes virava 3,2 → parcelas de R$ 0,40)
   var n = parseFloat(t);
   return isNaN(n) ? 0 : Math.round(n * 100) / 100;
 }
