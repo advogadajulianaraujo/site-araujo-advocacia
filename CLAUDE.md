@@ -1316,4 +1316,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.35.6 (pedido da usuária, com a foto do CRM): o quadro de Processos usa a MESMA aparência do CRM (`crm-quadro`/`crm-col`/`crm-card`:
   bolinha da cor da etapa, nome e número no topo da coluna, cartão com cliente, área/tribunal, nº e próximo ato; ← / → / Inicial feita aparecem
   ao passar o mouse).
+- 8.35.7 (pedido da usuária: "muito feio… sem brechas"): o semáforo do robô em Intimações virou uma CENTRAL (`semaforoRobo`, classes `cr-*`):
+  uma linha (bolinha, "Robôs em dia/funcionando/Atenção", última leitura e chips curtos das pendências); aberta mostra "O que fazer" (cada
+  pendência com explicação curta e um botão: Ler agora, Ler o DJEN agora, Ver os N prazos → #/prazos?fila=conferir, Passo a passo para
+  publicar a Nova versão no Google, "Já fiz: tentar de novo" → `sistema.atualizar`) e cartões por robô (Gmail, DJEN, Andamentos, Agenda,
+  IA, tempo de robô, programa do Google). Aviso da API e da versão viram UM item; pendências do sistema só para a administração.
 

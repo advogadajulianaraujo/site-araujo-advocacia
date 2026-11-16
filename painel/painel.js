@@ -3364,20 +3364,91 @@
 
   /** Cartão do robô: última e próxima leitura; se estiver atrasado, roda sozinho ao abrir a tela. */
   /** 8.25: semáforo do robô — uma linha (verde/âmbar/vermelho) com o que falta para rodar 100%; os detalhes abrem embaixo. */
+  // 8.35.7 (pedido da usuária: "isso está muito feio… sem brechas"): central dos robôs — UMA linha de status e, aberta, cartões por robô
+  // + "O que fazer" com um botão para cada pendência. Pendência do sistema (versão do Google, API) só aparece para a administração.
   function semaforoRobo(robo) {
-    const faltas = [];
-    const vServ = (robo && robo.versao) || '';
-    if (!robo || !robo.ultima || robo.atrasado) faltas.push(['vermelho', 'o robô do Gmail não leu nas últimas horas']);
-    if (sessao.usuario.pode.usuarios && (!vServ || vServ.localeCompare(VERSAO_PAINEL, undefined, { numeric: true }) < 0)) faltas.push(['amarelo', 'colar o Code.gs novo no Google (versão ' + VERSAO_PAINEL + ')']);
-    const dj = (robo && robo.djen) || {};
-    if (!dj.ultima || Date.now() - Date.parse(dj.ultima) > 26 * 3600e3) faltas.push(['amarelo', 'DJEN sem leitura há mais de 1 dia: ligue o "☁ Robô do DJEN" ou deixe o painel aberto no computador do escritório']);
-    (robo && robo.alertas || []).forEach(a => faltas.push(['vermelho', a]));
-    const nivel = faltas.some(f => f[0] === 'vermelho') ? 'vermelho' : faltas.length ? 'amarelo' : 'verde';
-    const det = h('details', { class: 'semaforo s-' + nivel },
-      h('summary', {}, h('span', { class: 'sem-ponto' }),
-        h('span', {}, nivel === 'verde' ? 'Tudo funcionando · ' + (robo && robo.ultima ? 'última leitura ' + quando(robo.ultima) : '') : `Falta${faltas.length > 1 ? 'm' : ''} ${faltas.length} coisa${faltas.length > 1 ? 's' : ''} para rodar 100%: ` + faltas.map(f => f[1]).join(' · ')),
-        h('span', { class: 'sem-ver' }, 'detalhes')),
-      cartaoRobo(robo));
+    robo = robo || {};
+    const admin = !!sessao.usuario.pode.usuarios;
+    const agora = Date.now();
+    const ms = iso => { const t = Date.parse(String(iso || '').split(' ')[0]); return isNaN(t) ? 0 : t; };
+    const ha = iso => { const t = ms(iso); if (!t) return 'ainda não rodou'; const m = Math.round((agora - t) / 60000);
+      return m < 1 ? 'agora há pouco' : m < 60 ? `há ${m} min` : m < 24 * 60 ? `há ${Math.round(m / 60)} h` : quando(new Date(t).toISOString()); };
+    const lido = (pre, iso) => ms(iso) ? pre + ' ' + ha(iso) : 'ainda não rodou';
+    const vServ = robo.versao || '';
+    const velho = admin && (!vServ || vServ.localeCompare(VERSAO_PAINEL, undefined, { numeric: true }) < 0);
+    const alertas = (robo.alertas || []).slice();
+    const tira = re => { const k = alertas.findIndex(a => re.test(a)); return k >= 0 ? alertas.splice(k, 1)[0] : ''; };
+    const aApi = tira(/API do Google Apps Script|atualiza[çc][ãa]o autom[áa]tica/i);
+    const aIa = tira(/IA encontrou prazo diferente/i);
+    const nIa = aIa ? ((aIa.match(/\d{7}-\d{2}\.\d{4}/g) || []).length || +(aIa.match(/em (\d+) processo/) || [])[1] || 0) : 0;
+    const dj = robo.djen || {}, dj2 = robo.datajud || {}, ia = robo.ia || {};
+    const gmailParado = !robo.ultima || robo.atrasado;
+    const djenParado = !dj.ultima || agora - Date.parse(dj.ultima) > 26 * 3600e3;
+    const iaPassageiro = /\b(503|429|500)\b|high demand|overloaded|try again later/i.test(ia.erro || '');
+
+    // ---------- pendências: [nível, título curto (chip), explicação, ações] ----------
+    const pend = [];
+    const rodarRobo = async ev => { const b = ev.currentTarget; b.disabled = true; b.textContent = 'Lendo…';
+      try { const r = await api('robo.rodar'); avisar(r.resumo.replace(/^Robô em [^:]+: /, '')); rota(); } catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Ler agora'; } };
+    const lerDjen = async ev => { const b = ev.currentTarget; b.disabled = true; b.textContent = 'Lendo o DJEN…';
+      const r = await lerDjenNavegador(true);
+      if (r && r.ok) { avisar(`DJEN lido: ${r.total} comunicação(ões), ${r.novas} nova(s).`); rota(); }
+      else { avisar('Não consegui ler o DJEN: ' + ((r && r.erro) || 'tente de novo'), true); b.disabled = false; b.textContent = 'Ler o DJEN agora'; } };
+    const tentarAtualizar = async ev => { const b = ev.currentTarget; b.disabled = true; b.textContent = 'Tentando (até 2 min)…';
+      try { const r = await api('sistema.atualizar', {}) || {}; avisar(r.atualizado ? `Pronto: versão ${r.atualizado} instalada. Aperte F5.` : r.erro ? 'Ainda não deu: ' + r.erro : `O Google já está na versão ${r.atual || 'mais nova'}. Aperte F5.`, !!r.erro); b.disabled = false; b.textContent = 'Já fiz: tentar de novo'; }
+      catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Já fiz: tentar de novo'; } };
+    if (gmailParado) pend.push(['vermelho', 'Gmail parado', 'O robô não leu os avisos dos tribunais nas últimas horas. Ele tenta sozinho; se continuar, aperte "Ler agora".',
+      [h('button', { type: 'button', class: 'btn mini', onclick: rodarRobo }, 'Ler agora')]]);
+    if (velho) {
+      const passos = h('ol', { class: 'cr-passos' },
+        h('li', {}, 'Abra o Apps Script do painel e confira se o Code.gs colado é o mais novo (', h('a', { href: 'https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/painel-backend/Code.gs', target: '_blank', rel: 'noopener noreferrer' }, 'abrir o Code.gs'), ') e aperte 💾 Salvar.'),
+        h('li', {}, 'Lá em cima, à direita: ', h('b', {}, 'Implantar › Gerenciar implantações'), '.'),
+        h('li', {}, 'Clique no lápis ✎, em ', h('b', {}, 'Versão'), ' escolha ', h('b', {}, '"Nova versão"'), ' e aperte ', h('b', {}, 'Implantar'), '. Colar e salvar NÃO basta: sem a nova versão o painel continua usando a antiga.'),
+        h('li', {}, 'Para isso acontecer sozinho daqui em diante: ligue a ', h('a', { href: 'https://script.google.com/home/usersettings', target: '_blank', rel: 'noopener noreferrer' }, '"API do Google Apps Script"'), ' (uma vez só) e, no editor, rode a função ', h('b', {}, 'autorizar'), '.'));
+      pend.push(['amarelo', 'Publicar a versão ' + VERSAO_PAINEL + ' no Google', `O Google ainda responde com a versão ${vServ || 'antiga'}. Enquanto isso Agenda, Audiências e Início ficam mais lentos.`,
+        [h('details', { class: 'cr-como' }, h('summary', { class: 'btn mini sec' }, 'Passo a passo'), passos),
+         h('button', { type: 'button', class: 'btn mini', onclick: tentarAtualizar }, 'Já fiz: tentar de novo')]]);
+    } else if (aApi && admin) pend.push(['amarelo', 'Atualização automática desligada', 'Falta ligar a "API do Google Apps Script" (uma vez só). Sem ela, cada versão nova precisa ser publicada à mão.',
+      [h('a', { class: 'btn mini sec', href: 'https://script.google.com/home/usersettings', target: '_blank', rel: 'noopener noreferrer' }, 'Abrir a configuração'),
+       h('button', { type: 'button', class: 'btn mini', onclick: tentarAtualizar }, 'Já liguei: tentar de novo')]]);
+    if (aIa) pend.push(['amarelo', `${nIa || 'Alguns'} prazo${nIa === 1 ? '' : 's'} para conferir`, 'A IA leu um número de dias ou uma data diferente da que o painel calculou. Abra no tribunal e confirme a data certa.',
+      [h('a', { class: 'btn mini', href: '#/prazos?fila=conferir' }, `Ver ${nIa ? 'os ' + nIa : 'os prazos'}`)]]);
+    if (djenParado) pend.push(['amarelo', 'DJEN sem leitura', 'O CNJ só deixa ler o DJEN pelo navegador: com o painel aberto ele lê de 2 em 2 horas.',
+      [h('button', { type: 'button', class: 'btn mini', onclick: lerDjen }, 'Ler o DJEN agora')]]);
+    if (dj2.erro && admin) pend.push(['amarelo', 'Andamentos com erro', dj2.erro, [h('button', { type: 'button', class: 'btn mini sec', onclick: async ev => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Consertando…'; try { await api('robo.consertar'); rota(); } catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Consertar agora'; } } }, 'Consertar agora')]]);
+    if (ia.erro && !iaPassageiro && admin) pend.push(['amarelo', 'IA com erro', ia.erro, []]);
+    alertas.filter(a => admin || !/Code\.gs|Apps Script|Supabase|vers[ãa]o/i.test(a)).forEach(a => pend.push(['vermelho', a.length > 46 ? a.slice(0, 44) + '…' : a, a, []]));
+
+    const nivel = pend.some(x => x[0] === 'vermelho') ? 'vermelho' : pend.length ? 'amarelo' : 'verde';
+    const titulo = nivel === 'verde' ? 'Robôs em dia' : nivel === 'vermelho' ? 'Atenção nos robôs' : 'Robôs funcionando';
+
+    // ---------- cartões por robô ----------
+    const cartaoR = (nome, ok, linha1, linha2) => h('div', { class: 'cr-tile cr-' + ok }, h('span', { class: 'cr-dot' }),
+      h('div', {}, h('b', {}, nome), h('span', {}, linha1), linha2 ? h('small', {}, linha2) : null));
+    const tempo = robo.tempoRobo;
+    const tiles = h('div', { class: 'cr-tiles' },
+      cartaoR('Gmail dos tribunais', gmailParado ? 'vermelho' : 'verde', lido('Leu', robo.ultima), robo.proxima ? 'próxima: ' + quando(robo.proxima).split(' às ')[1] : 'de hora em hora'),
+      cartaoR('DJEN', djenParado ? 'amarelo' : 'verde', lido('Leu', dj.ultima), 'de 2 em 2 h com o painel aberto'),
+      cartaoR('Andamentos (CNJ)', dj2.erro ? 'amarelo' : 'verde', lido('Leu', dj2.ok || dj2.ultima), /pausa/.test(dj2.ultima || '') ? 'o CNJ pediu pausa: continua sozinho' : 'de 4 em 4 h'),
+      cartaoR('Google Agenda', robo.agenda ? 'verde' : 'amarelo', lido('Sincronizou', robo.agenda), 'prazos fatais e audiências'),
+      ia.ligada || ia.erro ? cartaoR('Resumo por IA', ia.erro && !iaPassageiro ? 'amarelo' : 'verde', ia.ultima ? lido('Rodou', ia.ultima) : 'ligado', iaPassageiro ? 'Google ocupado: tenta de novo' : 'só resume, nunca muda prazo') : null,
+      tempo && admin ? cartaoR('Tempo de robô hoje', tempo.min >= 70 ? 'amarelo' : 'verde', `${tempo.min} de 90 min`, tempo.ontem != null ? `ontem: ${tempo.ontem} min` : '') : null,
+      admin ? cartaoR('Programa do Google', velho ? 'amarelo' : 'verde', 'Versão ' + (vServ || '?'), velho ? 'painel: ' + VERSAO_PAINEL : 'igual ao painel') : null);
+
+    const lista = pend.length ? h('div', { class: 'cr-pend' }, h('h4', {}, 'O que fazer'),
+      pend.map(([nv, tit, txt, acoes]) => h('div', { class: 'cr-item cr-' + nv }, h('span', { class: 'cr-dot' }),
+        h('div', { class: 'cr-item-txt' }, h('b', {}, tit), tit !== txt ? h('p', {}, txt) : null), h('div', { class: 'cr-item-bts' }, acoes)))) : null;
+
+    const det = h('details', { class: 'semaforo cr s-' + nivel },
+      h('summary', {}, h('span', { class: 'sem-ponto' }), h('b', { class: 'cr-tit' }, titulo),
+        h('span', { class: 'cr-sub' }, gmailParado ? 'Gmail parado' : lido('última leitura', robo.ultima)),
+        h('span', { class: 'cr-chips' }, pend.map(([nv, tit]) => h('span', { class: 'cr-chip cr-' + nv }, tit))),
+        h('span', { class: 'sem-ver' }, pend.length ? 'ver o que fazer ▾' : 'detalhes ▾')),
+      h('div', { class: 'cr-corpo' }, lista, tiles,
+        h('div', { class: 'cr-rodape' }, h('button', { type: 'button', class: 'btn mini sec', onclick: rodarRobo }, 'Ler agora'),
+          h('a', { class: 'link escuro', href: djenLinkPublico('54832', 'SC', isoSoma(hojeISO(), -7), hojeISO()), target: '_blank', rel: 'noopener noreferrer' }, 'ver no site do DJEN'))));
+    if (gmailParado && !ler('robo_auto')) { guardar('robo_auto', Date.now()); setTimeout(() => { api('robo.rodar').then(() => rota()).catch(() => {}); }, 300); }
     return det;
   }
   function cartaoRobo(robo) {
