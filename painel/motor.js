@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.36.8 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.37.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.36.8';
+var MOTOR_VERSAO = '8.37.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.36.8';
+var VERSAO = '8.37.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -111,7 +111,7 @@ function semValores_(x) {
 function valoresDoPerfil_(acao, res, perfil) {
   if (!PERFIS[perfil] || !PERFIS[perfil].ocultarValores || !res || typeof res !== 'object') return res;
   if (acao === 'fin.areceber' || acao === 'fin.painel') return semValores_(res);
-  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); o.mes = null; o.agenda = (res.agenda || []).map(function (a) { return { dia: a.dia, qtd: a.qtd, valor: null }; }); return o; }
+  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); o.mes = null; if (res.emAcao) o.emAcao = { clientes: res.emAcao.clientes, parcelas: res.emAcao.parcelas, valor: null }; o.agenda = (res.agenda || []).map(function (a) { return { dia: a.dia, qtd: a.qtd, valor: null }; }); return o; }
   return res;
 }
 var ESQUEMA = {
@@ -869,6 +869,11 @@ function novaParcela_(h, numero, vencimento, valor, quem) {
  * ================================================================== */
 var HON_FORA = /^(retirado|cancelado)/;
 /** "Retirar honorário": sai da cobrança SEM virar saldo. As parcelas NÃO pagas somem; as pagas ficam como histórico. Só administração e RH. */
+function clientesEmAcao_(hoje) {
+  var r = {};
+  tabela_('Parcelas').linhas.forEach(function (p) { if (p.cobranca === 'acao' && !p.pago_em && p.vencimento && p.vencimento < hoje && p.cliente_id) r[p.cliente_id] = 1; });
+  return r;
+}
 function acaoCobranca_(d) {
   var hoje = hojeSP_(), clientes = mapaClientes_(), hons = {}, porCli = {};
   tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
@@ -963,7 +968,11 @@ function resumoFinanceiro_() {
   var hons = {};
   tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
   var parcelas = tabela_('Parcelas').linhas.filter(function (p) { return !HON_FORA.test((hons[p.honorario_id] || {}).situacao || ''); }).map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); });
-  var atrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; })
+  // 8.37 (pedido da usuária): cliente mandado para a AÇÃO DE COBRANÇA sai de "Atrasadas" e vai para a aba "Ação de cobrança"
+  var emAcao = clientesEmAcao_(hoje);
+  var todasAtrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; });
+  var naAcao = todasAtrasadas.filter(function (p) { return emAcao[p.cliente_id]; });
+  var atrasadas = todasAtrasadas.filter(function (p) { return !emAcao[p.cliente_id]; })
     .sort(function (a, b) { return b.dias_atraso - a.dias_atraso; });
   var em30 = somarDias_(hoje, 30);
   var proximas = parcelas.filter(function (p) { return p.situacao === 'a vencer' && p.vencimento <= em30; })
@@ -986,6 +995,7 @@ function resumoFinanceiro_() {
       { nome: 'mais de 90 dias', valor: soma(faixa(91, 100000), function (p) { return p.saldo; }), qtd: faixa(91, 100000).length }
     ],
     atrasadas: atrasadas.slice(0, 200),
+    emAcao: { clientes: Object.keys(emAcao).length, parcelas: naAcao.length, valor: soma(naAcao, function (p) { return p.saldo; }) },
     proximas: proximas.slice(0, 100), asaas: !!asaasChave_(),
     // 8.23 layout novo: meta do mês (tudo que vence no mês) × recebido, agenda dos próximos 14 dias e os recebidos do mês
     mes: (function () {
@@ -1776,7 +1786,8 @@ function inicioExtras_(d, u) {
     var hons = {};
     tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
     var verValor = !!pf.financeiro;
-    cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje; })
+    var emAcaoIni = clientesEmAcao_(hoje);
+    cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje && !emAcaoIni[q.cliente_id] && !HON_FORA.test((hons[q.honorario_id] || {}).situacao || ''); })
       .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
       .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
         return { id: q.id, cliente_id: q.cliente_id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',

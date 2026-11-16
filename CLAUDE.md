@@ -1430,3 +1430,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   os espaços e as margens de cima/baixo e gera de novo (até 4 vezes, letra mínima 8,5). "Padrão do escritório" no contrato não é apertado.
 - 8.36.8: nome do arquivo gerado nunca sai "undefined" (`NOMES_ARQ` ganhou o contrato previdenciário; sem nome na lista usa o nome do modelo).
   Motor anterior em painel/motor-8.36.7.js.
+
+## 8.37.0 Ação de cobrança como aba + prazos do "Advogado" para a equipe (pedidos da usuária, 16/11/2026)
+
+- Cobranças: aba principal "⚖ Ação de cobrança" (ao lado de Atrasadas; saiu de Ferramentas). Cliente com parcela atrasada marcada
+  `cobranca = 'acao'` (`clientesEmAcao_`) SAI de "Atrasadas", do total "Em atraso", das faixas e das cobranças do Início; vai para a TABELA
+  da aba (parcelas, total, mais antiga, prescrição, dados para a ação, WhatsApp/Notificação/Honorário/"↩ Voltar para atrasadas"). Embaixo,
+  "Podem ir para a ação" (atraso > 60 dias). Marcar uma parcela manda o cliente inteiro (`cobrancaParcela_`). fin.resumo devolve `emAcao`.
+- `distribuirAdvogado837_` (robôs do escritório, uma vez, Config FIX_DIST_837): sem "Quem faz o quê" salvo, grava a divisão da usuária (Lara
+  trabalhista; Davi e Jennifer cível, criminal e outras; Jennifer família; Gustavo previdenciário; secretaria = perfis secretaria/RH) e passa os
+  prazos abertos e as tarefas ativas do usuário genérico "Advogado" (`GENERICOS_DIST`) para quem cuida da área do processo; lembretes ao
+  cliente → secretaria. Motor anterior em painel/motor-8.36.8.js.

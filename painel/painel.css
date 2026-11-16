@@ -2799,3 +2799,9 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 
 /* 8.36.3 — alerta da calculadora (rescisão indireta = cálculo para a petição) */
 .calc-alerta { background: #fff6e0; border: 1px solid #f0d58f; border-left: 4px solid #d9a21b; border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 13px; line-height: 1.45; color: #4a3a12; }
+
+/* 8.37 aba "Ação de cobrança" em Cobranças */
+.cob-tit { margin: 4px 0 2px; font-size: 15px; }
+.cob-sugestoes { margin-top: 18px; border-top: 1px solid var(--borda, #e3ded5); padding-top: 10px; }
+.cob-sugestoes > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.cob-sugestoes .cob-lista { margin-top: 8px; }

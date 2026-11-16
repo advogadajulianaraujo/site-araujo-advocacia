@@ -3507,7 +3507,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.36.8';
+  const VERSAO_PAINEL = '8.37.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4489,7 +4489,7 @@
         catch (e) { ev.target.disabled = false; ev.target.textContent = 'Gerar boleto/Pix'; throw e; }
       }) }, 'Gerar boleto/Pix'));
     }
-    if (semWhats) { if (p.situacao === 'atrasada' && p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Marcado: ação de cobrança.'); depois(); }) }, 'Mandar para ação de cobrança')); return caixa; }
+    if (semWhats) { if (p.situacao === 'atrasada' && p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { if (!confirm(`Mandar ${p.cliente || 'este cliente'} para a AÇÃO DE COBRANÇA? Todas as parcelas atrasadas dele saem de "Atrasadas" e vão para a aba "Ação de cobrança".`)) return; await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Foi para a aba "Ação de cobrança".'); depois(); }) }, '⚖ Mandar para ação de cobrança')); return caixa; }
     if (p.situacao !== 'atrasada' && p.vencimento >= hojeISO()) {
       caixa.append(wa
         ? h('a', { class: 'btn mini sec wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com um lembrete pronto', onclick: ev => ev.stopPropagation() }, 'Lembrar no WhatsApp')
@@ -4499,7 +4499,7 @@
       caixa.append(wa
         ? h('a', { class: 'btn mini sec wa', href: wa, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com a cobrança pronta', onclick: ev => { ev.stopPropagation(); api('fin.parcela.cobranca', { id: p.id, etapa: 'mensagem' }).then(depois).catch(() => {}); } }, 'Cobrar no WhatsApp')
         : h('span', { class: 'peq' }, 'sem telefone'));
-      if (p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Marcado: ação de cobrança.'); depois(); }) }, 'Ação'));
+      if (p.cobranca !== 'acao') caixa.append(h('button', { type: 'button', class: 'btn mini sec', onclick: parar(async () => { if (!confirm(`Mandar ${p.cliente || 'este cliente'} para a AÇÃO DE COBRANÇA? Todas as parcelas atrasadas dele saem de "Atrasadas" e vão para a aba "Ação de cobrança".`)) return; await api('fin.parcela.cobranca', { id: p.id, etapa: 'acao' }); avisar('Foi para a aba "Ação de cobrança".'); depois(); }) }, '⚖ Ação de cobrança'));
     }
     return caixa;
   }
@@ -4601,7 +4601,7 @@
      3 números, uma lista com 4 abas e UM botão por linha (o resto no ⋯); clicar na linha abre a cobrança na lateral.
      Ferramentas (honorários, ação de cobrança, PIX, alvarás, recibos, conferir, sistema antigo, boleto/Pix, entradas e saídas)
      ficam no botão "Ferramentas"; cada uma abre com "← Cobranças". */
-  const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['pix', 'PIX recebidos'], ['acao', 'Ação de cobrança'], ['levantar', 'Alvarás e RPV a levantar'],
+  const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['pix', 'PIX recebidos'], ['levantar', 'Alvarás e RPV a levantar'],
     ['recibos', 'Recibos'], ['conferir', 'Conferir cobranças'], ['antigos', 'Do sistema antigo'], ['asaas', 'Boleto e Pix automático', 'usuarios'], ['painel', 'Entradas e saídas do mês', 'usuarios']];
   async function telaFinanceiro(params) {
     carregando();
@@ -4620,8 +4620,7 @@
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar honorário por cliente', 'aria-label': 'Buscar honorários' }),
       h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), ver: 'honorarios' }); });
-    const ferramenta = () => ver === 'acao' ? blocoAcaoCobranca()
-      : ver === 'conferir' ? blocoConferencia()
+    const ferramenta = () => ver === 'conferir' ? blocoConferencia()
       : ver === 'asaas' ? blocoAsaas()
       : ver === 'pix' ? blocoPix()
       : ver === 'antigos' ? blocoLevantamento()
@@ -4662,7 +4661,8 @@
 
     // as 4 listas
     const hoje = hojeISO(), fimMes = hoje.slice(0, 8) + String(new Date(+hoje.slice(0, 4), +hoje.slice(5, 7), 0).getDate()).padStart(2, '0');
-    const listas = { atrasadas: r.atrasadas, mes: r.proximas.filter(p => p.vencimento <= fimMes), proximas: r.proximas.filter(p => p.vencimento > fimMes), pagas: r.recebidas || [] };
+    const emAcao = r.emAcao || { clientes: 0, parcelas: 0, valor: 0 };
+    const listas = { atrasadas: r.atrasadas, acao: { length: emAcao.clientes }, mes: r.proximas.filter(p => p.vencimento <= fimMes), proximas: r.proximas.filter(p => p.vencimento > fimMes), pagas: r.recebidas || [] };
     const aba = ver && listas[ver] ? ver : (listas.atrasadas.length ? 'atrasadas' : 'mes');
     const nomeMes = new Date(hoje + 'T12:00:00Z').toLocaleDateString('pt-BR', { month: 'long' });
     const m = r.mes || {};
@@ -4672,7 +4672,7 @@
       numero('Falta receber em ' + nomeMes, rh ? `${listas.mes.length} parcela(s)` : reais(m.falta != null ? m.falta : listas.mes.reduce((a, p) => a + (+p.saldo || +p.valor || 0), 0)), '', 'mes'),
       numero('Em atraso', rh ? `${t.parcelasAtrasadas} parcela(s)` : reais(t.atrasado), t.atrasado || t.parcelasAtrasadas ? 'ruim' : '', 'atrasadas'));
     const avisoPix = nPix ? h('a', { class: 'cb-aviso', href: '#/financeiro?ver=pix' }, `${nPix} PIX ${nPix > 1 ? 'chegaram e precisam' : 'chegou e precisa'} de você · conferir →`) : null;
-    const abas = h('div', { class: 'cb-abas', role: 'tablist' }, [['atrasadas', 'Atrasadas'], ['mes', 'Este mês'], ['proximas', 'Próximas'], ['pagas', 'Pagas no mês']].map(([id, rot]) =>
+    const abas = h('div', { class: 'cb-abas', role: 'tablist' }, [['atrasadas', 'Atrasadas'], ['acao', '⚖ Ação de cobrança'], ['mes', 'Este mês'], ['proximas', 'Próximas'], ['pagas', 'Pagas no mês']].map(([id, rot]) =>
       h('button', { type: 'button', role: 'tab', class: 'cb-aba' + (aba === id ? ' on' : ''), 'aria-selected': String(aba === id), onclick: () => ir({ ver: id }) }, rot, listas[id].length ? h('span', { class: 'cb-n' }, String(listas[id].length)) : null)));
     const VAZIO = { atrasadas: 'Ninguém atrasado. 🎉', mes: 'Nada mais vence neste mês.', proximas: 'Nada vencendo nos próximos 30 dias.', pagas: 'Nada recebido neste mês ainda.' };
     // 8.37 (pedido da usuária: "mais futurista, com percentual e gráficos, como o Asaas, sem exagero"): painel do mês para quem vê valores
@@ -4685,7 +4685,7 @@
       const kpis = h('div', { class: 'cbx-kpis' },
         kpi('Recebido em ' + nomeMes, reais(rec), `${pct}% do previsto (${reais(prev)})`, 'ok', 'pagas', barra(pct, 'ok')),
         kpi('Falta receber em ' + nomeMes, reais(falta), `${Math.max(0, (m.qtd || 0) - (m.pagas || 0))} parcela(s) em aberto no mês`, '', 'mes', barra(prev ? falta * 100 / prev : 0)),
-        kpi('Em atraso', reais(atr), null, atr ? 'ruim' : '', 'atrasadas', inad),
+        kpi('Em atraso', reais(atr), emAcao.clientes ? `+ ${reais(+emAcao.valor || 0)} em ação de cobrança (${emAcao.clientes} cliente(s))` : null, atr ? 'ruim' : '', 'atrasadas', inad),
         kpi('Próximos 30 dias', reais(+t.aReceber30 || 0), `${r.proximas.length} parcela(s)`, '', 'proximas'));
       const roscaMes = h('div', { class: 'cbx-card' }, h('h3', {}, 'Situação de ' + nomeMes), grafRosca([
         { nome: 'Recebido', valor: rec, cor: '#3D7A55', ir: () => ir({ ver: 'pagas' }) },
@@ -4707,7 +4707,7 @@
       }).catch(() => meses.remove());
       return h('section', { class: 'cbx' }, kpis, h('div', { class: 'cbx-graficos' }, meses, roscaMes, faixasCard));
     })();
-    mostrar(cab, painelCob, avisoPix, h('section', { class: 'cb-corpo' }, abas, linhasCobranca(listas[aba], recarregar, VAZIO[aba])));
+    mostrar(cab, painelCob, avisoPix, h('section', { class: 'cb-corpo' }, abas, aba === 'acao' ? blocoAcaoCobranca(recarregar) : linhasCobranca(listas[aba], recarregar, VAZIO[aba])));
   }
 
   /** 8.24: uma linha por parcela — nome, parcela, vencimento, situação, valor, UM botão e o ⋯. */
@@ -4826,40 +4826,53 @@
     }).catch(e => caixa.replaceChildren(h('p', { class: 'erro' }, e.message)));
     return caixa;
   }
-  /** 8.21 (pedido da usuária): quem deve há mais de 60 dias (ou marcado "Ação"), por cliente, com a etapa sugerida e a prescrição. */
-  function blocoAcaoCobranca() {
+  /** 8.37 (pedido da usuária): aba "Ação de cobrança" em Cobranças. Em cima, a TABELA de quem foi mandado para a ação (saiu de
+   *  "Atrasadas"); embaixo, quem pode ir (mais de 60 dias de atraso), com a etapa sugerida e a prescrição. */
+  function blocoAcaoCobranca(depoisFora) {
     const caixa = h('div', {}, h('p', { class: 'peq' }, 'Montando a lista…'));
     const rh = sessao.usuario.pode.ocultarValores;
     const ETAPA = { whatsapp: ['1 · Cobrar no WhatsApp', 'atencao'], aguardando: ['Avisado — aguardando resposta', ''], notificacao: ['2 · Notificação extrajudicial', 'conferir'], acao: ['3 · Entrar com a ação', 'urgente'] };
     const desenhar = async (todos) => {
       const r = await apiFresco('fin.acaoCobranca', { todos: !!todos });
-      const marcar = (g, acao, msg) => api('fin.acaoCobranca.marcar', { cliente_id: g.cliente_id, acao }).then(() => { avisar(msg); desenhar(todos); }).catch(e => avisar(e.message, true));
+      const marcar = (g, acao, msg) => api('fin.acaoCobranca.marcar', { cliente_id: g.cliente_id, acao }).then(() => { avisar(msg); if (depoisFora && (acao === 'acao' || acao === 'limpar')) depoisFora(); else desenhar(todos); }).catch(e => avisar(e.message, true));
       const msgCob = g => { const nome = nomeProprioJS(String(g.cliente).split(' ')[0]);
         return `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Consta em aberto ${g.parcelas.length === 1 ? 'uma parcela' : g.parcelas.length + ' parcelas'} dos honorários${rh ? '' : ', no total de ' + reais(g.total)}, a mais antiga vencida em ${dataBR(g.mais_antiga)}. Precisamos regularizar: podemos combinar o pagamento ou um parcelamento. Se já pagou, por favor nos envie o comprovante. Obrigado!`; };
-      const linha = g => {
-        const tel = telefoneWhats(g.telefone || ''), [rot, cls] = ETAPA[g.etapa] || ['', ''];
-        return h('article', { class: 'cob-cartao' + (g.marcado_acao ? ' cob-acao' : '') },
+      const zap = g => { const tel = telefoneWhats(g.telefone || '');
+        return tel ? botaoAvisar('https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(msgCob(g)), 'WhatsApp', g.ultimo_aviso === hojeISO() ? { em: new Date().toISOString() } : null,
+          () => api('fin.acaoCobranca.marcar', { cliente_id: g.cliente_id, acao: 'avisado' }).catch(() => {})) : h('span', { class: 'peq' }, 'sem telefone'); };
+      const falta = g => !g.cpf || !g.endereco ? h('span', { class: 'tag conferir' }, 'falta ' + [!g.cpf ? 'CPF' : '', !g.endereco ? 'endereço' : ''].filter(Boolean).join(' e ')) : h('span', { class: 'tag ok' }, 'dados ok');
+      const marcados = r.lista.filter(g => g.marcado_acao), sugestoes = r.lista.filter(g => !g.marcado_acao);
+      const tabelaAcao = marcados.length ? tabela(['Cliente', 'Parcelas', rh ? null : 'Total', 'Mais antiga', 'Prescreve em', 'Para a ação', ''].filter(Boolean), marcados, g => [
+        h('td', { 'data-r': 'Cliente' }, h('a', { href: '#/cliente/' + g.cliente_id, onclick: ev => ev.stopPropagation() }, h('strong', {}, g.cliente || 'cliente sem nome')),
+          h('div', { class: 'peq' }, g.honorarios.map(x => x.descricao).filter(Boolean).join(' · ') + (g.promissoria ? ' · tem nota promissória' : ''))),
+        h('td', { 'data-r': 'Parcelas' }, String(g.parcelas.length)),
+        rh ? null : h('td', { class: 'num', 'data-r': 'Total' }, h('strong', {}, reais(g.total))),
+        h('td', { 'data-r': 'Mais antiga' }, dataBR(g.mais_antiga), h('div', { class: 'peq' }, g.dias + ' dias')),
+        h('td', { 'data-r': 'Prescreve em' }, h('b', { class: g.dias_prescricao < 180 ? 'txt-vermelho' : '' }, dataBR(g.prescreve_em)), g.dias_prescricao < 180 ? h('div', { class: 'peq txt-vermelho' }, 'faltam ' + g.dias_prescricao + ' dias') : null),
+        h('td', { 'data-r': 'Para a ação' }, falta(g)),
+        h('td', { class: 'mini-acoes', onclick: ev => ev.stopPropagation() }, zap(g),
+          h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=cobranca', onclick: ev => ev.stopPropagation() }, '📄 Notificação'),
+          g.honorarios[0] ? h('a', { class: 'btn mini sec', href: '#/honorario/' + g.honorarios[0].id, onclick: ev => ev.stopPropagation() }, 'Honorário') : null,
+          h('button', { type: 'button', class: 'btn mini sec', onclick: ev => { ev.stopPropagation(); if (confirm('Tirar ' + g.cliente + ' da ação de cobrança? As parcelas voltam para "Atrasadas".')) marcar(g, 'limpar', 'Voltou para "Atrasadas".'); } }, '↩ Voltar para atrasadas'))
+      ], g => { location.hash = '#/cliente/' + g.cliente_id; }) : h('div', { class: 'cb-vazio' }, 'Ninguém em ação de cobrança. Para mandar alguém: em "Atrasadas", clique em ⋯ › "⚖ Ação de cobrança", ou use o botão na lista abaixo.');
+      const cartao = g => { const [rot, cls] = ETAPA[g.etapa] || ['', ''];
+        return h('article', { class: 'cob-cartao' },
           h('div', { class: 'cob-cab' },
             h('div', {}, h('a', { href: '#/cliente/' + g.cliente_id }, h('strong', {}, g.cliente || 'cliente sem nome')),
               h('div', { class: 'peq' }, `${g.parcelas.length} parcela(s) atrasada(s) · a mais antiga em ${dataBR(g.mais_antiga)} (${g.dias} dias)` + (g.ultimo_aviso ? ` · último aviso ${dataBR(g.ultimo_aviso)}` : ' · nunca avisado'))),
             h('div', { class: 'cob-dir' }, rh ? null : h('b', { class: 'cob-total' }, reais(g.total)), h('span', { class: 'tag ' + cls }, rot))),
-          h('div', { class: 'peq' }, g.honorarios.map(x => x.descricao).filter(Boolean).join(' · '), g.promissoria ? ' · tem nota promissória' : '',
-            ' · prescreve em ', h('b', { class: g.dias_prescricao < 180 ? 'txt-vermelho' : '' }, dataBR(g.prescreve_em)), g.dias_prescricao < 180 ? ' (faltam ' + g.dias_prescricao + ' dias!)' : '',
-            !g.cpf || !g.endereco ? h('span', { class: 'tag conferir' }, 'falta ' + [!g.cpf ? 'CPF' : '', !g.endereco ? 'endereço' : ''].filter(Boolean).join(' e ') + ' para a ação') : null),
-          h('div', { class: 'g-acoes' },
-            tel ? botaoAvisar('https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(msgCob(g)), 'Cobrar no WhatsApp', g.ultimo_aviso === hojeISO() ? { em: new Date().toISOString() } : null,
-              () => api('fin.acaoCobranca.marcar', { cliente_id: g.cliente_id, acao: 'avisado' }).catch(() => {})) : h('span', { class: 'peq' }, 'sem telefone'),
+          h('div', { class: 'g-acoes' }, zap(g),
             h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=cobranca' }, '📄 Notificação de cobrança'),
-            g.marcado_acao ? botao('Tirar de "entrar com a ação"', () => marcar(g, 'limpar', 'Desmarcado.'), 'mini sec') : botao('⚖ Marcar: entrar com a ação', () => marcar(g, 'acao', 'Marcado para a ação de cobrança.'), 'mini'),
-            g.honorarios[0] ? h('a', { class: 'btn mini sec', href: '#/honorario/' + g.honorarios[0].id }, 'Abrir honorário') : null,
-            g.ignorado ? botao('Voltar para a lista', () => marcar(g, 'voltar', 'Voltou para a lista.'), 'mini sec') : botao('Não cobrar (tirar da lista)', () => { if (confirm('Tirar ' + g.cliente + ' da lista de ação de cobrança? (as parcelas continuam em atraso; para tirar o honorário use "Retirar honorário")')) marcar(g, 'ignorar', 'Tirado da lista.'); }, 'mini sec')));
-      };
-      const n = k => r.lista.filter(g => g.etapa === k).length;
+            botao('⚖ Mandar para a ação de cobrança', () => marcar(g, 'acao', 'Foi para a ação de cobrança.'), 'mini'),
+            g.ignorado ? botao('Voltar para a lista', () => marcar(g, 'voltar', 'Voltou para a lista.'), 'mini sec') : botao('Não cobrar', () => { if (confirm('Tirar ' + g.cliente + ' desta lista de sugestões? (as parcelas continuam em atraso; para tirar o honorário use "Retirar honorário")')) marcar(g, 'ignorar', 'Tirado da lista.'); }, 'mini sec'))); };
       caixa.replaceChildren(
-        h('p', { class: 'peq fin-dica' }, 'Quem deve há mais de 60 dias. Caminho: 1) cobrar no WhatsApp → 2) sem resposta em 15 dias e mais de 90 dias de atraso: notificação extrajudicial → 3) entrar com a ação (honorários do contrato assinado são título executivo: art. 24 do EAOAB). Prescreve em 5 anos do vencimento (art. 25 do EAOAB).'),
-        h('div', { class: 'chips' }, h('span', { class: 'chip-filtro' }, `${r.lista.length} cliente(s)`), h('span', { class: 'chip-filtro' }, `${n('acao')} para entrar com a ação`), h('span', { class: 'chip-filtro' }, `${n('notificacao')} para notificar`), h('span', { class: 'chip-filtro' }, `${n('whatsapp')} para cobrar`),
-          r.ignorados ? h('button', { type: 'button', class: 'chip-filtro', onclick: () => desenhar(!todos) }, todos ? 'esconder os tirados' : `ver os ${r.ignorados} tirado(s) da lista`) : null),
-        r.lista.length ? h('div', { class: 'cob-lista' }, r.lista.map(linha)) : h('p', { class: 'vazio' }, 'Ninguém com mais de 60 dias de atraso. 👏'));
+        h('h3', { class: 'cob-tit' }, `Em ação de cobrança · ${marcados.length} cliente(s)` + (rh || !marcados.length ? '' : ' · ' + reais(marcados.reduce((a, g) => a + g.total, 0)))),
+        h('p', { class: 'peq fin-dica' }, 'Estes clientes saíram de "Atrasadas". Caminho: notificação extrajudicial → ação de cobrança/execução (contrato de honorários assinado é título executivo, art. 24 do EAOAB). Prescreve em 5 anos do vencimento (art. 25 do EAOAB).'),
+        tabelaAcao,
+        h('details', { class: 'cob-sugestoes', open: !marcados.length },
+          h('summary', {}, `Podem ir para a ação: atraso de mais de 60 dias · ${sugestoes.length} cliente(s)`),
+          h('div', { class: 'chips' }, r.ignorados ? h('button', { type: 'button', class: 'chip-filtro', onclick: () => desenhar(!todos) }, todos ? 'esconder os tirados' : `ver os ${r.ignorados} tirado(s) da lista`) : null),
+          sugestoes.length ? h('div', { class: 'cob-lista' }, sugestoes.map(cartao)) : h('p', { class: 'vazio' }, 'Ninguém com mais de 60 dias de atraso fora da ação. 👏')));
     };
     desenhar(false).catch(e => caixa.replaceChildren(h('p', { class: 'erro' }, e.message)));
     return caixa;

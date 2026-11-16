@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.8';
+var VERSAO = '8.37.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -47,7 +47,7 @@ function semValores_(x) {
 function valoresDoPerfil_(acao, res, perfil) {
   if (!PERFIS[perfil] || !PERFIS[perfil].ocultarValores || !res || typeof res !== 'object') return res;
   if (acao === 'fin.areceber' || acao === 'fin.painel') return semValores_(res);
-  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); o.mes = null; o.agenda = (res.agenda || []).map(function (a) { return { dia: a.dia, qtd: a.qtd, valor: null }; }); return o; }
+  if (acao === 'fin.resumo') { var o = Object.assign({}, res); o.totais = semValores_(res.totais); o.faixas = semValores_(res.faixas); o.mes = null; if (res.emAcao) o.emAcao = { clientes: res.emAcao.clientes, parcelas: res.emAcao.parcelas, valor: null }; o.agenda = (res.agenda || []).map(function (a) { return { dia: a.dia, qtd: a.qtd, valor: null }; }); return o; }
   return res;
 }
 var ROTAS_VALOR_BLOQUEADAS = { 'fin.renegociar': 1, 'fin.honorario.salvar': 1, 'fin.parcela.salvar': 1, 'fin.recebimento.salvar': 1, 'fin.despesa.salvar': 1, 'fin.pixBaixar': 1, 'fin.pixIgnorar': 1, 'fin.pixConfig': 1, 'fin.parcela.pagar': 1 };
@@ -4154,6 +4154,12 @@ function mudarDiaHonorario_(d, u) {
  * (ou já marcado "Ação"), com o total, a parcela mais antiga, o último aviso, quantos dias faltam para prescrever (5 anos, art. 25 do
  * EAOAB, contados do vencimento) e a etapa sugerida: cobrar no WhatsApp → notificação extrajudicial → ação de cobrança/execução.
  */
+/** Clientes com alguma parcela atrasada marcada "ação de cobrança" (cobranca = 'acao'). Todas as atrasadas dele ficam na ação. */
+function clientesEmAcao_(hoje) {
+  var r = {};
+  tabela_('Parcelas').linhas.forEach(function (p) { if (p.cobranca === 'acao' && !p.pago_em && p.vencimento && p.vencimento < hoje && p.cliente_id) r[p.cliente_id] = 1; });
+  return r;
+}
 function acaoCobranca_(d) {
   var hoje = hojeSP_(), clientes = mapaClientes_(), hons = {}, porCli = {};
   tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
@@ -4276,7 +4282,11 @@ function resumoFinanceiro_() {
   var hons = {};
   tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
   var parcelas = tabela_('Parcelas').linhas.filter(function (p) { return !HON_FORA.test((hons[p.honorario_id] || {}).situacao || ''); }).map(function (p) { return parcelaPublica_(p, hoje, clientes, hons); });
-  var atrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; })
+  // 8.37 (pedido da usuária): cliente mandado para a AÇÃO DE COBRANÇA sai de "Atrasadas" e vai para a aba "Ação de cobrança"
+  var emAcao = clientesEmAcao_(hoje);
+  var todasAtrasadas = parcelas.filter(function (p) { return p.situacao === 'atrasada'; });
+  var naAcao = todasAtrasadas.filter(function (p) { return emAcao[p.cliente_id]; });
+  var atrasadas = todasAtrasadas.filter(function (p) { return !emAcao[p.cliente_id]; })
     .sort(function (a, b) { return b.dias_atraso - a.dias_atraso; });
   var em30 = somarDias_(hoje, 30);
   var proximas = parcelas.filter(function (p) { return p.situacao === 'a vencer' && p.vencimento <= em30; })
@@ -4299,6 +4309,7 @@ function resumoFinanceiro_() {
       { nome: 'mais de 90 dias', valor: soma(faixa(91, 100000), function (p) { return p.saldo; }), qtd: faixa(91, 100000).length }
     ],
     atrasadas: atrasadas.slice(0, 200),
+    emAcao: { clientes: Object.keys(emAcao).length, parcelas: naAcao.length, valor: soma(naAcao, function (p) { return p.saldo; }) },
     proximas: proximas.slice(0, 100), asaas: !!asaasChave_(),
     // 8.23 layout novo: meta do mês (tudo que vence no mês) × recebido, agenda dos próximos 14 dias e os recebidos do mês
     mes: (function () {
@@ -4535,6 +4546,11 @@ function cobrancaParcela_(d, u) {
     else if (d.etapa === 'limpar') { m.cobranca = ''; m.mensagem_em = ''; m.acao_processo_id = ''; }
     else throw falha_('Etapa inválida.');
     atualizarLinha_(r.tab, r.p, m);
+    if (d.etapa === 'acao' && r.p.cliente_id) { // 8.37: vai o cliente inteiro (todas as parcelas atrasadas dele)
+      var hj = hojeSP_();
+      r.tab.linhas.filter(function (q) { return q.id !== r.p.id && q.cliente_id === r.p.cliente_id && !q.pago_em && q.vencimento && q.vencimento < hj && q.cobranca !== 'acao'; })
+        .forEach(function (q) { atualizarLinha_(r.tab, q, { cobranca: 'acao', atualizado_em: m.atualizado_em, atualizado_por: u.usuario }); });
+    }
     registrar_(u.usuario, 'cobrança: ' + d.etapa, d.id);
     return { ok: true };
   });
@@ -5819,6 +5835,53 @@ function configDistribuicao_(d, u) {
   });
 }
 
+/** 8.37 (pedido da usuária: "pode passar à equipe os prazos"), UMA vez (Config FIX_DIST_837): o usuário genérico "Advogado" tinha os
+ *  prazos abertos e as tarefas dos processos. Sem "Quem faz o quê" salvo, grava a divisão que a usuária descreveu (Lara no trabalhista,
+ *  Davi e Jennifer no cível, criminal e outras, Jennifer na família, Gustavo no previdenciário, secretaria = perfis secretaria/RH) e
+ *  passa cada prazo/tarefa para quem cuida da área do processo (com 2+, quem tem menos coisa aberta). Lembretes ao cliente → secretaria. */
+var GENERICOS_DIST = ['Advogado'];
+function distribuirAdvogado837_() {
+  if (config_('FIX_DIST_837')) return 0;
+  return comTrava_(function () {
+    var us = usuarios_().filter(function (x) { return x.ativo === 'sim'; });
+    var gen = {}; GENERICOS_DIST.forEach(function (g) { gen[g] = 1; });
+    if (!distribuicao_()) {
+      var por = function (re) { return us.filter(function (x) { return re.test(normalizar_(x.nome + ' ' + x.usuario)) && x.perfil !== 'administrador' && !gen[x.usuario]; }).map(function (x) { return x.usuario; }); };
+      var lara = por(/\blara\b/), davi = por(/\bdavi\b/), jen = por(/\bjen+if+er\b/), gus = por(/\bgustavo\b/);
+      var sec = us.filter(function (x) { return x.perfil === 'secretario' || x.perfil === 'rh'; }).map(function (x) { return x.usuario; });
+      var civ = davi.concat(jen), d = { prazo: {}, inicial: {}, secretaria: sec };
+      var pz = { trabalhista: lara, civel: civ, familia: jen, previdenciario: gus, criminal: civ, outros: civ };
+      var ini = { trabalhista: lara, civel: davi.length ? davi : civ, familia: jen, previdenciario: gus, criminal: civ, outros: civ };
+      Object.keys(pz).forEach(function (a) { if (pz[a].length) d.prazo[a] = pz[a]; if (ini[a].length) d.inicial[a] = ini[a]; });
+      if (!Object.keys(d.prazo).length) { setConfig_('FIX_DIST_837', new Date().toISOString() + ' · ninguém da equipe encontrado', 'Distribuição 8.37'); return 0; }
+      setConfig_('DISTRIBUICAO', JSON.stringify(d), 'Quem faz o quê: distribuição automática por área e tipo de trabalho');
+      CARGAS_ = null;
+    }
+    var procs = {}; tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+    var porNum = {}; Object.keys(procs).forEach(function (k) { if (procs[k].numero) porNum[procs[k].numero] = procs[k]; });
+    var tz = tabela_('Prazos'); tz.adiar = true; var nz = 0;
+    tz.linhas.forEach(function (z) {
+      if (!gen[z.responsavel] || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return;
+      var pr = procs[z.processo_id] || porNum[z.numero] || {};
+      var r = quemDa_('prazo', pr.area, z.numero || pr.numero);
+      if (r && !gen[r]) { atualizarLinha_(tz, z, { responsavel: r }); nz++; }
+    });
+    regravarMudadas_(tz);
+    var tt = tabela_('Tarefas'); tt.adiar = true; var nt = 0, agora = new Date().toISOString();
+    tt.linhas.forEach(function (t) {
+      if (!gen[t.responsavel] || t.situacao !== 'ativa') return;
+      var lembrete = /^(lembrar|avisar) o cliente|\[lembrete:|\[aviso(dia|vespera)\]/i.test(t.titulo + ' ' + t.descricao);
+      var pr = procs[t.processo_id] || porNum[t.numero] || {};
+      var r = lembrete ? respSecretaria_() : (t.processo_id || t.numero ? quemDa_(/\[inicial:/.test(t.descricao || '') ? 'inicial' : 'prazo', pr.area, t.numero || pr.numero) : '');
+      if (r && !gen[r]) { atualizarLinha_(tt, t, { responsavel: r, atualizado_em: agora, atualizado_por: 'robô', historico: historicoMais_(t.historico || '', { nome: 'robô' }, 'passada de "' + t.responsavel + '" para ' + r + ' (distribuição por área)') }); nt++; }
+    });
+    regravarMudadas_(tt);
+    setConfig_('FIX_DIST_837', new Date().toISOString() + ' · ' + nz + ' prazo(s) e ' + nt + ' tarefa(s) passados do "Advogado" para a equipe', 'Distribuição 8.37 (uma vez)');
+    registrar_('robô', 'quem faz o quê', nz + ' prazo(s) e ' + nt + ' tarefa(s) passados do usuário genérico para a equipe');
+    return nz + nt;
+  });
+}
+
 /** Quem cuida da secretaria (assinaturas, retomar contato, avaliação): "Quem faz o quê" › secretaria, Config RESP_SECRETARIA ou a 1ª pessoa com perfil secretaria. */
 function respSecretaria_() {
   var q = quemDa_('secretaria'); if (q) return q;
@@ -5855,7 +5918,7 @@ function robosEscritorio_(ctx) {
   var r = {}, erros = [];
   [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'audiencia', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.audiencia.length + r.recalcular.length;
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -9394,7 +9457,8 @@ function inicioExtras_(d, u) {
     var hons = {};
     tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
     var verValor = !!pf.financeiro;
-    cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje; })
+    var emAcaoIni = clientesEmAcao_(hoje);
+    cobrancas = tabela_('Parcelas').linhas.filter(function (q) { return !q.pago_em && q.vencimento && q.vencimento <= hoje && !emAcaoIni[q.cliente_id] && !HON_FORA.test((hons[q.honorario_id] || {}).situacao || ''); })
       .sort(function (a, b) { return a.vencimento < b.vencimento ? 1 : -1; })
       .map(function (q) { var c = clis[q.cliente_id] || {}, h = hons[q.honorario_id] || {};
         return { id: q.id, cliente_id: q.cliente_id, cliente: c.nome || '', telefone: c.telefone || '', vencimento: q.vencimento, numero: q.numero, honorario: h.descricao || '',
