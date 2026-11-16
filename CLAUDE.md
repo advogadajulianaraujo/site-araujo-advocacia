@@ -1304,3 +1304,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   equipe), Cobranças (atraso por tempo), Relatórios (desempenho), CRM ("Contatos por etapa", cartão escuro).
 - Mais escuro (pedido da usuária: "muito claro"): fundo #ECE8E1, cabeçalho das tabelas grafite, barra de filtros de Intimações grafite,
   cartão "Recebido no mês" e "Recebido nos últimos 6 meses" escuros (`pc-escuro`).
+- 8.35.4 Processos (pedido da usuária, com desenho): gráfico "Processos por área" maior, na largura toda (`px-areas-g`, alto 210); ETAPAS de novo
+  em QUADROS (`px-etapa-cards`/`px-et`: número + nome, borda na cor da fase, rolagem com as setas ‹ ›, "Todas as etapas" primeiro); os filtros
+  (andamento, tribunal, cliente, só com ato, Lista/Quadro, organizar) ficam escondidos no botão "⚙ Filtros" (`details.px-filtros`, com o número
+  de filtros ligados; fecha ao clicar fora). Lista na largura toda.
+

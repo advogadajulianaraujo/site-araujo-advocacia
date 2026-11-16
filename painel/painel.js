@@ -2489,15 +2489,15 @@
       h('button', { type: 'submit', class: 'btn mini' }, 'Buscar'));
     formBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: formBusca.busca.value.trim() }); });
     const graficoAreas = h('div', { class: 'px-areas-g pc-escuro' }, h('div', { class: 'px-g-tit' }, h('h3', {}, 'Processos por área'), area ? h('button', { type: 'button', class: 'link', onclick: () => ir({ area: '' }) }, 'ver todas') : null),
-      grafCols(areas.map((a, i) => ({ nome: a, valor: porArea[a], cor: CORES_GRAF[i % CORES_GRAF.length], ativo: area === a, ir: () => ir({ area: area === a ? '' : a }) })), { alto: 140 }));
-    const totFases = Object.keys(FASES).reduce((t, f) => t + (porFaseArea[f] || 0), 0) || 1;
-    const etapas = h('div', { class: 'px-etapas' }, h('h3', {}, 'Etapas'),
-      h('div', { class: 'px-pipe', 'aria-hidden': 'true' }, Object.keys(FASES).filter(f => porFaseArea[f]).map(f => { const seg = h('i', { title: `${FASES[f]}: ${porFaseArea[f]}` }); seg.style.setProperty('flex', String(porFaseArea[f] / totFases)); seg.style.setProperty('background', CORES_FASE[f] || '#9aa0aa'); return seg; })),
-      h('div', { class: 'px-fases', role: 'group', 'aria-label': 'Etapas' },
-        h('button', { type: 'button', class: 'px-fase' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) }, 'Todas', h('b', {}, String(todos.filter(p => !area || nomeArea(p) === area).length))),
-        Object.keys(FASES).map(f => { const b = h('button', { type: 'button', class: 'px-fase' + (fase === f ? ' ativo' : '') + (porFaseArea[f] ? '' : ' vazia'), onclick: () => ir({ fase: fase === f ? '' : f }) }, h('i', { 'aria-hidden': 'true' }), FASES[f], h('b', {}, String(porFaseArea[f] || 0))); b.style.setProperty('--cor', CORES_FASE[f] || '#9aa0aa'); return b; })));
-    const lado = h('aside', { class: 'px-lado' },
-      h('h3', {}, 'Filtros'),
+      grafCols(areas.map((a, i) => ({ nome: a, valor: porArea[a], cor: CORES_GRAF[1 + i % (CORES_GRAF.length - 1)], ativo: area === a, ir: () => ir({ area: area === a ? '' : a }) })), { alto: 210 }));
+    // 8.37 (pedido da usuária: "etapas como antes: cada etapa um quadro, que passa um para o outro")
+    const etapas = comSetas(h('div', { class: 'px-etapa-cards', role: 'group', 'aria-label': 'Etapas' },
+      h('button', { type: 'button', class: 'px-et todas' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) },
+        h('b', {}, String(todos.filter(p => !area || nomeArea(p) === area).length)), h('span', {}, 'Todas as etapas')),
+      Object.keys(FASES).map(f => { const b2 = h('button', { type: 'button', class: 'px-et' + (fase === f ? ' ativo' : '') + (porFaseArea[f] ? '' : ' vazia'), onclick: () => ir({ fase: fase === f ? '' : f }) },
+        h('b', {}, String(porFaseArea[f] || 0)), h('span', {}, FASES[f])); b2.style.setProperty('--cor', CORES_FASE[f] || '#9aa0aa'); return b2; })));
+    const nFiltros = [sit !== 'ativo', trib, cli, ato].filter(Boolean).length;
+    const lado = h('div', { class: 'px-lado' },
       h('label', {}, 'Andamento', h('select', { onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value, area: '' }) },
         [['ativo', `Em andamento (${nAtivos})`], ['arquivado', `Arquivados / baixados (${nArq})`], ['todos', `Todos (${todosSit.length})`]].map(([v, t]) => h('option', { value: v, selected: sit === v }, t)))),
       h('label', {}, 'Tribunal', h('select', { onchange: e => ir({ trib: e.target.value, area: '' }) },
@@ -2519,12 +2519,12 @@
         h('a', { class: 'btn dourado', href: '#/processo/novo' }, '+ Novo processo')),
       h('hr', { class: 'px-linha' }),
       faixaAssinaturas(),
-      h('div', { class: 'px-graficos' }, graficoAreas, etapas),
-      h('div', { class: 'px-corpo' },
-        h('div', { class: 'px-main' },
-          h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''}${fase ? ' · ' + FASES[fase] : ''}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
-          visao === 'quadro' ? [h('p', { class: 'peq quadro-dica' }, 'Arraste o cartão para a próxima etapa (ou use "Concluir etapa →").'), comSetas(quadroProc)] : tabelaLista()),
-        lado));
+      graficoAreas,
+      etapas,
+      h('div', { class: 'px-barra-lista' },
+        h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''}${fase ? ' · ' + FASES[fase] : ''}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
+        h('details', { class: 'px-filtros' }, h('summary', { class: 'btn sec' }, '⚙ Filtros', nFiltros ? h('span', { class: 'cb-n' }, String(nFiltros)) : null, ' ▾'), lado)),
+      visao === 'quadro' ? [h('p', { class: 'peq quadro-dica' }, 'Arraste o cartão para a próxima etapa (ou use "Concluir etapa →").'), comSetas(quadroProc)] : h('div', { class: 'px-main' }, tabelaLista()));
     void etapasProc; void filtrosProc;
   }
 
@@ -4518,7 +4518,7 @@
   }
   window.addEventListener('hashchange', () => fecharGaveta());
   // menus ⋯ e Ferramentas: um clique fora fecha
-  document.addEventListener('click', ev => { document.querySelectorAll('details.cb-mais[open],details.cb-ferr[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; }); });
+  document.addEventListener('click', ev => { document.querySelectorAll('details.cb-mais[open],details.cb-ferr[open],details.px-filtros[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; }); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') fecharGaveta(); });
 
   /** 8.22: cobrança automática com boleto e Pix (Asaas). A chave vai só para as Propriedades do servidor. */
