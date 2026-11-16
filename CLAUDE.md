@@ -1383,4 +1383,4 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   honorários do Aílton e do Leandro de Souza tinham parcelas de R$ 0,40 → corrigidas para R$ 400,00 (total R$ 3.200,00).
 - Edifício Future: caução é R$ 1.750,00 ou R$ 3.500,00 (conforme a pessoa) — botões rápidos no contrato, padrão 1.750,00.
 - Motor anterior guardado em painel/motor-8.36.0.js.
-- 8.36.2 (só painel): "Precisa de ação agora" do Início virou uma linha (`acoes-mini`: chips com o total por tipo, só os urgentes aparecem, até 3; "ver todos" abre a lista em linhas curtas).
+- 8.36.2: a atualização automática pula a etapa do Supabase quando a função "painel" já responde com a versão nova (publicada pelo Claude/GitHub): a chave de gestão vencida não trava mais o Google. Motor anterior em painel/motor-8.36.1.js. "Precisa de ação agora" do Início virou uma linha (`acoes-mini`: chips com o total por tipo, só os urgentes aparecem, até 3; "ver todos" abre a lista em linhas curtas).

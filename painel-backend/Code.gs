@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.1';
+var VERSAO = '8.36.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -15332,7 +15332,11 @@ function autoAtualizar_(forcar) {
   if (novas.length) return erro('a versão ' + nova + ' pede uma permissão nova do Google (' + novas.join(', ') + '): abra o Apps Script, cole o appsscript.json do GitHub e rode a função "autorizar" (uma vez só)');
   // 2) Supabase primeiro (o banco e a função precisam estar prontos quando o código novo chegar)
   var sb = { feito: false };
-  try { sb = supabasePublicar_(nova); } catch (eSb) { return erro('Supabase: ' + String(eSb.message || eSb)); }
+  // 8.36.2: se a função do Supabase já está na versão nova (publicada pelo GitHub/Claude), não precisa da chave de gestão;
+  // chave de gestão vencida (401) com a função já nova também não trava a atualização do Google
+  var pg0 = {}; try { pg0 = sbEdgePing_() || {}; } catch (eP) { pg0 = {}; }
+  if (pg0.ok && pg0.versao === nova) sb = { feito: true, pulou: 'a função do Supabase já estava na versão ' + nova };
+  else { try { sb = supabasePublicar_(nova); } catch (eSb) { return erro('Supabase: ' + String(eSb.message || eSb)); } }
   // 3) troca o código (e o manifesto, se mudou sem permissão nova)
   var antigo = arq.map(function (f) { return { name: f.name, type: f.type, source: f.source }; });
   var novo = antigo.map(function (f) {
