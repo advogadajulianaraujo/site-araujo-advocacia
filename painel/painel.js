@@ -1251,20 +1251,29 @@
       if (!admin) itens = itens.filter(x => x.quem_us === eu || (x.tipo === 'semresp') || (secretaria && (x.tipo === 'aviso' || x.tipo === 'semhora' || x.tipo === 'testemunhas')));
       const nIntim = admin ? r.intimSemResp : 0;
       if (!itens.length && !nIntim) return;
-      const linha = x => h('li', { class: 'acao-' + x.nivel, tabindex: 0, onclick: () => { location.hash = x.link; }, onkeydown: e => { if (e.key === 'Enter') location.hash = x.link; } },
-        h('span', { class: 'acao-nivel' }, x.tipo === 'aviso' && x.nivel === 'risco' ? 'Audiência — avisar já' : x.tipo === 'testemunhas' ? 'Testemunhas' : (NIV[x.nivel] || '')),
-        h('div', { class: 'acao-txt' }, h('b', {}, x.titulo), h('div', { class: 'peq' }, x.sub)),
-        h('div', { class: 'acao-prox' }, h('span', { class: 'peq' }, 'Próxima ação'), h('div', {}, x.acao)),
-        h('div', { class: 'acao-quem' }, h('span', { class: 'peq' }, 'Quem cuida'), h('div', {}, x.quem || h('em', {}, 'ninguém ainda'))));
+      // 8.36.2 (pedido da usuária: "muito ruim… deixe bem menor"): uma linha com os totais por tipo; só os urgentes aparecem, até 3
+      const grupoDe = x => x.tipo === 'aviso' ? ['avisar', 'audiência(s) para avisar o cliente', '#/audiencias']
+        : x.tipo === 'testemunhas' ? ['test', 'instrução sem testemunhas', '#/audiencias']
+        : x.tipo === 'semhora' ? ['hora', 'audiência(s) sem horário', '#/audiencias']
+        : x.tipo === 'semresp' ? ['semresp', 'prazo(s) sem responsável', '#/prazos']
+        : x.nivel === 'conferir' ? ['conf', 'prazo(s) para conferir no tribunal', '#/prazos?fila=conferir']
+        : x.nivel === 'risco' ? ['risco', 'prazo(s) em risco', '#/prazos'] : ['outro', NIV[x.nivel] || 'outros', x.link];
+      const grupos = {};
+      itens.forEach(x => { const g = grupoDe(x); (grupos[g[0]] = grupos[g[0]] || { n: 0, rot: g[1], link: g[2], risco: false }).n++; if (x.nivel === 'risco') grupos[g[0]].risco = true; });
+      if (nIntim) grupos.intim = { n: nIntim, rot: 'intimação(ões) sem responsável', link: '#/prazos', risco: false };
+      const total = itens.length + (nIntim ? 1 : 0);
+      const linhaMini = x => h('li', { class: 'acm-' + x.nivel, tabindex: 0, title: x.acao + (x.quem ? ' · ' + x.quem : ''), onclick: () => { location.hash = x.link; }, onkeydown: e => { if (e.key === 'Enter') location.hash = x.link; } },
+        h('b', {}, x.titulo), h('span', { class: 'peq' }, ' · ' + x.sub + (x.quem ? ' · ' + x.quem : '')));
+      const urgentes = itens.filter(x => x.nivel === 'risco');
+      const todos = h('ul', { class: 'acm-lista', hidden: true }, itens.map(linhaMini));
+      const ver = h('button', { type: 'button', class: 'acm-ver', onclick: () => { todos.hidden = !todos.hidden; ver.textContent = todos.hidden ? `ver todos (${total})` : 'esconder'; } }, `ver todos (${total})`);
+      caixa.className = 'acoes-mini';
       caixa.replaceChildren(
-        h('div', { class: 'bloco-cab' }, h('h2', {}, `Precisa de ação agora (${r.total + (nIntim ? 1 : 0)})`), h('a', { href: '#/prazos?fila=conferir' }, 'fila de conferência')),
-        h('ul', { class: 'acoes-lista' }, itens.slice(0, 8).map(linha),
-          nIntim ? h('li', { class: 'acao-aviso', tabindex: 0, onclick: () => { location.hash = '#/prazos'; } },
-            h('span', { class: 'acao-nivel' }, 'Intimações'),
-            h('div', { class: 'acao-txt' }, h('b', {}, `${nIntim} intimação(ões) a fazer sem responsável`), h('div', { class: 'peq' }, `${r.intimSemRespRecentes} delas chegaram nos últimos 30 dias`)),
-            h('div', { class: 'acao-prox' }, h('span', { class: 'peq' }, 'Próxima ação'), h('div', {}, 'Distribuir com "Eu faço" / "Passar para", ou "Conferido" nas que já foram resolvidas')),
-            h('div', { class: 'acao-quem' }, h('span', { class: 'peq' }, 'Quem cuida'), h('div', {}, 'administração'))) : null),
-        itens.length > 8 ? h('p', { class: 'peq' }, `+ ${itens.length - 8} na fila. Veja em Intimações › Conferir no tribunal.`) : null);
+        h('div', { class: 'acm-linha' }, h('span', { class: 'acm-tit' }, 'Precisa de ação'),
+          Object.values(grupos).map(g => h('a', { class: 'acm-chip' + (g.risco ? ' risco' : ''), href: g.link }, h('b', {}, String(g.n)), ' ' + g.rot)),
+          itens.length ? ver : null),
+        urgentes.length ? h('ul', { class: 'acm-lista' }, urgentes.slice(0, 3).map(linhaMini)) : null,
+        todos);
       caixa.hidden = false;
     }).catch(() => { /* Code.gs antigo: o Início segue sem o bloco */ });
     return caixa;

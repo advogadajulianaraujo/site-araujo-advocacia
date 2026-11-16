@@ -2782,3 +2782,17 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 .cfg-txt{display:flex;flex-direction:column;gap:1px}.cfg-txt b{font-size:13.5px}.cfg-txt small{font-size:12px;color:var(--mudo)}
 .cfg-seta{color:var(--mudo);font-size:18px}
 .ed-parcelas table input{width:150px}
+
+/* 8.36.2 — "Precisa de ação" compacto */
+.acoes-mini { background: #fff; border: 1px solid #e4dfd6; border-radius: 10px; padding: 8px 12px; margin: 10px 0; }
+.acm-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.acm-tit { font-weight: 600; margin-right: 4px; color: #171513; }
+.acm-chip { display: inline-flex; gap: 3px; padding: 3px 9px; border-radius: 999px; background: #fbf3e2; color: #7a5a14; text-decoration: none; border: 1px solid #efdfb8; }
+.acm-chip.risco { background: #fdecea; color: #a12a1e; border-color: #f4c7c1; }
+.acm-chip:hover { filter: brightness(.97); }
+.acm-ver { margin-left: auto; background: none; border: 0; color: #8a6d3b; cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.acm-lista { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12.5px; }
+.acm-lista li { padding: 4px 8px; border-left: 3px solid #e3c27a; margin: 3px 0; cursor: pointer; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acm-lista li.acm-risco { border-left-color: #c0392b; background: #fdf3f1; }
+.acm-lista li:hover { background: #f6f2ea; }
+.acm-lista[hidden] { display: none; }
