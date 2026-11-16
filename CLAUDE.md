@@ -1421,3 +1421,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   painel_aplicar_pedido (medido com contadores), 820 mil rollbacks, banco a 16–47 s por consulta. Agora o conflito usa errcode 'PT409'
   (o PostgREST devolve HTTP 409 e não repete); servidor.js aceita '40001' ou 'PT409'. NUNCA usar 40001/40P01 em raise de função chamada
   pelo PostgREST. Depois: zero rollbacks em 10 s, entrada em 5,8 s.
+- 8.36.6: "Erro interno (motivo técnico curto)" — o doPost mostra a mensagem do erro, para a equipe mandar o print. Achado com isso: o script foi
+  ligado ao projeto do Google Cloud 895531255553 (para a atualização automática) e a API do Google Drive precisava ser ativada nele
+  ("Permission denied while enabling APIs: drive") — a usuária ativou em 16/11. Trocou de projeto? Ative lá as APIs que o script usa.
+- 8.36.7 (pedido da usuária: "contrato previdenciário muito grande, às vezes 1 página e meia"): contrato previdenciário em UMA folha, no formato do
+  contrato de honorários (`umaFolha: 'mini'`, cláusulas com título junto, mesmas regras; chave MODELO11_CONTRATO_PREV_ID). E TODO documento de
+  uma folha é conferido depois de gerado: `caberUmaFolha_` conta as páginas do PDF (`paginasPdf_`) e, se passou de 1, diminui meio ponto da letra,
+  os espaços e as margens de cima/baixo e gera de novo (até 4 vezes, letra mínima 8,5). "Padrão do escritório" no contrato não é apertado.

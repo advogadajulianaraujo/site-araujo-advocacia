@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.6';
+var VERSAO = '8.36.7';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -1092,6 +1092,27 @@ function editarNotaCliente_(d, u) {
 }
 
 /** Liga o cliente à pasta que já existe em 02. CLIENTES ou cria uma nova, com a ficha dentro. */
+/** 8.36.7: quantas páginas tem o PDF (conta os objetos /Type /Page). */
+function paginasPdf_(blob) { var m = blob.getDataAsString('ISO-8859-1').match(/\/Type\s*\/Page[^s]/g); return m ? m.length : 1; }
+/** 8.36.7: documento de uma folha que passou para a 2ª página: diminui meio ponto da letra, o espaço entre parágrafos e as margens de
+ *  cima/baixo, e confere de novo (até 4 vezes; letra nunca abaixo de 8,5). Devolve o PDF final. */
+function caberUmaFolha_(docId, blob, mini) {
+  for (var i = 0; i < 4 && paginasPdf_(blob) > 1; i++) {
+    var doc = DocumentApp.openById(docId), corpo = doc.getBody();
+    corpo.setMarginTop(Math.max(12, (corpo.getMarginTop() || 20) - 4)).setMarginBottom(Math.max(12, (corpo.getMarginBottom() || 20) - 4));
+    corpo.getParagraphs().forEach(function (p) {
+      var t = p.editAsText(), txt = t.getText();
+      if (!txt.length) { try { p.setSpacingAfter(0).setSpacingBefore(0); } catch (e) { /* segue */ } return; }
+      var fs = t.getFontSize() || (mini ? 10.5 : 12);
+      t.setFontSize(Math.max(8.5, fs - 0.5));
+      try { p.setSpacingAfter(Math.max(0, (p.getSpacingAfter() || 0) - 1)).setSpacingBefore(Math.max(0, (p.getSpacingBefore() || 0) - 1)); } catch (e2) { /* segue */ }
+    });
+    doc.saveAndClose();
+    blob = DriveApp.getFileById(docId).getAs('application/pdf');
+  }
+  return blob;
+}
+
 function criarPastaCliente_(d, u) {
   var tab = tabela_('Clientes');
   var c = tab.linhas.filter(function (r) { return r.id === d.id; })[0];
@@ -6672,7 +6693,7 @@ var MODELOS = {
   isencao_irpf: { assinaCliente: true, nome: 'Requerimento de isenção do imposto de renda (doença grave)', grupo: 'Procuração e declarações', config: 'MODELO7_ISENCAO_IRPF_ID' },
   comparecimento: { nome: 'Declaração de comparecimento ao escritório', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_COMPARECIMENTO_ID' },
   notificacao: { nome: 'Notificação extrajudicial (em nome do cliente)', grupo: 'Petições e notificações', config: 'MODELO7_NOTIFICACAO_ID' },
-  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, config: 'MODELO10_CONTRATO_PREV_ID', antigo: ['MODELO9_CONTRATO_PREV_ID', 'MODELO8_CONTRATO_PREV_ID', 'MODELO7_CONTRATO_PREV_ID'] }
+  contrato_previdenciario: { assinaCliente: true, nome: 'Contrato de honorários previdenciário (INSS — 30% / benefícios)', grupo: 'Contratos, recibos e cobrança', financeiro: true, umaFolha: 'mini', config: 'MODELO11_CONTRATO_PREV_ID', antigo: ['MODELO10_CONTRATO_PREV_ID', 'MODELO9_CONTRATO_PREV_ID', 'MODELO8_CONTRATO_PREV_ID', 'MODELO7_CONTRATO_PREV_ID'] }
 };
 
 var CABECALHO_PETICAO = [
@@ -6974,34 +6995,18 @@ var TEXTO_MODELOS = {
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['adv']
   ],
-  contrato_previdenciario: [
+  contrato_previdenciario: [ // 8.36.7 (pedido da usuária: "muito grande, às vezes fica 1 página e meia"): mesmas regras, em UMA folha
     ['t', 'CONTRATO DE HONORÁRIOS ADVOCATÍCIOS — PREVIDENCIÁRIO'],
-    ['p', 'Contrato de honorários advocatícios que fazem entre si as partes abaixo qualificadas, em conformidade com a tabela de honorários da OAB/SC, nas condições a seguir especificadas:'],
     ['p', '**CONTRATANTE:** **{{nome}}**, {{qualificacao_resto}}.'],
-    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, neste ato representada por **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
-    ['h', 'CLÁUSULA 1ª – DO OBJETO'],
-    ['p', 'A CONTRATADA obriga-se a atuar em favor d{{c:o|a}} CONTRATANTE em processo administrativo e/ou judicial contra o Instituto Nacional do Seguro Social (INSS){{objeto_prev}}.'],
-    ['h', 'CLÁUSULA 2ª – DOS HONORÁRIOS (SOMENTE EM CASO DE ÊXITO)'],
-    ['p', 'a) Nas CONCESSÕES, {{c:o|a}} CONTRATANTE pagará {{prev_concessao}};'],
-    ['p', 'b) Nas REVISÕES, {{c:o|a}} CONTRATANTE pagará 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a data da efetiva implantação da revisão, não inferiores ao mínimo da tabela da OAB/SC vigente na data do pagamento.'],
-    ['p', 'Parágrafo primeiro. Havendo implantação do direito por tutela antecipada, medida cautelar ou de ofício, o percentual de 30% (trinta por cento) incidirá também sobre o período de manutenção da medida.'],
-    ['p', 'Parágrafo segundo. Valores recebidos administrativamente ou descontados do benefício durante o processo judicial não serão abatidos dos atrasados para o cálculo do percentual.'],
-    ['p', 'Parágrafo terceiro. Havendo procedência parcial do pedido, será devido, no mínimo, o valor previsto na tabela de honorários da OAB/SC.'],
-    ['p', 'Parágrafo quarto. Os valores contratados não excluem o direito da CONTRATADA ao recebimento integral dos honorários de sucumbência (arts. 22 e 23 da Lei nº 8.906/1994). Havendo pagamento por RPV, precatório ou alvará, fica a CONTRATADA autorizada a reter os honorários, repassando o saldo com a devida prestação de contas.'],
-    ['p', 'Parágrafo quinto. Os pagamentos serão feitos por PIX ou depósito em favor da CONTRATADA ({{escritorio_pix}}), valendo o comprovante como recibo.'],
-    ['h', 'CLÁUSULA 3ª – DAS DESPESAS'],
-    ['p', 'Correrão por conta d{{c:o|a}} CONTRATANTE as despesas com perícias, custas, certidões e diligências, bem como os honorários para sustentação oral e para recursos aos Tribunais Superiores, que dependerão de ajuste próprio.'],
-    ['h', 'CLÁUSULA 4ª – DAS OBRIGAÇÕES D{{c:O|A}} CONTRATANTE'],
-    ['p', '{{c:O|A}} CONTRATANTE obriga-se a entregar os documentos solicitados, informar mudanças de telefone e endereço e comparecer às perícias médicas, avaliações sociais e audiências para as quais for convocad{{c:o|a}}.'],
-    ['h', 'CLÁUSULA 5ª – DAS MULTAS, DO ATRASO E DA SUSPENSÃO DOS SERVIÇOS'],
-    ['p', '{{c:O|A}} CONTRATANTE pagará à CONTRATADA multa equivalente a 2 (dois) salários mínimos vigentes à época do pagamento: a) em caso de desistência; b) em caso de não comparecimento injustificado a perícia, avaliação social ou audiência para a qual tenha sido convocad{{c:o|a}} ou avisad{{c:o|a}} pela CONTRATADA. As multas são devidas sem prejuízo dos honorários e podem ser cobradas judicialmente, valendo este contrato como título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do Código de Processo Civil).'],
-    ['p', 'Parágrafo único. O atraso superior a 30 (trinta) dias no pagamento de qualquer parcela autoriza a CONTRATADA, independentemente de outras medidas, a suspender a prestação dos serviços não urgentes até a regularização e, persistindo a inadimplência, a renunciar ao mandato, mediante notificação {{c:ao|à}} CONTRATANTE com 10 (dez) dias de antecedência, período em que continuará a representá-l{{c:o|a}} para evitar prejuízo (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do Código de Processo Civil), cabendo {{c:ao|à}} CONTRATANTE constituir novo advogado. A suspensão ou a renúncia não afasta o dever de pagar os honorários vencidos e os proporcionais ao trabalho já realizado.'],
-    ['h', 'CLÁUSULA 6ª – DO FALECIMENTO E DA HABILITAÇÃO DE HERDEIROS'],
-    ['p', 'Em caso de falecimento d{{c:o|a}} CONTRATANTE, os sucessores obrigam-se a cumprir integralmente o presente contrato, sendo devidos honorários adicionais de 5% (cinco por cento) pela habilitação dos herdeiros.'],
-    ['h', 'CLÁUSULA 7ª – DA NATUREZA DA OBRIGAÇÃO E DO SIGILO'],
-    ['p', 'A obrigação da CONTRATADA é de meio, e não de resultado. A CONTRATADA manterá sigilo sobre as informações recebidas e tratará os dados pessoais d{{c:o|a}} CONTRATANTE apenas para a execução deste contrato (Lei nº 13.709/2018 — LGPD).'],
-    ['h', 'CLÁUSULA 8ª – DO FORO'],
-    ['p', 'Fica eleito o foro da Comarca de {{foro}} para dirimir quaisquer dúvidas oriundas deste contrato.'],
+    ['p', '**CONTRATADA:** **{{escritorio}}**, {{escritorio_qualificacao}}, representada por **{{advogado_nome}}**, {{advogado_oab_qualif}}.'],
+    ['p', '**CLÁUSULA 1ª – OBJETO.** A CONTRATADA atuará em favor d{{c:o|a}} CONTRATANTE em processo administrativo e/ou judicial contra o Instituto Nacional do Seguro Social (INSS){{objeto_prev}}.'],
+    ['p', '**CLÁUSULA 2ª – HONORÁRIOS (SOMENTE EM CASO DE ÊXITO).** a) Nas CONCESSÕES, {{c:o|a}} CONTRATANTE pagará {{prev_concessao}}; b) nas REVISÕES, 30% (trinta por cento) dos valores brutos recebidos judicial e/ou administrativamente até a implantação da revisão, não inferiores ao mínimo da tabela da OAB/SC. § 1º Havendo implantação por tutela antecipada, cautelar ou de ofício, o percentual incide também sobre o período de manutenção da medida. § 2º Valores recebidos administrativamente ou descontados do benefício durante o processo não são abatidos dos atrasados para o cálculo. § 3º Na procedência parcial, é devido, no mínimo, o valor da tabela da OAB/SC. § 4º Os honorários de sucumbência pertencem integralmente à CONTRATADA (arts. 22 e 23 da Lei nº 8.906/1994); havendo RPV, precatório ou alvará, a CONTRATADA poderá reter os seus honorários, repassando o saldo com prestação de contas. § 5º Pagamento por PIX ou depósito ({{escritorio_pix}}), valendo o comprovante como recibo.'],
+    ['p', '**CLÁUSULA 3ª – DESPESAS.** Perícias, custas, certidões e diligências correm por conta d{{c:o|a}} CONTRATANTE; sustentação oral e recursos aos Tribunais Superiores dependem de ajuste próprio.'],
+    ['p', '**CLÁUSULA 4ª – OBRIGAÇÕES D{{c:O|A}} CONTRATANTE.** Entregar os documentos pedidos, avisar mudança de telefone e endereço e comparecer às perícias médicas, avaliações sociais e audiências para as quais for convocad{{c:o|a}}.'],
+    ['p', '**CLÁUSULA 5ª – MULTAS E ATRASO.** {{c:O|A}} CONTRATANTE pagará multa de 2 (dois) salários mínimos vigentes na data do pagamento se desistir ou se faltar sem justificativa a perícia, avaliação social ou audiência para a qual tenha sido convocad{{c:o|a}} ou avisad{{c:o|a}}, sem prejuízo dos honorários. O atraso superior a 30 dias autoriza a CONTRATADA a suspender os serviços não urgentes e, persistindo, a renunciar ao mandato com aviso de 10 dias (art. 5º, § 3º, da Lei nº 8.906/1994 e art. 112 do CPC), sem prejuízo dos honorários vencidos e dos proporcionais ao trabalho realizado.'],
+    ['p', '**CLÁUSULA 6ª – FALECIMENTO.** Os sucessores d{{c:o|a}} CONTRATANTE cumprirão este contrato, com honorários adicionais de 5% (cinco por cento) pela habilitação dos herdeiros.'],
+    ['p', '**CLÁUSULA 7ª – OBRIGAÇÃO DE MEIO E SIGILO.** A obrigação da CONTRATADA é de meio, não de resultado. Os dados d{{c:o|a}} CONTRATANTE são sigilosos e usados apenas para executar este contrato (Lei nº 13.709/2018 – LGPD).'],
+    ['p', '**CLÁUSULA 8ª – TÍTULO EXECUTIVO E FORO.** Este contrato é título executivo extrajudicial (art. 24 da Lei nº 8.906/1994 e art. 784, XII, do CPC). Fica eleito o foro da Comarca de {{foro}}.'],
     ['p', 'E, por estar de acordo, {{c:o|a}} CONTRATANTE assina o presente instrumento.'],
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}|CONTRATANTE']
@@ -8106,7 +8111,10 @@ function gerarDocumentos_(d, u) {
     if (MODELOS[k].processo && k !== 'substabelecimento') padraoPeticao_(corpo);
     if (d.formato_contrato === 'padrao' && MODELOS[k].umaFolha === 'mini') padraoContrato_(doc, corpo); // 8.11.2: contrato no padrão do escritório
     doc.saveAndClose();
-    var pdf = dest.createFile(copia.getAs('application/pdf')).setName(nomeArq + '.pdf');
+    var blobPdf = copia.getAs('application/pdf');
+    // 8.36.7: documento de UMA folha que passou para a 2ª página (nome/endereço longos) é apertado sozinho até caber
+    if (MODELOS[k].umaFolha && !(d.formato_contrato === 'padrao' && MODELOS[k].umaFolha === 'mini')) { try { blobPdf = caberUmaFolha_(copia.getId(), blobPdf, MODELOS[k].umaFolha === 'mini'); } catch (eUF) { /* fica como saiu */ } }
+    var pdf = dest.createFile(blobPdf).setName(nomeArq + '.pdf');
     gerados.push({ modelo: MODELOS[k].nome, doc: copia.getUrl(), pdf: pdf.getUrl(), assinar: !!MODELOS[k].assinaCliente, _docId: copia.getId(), _ordem: Object.keys(MODELOS).indexOf(k) });
   });
   // um PDF só com tudo o que o cliente assina, na ordem: procuração, declarações, contrato, promissórias
