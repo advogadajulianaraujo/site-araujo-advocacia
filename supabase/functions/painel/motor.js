@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.7 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.36.7';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.8 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.36.8';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.7';
+var VERSAO = '8.36.8';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -8095,7 +8095,7 @@ function gerarDocumentos_(d, u) {
   var NOMES_ARQ = { juntada: 'JUNTADA DE DOCUMENTOS', habilitacao: 'JUNTADA DE PROCURAÇÃO', substabelecimento: 'SUBSTABELECIMENTO', cobranca: 'NOTIFICAÇÃO DE COBRANÇA',
     procuracao: 'PROCURAÇÃO', hipossuficiencia: 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA', residencia: 'DECLARAÇÃO DE RESIDÊNCIA',
     lgpd: 'TERMO LGPD', contrato: 'CONTRATO DE HONORÁRIOS', prestacao: 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS', assessoria: 'CONTRATO DE ASSESSORIA',
-    recibo: 'RECIBO DE HONORÁRIOS', procuracao_menor: 'PROCURAÇÃO (FILHOS MENORES)', promissoria: 'NOTAS PROMISSÓRIAS' };
+    recibo: 'RECIBO DE HONORÁRIOS', procuracao_menor: 'PROCURAÇÃO (FILHOS MENORES)', promissoria: 'NOTAS PROMISSÓRIAS', contrato_previdenciario: 'CONTRATO DE HONORÁRIOS PREVIDENCIÁRIO' };
   var pasta = DriveApp.getFolderById(c.pasta_id);
   var gerados = [];
   var hojeIso = hojeSP_();
@@ -8143,7 +8143,7 @@ function gerarDocumentos_(d, u) {
     gerados.push({ modelo: MODELOS.promissoria.nome + ' (' + notasP.length + ')', doc: arqNP.getUrl(), pdf: pdfNP.getUrl(), assinar: true, _docId: arqNP.getId(), _ordem: 99 });
   }
   quais.filter(function (k) { return MODELOS[k] && !MODELOS[k].gerado; }).forEach(function (k) {
-    var nomeArq = NOMES_ARQ[k] + (k === 'procuracao' && tipo && d.tipo_acao !== 'outro' ? ' (' + tipo.nome.replace(/\s*\(.*\)$/, '').toUpperCase() + ')' : '') +
+    var nomeArq = (NOMES_ARQ[k] || String(MODELOS[k].nome || k).replace(/\s*\(.*\)$/, '').toUpperCase()) + (k === 'procuracao' && tipo && d.tipo_acao !== 'outro' ? ' (' + tipo.nome.replace(/\s*\(.*\)$/, '').toUpperCase() + ')' : '') +
       ' — ' + nomePasta_(c.nome) + ' — ' + dataBR_(hoje).replace(/\//g, '-');
     var dest = destino(k);
     var copia = DriveApp.getFileById(modeloId_(k, true)).makeCopy(nomeArq, dest);

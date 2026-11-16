@@ -1428,3 +1428,5 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   contrato de honorários (`umaFolha: 'mini'`, cláusulas com título junto, mesmas regras; chave MODELO11_CONTRATO_PREV_ID). E TODO documento de
   uma folha é conferido depois de gerado: `caberUmaFolha_` conta as páginas do PDF (`paginasPdf_`) e, se passou de 1, diminui meio ponto da letra,
   os espaços e as margens de cima/baixo e gera de novo (até 4 vezes, letra mínima 8,5). "Padrão do escritório" no contrato não é apertado.
+- 8.36.8: nome do arquivo gerado nunca sai "undefined" (`NOMES_ARQ` ganhou o contrato previdenciário; sem nome na lista usa o nome do modelo).
+  Motor anterior em painel/motor-8.36.7.js.
