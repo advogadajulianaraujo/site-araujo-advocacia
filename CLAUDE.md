@@ -1345,4 +1345,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   as tabelas seguem fechadas por RLS) e a função foi RELIGADA (painel_estado edge/login_edge = sim). Medido no painel real: 1ª entrada 7 s
   (Google), da 2ª em diante 1,8 s pela função; Início pronto em ~7 s; telas 0,5 s; nenhum erro. Registros da função: Management API
   `analytics/endpoints/functions.combined-stats?function_id=…&interval=1day` (as tabelas function_logs/edge_logs não existem mais no endpoint logs).
+- 8.35.9 (pedido da usuária): "Aguardando o seu OK" SEMPRE à vista para a administração — no Início logo abaixo dos números (lista aberta, até 8
+  itens com OK/Devolver, "ver todos em Intimações") e em Intimações; vazio = faixa verde "✓ Aguardando o seu OK: nada · a equipe está em dia"
+  (`blocoAguardandoOk({ inicio })`, `.aguarda-vazio`, `.aguarda-ini`).
 

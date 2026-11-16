@@ -1136,6 +1136,7 @@
         atalho('#/prazos', 'Seu OK', aguarda ? aguarda.length : 0, 'esperando aprovação', aguarda && aguarda.length ? 'atencao' : ''),
         atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
         atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
+      blocoAguardandoOk({ inicio: true }),
       blocoMeuDia, acoes,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
       blocoEquipe,
@@ -3176,16 +3177,23 @@
   }
 
   /** Painel da administração: o que a equipe conferiu e espera o OK. */
-  function blocoAguardandoOk() {
-    const caixa = h('section', { class: 'caixa aguarda-ok' });
+  /** 8.35.9 (pedido da usuária: "deixar o aguardando o OK no administrador"): sempre à vista para a administração — no Início (lista aberta,
+      até 8 itens) e em Intimações; vazio mostra "✓ a equipe está em dia". opc = { inicio: true } */
+  function blocoAguardandoOk(opc) {
+    opc = opc || {};
+    const caixa = h('section', { class: 'caixa aguarda-ok' + (opc.inicio ? ' aguarda-ini' : ''), id: 'aguardando-ok' });
     if (!sessao.usuario.pode.usuarios) return null;
     (async () => {
       let itens;
       try { itens = await api('trabalho.aguardando'); } catch (e) { caixa.remove(); return; }
-      if (!itens.length) { caixa.remove(); return; } // 8.36: nada esperando = nada na tela (menos poluição)
+      if (!itens.length) {
+        caixa.classList.add('aguarda-vazio');
+        caixa.replaceChildren(h('div', { class: 'aguarda-cab aguarda-compacta' }, h('div', {}, h('strong', {}, '✓ Aguardando o seu OK: nada'), h('span', { class: 'peq' }, ' · a equipe está em dia'))));
+        return;
+      }
       const ICO = { prazo: '⏱', intimacao: '📨', inicial: '⚖' }, NOME = { prazo: 'Prazo', intimacao: 'Intimação', inicial: 'Petição inicial' };
       // 8.11 (pedido da usuária): uma linha só, com um botão pequeno de OK; a lista inteira só abre no "ver a lista"
-      let aberta = false; try { aberta = localStorage.getItem('aguarda_aberta') === '1'; } catch (e) { /* segue fechada */ }
+      let aberta = !!opc.inicio; try { if (!opc.inicio) aberta = localStorage.getItem('aguarda_aberta') === '1'; } catch (e) { /* segue fechada */ }
       const lista = h('ul', { class: 'aguarda-lista', hidden: !aberta });
       const verBt = h('button', { type: 'button', class: 'btn mini sec', 'aria-expanded': String(aberta), onclick: () => {
         aberta = !aberta; lista.hidden = !aberta; verBt.textContent = aberta ? 'esconder a lista' : 'ver a lista'; verBt.setAttribute('aria-expanded', String(aberta));
@@ -3202,7 +3210,9 @@
             }, 'mini ok-bt'),
             verBt)),
         lista);
-      lista.append(...itens.map(x => h('li', { class: 'aguarda-item t-' + x.tipo },
+      const mostrar8 = opc.inicio ? itens.slice(0, 8) : itens;
+      if (opc.inicio && itens.length > 8) caixa.append(h('p', { class: 'peq aguarda-mais' }, h('a', { href: '#/prazos' }, `ver todos os ${itens.length} em Intimações →`)));
+      lista.append(...mostrar8.map(x => h('li', { class: 'aguarda-item t-' + x.tipo },
           h('span', { class: 'aguarda-ico', 'aria-hidden': 'true' }, ICO[x.tipo]),
           h('div', { class: 'aguarda-txt' },
             h('div', {}, h('span', { class: 'tag mini-tag' }, NOME[x.tipo]), ' ', h('a', { href: x.link }, h('strong', {}, String(x.titulo || '').slice(0, 90)))),
