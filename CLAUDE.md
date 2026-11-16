@@ -1441,3 +1441,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   trabalhista; Davi e Jennifer cível, criminal e outras; Jennifer família; Gustavo previdenciário; secretaria = perfis secretaria/RH) e passa os
   prazos abertos e as tarefas ativas do usuário genérico "Advogado" (`GENERICOS_DIST`) para quem cuida da área do processo; lembretes ao
   cliente → secretaria. Motor anterior em painel/motor-8.36.8.js.
+- 8.37.1 (pedido da usuária: "não falei para apagar essa etapa — é importante saber se foi feita ou não"): a tabela "Em ação de cobrança" voltou a
+  mostrar as ETAPAS da cobrança, cada uma ✓ com data e quem fez (clique marca/desfaz): 1 WhatsApp (mensagem_em das parcelas), 2 Notificação e
+  3 Ação ajuizada (aba Avisos, chave `acaocob:<cliente>:notificacao|ajuizada`, rota `fin.acaoCobranca.marcar` acao=notificacao|ajuizada|desfazer_*),
+  + "último aviso / nunca avisado". Os cartões de sugestão continuam com a etapa sugerida.

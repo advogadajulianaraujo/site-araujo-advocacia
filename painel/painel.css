@@ -2805,3 +2805,7 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 .cob-sugestoes { margin-top: 18px; border-top: 1px solid var(--borda, #e3ded5); padding-top: 10px; }
 .cob-sugestoes > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .cob-sugestoes .cob-lista { margin-top: 8px; }
+.cob-etapas { display: flex; gap: 4px; flex-wrap: wrap; }
+.cob-et { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 3px 8px; border-radius: 8px; border: 1px dashed #c9c2b6; background: #fff; color: #6b645a; font-size: 12px; cursor: pointer; line-height: 1.25; }
+.cob-et small { font-size: 10.5px; opacity: .85; }
+.cob-et.ok { border: 1px solid #3D7A55; background: #E8F3EC; color: #24563a; font-weight: 600; }

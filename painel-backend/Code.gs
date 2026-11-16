@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.37.0';
+var VERSAO = '8.37.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4179,8 +4179,12 @@ function acaoCobranca_(d) {
     g.honorarios[h.id] = h.descricao || TIPOS_HONORARIO[h.tipo] || '';
     if (/promiss/i.test((h.observacoes || '') + ' ' + (h.descricao || '') + ' ' + (p.observacoes || ''))) g.promissoria = true;
   });
+  var avs = avisosMapa_();
   var lista = Object.keys(porCli).map(function (k) {
     var g = porCli[k], c = clientes[k] || {}, dias = diffDias_(hoje, g.mais_antiga);
+    // 8.37.1: etapas da cobrança (WhatsApp → notificação → ação ajuizada), cada uma com quem fez e quando
+    g.notificacao = avs['acaocob:' + k + ':notificacao'] && avs['acaocob:' + k + ':notificacao'].em ? avs['acaocob:' + k + ':notificacao'] : null;
+    g.ajuizada = avs['acaocob:' + k + ':ajuizada'] && avs['acaocob:' + k + ':ajuizada'].em ? avs['acaocob:' + k + ':ajuizada'] : null;
     var prescreve = somarDias_(g.mais_antiga, 0).replace(/^(\d{4})/, function (a) { return String(+a + 5); });
     g.cliente = c.nome || ''; g.telefone = c.telefone || ''; g.cpf = c.cpf_cnpj ? 'sim' : ''; g.endereco = c.endereco ? 'sim' : '';
     g.dias = dias; g.total = Math.round(g.total * 100) / 100; g.prescreve_em = prescreve; g.dias_prescricao = diffDias_(prescreve, hoje);
@@ -4195,6 +4199,14 @@ function acaoCobranca_(d) {
 function acaoCobrancaMarcar_(d, u) {
   return comTrava_(function () {
     var parc = tabela_('Parcelas'), hoje = hojeSP_(), agora = new Date().toISOString(), n = 0;
+    var mEt = /^(desfazer_)?(notificacao|ajuizada)$/.exec(d.acao || '');
+    if (mEt) { // 8.37.1: marca (ou desfaz) a etapa da cobrança na aba Avisos
+      var tabA = tabela_('Avisos'), ch = 'acaocob:' + d.cliente_id + ':' + mEt[2], xa = tabA.linhas.filter(function (r) { return r.chave === ch; })[0];
+      var mv = mEt[1] ? { em: '', por: '' } : { em: agora, por: u.nome || u.usuario, tipo: 'ação de cobrança' };
+      if (xa) atualizarLinha_(tabA, xa, mv); else if (!mEt[1]) inserirLinha_(tabA, { chave: ch, tipo: 'ação de cobrança', ref: d.cliente_id, em: mv.em, por: mv.por });
+      registrar_(u.usuario, 'ação de cobrança: ' + d.acao, d.cliente_id);
+      return { ok: true };
+    }
     if (d.acao === 'ignorar' || d.acao === 'voltar') {
       var l = String(config_('ACAO_COB_IGNORADOS') || '').split(',').filter(function (x) { return x && x !== d.cliente_id; });
       if (d.acao === 'ignorar') l.push(d.cliente_id);

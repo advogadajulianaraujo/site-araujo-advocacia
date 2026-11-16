@@ -3507,7 +3507,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.37.0';
+  const VERSAO_PAINEL = '8.37.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4842,9 +4842,23 @@
           () => api('fin.acaoCobranca.marcar', { cliente_id: g.cliente_id, acao: 'avisado' }).catch(() => {})) : h('span', { class: 'peq' }, 'sem telefone'); };
       const falta = g => !g.cpf || !g.endereco ? h('span', { class: 'tag conferir' }, 'falta ' + [!g.cpf ? 'CPF' : '', !g.endereco ? 'endereço' : ''].filter(Boolean).join(' e ')) : h('span', { class: 'tag ok' }, 'dados ok');
       const marcados = r.lista.filter(g => g.marcado_acao), sugestoes = r.lista.filter(g => !g.marcado_acao);
-      const tabelaAcao = marcados.length ? tabela(['Cliente', 'Parcelas', rh ? null : 'Total', 'Mais antiga', 'Prescreve em', 'Para a ação', ''].filter(Boolean), marcados, g => [
+      // 8.37.1 (pedido da usuária: "é muito importante saber se foi feita ou não"): as 3 etapas da cobrança, cada uma ✓ com data e quem fez
+      const etapasCob = g => {
+        const passo = (n, rot, feito, acaoFaz, acaoDesfaz) => feito
+          ? h('button', { type: 'button', class: 'cob-et ok', title: rot + ' · ' + quandoAvisado(feito.em, feito.por).replace(' · clique para mandar de novo', '') + ' · clique para desfazer',
+              onclick: ev => { ev.stopPropagation(); if (acaoDesfaz && confirm('Desfazer "' + rot + '"?')) marcar(g, acaoDesfaz, 'Desfeito.'); } }, '✓ ' + n + ' ' + rot, h('small', {}, dataBR(String(feito.em).slice(0, 10))))
+          : h('button', { type: 'button', class: 'cob-et', title: 'Ainda não feito · clique para marcar como feito',
+              onclick: ev => { ev.stopPropagation(); if (acaoFaz) marcar(g, acaoFaz, 'Marcado: ' + rot + '.'); } }, n + ' ' + rot, h('small', {}, 'não feito'));
+        return h('div', { class: 'cob-etapas' },
+          passo('1', 'WhatsApp', g.ultimo_aviso ? { em: g.ultimo_aviso, por: '' } : null, 'avisado', null),
+          passo('2', 'Notificação', g.notificacao, 'notificacao', 'desfazer_notificacao'),
+          passo('3', 'Ação ajuizada', g.ajuizada, 'ajuizada', 'desfazer_ajuizada'));
+      };
+      const tabelaAcao = marcados.length ? tabela(['Cliente', 'Etapa da cobrança', 'Parcelas', rh ? null : 'Total', 'Mais antiga', 'Prescreve em', 'Para a ação', ''].filter(Boolean), marcados, g => [
         h('td', { 'data-r': 'Cliente' }, h('a', { href: '#/cliente/' + g.cliente_id, onclick: ev => ev.stopPropagation() }, h('strong', {}, g.cliente || 'cliente sem nome')),
           h('div', { class: 'peq' }, g.honorarios.map(x => x.descricao).filter(Boolean).join(' · ') + (g.promissoria ? ' · tem nota promissória' : ''))),
+        h('td', { 'data-r': 'Etapa da cobrança', onclick: ev => ev.stopPropagation() }, etapasCob(g),
+          h('div', { class: 'peq' }, g.ultimo_aviso ? 'último aviso ' + dataBR(g.ultimo_aviso) : 'nunca avisado')),
         h('td', { 'data-r': 'Parcelas' }, String(g.parcelas.length)),
         rh ? null : h('td', { class: 'num', 'data-r': 'Total' }, h('strong', {}, reais(g.total))),
         h('td', { 'data-r': 'Mais antiga' }, dataBR(g.mais_antiga), h('div', { class: 'peq' }, g.dias + ' dias')),

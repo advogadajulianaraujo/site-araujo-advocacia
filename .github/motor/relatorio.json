@@ -1,5 +1,5 @@
 {
- "versao": "8.37.0",
+ "versao": "8.37.1",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -304,6 +304,7 @@
   },
   "fin.acaoCobranca": {
    "tabelas": [
+    "Avisos",
     "Clientes",
     "Honorarios",
     "Parcelas",
@@ -312,7 +313,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 18
+   "funcoes": 19
   },
   "fin.conferencia": {
    "tabelas": [
