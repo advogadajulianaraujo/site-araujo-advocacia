@@ -74,7 +74,7 @@ export function criarServidor({ rpc, base }) {
       if (x.falhou) { try { await rpc('painel_login_falha', { p_escritorio: esc }); } catch (e) { /* o bloqueio por pessoa já vai nas mudanças */ } }
       try { if (x.ops.length) await rpc('painel_aplicar_pedido', { p_escritorio: esc, p_pedido: null, p_ops: x.ops, p_resposta: null }); }
       catch (e) {
-        if (e.codigo === '40001') continue; // a linha da pessoa mudou no meio: confere de novo
+        if (e.codigo === '40001' || e.codigo === 'PT409') continue; // a linha da pessoa mudou no meio: confere de novo
         return { ok: false, erro: 'Não consegui entrar agora (banco de dados: ' + String(e.message || e).slice(0, 120) + '). Tente de novo.' };
       }
       if (erro) return { ok: false, erro: erro.message };
@@ -128,7 +128,7 @@ export function criarServidor({ rpc, base }) {
           const x = await rpc('painel_aplicar_pedido', { p_escritorio: esc, p_pedido: b.pedido ? String(b.pedido).slice(0, 80) : null, p_ops: ops, p_resposta: resposta });
           if (x && x.repetido) return x.resposta; // o mesmo pedido já tinha sido gravado: devolve a mesma resposta, sem gravar de novo
         } catch (e) {
-          if (e.codigo === '40001' && conflitos++ < 2) { raw = {}; forcar = true; continue; } // alguém mudou a mesma linha no meio: lê de novo e refaz
+          if ((e.codigo === '40001' || e.codigo === 'PT409') && conflitos++ < 2) { raw = {}; forcar = true; continue; } // alguém mudou a mesma linha no meio: lê de novo e refaz
           return { ok: false, erro: 'Não consegui gravar no banco de dados (' + String(e.message || e).slice(0, 160) + '). Nada foi gravado: tente de novo.' };
         }
         if (!erro) resposta.gravou = ops.some(o => o.t !== 'log');

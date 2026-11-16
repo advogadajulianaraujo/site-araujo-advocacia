@@ -1416,3 +1416,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   14h12). `aquecerGatilho` (10 em 10 min) ficou leve: `aquecerAgenda_` e `roboExtrasAtualizar_` só de 30 em 30 min (Properties
   AQUECER_PESADO_EM) — a agenda sai antes se o painel mudou algo (Config AGENDA_COPIA vazia); sem aquecerMemoria_ com o motor ligado.
   Depois da correção, pg_stat_statements: ~2 s de trabalho do banco em 10 min (antes: horas).
+- 8.36.5 (16/11 ~19h20 UTC, "equipe inteira sem entrar"): CAUSA REAL DO TRAVAMENTO — `painel_aplicar` levantava o conflito de linha com
+  errcode '40001' (serialization_failure) e o PostgREST REPETE sozinho, sem parar, o pedido com esse código: ~170 chamadas/s de
+  painel_aplicar_pedido (medido com contadores), 820 mil rollbacks, banco a 16–47 s por consulta. Agora o conflito usa errcode 'PT409'
+  (o PostgREST devolve HTTP 409 e não repete); servidor.js aceita '40001' ou 'PT409'. NUNCA usar 40001/40P01 em raise de função chamada
+  pelo PostgREST. Depois: zero rollbacks em 10 s, entrada em 5,8 s.

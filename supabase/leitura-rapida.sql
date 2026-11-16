@@ -240,7 +240,7 @@ begin
       get diagnostics n = row_count;
       if n = 0 and (u ->> 'v') is not null then
         execute format('select count(*) from public.%I where escritorio_id = $1 and %I::text = $2', t, ch) into n using p_escritorio, u ->> 'k';
-        if n > 0 then raise exception 'conflito: % de % mudou enquanto era gravada', u ->> 'k', t using errcode = '40001'; end if;
+        if n > 0 then raise exception 'conflito: % de % mudou enquanto era gravada', u ->> 'k', t using errcode = 'PT409'; end if; -- 8.36.5: NÃO usar 40001 — o PostgREST repete sozinho e sem parar (16/11: ~170 repetições/s derrubaram o banco)
         n := 0;
       end if;
       if n = 0 then raise exception 'A linha % de % não existe mais no banco (mudou por outro lado). Nada foi gravado.', u ->> 'k', t; end if;
