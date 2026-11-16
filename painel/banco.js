@@ -55,17 +55,22 @@
      Antes isso desligava o banco e CADA tela ia duas vezes ao Google (banco.sessao recusada + a tela). Agora o painel carrega o motor da
      MESMA versão do servidor (/painel/motor-<versão>.js, guardado ao publicar uma versão nova) e segue rápido; sem esse arquivo, o banco
      fica desligado por 10 min sem perguntar de novo (uma ida ao Google por tela, como na planilha). */
-  const motoresPedidos = {};
+  const motoresPedidos = {}, motores = {};
+  if (M()) motores[M().versao] = M(); // o motor publicado (motor.js) fica guardado: dá para voltar a ele quando o Google se atualizar
   function carregarMotor(ver) {
     if (!/^\d+\.\d+\.\d+$/.test(ver || '')) return Promise.resolve(false);
     if (M() && M().versao === ver) return Promise.resolve(true);
+    if (motores[ver]) { window.PAINEL_MOTOR = motores[ver]; return Promise.resolve(true); }
     if (motoresPedidos[ver]) return motoresPedidos[ver];
+    const anterior = M();
     return (motoresPedidos[ver] = new Promise(ok => {
       const s = document.createElement('script'); s.src = '/painel/motor-' + ver + '.js'; s.async = true;
-      s.onload = () => ok(!!(M() && M().versao === ver)); s.onerror = () => ok(false);
+      s.onload = () => { const m = M(); if (m && m.versao === ver) { motores[ver] = m; ok(true); } else { window.PAINEL_MOTOR = anterior; ok(false); } };
+      s.onerror = () => { delete motoresPedidos[ver]; window.PAINEL_MOTOR = anterior; ok(false); };
       document.head.append(s);
     }));
   }
+  const versaoPublicada = () => Object.keys(motores)[0] || '';
   // versão do servidor lembrada neste computador: o motor certo já vem carregado antes da entrada
   const VER_SERV = 'painel_versao_servidor';
   function lembrarVersao(v) { try { if (v) localStorage.setItem(VER_SERV, v); } catch (e) { /* privado */ } }
@@ -80,7 +85,7 @@
     if (!M()) { motivoOff = 'motor não carregou'; return null; }
     if (!fusoOk()) return desligarPor(60, 'o relógio do computador não está no horário de Brasília');
     const salvo = lerS('painel_banco');
-    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && (salvo.versao === M().versao || await carregarMotor(salvo.versao))) { S = salvo; lembrarEdge(S); return S; }
+    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && salvo.versao === versaoPublicada() && await carregarMotor(salvo.versao)) { S = salvo; lembrarEdge(S); return S; }
     pedindo = (async () => {
       try {
         const r = await chamarApps('banco.sessao', {});
@@ -114,8 +119,8 @@
   async function entrarViaEdge(dados) {
     try { const v0 = localStorage.getItem(VER_SERV); if (v0 && motoresPedidos[v0]) await motoresPedidos[v0]; } catch (e) { /* segue */ }
     const c = cfgEdge();
-    if (!c || !M() || !fusoOk()) return null;
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000), t0 = performance.now();
+    if (!c || !M() || !fusoOk() || Date.now() < edgeOffAte) return null;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000), t0 = performance.now();
     const cab = { apikey: c.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.chave)) cab.Authorization = 'Bearer ' + c.chave;
     let r;
     try {
@@ -123,7 +128,7 @@
         body: JSON.stringify({ acao: 'login', entrar: true, dados, versao: M().versao }) });
       if (!x.ok) return null;
       r = await x.json();
-    } catch (e) { return null; } finally { clearTimeout(timer); }
+    } catch (e) { edgeOffAte = Date.now() + 3 * 60000; return null; } finally { clearTimeout(timer); }
     if (!r || r.voltar) return null;
     if (!r.ok) throw new Error(r.erro || 'Não foi possível entrar.');
     const d = r.dados, b = d.banco; delete d.banco;
@@ -274,7 +279,8 @@
 
   /* ---------- 8.32 Etapa C: o motor do painel no Supabase (Edge Function "painel") ---------- */
   const edgeFora = new Set(); // rotas que a função devolveu ("precisa do Google"): nesta aba vão direto ao Apps Script
-  function edgeLigada() { return !!(pronto() && S.edge && M()); }
+  let edgeOffAte = 0; // 8.37: o motor do Supabase não respondeu → 3 min sem tentar (antes cada tela esperava até 10 s)
+  function edgeLigada() { return !!(pronto() && S.edge && M() && Date.now() >= edgeOffAte); }
   async function chamarEdge(acao, dados, pedido, limiteMs) {
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), limiteMs);
     const cab = { apikey: S.chave, 'Content-Type': 'application/json' };
@@ -297,11 +303,11 @@
     if (edgeLigada() && !edgeFora.has(acao) && !foraLembrado('e', acao)) {
       const t0 = performance.now();
       try {
-        const r = await chamarEdge(acao, dados, null, 10000);
+        const r = await chamarEdge(acao, dados, null, 7000);
         if (r && r.voltar) tratarVoltar(acao, r);
         else if (r && r.ok) { medir(acao, 'supabase', performance.now() - t0); return r.dados; }
         else if (r && r.erro) throw new Error(r.erro);
-      } catch (e) { if (!e.rede) throw e; medir(acao, 'supabase-falhou', 0, String(e.message || e).slice(0, 120)); }
+      } catch (e) { if (!e.rede) throw e; edgeOffAte = Date.now() + 3 * 60000; medir(acao, 'supabase-falhou', 0, String(e.message || e).slice(0, 120)); }
     }
     const t0 = performance.now(), r = await google();
     medir(acao, 'google', performance.now() - t0);
@@ -316,6 +322,7 @@
     for (let vez = 0; vez < 2 && !r; vez++) {
       try { r = await chamarEdge(acao, dados, pedido, 30000); } catch (e) { ultimo = e; }
     }
+    if (!r) edgeOffAte = Date.now() + 3 * 60000;
     if (!r) throw new Error('Sem resposta do banco de dados ao gravar (' + (ultimo && ultimo.message || '') + '). Atualize a tela e confira se ficou gravado antes de repetir.');
     if (r.voltar) { tratarVoltar(acao, r); return google(); } // nada foi gravado no Supabase: o Apps Script faz
     medir(acao, 'supabase', performance.now() - t0);
