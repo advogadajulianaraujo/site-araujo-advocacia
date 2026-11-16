@@ -166,7 +166,7 @@
   function naFila(fn) {
     return new Promise((ok, nao) => {
       const vai = () => { ativos++; fn().then(ok, nao).finally(() => { ativos--; const prox = filaRpc.shift(); if (prox) prox(); }); };
-      if (ativos < 3) vai(); else filaRpc.push(vai);
+      if (ativos < 6) vai(); else filaRpc.push(vai); // 8.36.3: 6 (o limite de tempo do Supabase subiu para 15 s)
     });
   }
   async function sincronizar(tabelas, limiteMs) {
@@ -327,13 +327,36 @@
   /** Leitura que o navegador não calcula: tenta o motor do Supabase; precisa do Google → Apps Script. */
   async function lerViaEdge(acao, dados, google) {
     if (edgeLigada() && !edgeFora.has(acao) && !foraLembrado('e', acao)) {
+      // 8.36.3: corrida — o Supabase tem até 25 s; se passar de 6 s sem resposta, pede TAMBÉM ao Google e vale o que chegar primeiro.
+      // Demorar não desliga mais o Supabase (antes, uma tela lenta mandava TUDO ao Google por 3 min = painel "travado").
       const t0 = performance.now();
-      try {
-        const r = await chamarEdge(acao, dados, null, 7000);
-        if (r && r.voltar) tratarVoltar(acao, r);
-        else if (r && r.ok) { medir(acao, 'supabase', performance.now() - t0); return r.dados; }
-        else if (r && r.erro) throw new Error(r.erro);
-      } catch (e) { if (!e.rede) throw e; edgeOffAte = Date.now() + 3 * 60000; medir(acao, 'supabase-falhou', 0, String(e.message || e).slice(0, 120)); }
+      const pEdge = chamarEdge(acao, dados, null, 25000).then(r => {
+        if (r && r.voltar) { tratarVoltar(acao, r); return { ir: true }; }
+        if (r && r.ok) { medir(acao, 'supabase', performance.now() - t0); return { ok: true, dados: r.dados }; }
+        if (r && r.erro) return { erro: new Error(r.erro) };
+        return { ir: true };
+      }, e => {
+        if (!e.rede) return { erro: e };
+        if (!/demorou/.test(String(e.message))) edgeOffAte = Date.now() + 60000; // sem internet / função fora: 1 min
+        medir(acao, 'supabase-falhou', 0, String(e.message || e).slice(0, 120));
+        return { ir: true };
+      });
+      let pGoogle = null;
+      const doGoogle = () => (pGoogle = pGoogle || google().then(d => ({ ok: true, dados: d, g: true }), e => ({ erro: e, g: true })));
+      const r1 = await Promise.race([pEdge, new Promise(ok => setTimeout(() => ok({ espera: true }), 6000))]);
+      let r = r1;
+      if (r1.espera) {
+        // os dois correm; o primeiro que der certo vale
+        r = await new Promise(fim => {
+          let pend = 2, ultimo = null;
+          const um = x => { if (x.ok) return fim(x); ultimo = x.erro ? x : (ultimo || x); if (--pend === 0) fim(ultimo); };
+          pEdge.then(x => x.ir ? doGoogle().then(um) : um(x)); doGoogle().then(um);
+        });
+        if (r && r.ir) r = await doGoogle();
+      }
+      if (r.ok) { if (r.g) medir(acao, 'google', performance.now() - t0); return r.dados; }
+      if (r.erro && !r.g) throw r.erro;
+      if (r.erro && r.g) throw r.erro;
     }
     const t0 = performance.now(), r = await google();
     medir(acao, 'google', performance.now() - t0);
@@ -345,11 +368,13 @@
     if (!edgeLigada() || edgeFora.has(acao) || foraLembrado('e', acao)) return google();
     const pedido = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10), t0 = performance.now();
     let r = null, ultimo = null;
-    for (let vez = 0; vez < 2 && !r; vez++) {
-      try { r = await chamarEdge(acao, dados, pedido, 30000); } catch (e) { ultimo = e; }
+    // 8.36.3: 3 tentativas com o MESMO pedido (se a 1ª já gravou, as outras só devolvem a resposta guardada: nunca grava duas vezes)
+    for (let vez = 0; vez < 3 && !r; vez++) {
+      if (vez) await new Promise(ok => setTimeout(ok, 1500 * vez));
+      try { r = await chamarEdge(acao, dados, pedido, vez < 2 ? 25000 : 60000); } catch (e) { ultimo = e; }
     }
     if (!r) edgeOffAte = Date.now() + 3 * 60000;
-    if (!r) throw new Error('Sem resposta do banco de dados ao gravar (' + (ultimo && ultimo.message || '') + '). Atualize a tela e confira se ficou gravado antes de repetir.');
+    if (!r) throw new Error('O banco de dados não respondeu em 2 minutos (' + (ultimo && ultimo.message || '') + '). Pode ser a internet: atualize a tela e confira se ficou gravado antes de repetir.');
     if (r.voltar) { tratarVoltar(acao, r); return google(); } // nada foi gravado no Supabase: o Apps Script faz
     medir(acao, 'supabase', performance.now() - t0);
     if (!r.ok) throw new Error(r.erro || 'Erro.');

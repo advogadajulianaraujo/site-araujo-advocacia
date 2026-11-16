@@ -1,5 +1,5 @@
 {
- "versao": "8.36.2",
+ "versao": "8.36.3",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -406,7 +406,40 @@
     "Utilities"
    ],
    "funcoes": 45
+  },
+  "fin.painel": {
+   "tabelas": [
+    "Assinaturas",
+    "Clientes",
+    "Despesas",
+    "Honorarios",
+    "Parcelas",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 30
+  },
+  "relatorio.geral": {
+   "tabelas": [
+    "Assinaturas",
+    "Avisos",
+    "Clientes",
+    "Despesas",
+    "Intimacoes",
+    "Parcelas",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 38
   }
  },
- "funcoes": 136
+ "funcoes": 141
 }

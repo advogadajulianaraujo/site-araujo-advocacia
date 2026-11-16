@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.2 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.36.2';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.36.3 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.36.3';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.2';
+var VERSAO = '8.36.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -9341,7 +9341,9 @@ function aquecerGatilho() {
   try { autoAtualizar_(false); } catch (eU) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
-  try { aquecerMemoria_(); } catch (e) { /* segue */ }
+  // 8.36.3: com o motor do Supabase ligado a memória do Google não é usada (comMemoria_ só roda a conta): aquecer era trabalho jogado fora
+  // — milhares de leituras de tabelas inteiras por dia, que deixavam o banco lento e gastavam o tempo de robô do Google.
+  if (!sbEdge_()) { try { aquecerMemoria_(); } catch (e) { /* segue */ } }
   try { aquecerAgenda_(); } catch (e) { /* segue */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
   contarTempoRobo_(Date.now() - t0);
@@ -10664,7 +10666,7 @@ function marketingResumo_(d) {
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
   try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
-  try { aquecerMemoria_(); } catch (eQ) { /* segue */ }
+  if (!sbEdge_()) { try { aquecerMemoria_(); } catch (eQ) { /* segue */ } } // 8.36.3: com o motor do Supabase não serve para nada
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }

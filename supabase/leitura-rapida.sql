@@ -179,20 +179,31 @@ end $$;
 
 -- 7) (8.29) LEITURA pelo servidor quando o Supabase é o banco principal: a tabela inteira do escritório, compacta
 --    (nomes das colunas uma vez + uma lista por linha, na ordem de _n), com quantas linhas e a maior _n (para conferir com a planilha).
-create or replace function painel_tabela(p_tabela text, p_escritorio uuid) returns jsonb
+-- 8.36.3: mais leve (o Google chamava isto milhares de vezes por dia e o banco ficava lento): colunas pelo pg_attribute (o
+-- information_schema gastava ~60 ms só para planejar) e json em vez de jsonb (~30% mais rápido). Mesmo formato de resposta.
+create or replace function painel_cols_(p_tabela text, p_tira text[]) returns table(cols text, nomes json)
+language sql stable security definer set search_path = public as $$
+  select string_agg(format('coalesce(%I::text, %L)', a.attname, ''), ', ' order by a.attnum), json_agg(a.attname order by a.attnum)
+    from pg_attribute a
+   where a.attrelid = to_regclass('public.' || quote_ident(p_tabela)) and a.attnum > 0 and not a.attisdropped and a.attname <> all(p_tira)
+$$;
+revoke all on function painel_cols_(text, text[]) from public, anon, authenticated;
+do $$ begin
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'painel_tabela' and p.prorettype = 'jsonb'::regtype)
+    then drop function public.painel_tabela(text, uuid); end if;
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'painel_tabelas' and p.prorettype = 'jsonb'::regtype)
+    then drop function public.painel_tabelas(uuid, text[]); end if;
+end $$;
+create or replace function painel_tabela(p_tabela text, p_escritorio uuid) returns json
 language plpgsql security definer set search_path = public as $$
-declare cols text; nomes jsonb; linhas jsonb; n bigint; maxn integer;
+declare cols text; nomes json; linhas json; n bigint; maxn integer;
 begin
   if p_tabela !~ '^[a-z_]+$' or p_tabela like 'painel\_%' then raise exception 'tabela inválida'; end if;
-  select string_agg(format('coalesce(%I::text, %L)', column_name, ''), ', ' order by ordinal_position),
-         jsonb_agg(column_name order by ordinal_position)
-    into cols, nomes
-    from information_schema.columns
-   where table_schema = 'public' and table_name = p_tabela and column_name not in ('escritorio_id', '_sinc', '_em');
+  select c.cols, c.nomes into cols, nomes from painel_cols_(p_tabela, array['escritorio_id', '_sinc', '_em']) c;
   if cols is null then raise exception 'tabela % não existe', p_tabela; end if;
-  execute format('select coalesce(jsonb_agg(jsonb_build_array(%s) order by _n), ''[]''::jsonb), count(*), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, p_tabela)
+  execute format('select coalesce(json_agg(json_build_array(%s) order by _n), ''[]''::json), count(*), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, p_tabela)
     into linhas, n, maxn using p_escritorio;
-  return jsonb_build_object('cols', nomes, 'linhas', linhas, 'n', n, 'max_n', maxn);
+  return json_build_object('cols', nomes, 'linhas', linhas, 'n', n, 'max_n', maxn);
 end $$;
 revoke all on function painel_tabela(text, uuid) from public, anon, authenticated;
 grant execute on function painel_tabela(text, uuid) to service_role;
@@ -259,21 +270,19 @@ grant execute on function painel_aplicar(uuid, jsonb) to service_role;
 
 -- 9) (8.32 Etapa C) o motor do painel no Supabase (Edge Function "painel", com a chave secreta só lá dentro)
 -- 9a) várias abas de uma vez, com o _sinc (versão de cada linha)
-create or replace function painel_tabelas(p_escritorio uuid, p_tabelas text[]) returns jsonb
+create or replace function painel_tabelas(p_escritorio uuid, p_tabelas text[]) returns json
 language plpgsql security definer set search_path = public as $$
-declare t text; cols text; nomes jsonb; linhas jsonb; maxn integer; res jsonb := '{}'::jsonb;
+declare t text; cols text; nomes json; linhas json; maxn integer; partes text[] := '{}';
 begin
   foreach t in array coalesce(p_tabelas, '{}'::text[]) loop
     if t !~ '^[a-z_]+$' or t like 'painel\_%' then raise exception 'tabela inválida: %', t; end if;
-    select string_agg(format('coalesce(%I::text, %L)', column_name, ''), ', ' order by ordinal_position), jsonb_agg(column_name order by ordinal_position)
-      into cols, nomes from information_schema.columns
-     where table_schema = 'public' and table_name = t and column_name not in ('escritorio_id', '_em');
+    select c.cols, c.nomes into cols, nomes from painel_cols_(t, array['escritorio_id', '_em']) c;
     if cols is null then raise exception 'tabela % não existe', t; end if;
-    execute format('select coalesce(jsonb_agg(jsonb_build_array(%s) order by _n), ''[]''::jsonb), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, t)
+    execute format('select coalesce(json_agg(json_build_array(%s) order by _n), ''[]''::json), coalesce(max(_n), 1) from public.%I where escritorio_id = $1', cols, t)
       into linhas, maxn using p_escritorio;
-    res := res || jsonb_build_object(t, jsonb_build_object('cols', nomes, 'linhas', linhas, 'max_n', maxn));
+    partes := partes || (to_json(t)::text || ':' || json_build_object('cols', nomes, 'linhas', linhas, 'max_n', maxn)::text);
   end loop;
-  return res;
+  return ('{' || coalesce(array_to_string(partes, ','), '') || '}')::json;
 end $$;
 -- 9b) confere a sessão do banco (as mesmas regras do painel_ler) e devolve quem é a pessoa (sem hash/salt)
 create or replace function painel_quem(p_token text) returns jsonb

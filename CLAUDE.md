@@ -1389,3 +1389,26 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   chave PÚBLICA sb_publishable_, feita para o navegador) e `cfgEdge` usa como reserva: entrada em ~3 s desde o 1º acesso. Login pelo Google
   (reserva) mostra aviso depois de 45 s em vez de ficar parado; espera da entrada pelo Supabase 12 s (antes 8). Trocou a chave pública ou o
   projeto do Supabase? Atualize config.js.
+
+## 8.36.3 (16/11/2026 noite) Banco lento achado e corrigido + PDF + calculadora
+
+- CAUSA do "trava": o banco do Supabase (instância pequena) estava sobrecarregado. pg_stat_statements: `painel_tabela` (o Google lendo tabelas
+  INTEIRAS) foi chamada 13.718 vezes = 2,3 h de trabalho do banco; uma consulta simples chegou a 47 s. Correções: (1) `aquecerMemoria_` não
+  roda mais com o motor do Supabase ligado (`sbEdge_()`: a memória do Google nem é usada — era milhares de leituras inteiras por dia jogadas
+  fora e tempo de robô gasto), no aquecerGatilho e no roboRapidoGatilho; (2) `painel_tabela`/`painel_tabelas` mais leves (leitura-rapida.sql:
+  colunas por `painel_cols_` via pg_attribute, json em vez de jsonb, sem `res || jsonb` em loop): intimações 607→319 ms, processos 420→117 ms.
+  As duas funções mudaram de jsonb para json (o arquivo apaga a versão jsonb antes de criar). Para olhar o banco: Management API
+  `/database/query` com `select … from pg_stat_statements order by total_exec_time desc`.
+- PDF/documentos davam "Sem resposta do banco de dados ao gravar (o motor do Supabase demorou)": a rota passava pela função do Supabase, que só
+  descobria no meio que precisava do Google. Agora gerar.mjs calcula as rotas que usam Drive/Docs/Gmail/Agenda/internet (`google` no motor.js,
+  55 rotas: documentos.gerar, clientes.salvar, fin.parcela.pagar, ia.*, future.contrato.*…) e o painel manda essas DIRETO ao Apps Script.
+  Ficam fora (`NAO_FORCAR`) as gravações frequentes que só às vezes usam o Google (trabalho.conferir, processos.salvar…). Gravação pela função:
+  3 tentativas com o MESMO pedido (25 s, 25 s, 60 s) antes de qualquer erro. Leitura pela função: corrida — passou de 6 s, pede também ao
+  Google e vale o primeiro; demorar não desliga mais a função por 3 min. `naFila` = 6 leituras ao mesmo tempo. Cobranças e Relatórios
+  (`fin.painel`, `relatorio.geral`) entraram no motor do navegador (3 s em vez de 20 s).
+- Calculadora de rescisão (painel): é CÁLCULO, não "pago no TRCT": "Verbas rescisórias devidas (valores brutos)" + subtotal, "FGTS devido pela
+  empresa" (mês da rescisão, aviso, não depositado, multa 40%/20% com o motivo escrito) + subtotal e "VALOR TOTAL A SER PAGO PELA EMPRESA";
+  INSS só em "Para conferência". Rescisão indireta mostra alerta âmbar (`.calc-alerta`): cálculo para a petição, valores brutos, depende do juiz.
+  FGTS não depositado não conta mais duas vezes o mês da saída e o 13º do ano da saída (site e painel).
+- Token de gestão do Supabase: NÃO precisa trocar mais (só trocamos porque ele apareceu no chat). Fica no formulário seguro desta nuvem e em
+  Gerenciar acessos › Banco novo (SUPABASE_GESTAO).

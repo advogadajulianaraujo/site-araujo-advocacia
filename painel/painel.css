@@ -2796,3 +2796,6 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 .acm-lista li.acm-risco { border-left-color: #c0392b; background: #fdf3f1; }
 .acm-lista li:hover { background: #f6f2ea; }
 .acm-lista[hidden] { display: none; }
+
+/* 8.36.3 — alerta da calculadora (rescisão indireta = cálculo para a petição) */
+.calc-alerta { background: #fff6e0; border: 1px solid #f0d58f; border-left: 4px solid #d9a21b; border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 13px; line-height: 1.45; color: #4a3a12; }

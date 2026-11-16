@@ -391,7 +391,7 @@
   const mesesEntre = (ini, fim) => { let n = 0, a = ini; while (n < 12) { const b = somaMes(a, 1); if (somaDias(b, -1) <= fim) { n++; a = b; } else { if ((fim - a) / 86400000 + 1 >= 15) n++; break; } } return Math.min(12, n); };
   function resultado(linhas, total, notas) {
     const { h } = K();
-    return h('div', { class: 'calc-res' }, h('table', { class: 'tabela calc-tab' }, h('tbody', {}, linhas.map(([r, v]) => v === undefined ? h('tr', { class: 'calc-sec' }, h('th', { colspan: 2 }, r)) : h('tr', /^(Total|Líquido)/.test(r) ? { class: 'calc-total' } : {}, h('th', { scope: 'row' }, r), h('td', { class: 'num' }, typeof v === 'number' ? din(v) : v))),
+    return h('div', { class: 'calc-res' }, h('table', { class: 'tabela calc-tab' }, h('tbody', {}, linhas.map(([r, v]) => v === undefined ? h('tr', { class: 'calc-sec' }, h('th', { colspan: 2 }, r)) : h('tr', /^(Total|Líquido|Subtotal|VALOR TOTAL)/.test(r) ? { class: 'calc-total' } : {}, h('th', { scope: 'row' }, r), h('td', { class: 'num' }, typeof v === 'number' ? din(v) : v))),
       total !== null && total !== undefined ? h('tr', { class: 'calc-total' }, h('th', { scope: 'row' }, 'Total'), h('td', { class: 'num' }, typeof total === 'number' ? din(total) : total)) : null)),
       (notas || []).filter(Boolean).map(t => h('p', { class: 'peq' }, t)),
       h('div', { class: 'g-acoes' }, h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(linhas.map(([r, v]) => v === undefined ? '\n' + r.toUpperCase() : r + ': ' + (typeof v === 'number' ? din(v) : v)).join('\n') + (total !== null && total !== undefined ? '\nTotal: ' + (typeof total === 'number' ? din(total) : total) : ''), 'Resultado copiado.') }, 'Copiar resultado')));
@@ -439,7 +439,11 @@
     const mesesSem = Math.max(1, Math.round((saida - adm) / (30.4375 * 86400000)));
     // 8.35.8: FGTS não depositado = 8% do salário + 13º (1/12) + 1/3 de férias (1/36) por mês; cobrável só dos últimos 5 anos (STF, Tema 608)
     const mesesFalta = naoDep ? Math.min(mesesSem, naoDep > 0 ? naoDep : mesesSem) : 0;
-    r.mesesNP = Math.min(60, mesesFalta); r.cortou = mesesFalta > 60; r.fgtsNP = base * 0.08 * r.mesesNP * (1 + 1 / 12 + 1 / 36);
+    // 8.36.3: o mês da saída e o 13º do ano da saída já estão no "FGTS do mês da rescisão" — não contar duas vezes
+    const todos = naoDep < 0, mf = todos ? Math.max(0, mesesFalta - 1) : Math.min(mesesFalta, Math.max(0, mesesSem - 1));
+    r.mesesNP = Math.min(60, mf); r.cortou = mf > 60;
+    const noAno = todos ? Math.min(r.mesesNP, saida.getUTCMonth()) : 0;
+    r.fgtsNP = base * 0.08 * (r.mesesNP * (1 + 1 / 36) + (r.mesesNP - noAno) / 12);
     r.saldoInf = fgtsInf > 0; r.saldoConta = fgtsInf > 0 ? fgtsInf : base * 0.08 * Math.max(0, mesesSem - mesesFalta);
     r.fgtsMes = 0.08 * (saldoSal + v13); r.fgtsAviso = 0.08 * vAviso;
     r.pct = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
@@ -468,19 +472,21 @@
       const base = num(form.salario.value) + num(form.medias.value), adm = lerData(form.admissao.value), saida = lerData(form.saida.value);
       if (!(base > 0) || !adm || !saida || saida < adm) { out.replaceChildren(h('p', { class: 'erro' }, 'Confira o salário e as datas.')); return; }
       const r = contaRescisao(base, adm, saida, form.motivo.value, form.aviso.value, +form.vencidas.value || 0, num(form.fgts.value), form.fgts_dep.value === 'nao' ? -1 : form.fgts_dep.value === 'parte' ? (parseInt(form.meses_np.value, 10) || -1) : 0);
-      const linhas = [['Pago diretamente no termo de rescisão (TRCT)'], ...r.trct,
-        ['Total bruto', r.bruto], ['(−) INSS sobre o saldo de salário', -r.inssSaldo]];
-      if (r.inss13) linhas.push(['(−) INSS sobre o 13º', -r.inss13]);
-      linhas.push(['Líquido a pagar (estimado, sem IR)', r.liquido], ['FGTS — depositado na conta do FGTS (não entra no líquido)'],
-        [`Saldo da conta ${r.saldoInf ? '(informado)' : '(estimado, sem a projeção do aviso)'}`, r.saldoConta],
-        ['FGTS a recolher do mês da rescisão (8% do saldo de salário e do 13º)', r.fgtsMes]);
-      if (r.fgtsNP) linhas.splice(linhas.length - 1, 0, [`FGTS que a empresa deve depositar (${r.mesesNP} meses sem depósito: 8% dos salários, do 13º e do 1/3 de férias)`, r.fgtsNP]);
-      if (r.fgtsAviso) linhas.push(['FGTS a recolher sobre o aviso prévio indenizado (8%)', r.fgtsAviso]);
-      if (r.pct) linhas.push([`Multa de ${r.pct * 100}% do FGTS (base para fins rescisórios ${din(r.baseMulta)}, sem a projeção do aviso)`, r.multa]);
-      linhas.push(['Total a recolher na rescisão (FGTS + multa)', r.fgtsRecolher]);
-      if (r.fgtsNP) linhas.push(['FGTS não pago — o que a empresa deve (separado da multa)'], ['Depósitos que faltaram', r.fgtsNP],
-        ...(r.pct ? [[`Multa de ${r.pct * 100}% sobre esses depósitos`, r.fgtsNP * r.pct]] : []), ['Total devido pelo FGTS não pago', r.fgtsNP * (1 + r.pct)]);
-      out.replaceChildren(resultado(linhas, null, [
+      // 8.36.3 (pedido da usuária): é CÁLCULO (valores devidos, brutos), não "o que foi pago no TRCT"; total geral no fim
+      const indireta = form.motivo.value === 'indireta';
+      const linhas = [[indireta ? 'Verbas rescisórias devidas — rescisão indireta (valores brutos)' : 'Verbas rescisórias devidas (valores brutos)'], ...r.trct,
+        ['Subtotal das verbas rescisórias', r.bruto], ['FGTS devido pela empresa']];
+      linhas.push(['FGTS do mês da rescisão (8% do saldo de salário e do 13º)', r.fgtsMes]);
+      if (r.fgtsAviso) linhas.push(['FGTS sobre o aviso prévio indenizado (8%)', r.fgtsAviso]);
+      if (r.fgtsNP) linhas.push([`FGTS não depositado (${r.mesesNP} meses: 8% dos salários, do 13º e do 1/3 de férias)`, r.fgtsNP]);
+      if (r.pct) linhas.push([`Multa de ${r.pct * 100}% do FGTS (${indireta ? 'rescisão indireta' : form.motivo.value === 'acordo' ? 'acordo' : 'dispensa sem justa causa'}; base ${din(r.baseMulta)}, sem a projeção do aviso)`, r.multa]);
+      linhas.push(['Subtotal do FGTS e da multa', r.fgtsRecolher]);
+      const totalGeral = r.bruto + r.fgtsRecolher;
+      linhas.push(['VALOR TOTAL A SER PAGO PELA EMPRESA (verbas + FGTS + multa)', totalGeral]);
+      linhas.push(['Para conferência'], [`Saldo já depositado na conta do FGTS ${r.saldoInf ? '(informado)' : '(estimado)'} — é do trabalhador, entra só na base da multa`, r.saldoConta],
+        ['Desconto de INSS do empregado (estimado: saldo de salário e 13º)', -(r.inssSaldo + r.inss13)]);
+      const alerta = indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'este é o CÁLCULO para a petição — valores devidos, brutos, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Na liquidação se descontam INSS e IR do empregado. Conferir antes de usar.') : null;
+      out.replaceChildren(alerta || '', resultado(linhas, null, [
         `Tempo de casa: ${r.anos} ano(s) · projeção do aviso até ${dataBR(iso(r.fimProj))} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fimProj, 2)))}.`,
         'INSS pela tabela progressiva de 2026 (Portaria MPS/MF nº 13/2026), separado no saldo de salário e no 13º; não há INSS sobre aviso indenizado nem férias indenizadas. IR não calculado. Férias vencidas fora do prazo de concessão podem ser devidas em dobro (CLT, art. 137).',
         r.fgtsNP ? `FGTS não depositado: a empresa deve os depósitos com correção e juros (Lei 8.036/1990, arts. 15 e 22) e a multa incide também sobre eles (art. 18).${r.cortou ? ' Considerados só os últimos 60 meses (STF, Tema 608: cobra-se até 5 anos, com ação em até 2 anos do fim do contrato).' : ''}` : form.fgts_dep.value === 'naosei' ? 'FGTS: confira no extrato do app FGTS se cada mês teve o depósito de 8%; se faltar, refaça marcando "Só em parte".' : '',

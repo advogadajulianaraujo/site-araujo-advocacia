@@ -22,7 +22,8 @@ const texto = d => linhas.slice(d.ini, d.fim + 1).join('\n');
 const ROTAS_MOTOR = ['resumo', 'clientes.listar', 'clientes.obter', 'processos.listar', 'prazos.listar', 'intimacoes.listar', 'tarefas.listar',
   'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'eu.painel', 'documentos.assinaturas',
   'fluxos.processo', 'prazos.memoria', 'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'fin.pix', 'fin.acaoCobranca',
-  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras'];
+  'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras',
+  'fin.painel', 'relatorio.geral']; // 8.36.3: Cobranças e Relatórios sem esperar o Google
 const blocoRotas = texto(decl.get('ROTAS'));
 const rotas = {};
 for (const r of ROTAS_MOTOR) {
@@ -69,6 +70,26 @@ for (const [r, obj] of Object.entries(rotas)) {
   porRota[r] = { tabelas: [...tabs].sort(), servicos: [...servs].sort(), funcoes: v.size };
 }
 visitar(base).forEach(x => fecho.add(x));
+
+// 8.36.3: rotas que usam arquivos, documentos, e-mail, agenda ou internet do Google (análise das chamadas até 2 níveis): o painel manda
+// estas DIRETO ao Apps Script (antes passavam pela função do Supabase, que só descobria no meio e, com o banco lento, dava "sem resposta").
+// Ficam de fora as gravações frequentes que só usam o Google às vezes (o motor do Supabase devolve ao Google quando precisa).
+const GOOGLE_FORTE = ['DriveApp.', 'DocumentApp.', 'GmailApp.', 'MailApp.', 'CalendarApp.', 'UrlFetchApp.', 'Drive.', 'Calendar.'];
+const NAO_FORCAR = new Set(['trabalho.conferir', 'processos.salvar', 'fin.honorario.retirar', 'login', 'sistema.atualizar', 'processos.andamentos']);
+const PULAR = new Set(['registrar_', 'comTrava_', 'rotear_', 'doPost', 'tabela_', 'lerTabela_', 'aba_', 'inserirLinha_', 'atualizarLinha_', 'apagarLinha_',
+  'gravarLote_', 'regravarMudadas_', 'gravarVarias_', 'setConfig_', 'config_', 'marcarMudanca_', 'comMemoria_', 'usuarioDaSessao_', 'sbMarcar_', 'sbApagar_',
+  'sbEnviarSujas_', 'mudouAgenda_', 'sbLigado_', 'sbPrimeiro_', 'sbEdge_', 'sbConf_', 'supabase_', 'sbLerTabela_', 'sbpTabela_', 'sbpAplicar_', 'semGoogle_', 'eventosDoMes_']);
+function usaGoogle(n, prof, vistos) {
+  if (vistos.has(n) || PULAR.has(n) || !decl.has(n)) return false; vistos.add(n);
+  const t = texto(decl.get(n)); if (GOOGLE_FORTE.some(x => t.includes(x))) return true;
+  if (prof > 0) for (const x of deps(n)) if (decl.has(x) && usaGoogle(x, prof - 1, vistos)) return true;
+  return false;
+}
+const rotasGoogle = [];
+for (const m of blocoRotas.matchAll(/^\s*'([a-zA-Z.]+)':\s*(\{.*\}),?\s*$/gm)) {
+  if (NAO_FORCAR.has(m[1]) || rotas[m[1]]) continue;
+  if ([...ids(m[2])].filter(x => decl.has(x)).some(x => usaGoogle(x, 2, new Set()))) rotasGoogle.push(m[1]);
+}
 
 // chaves de Config lidas pelas funções do fecho (só essas podem ir ao navegador, e nunca as que parecem segredo)
 const chavesConfig = new Set();
@@ -151,6 +172,7 @@ window.PAINEL_MOTOR = {
   esquema: ESQUEMA,
   configLivre: ${JSON.stringify(configLivre)},
   tabelasDaRota: ${JSON.stringify(Object.fromEntries(Object.entries(porRota).map(([r, x]) => [r, x.tabelas])))},
+  google: ${JSON.stringify(rotasGoogle.sort())},
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },
   /** Roda a rota como o Apps Script faria (rotear_): permissão do perfil, a conta e os valores escondidos do RH. */
   rodar: function (acao, dados, u, amb) {

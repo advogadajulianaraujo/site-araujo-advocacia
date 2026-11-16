@@ -353,7 +353,9 @@
   const SO_GOOGLE = /^(login|logout|sessao|primeiroAcesso|situacao|banco\.|usuarios\.|senha\.|ext\.|future\.)/;
   function chamar(acao, dados) {
     const google = () => chamarGoogle(acao, dados);
-    if (!BANCO || !sessao || SO_GOOGLE.test(acao)) return google();
+    // 8.36.3: o que usa arquivos/documentos/e-mail/agenda do Google vai direto (lista feita pelo gerar.mjs a partir do Code.gs)
+    const M = window.PAINEL_MOTOR;
+    if (!BANCO || !sessao || SO_GOOGLE.test(acao) || (M && M.google && M.google.indexOf(acao) >= 0)) return google();
     const viaEdge = () => BANCO.lerViaEdge(acao, dados, google);
     if (LEITURAS.has(acao)) return BANCO.pode(acao) ? BANCO.lerOuPlanilha(acao, dados, viaEdge) : viaEdge();
     if (acao === 'processos.andamentos' && !(dados && dados.atualizar)) return viaEdge();
@@ -3505,7 +3507,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.36.2';
+  const VERSAO_PAINEL = '8.36.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

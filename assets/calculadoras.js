@@ -111,8 +111,10 @@
       // O depósito é de 8% sobre o salário, o 13º (1/12 por mês) e o 1/3 de férias (1/36 por mês).
       const dep = fr.fgts_dep.value, naoDep = dep === 'nao' || dep === 'parte';
       const mesesFalta = dep === 'nao' ? mesesSem : dep === 'parte' ? Math.min(mesesSem, parseInt(fr.meses_np.value, 10) || mesesSem) : 0;
-      const mesesNP = Math.min(60, mesesFalta), cortou = mesesFalta > 60;
-      const fgtsNP = sal * 0.08 * mesesNP * (1 + 1 / 12 + 1 / 36);
+      // 8.36.3: o mês da saída e o 13º do ano da saída já estão no "FGTS do mês da rescisão" — não contar duas vezes
+      const mf = dep === 'nao' ? Math.max(0, mesesFalta - 1) : Math.min(mesesFalta, Math.max(0, mesesSem - 1));
+      const mesesNP = Math.min(60, mf), cortou = mf > 60, noAno = dep === 'nao' ? Math.min(mesesNP, saida.getUTCMonth()) : 0;
+      const fgtsNP = sal * 0.08 * (mesesNP * (1 + 1 / 36) + (mesesNP - noAno) / 12);
       const saldoFgts = saldoInf > 0 ? saldoInf : sal * 0.08 * Math.max(0, mesesSem - mesesFalta); // só os meses que foram depositados
       const fgtsMes = 0.08 * (saldoSal + v13), fgtsAviso = 0.08 * vAviso;
       const multa = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
