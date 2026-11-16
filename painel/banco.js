@@ -51,21 +51,43 @@
     return true;
   }
 
+  /* 8.37 (painel travando, 16/11): o painel publicado pode estar uma versão À FRENTE do Code.gs (a atualização do Google demora ou falha).
+     Antes isso desligava o banco e CADA tela ia duas vezes ao Google (banco.sessao recusada + a tela). Agora o painel carrega o motor da
+     MESMA versão do servidor (/painel/motor-<versão>.js, guardado ao publicar uma versão nova) e segue rápido; sem esse arquivo, o banco
+     fica desligado por 10 min sem perguntar de novo (uma ida ao Google por tela, como na planilha). */
+  const motoresPedidos = {};
+  function carregarMotor(ver) {
+    if (!/^\d+\.\d+\.\d+$/.test(ver || '')) return Promise.resolve(false);
+    if (M() && M().versao === ver) return Promise.resolve(true);
+    if (motoresPedidos[ver]) return motoresPedidos[ver];
+    return (motoresPedidos[ver] = new Promise(ok => {
+      const s = document.createElement('script'); s.src = '/painel/motor-' + ver + '.js'; s.async = true;
+      s.onload = () => ok(!!(M() && M().versao === ver)); s.onerror = () => ok(false);
+      document.head.append(s);
+    }));
+  }
+  // versão do servidor lembrada neste computador: o motor certo já vem carregado antes da entrada
+  const VER_SERV = 'painel_versao_servidor';
+  function lembrarVersao(v) { try { if (v) localStorage.setItem(VER_SERV, v); } catch (e) { /* privado */ } }
+  try { const v0 = localStorage.getItem(VER_SERV); if (v0 && M() && v0 !== M().versao) carregarMotor(v0); } catch (e) { /* privado */ }
+  function desligarPor(min, motivo) { motivoOff = motivo; desligadoAte = Date.now() + min * 60000; return null; }
+
   /* ---------- sessão do banco ---------- */
   async function iniciar() {
     if (pronto()) return S;
     if (pedindo || !chamarApps) return pedindo;
+    if (Date.now() < desligadoAte) return null;
     if (!M()) { motivoOff = 'motor não carregou'; return null; }
-    if (!fusoOk()) { motivoOff = 'o relógio do computador não está no horário de Brasília'; return null; }
+    if (!fusoOk()) return desligarPor(60, 'o relógio do computador não está no horário de Brasília');
     const salvo = lerS('painel_banco');
-    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && salvo.versao === M().versao) { S = salvo; lembrarEdge(S); return S; }
+    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && (salvo.versao === M().versao || await carregarMotor(salvo.versao))) { S = salvo; lembrarEdge(S); return S; }
     pedindo = (async () => {
       try {
         const r = await chamarApps('banco.sessao', {});
-        if (!r || !r.ligado) { motivoOff = (r && r.motivo) || 'desligado'; return null; }
-        if (r.versao !== M().versao) { motivoOff = 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes'; return null; }
-        S = r; motivoOff = ''; guardar('painel_banco', r); lembrarEdge(r); acordar(); return S;
-      } catch (e) { motivoOff = String(e.message || e); return null; } finally { pedindo = null; }
+        if (!r || !r.ligado) return desligarPor(10, (r && r.motivo) || 'desligado');
+        if (r.versao !== M().versao && !(await carregarMotor(r.versao))) return desligarPor(10, 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes');
+        S = r; motivoOff = ''; lembrarVersao(r.versao); guardar('painel_banco', r); lembrarEdge(r); acordar(); return S;
+      } catch (e) { return desligarPor(2, String(e.message || e)); } finally { pedindo = null; }
     })();
     return pedindo;
   }
@@ -90,6 +112,7 @@
   function cfgEdge() { try { const c = JSON.parse(localStorage.getItem('painel_edge') || 'null'); return c && c.edge && c.chave ? c : null; } catch (e) { return null; } }
   /** Devolve { token, usuario } (como o login do Apps Script) ou null = entrar pelo Google. Senha errada etc. = erro com a mensagem. */
   async function entrarViaEdge(dados) {
+    try { const v0 = localStorage.getItem(VER_SERV); if (v0 && motoresPedidos[v0]) await motoresPedidos[v0]; } catch (e) { /* segue */ }
     const c = cfgEdge();
     if (!c || !M() || !fusoOk()) return null;
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000), t0 = performance.now();
@@ -104,7 +127,7 @@
     if (!r || r.voltar) return null;
     if (!r.ok) throw new Error(r.erro || 'Não foi possível entrar.');
     const d = r.dados, b = d.banco; delete d.banco;
-    if (b && b.token && b.versao === M().versao) { S = b; motivoOff = ''; guardar('painel_banco', b); lembrarEdge(b); }
+    if (b && b.token && (b.versao === M().versao || await carregarMotor(b.versao))) { S = b; motivoOff = ''; desligadoAte = 0; lembrarVersao(b.versao); guardar('painel_banco', b); lembrarEdge(b); }
     medir('login', 'supabase', performance.now() - t0);
     return d;
   }
