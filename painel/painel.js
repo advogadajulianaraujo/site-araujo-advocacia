@@ -884,7 +884,9 @@
     if (lembrado) { form.usuario.value = lembrado; form.senha.focus(); } else form.querySelector('input').focus();
     aoEnviar(form, async fd => {
       const dl = { usuario: fd.get('usuario'), senha: fd.get('senha') };
-      const r = (BANCO && await BANCO.entrarViaEdge(dl)) || await api('login', dl); // 8.33: pelo Supabase; se não der, pelo Google
+      // 8.36.3: pelo Supabase (2 s); se não der, pelo Google — que às vezes demora minutos: depois de 45 s a tela avisa em vez de ficar parada
+      const r = (BANCO && await BANCO.entrarViaEdge(dl)) || await Promise.race([api('login', dl),
+        new Promise((_, nao) => setTimeout(() => nao(new Error('O Google está demorando para responder agora. Espere um minuto e aperte "Entrar" de novo.')), 45000))]);
       try { if (fd.get('lembrar')) localStorage.setItem('painel_usuario', fd.get('usuario')); else localStorage.removeItem('painel_usuario'); } catch (e) { /* navegação privada */ }
       // pede ao navegador para guardar usuário e senha no gerenciador de senhas (Chrome/Edge)
       try { if (window.PasswordCredential && navigator.credentials) await navigator.credentials.store(new PasswordCredential({ id: fd.get('usuario'), password: fd.get('senha'), name: r.usuario.nome })); } catch (e) { /* o navegador recusou */ }

@@ -115,13 +115,16 @@
     const cab = { apikey: c.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.chave)) cab.Authorization = 'Bearer ' + c.chave;
     try { fetch(c.edge, { method: 'POST', headers: cab, credentials: 'omit', cache: 'no-store', body: '{"ping":true}' }).catch(() => {}); } catch (e) { /* tanto faz */ }
   }
-  function cfgEdge() { try { const c = JSON.parse(localStorage.getItem('painel_edge') || 'null'); return c && c.edge && c.chave ? c : null; } catch (e) { return null; } }
+  function cfgEdge() {
+    try { const c = JSON.parse(localStorage.getItem('painel_edge') || 'null'); if (c && c.edge && c.chave) return c; } catch (e) { /* privado */ }
+    const f = window.PAINEL_EDGE; return f && f.edge && f.chave ? f : null; // 8.36.3: já vem no config.js (primeiro acesso também entra pelo Supabase)
+  }
   /** Devolve { token, usuario } (como o login do Apps Script) ou null = entrar pelo Google. Senha errada etc. = erro com a mensagem. */
   async function entrarViaEdge(dados) {
     try { const v0 = localStorage.getItem(VER_SERV); if (v0 && motoresPedidos[v0]) await motoresPedidos[v0]; } catch (e) { /* segue */ }
     const c = cfgEdge();
     if (!c || !M() || !fusoOk() || Date.now() < edgeOffAte) return null;
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000), t0 = performance.now();
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000), t0 = performance.now();
     const cab = { apikey: c.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.chave)) cab.Authorization = 'Bearer ' + c.chave;
     let r;
     try {

@@ -1384,3 +1384,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Edifício Future: caução é R$ 1.750,00 ou R$ 3.500,00 (conforme a pessoa) — botões rápidos no contrato, padrão 1.750,00.
 - Motor anterior guardado em painel/motor-8.36.0.js.
 - 8.36.2: a atualização automática pula a etapa do Supabase quando a função "painel" já responde com a versão nova (publicada pelo Claude/GitHub): a chave de gestão vencida não trava mais o Google. Motor anterior em painel/motor-8.36.1.js. "Precisa de ação agora" do Início virou uma linha (`acoes-mini`: chips com o total por tipo, só os urgentes aparecem, até 3; "ver todos" abre a lista em linhas curtas).
+- 8.36.3 (16/11, "ainda trava"): a ENTRADA era o gargalo — ia ao Google (10 a 23 s; às vezes mais de 2 min) porque o navegador só aprendia o
+  endereço da função do Supabase depois de entrar uma vez pelo Google. Agora painel/config.js traz `window.PAINEL_EDGE` (endereço da função +
+  chave PÚBLICA sb_publishable_, feita para o navegador) e `cfgEdge` usa como reserva: entrada em ~3 s desde o 1º acesso. Login pelo Google
+  (reserva) mostra aviso depois de 45 s em vez de ficar parado; espera da entrada pelo Supabase 12 s (antes 8). Trocou a chave pública ou o
+  projeto do Supabase? Atualize config.js.
