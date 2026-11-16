@@ -1349,3 +1349,21 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   itens com OK/Devolver, "ver todos em Intimações") e em Intimações; vazio = faixa verde "✓ Aguardando o seu OK: nada · a equipe está em dia"
   (`blocoAguardandoOk({ inicio })`, `.aguarda-vazio`, `.aguarda-ini`).
 
+## 8.36.0 Quem faz o quê + avisos no canto + atalhos (pedidos da usuária, 16/11/2026)
+
+- Distribuição automática (Code.gs): Config DISTRIBUICAO (JSON) = { prazo: {trabalhista, civel, familia, previdenciario, criminal, outros: [usuarios]},
+  inicial: {mesmas áreas}, secretaria: [usuarios] }. `areaDist_` (área do processo; sem área: nº ".5." = trabalhista, ".4." = previdenciário),
+  `quemDa_(tipo, area, numero)` (só usuários ativos; 2+ pessoas → quem tem MENOS prazos abertos + tarefas ativas, `cargas_` com 5 s de
+  memória), `respInicial_(area)`. Entra em `responsavelPadrao_`/`atribuirResponsaveis_` (prazos do robô), nas 4 criações de petição inicial
+  e no `respSecretaria_` (assinaturas, retomar contato, avaliação, avisos de audiência…). Sem ninguém marcado valem RESP_PJE/RESP_EPROC/
+  RESP_INICIAL/RESP_SECRETARIA. Rota `distribuicao.config` (administração; salvar + "distribuir agora os prazos sem responsável").
+- Tela "Quem faz o quê" (#/distribuicao, menu do NOME, só administração): chips da equipe por área com a carga aberta de cada um; na 1ª vez já
+  vem marcada a divisão descrita pela usuária (Lara trabalhista; Davi e Jennifer cível; Jennifer família; Gustavo previdenciário; perfis
+  secretario/rh na secretaria) — confere e salva.
+- Avisos discretos no canto (`iniciarNotificacoes`/`mostrarNotif`, `.notifs`): administração e secretaria/RH; de 90 em 90 s (aba visível) PIX
+  dos últimos 2 dias ("PIX de R$ 500 recebido · MARIA · baixado ✓") e, para a administração, intimações novas; ids vistos em localStorage
+  `notif_vistos_<usuario>` (1ª vez marca tudo como visto); mais de 3 juntos viram 1 aviso; some em 12 s; clicar abre a tela.
+- Atalhos de teclado (`atalhosTeclado`): "?" mostra a lista; g i/c/p/n/t/a/u/f/d/r = Início, Clientes, Processos, Intimações, Tarefas, Agenda,
+  Audiências, Cobranças, Documentos, CRM; n c/p/z/a = novo cliente/processo/prazo/compromisso; Ctrl+K busca (não age dentro de campos).
+- Motor anterior guardado em painel/motor-8.35.0.js.
+

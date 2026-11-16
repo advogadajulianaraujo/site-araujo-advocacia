@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.35.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.36.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.35.0';
+var MOTOR_VERSAO = '8.36.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.35.0';
+var VERSAO = '8.36.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -1340,8 +1340,45 @@ function indicadores_(d) {
  */
 var LINK_AVALIACAO_PADRAO = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Rua%20Silvino%20Moreira%20Lima%20Sobrinho%2C%20888%2C%20Tubar%C3%A3o%20-%20SC';
 
-/** Quem cuida da secretaria (assinaturas, retomar contato, avaliação): Config RESP_SECRETARIA ou a primeira pessoa com perfil secretaria. */
+/* ---------- 8.36 Distribuição automática: "Quem faz o quê" (pedido da usuária) ----------
+   Config DISTRIBUICAO (JSON) = { prazo: { trabalhista: [usuarios], civel: [...], familia, previdenciario, criminal, outros },
+   inicial: { mesmas áreas }, secretaria: [usuarios] }. Com 2+ pessoas na mesma área, vai para quem tem MENOS coisa aberta
+   (prazos abertos + tarefas ativas). Sem ninguém marcado, valem as regras antigas (RESP_PJE/RESP_EPROC/RESP_INICIAL/RESP_SECRETARIA). */
+function areaDist_(area, numero) {
+  var a = normalizar_(area || '');
+  if (/trabalh/.test(a) || (!a && /\.5\.\d{2}\.\d{4}$/.test(numero || ''))) return 'trabalhista';
+  if (/previd|inss/.test(a)) return 'previdenciario';
+  if (/famil|divorc|alimento|guarda|invent/.test(a)) return 'familia';
+  if (/crim|penal/.test(a)) return 'criminal';
+  if (/civ|consum|empresa|banc|imobil|tribut|saude/.test(a)) return 'civel';
+  if (!a && /\.4\.\d{2}\.\d{4}$/.test(numero || '')) return 'previdenciario';
+  return a ? 'outros' : 'outros';
+}
+function distribuicao_() { try { var d = JSON.parse(config_('DISTRIBUICAO') || 'null'); return d && typeof d === 'object' ? d : null; } catch (e) { return null; } }
+var CARGAS_ = null, CARGAS_EM_ = 0; // vale só alguns segundos (no Supabase a memória fica entre um pedido e outro)
+function cargas_() {
+  if (CARGAS_ && Date.now() - CARGAS_EM_ < 5000) return CARGAS_;
+  CARGAS_EM_ = Date.now();
+  var c = {};
+  try { tabela_('Prazos').linhas.forEach(function (z) { if (z.responsavel && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) c[z.responsavel] = (c[z.responsavel] || 0) + 1; }); } catch (e) { /* segue */ }
+  try { tabela_('Tarefas').linhas.forEach(function (t) { if (t.responsavel && t.situacao === 'ativa' && !/feito|concluid|protocolad/.test(t.etapa || '')) c[t.responsavel] = (c[t.responsavel] || 0) + 1; }); } catch (e) { /* segue */ }
+  CARGAS_ = c; return c;
+}
+/** Quem recebe: tipo = 'prazo' | 'inicial' | 'secretaria'. '' = ninguém marcado (usa a regra antiga). */
+function quemDa_(tipo, area, numero) {
+  var d = distribuicao_(); if (!d) return '';
+  var lista = tipo === 'secretaria' ? (d.secretaria || []) : (((d[tipo] || {})[areaDist_(area, numero)]) || ((d[tipo] || {}).outros) || []);
+  var ativos = {}; usuarios_().forEach(function (x) { if (x.ativo === 'sim') ativos[x.usuario] = true; });
+  lista = lista.filter(function (x) { return ativos[x]; });
+  if (!lista.length) return '';
+  if (lista.length === 1) return lista[0];
+  var c = cargas_();
+  var r = lista.slice().sort(function (a, b) { return (c[a] || 0) - (c[b] || 0); })[0];
+  c[r] = (c[r] || 0) + 1; // o próximo da mesma rodada já conta este
+  return r;
+}
 function respSecretaria_() {
+  var q = quemDa_('secretaria'); if (q) return q;
   var r = config_('RESP_SECRETARIA');
   if (r) return r;
   var s = usuarios_().filter(function (x) { return x.ativo === 'sim' && x.perfil === 'secretario'; })[0];
@@ -1886,7 +1923,7 @@ var ROTAS_MOTOR = {
 window.PAINEL_MOTOR = {
   versao: MOTOR_VERSAO,
   esquema: ESQUEMA,
-  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
+  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
   tabelasDaRota: {"resumo":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"]},
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },
   /** Roda a rota como o Apps Script faria (rotear_): permissão do perfil, a conta e os valores escondidos do RH. */

@@ -1,5 +1,5 @@
 {
- "versao": "8.35.0",
+ "versao": "8.36.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -11,6 +11,7 @@
   "DATAJUD_ERRO",
   "DATAJUD_OK",
   "DATAJUD_ULTIMA",
+  "DISTRIBUICAO",
   "DJEN_NAVEGADOR_ERRO",
   "DJEN_NAVEGADOR_ULTIMA",
   "FUTURE_USUARIOS",
@@ -126,7 +127,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 28
+   "funcoes": 33
   },
   "feriados.listar": {
    "tabelas": [
@@ -174,7 +175,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 47
+   "funcoes": 52
   },
   "audiencias.listar": {
    "tabelas": [
@@ -207,7 +208,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 32
+   "funcoes": 37
   },
   "documentos.assinaturas": {
    "tabelas": [
@@ -407,5 +408,5 @@
    "funcoes": 45
   }
  },
- "funcoes": 131
+ "funcoes": 136
 }

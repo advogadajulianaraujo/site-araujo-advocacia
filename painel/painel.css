@@ -2746,3 +2746,28 @@ body[data-tela="processos"] .crm-quadro.quadro-proc{grid-auto-columns:minmax(240
 .aguarda-ok.aguarda-vazio strong{color:#1F7A3F}
 .aguarda-ok.aguarda-ini{border-left:4px solid #C9A46A}
 .aguarda-mais{margin:6px 0 0}
+/* 8.36 Quem faz o quê */
+.qf-caixa h2{margin-bottom:2px}
+.qf-linhas{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.qf-linha{display:grid;grid-template-columns:190px 1fr;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--linha)}
+.qf-linha>b{font-size:13.5px}
+.qf-chips{display:flex;flex-wrap:wrap;gap:6px}
+.qf-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border:1px solid var(--linha);border-radius:999px;background:#fff;cursor:pointer;font:inherit;font-size:13px;color:var(--tinta)}
+.qf-chip small{font-size:11px;color:var(--mudo);background:#F2EEE7;border-radius:999px;padding:0 6px}
+.qf-chip.on{background:#24201C;border-color:#24201C;color:#fff}
+.qf-chip.on small{background:rgba(255,255,255,.18);color:#fff}
+.qf-chip.on .quem-ini{background:#C9A46A;color:#24201C}
+@media (max-width:700px){.qf-linha{grid-template-columns:1fr}}
+/* 8.36 avisos discretos no canto + atalhos */
+.notifs{position:fixed;right:18px;bottom:18px;z-index:9000;display:flex;flex-direction:column;gap:8px;width:min(340px,calc(100vw - 32px))}
+.notif{display:grid;grid-template-columns:32px 1fr 22px;gap:10px;align-items:center;background:#1C1A17;color:#F4F0E8;border-radius:12px;padding:10px 10px 10px 12px;box-shadow:0 14px 34px -14px rgba(0,0,0,.55);border-left:4px solid #C9A46A;animation:notifEntra .25s ease-out}
+.notif.ok{border-left-color:#3E9B62}.notif.atencao{border-left-color:#D99A1E}
+.notif.saindo{opacity:0;transform:translateX(16px);transition:.25s}
+.notif-ico{font-size:20px;text-align:center}
+.notif-txt{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0}
+.notif-txt b{font-size:13.5px}.notif-txt span{font-size:12px;color:#CFC6B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notif-x{all:unset;cursor:pointer;color:#CFC6B8;font-size:18px;text-align:center}
+@keyframes notifEntra{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.atalhos-dlg kbd{display:inline-block;background:#F2EEE7;border:1px solid var(--linha);border-bottom-width:2px;border-radius:6px;padding:1px 7px;font:600 12px/1.6 ui-monospace,monospace;color:var(--tinta)}
+.atalhos-dlg td{padding:6px 10px}
+@media (prefers-reduced-motion:reduce){.notif{animation:none}}

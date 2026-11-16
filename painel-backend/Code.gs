@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.35.0';
+var VERSAO = '8.36.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -455,6 +455,7 @@ var ROTAS = {
   'tarefas.mover': { fn: moverTarefa_ },
   'tarefas.atribuir': { fn: atribuirTarefa_ },
   'tarefas.config': { permissao: 'usuarios', fn: configTarefas_ },
+  'distribuicao.config': { permissao: 'usuarios', fn: configDistribuicao_ },
   'tarefas.check': { fn: marcarItemTarefa_ },
   'tarefas.comentar': { fn: comentarTarefa_ },
   'eu.painel': { fn: meuPainel_ },
@@ -1799,7 +1800,7 @@ function salvarProcesso_(d, u) {
     if (!dados.fase) { dados.fase = numero ? 'ajuizado' : 'contratado'; dados.fase_auto = ''; }
     dados.origem = 'painel';
     dados.criado_em = agora;
-    if (!numero && dados.fase === 'contratado' && !dados.responsavel) dados.responsavel = config_('RESP_INICIAL') || '';
+    if (!numero && dados.fase === 'contratado' && !dados.responsavel) dados.responsavel = respInicial_(dados.area);
     if (!numero && !dados.proximo_ato) dados.proximo_ato = 'Ajuizar a ação';
     inserirLinha_(tab, dados);
     registrar_(u.usuario, 'processo criado', dados.id + ' ' + numero);
@@ -1821,7 +1822,7 @@ function tarefaPeticaoInicial_(proc, u, tipoNome) {
   var t = { id: novoId_('T'), titulo: 'Petição inicial — ' + nome + (tipoNome || proc.area ? ' (' + (tipoNome || proc.area) + ')' : ''),
     descricao: 'Cliente contratou. Fazer e protocolar a petição inicial' + (proc.parte_contraria ? ' contra ' + proc.parte_contraria : '') +
       '. Quando protocolar, coloque o número no processo (Processos › abrir) e ele passa sozinho para "Em andamento".\n' + marca,
-    responsavel: proc.responsavel || config_('RESP_INICIAL') || '', processo_id: proc.id, numero: '', cliente_id: proc.cliente_id || '',
+    responsavel: proc.responsavel || respInicial_(proc.area), processo_id: proc.id, numero: '', cliente_id: proc.cliente_id || '',
     vence_em: somarDias_(hoje, prazo), etapa: 'afazer', peso: '3', situacao: 'ativa', concluida_por: '', concluida_em: '',
     historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' ' + ((u && (u.nome || u.usuario)) || 'painel') + ': cliente com ação, petição inicial a fazer',
     criado_em: agora, criado_por: (u && u.usuario) || 'painel', atualizado_em: agora, atualizado_por: (u && u.usuario) || 'painel' };
@@ -1881,7 +1882,7 @@ function abrirAcaoCliente_(d, u) {
       polo: 'ativo', parte_contraria: String(d.parte_contraria || '').trim().slice(0, 200), proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
       observacoes: (tipo ? tipo.nome + '. ' : '') + 'Cliente contratou em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
       origem: 'painel', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '',
-      responsavel: d.responsavel || config_('RESP_INICIAL') || '' };
+      responsavel: d.responsavel || respInicial_((tipo && tipo.area) || d.area || c.area || '') };
     inserirLinha_(tabP, novo);
     tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
     registrar_(u.usuario, 'processo criado', novo.id + ' (petição inicial) ' + c.nome);
@@ -5738,8 +5739,66 @@ function indicadores_(d) {
 var RE_VALOR_LEVANTAR = /alvar[aá]|requisi[cç][aã]o de pequeno valor|\bRPV\b|precat[oó]rio|levantamento d[eo]s? (valor|dep[oó]sito|quantia|cr[eé]dito)|libera[cç][aã]o d[eo]s? (valor|cr[eé]dito|dep[oó]sito)|transfer[eê]ncia d[eo]s? valor/i;
 var LINK_AVALIACAO_PADRAO = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Rua%20Silvino%20Moreira%20Lima%20Sobrinho%2C%20888%2C%20Tubar%C3%A3o%20-%20SC';
 
-/** Quem cuida da secretaria (assinaturas, retomar contato, avaliação): Config RESP_SECRETARIA ou a primeira pessoa com perfil secretaria. */
+/* ---------- 8.36 Distribuição automática: "Quem faz o quê" (pedido da usuária) ----------
+   Config DISTRIBUICAO (JSON) = { prazo: { trabalhista: [usuarios], civel: [...], familia, previdenciario, criminal, outros },
+   inicial: { mesmas áreas }, secretaria: [usuarios] }. Com 2+ pessoas na mesma área, vai para quem tem MENOS coisa aberta
+   (prazos abertos + tarefas ativas). Sem ninguém marcado, valem as regras antigas (RESP_PJE/RESP_EPROC/RESP_INICIAL/RESP_SECRETARIA). */
+var AREAS_DIST = ['trabalhista', 'civel', 'familia', 'previdenciario', 'criminal', 'outros'];
+function areaDist_(area, numero) {
+  var a = normalizar_(area || '');
+  if (/trabalh/.test(a) || (!a && /\.5\.\d{2}\.\d{4}$/.test(numero || ''))) return 'trabalhista';
+  if (/previd|inss/.test(a)) return 'previdenciario';
+  if (/famil|divorc|alimento|guarda|invent/.test(a)) return 'familia';
+  if (/crim|penal/.test(a)) return 'criminal';
+  if (/civ|consum|empresa|banc|imobil|tribut|saude/.test(a)) return 'civel';
+  if (!a && /\.4\.\d{2}\.\d{4}$/.test(numero || '')) return 'previdenciario';
+  return a ? 'outros' : 'outros';
+}
+function distribuicao_() { try { var d = JSON.parse(config_('DISTRIBUICAO') || 'null'); return d && typeof d === 'object' ? d : null; } catch (e) { return null; } }
+var CARGAS_ = null, CARGAS_EM_ = 0; // vale só alguns segundos (no Supabase a memória fica entre um pedido e outro)
+function cargas_() {
+  if (CARGAS_ && Date.now() - CARGAS_EM_ < 5000) return CARGAS_;
+  CARGAS_EM_ = Date.now();
+  var c = {};
+  try { tabela_('Prazos').linhas.forEach(function (z) { if (z.responsavel && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) c[z.responsavel] = (c[z.responsavel] || 0) + 1; }); } catch (e) { /* segue */ }
+  try { tabela_('Tarefas').linhas.forEach(function (t) { if (t.responsavel && t.situacao === 'ativa' && !/feito|concluid|protocolad/.test(t.etapa || '')) c[t.responsavel] = (c[t.responsavel] || 0) + 1; }); } catch (e) { /* segue */ }
+  CARGAS_ = c; return c;
+}
+/** Quem recebe: tipo = 'prazo' | 'inicial' | 'secretaria'. '' = ninguém marcado (usa a regra antiga). */
+function quemDa_(tipo, area, numero) {
+  var d = distribuicao_(); if (!d) return '';
+  var lista = tipo === 'secretaria' ? (d.secretaria || []) : (((d[tipo] || {})[areaDist_(area, numero)]) || ((d[tipo] || {}).outros) || []);
+  var ativos = {}; usuarios_().forEach(function (x) { if (x.ativo === 'sim') ativos[x.usuario] = true; });
+  lista = lista.filter(function (x) { return ativos[x]; });
+  if (!lista.length) return '';
+  if (lista.length === 1) return lista[0];
+  var c = cargas_();
+  var r = lista.slice().sort(function (a, b) { return (c[a] || 0) - (c[b] || 0); })[0];
+  c[r] = (c[r] || 0) + 1; // o próximo da mesma rodada já conta este
+  return r;
+}
+function respInicial_(area) { return quemDa_('inicial', area) || config_('RESP_INICIAL') || ''; }
+function configDistribuicao_(d, u) {
+  return comTrava_(function () {
+    if (d.salvar) {
+      var ok = {}; usuarios_().forEach(function (x) { if (x.ativo === 'sim') ok[x.usuario] = true; });
+      var limpa = function (l) { return (Array.isArray(l) ? l : []).map(String).filter(function (x, i, a) { return ok[x] && a.indexOf(x) === i; }).slice(0, 10); };
+      var novo = { prazo: {}, inicial: {}, secretaria: limpa((d.dist || {}).secretaria) };
+      ['prazo', 'inicial'].forEach(function (t) { AREAS_DIST.forEach(function (a) { var l = limpa((((d.dist || {})[t]) || {})[a]); if (l.length) novo[t][a] = l; }); });
+      setConfig_('DISTRIBUICAO', JSON.stringify(novo), 'Quem faz o quê: distribuição automática por área e tipo de trabalho');
+      CARGAS_ = null;
+      var n = 0;
+      if (d.redistribuir) { var tz = tabela_('Prazos'); tz.adiar = true; n = atribuirResponsaveis_(tz, tabela_('Processos')); regravarMudadas_(tz); }
+      registrar_(u.usuario, 'quem faz o quê', JSON.stringify(novo).slice(0, 400) + (n ? ' · ' + n + ' prazos distribuídos' : ''));
+      return { dist: novo, distribuidos: n };
+    }
+    return { dist: distribuicao_() || { prazo: {}, inicial: {}, secretaria: [] }, areas: AREAS_DIST, cargas: cargas_() };
+  });
+}
+
+/** Quem cuida da secretaria (assinaturas, retomar contato, avaliação): "Quem faz o quê" › secretaria, Config RESP_SECRETARIA ou a 1ª pessoa com perfil secretaria. */
 function respSecretaria_() {
+  var q = quemDa_('secretaria'); if (q) return q;
   var r = config_('RESP_SECRETARIA');
   if (r) return r;
   var s = usuarios_().filter(function (x) { return x.ativo === 'sim' && x.perfil === 'secretario'; })[0];
@@ -6023,7 +6082,7 @@ function abrirPeticaoInicial_(c, tipoChave, contra, docs, u) {
     var novo = { id: novoId_('P'), cliente_id: c.id, cliente_nome: '', numero: '', tribunal: '', sistema: '', orgao: '', area: (tipo && tipo.area) || c.area || '',
       polo: 'ativo', parte_contraria: contra || '', proximo_ato: 'Ajuizar a ação', proximo_ato_data: '', status: 'ativo',
       observacoes: (tipo ? tipo.nome + '. ' : '') + 'Documentos assinados (' + docs + ') em ' + dataBR_(hojeSP_()) + '. Coloque o número quando ajuizar.',
-      origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '', responsavel: config_('RESP_INICIAL') || '' };
+      origem: 'documentos', criado_em: agora, atualizado_em: agora, atualizado_por: u.usuario, fase: 'contratado', fase_auto: '', responsavel: respInicial_((tipo && tipo.area) || c.area || '') };
     inserirLinha_(tabP, novo);
     tarefaPeticaoInicial_(novo, u, tipo ? tipo.nome : '');
     return novo.id;
@@ -8359,11 +8418,11 @@ function responsavelPadrao_(proc, numero) {
   var sis = normalizar_((proc && proc.sistema) || '');
   var trib = (proc && proc.tribunal) || tribunalDoNumero_(numero);
   var pje = /pje/.test(sis) || (!/eproc/.test(sis) && (/^TRT|^TST/.test(trib || '') || /\.5\.\d{2}\.\d{4}$/.test(numero || '')));
-  return config_(pje ? 'RESP_PJE' : 'RESP_EPROC') || config_('RESP_PADRAO') || '';
+  return quemDa_('prazo', proc && proc.area, numero) || config_(pje ? 'RESP_PJE' : 'RESP_EPROC') || config_('RESP_PADRAO') || '';
 }
 
 function atribuirResponsaveis_(tabZ, tabP) {
-  if (!config_('RESP_PJE') && !config_('RESP_EPROC') && !config_('RESP_PADRAO')) return 0;
+  if (!distribuicao_() && !config_('RESP_PJE') && !config_('RESP_EPROC') && !config_('RESP_PADRAO')) return 0;
   var procs = {};
   tabP.linhas.forEach(function (p) { procs[p.id] = p; });
   var n = 0;
@@ -14375,7 +14434,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DISTRIBUICAO', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {

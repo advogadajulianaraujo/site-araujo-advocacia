@@ -747,11 +747,86 @@
     document.getElementById('quem-avatar').textContent = String(nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
     const mUs = document.getElementById('menu-usuarios'); mUs.textContent = 'Gerenciar acessos'; mUs.hidden = !pode.usuarios;
     const mRel = document.getElementById('menu-relatorios'); mRel.hidden = !pode.usuarios;
+    const mDist = document.getElementById('menu-distribuicao'); if (mDist) mDist.hidden = !pode.usuarios;
     const mEq = document.getElementById('menu-equipe'); if (mEq) mEq.hidden = !pode.usuarios;
     document.body.classList.remove('sem-sessao');
     abasEl.hidden = false;
     quemEl.hidden = false;
+    iniciarNotificacoes();
   }
+
+  /* ---------- 8.36 Avisos discretos no canto da tela (administração e secretaria) ----------
+     De 90 em 90 s (só com a aba visível) olha PIX recebidos e intimações novas; o que já foi visto fica guardado neste computador
+     (só os ids). Na primeira vez marca tudo como visto, para não despejar avisos antigos. */
+  let notifTimer = null;
+  function iniciarNotificacoes() {
+    clearInterval(notifTimer);
+    const p = sessao && sessao.usuario && sessao.usuario.pode; if (!p) return;
+    const perfil = sessao.usuario.perfil, admin = !!p.usuarios, secretaria = ['secretario', 'rh'].includes(perfil);
+    if (!admin && !secretaria) return;
+    const CH = 'notif_vistos_' + sessao.usuario.usuario;
+    const lerVistos = () => { try { return JSON.parse(localStorage.getItem(CH) || 'null'); } catch (e) { return null; } };
+    const rodar = async () => {
+      if (document.hidden || !sessao) return;
+      const antes = lerVistos(), primeira = !antes, vistos = new Set(antes || []), novos = [];
+      try {
+        if (p.financeiro) {
+          const r = await apiFresco('fin.pix', { dias: 2 });
+          (r.lista || []).forEach(x => { if (vistos.has('pix:' + x.id)) return; vistos.add('pix:' + x.id);
+            const v = x.valor === null || x.valor === undefined || x.valor === '' ? '' : (isNaN(+String(x.valor).replace(/\./g, '').replace(',', '.')) ? 'R$ ' + x.valor : reais(+String(x.valor).replace(/\./g, '').replace(',', '.')));
+            novos.push({ ico: '💰', tit: `PIX ${v ? 'de ' + v + ' ' : ''}recebido`, sub: [primeiroNome(x.pagador || ''), x.situacao === 'baixado' ? 'baixado ✓' : x.situacao === 'a conferir' ? 'conferir' : x.situacao].filter(Boolean).join(' · '), ir: '#/financeiro?ver=pix', cls: x.situacao === 'baixado' ? 'ok' : 'atencao' }); });
+        }
+        if (admin) {
+          const r = await apiFresco('intimacoes.listar', { limite: 15, abertas: true });
+          ((r && r.lista) || []).forEach(x => { if (vistos.has('int:' + x.id)) return; vistos.add('int:' + x.id);
+            novos.push({ ico: '📨', tit: 'Intimação nova', sub: [x.numero, x.cliente || x.cliente_nome].filter(Boolean).join(' · '), ir: '#/prazos', cls: '' }); });
+        }
+      } catch (e) { return; }
+      try { localStorage.setItem(CH, JSON.stringify([...vistos].slice(-400))); } catch (e) { /* ok */ }
+      if (primeira || !novos.length) return;
+      if (novos.length > 3) { const pix = novos.filter(n => n.ico === '💰').length, int = novos.length - pix;
+        mostrarNotif({ ico: '🔔', tit: [pix ? pix + ' PIX recebido(s)' : '', int ? int + ' intimação(ões) nova(s)' : ''].filter(Boolean).join(' · '), sub: 'clique para ver', ir: pix ? '#/financeiro?ver=pix' : '#/prazos' }); }
+      else novos.forEach(mostrarNotif);
+    };
+    setTimeout(rodar, 6000); notifTimer = setInterval(rodar, 90000);
+  }
+  function mostrarNotif(n) {
+    let caixa = document.getElementById('notifs');
+    if (!caixa) { caixa = h('div', { id: 'notifs', class: 'notifs', 'aria-live': 'polite' }); document.body.append(caixa); }
+    const fechar = () => { el.classList.add('saindo'); setTimeout(() => el.remove(), 250); };
+    const el = h('div', { class: 'notif ' + (n.cls || ''), role: 'status' },
+      h('span', { class: 'notif-ico', 'aria-hidden': 'true' }, n.ico || '🔔'),
+      h('button', { type: 'button', class: 'notif-txt', onclick: () => { location.hash = n.ir; fechar(); } }, h('b', {}, n.tit), n.sub ? h('span', {}, n.sub) : null),
+      h('button', { type: 'button', class: 'notif-x', 'aria-label': 'Fechar', onclick: fechar }, '×'));
+    caixa.append(el);
+    while (caixa.children.length > 4) caixa.firstChild.remove();
+    setTimeout(fechar, 12000);
+  }
+
+  /* ---------- 8.36 Atalhos de teclado (como nos sistemas grandes): "?" mostra a lista ---------- */
+  (function atalhosTeclado() {
+    const IR = { i: ['#/inicio', 'Início'], c: ['#/clientes', 'Clientes'], p: ['#/processos', 'Processos'], n: ['#/prazos', 'Intimações'], t: ['#/tarefas', 'Tarefas'],
+      a: ['#/agenda', 'Agenda'], u: ['#/audiencias', 'Audiências'], f: ['#/financeiro', 'Cobranças'], d: ['#/modelos', 'Documentos'], r: ['#/crm', 'CRM'] };
+    const NOVO = { c: ['#/cliente/novo', 'Novo cliente'], p: ['#/processo/novo', 'Novo processo'], z: ['#/prazo/novo', 'Novo prazo'], a: ['#/compromisso/novo', 'Novo compromisso'] };
+    let prefixo = '', prefTimer = null;
+    const ajuda = () => {
+      const lin = (k, t) => h('tr', {}, h('td', {}, h('kbd', {}, k)), h('td', {}, t));
+      const d = h('dialog', { class: 'dialogo atalhos-dlg' }, h('h2', {}, '⌨ Atalhos de teclado'),
+        h('table', { class: 'tabela' }, h('tbody', {}, lin('Ctrl + K', 'Buscar cliente, CPF, telefone ou processo'),
+          ...Object.entries(IR).map(([k, [, t]]) => lin('g ' + k, 'Ir para ' + t)), ...Object.entries(NOVO).map(([k, [, t]]) => lin('n ' + k, t)), lin('?', 'Mostrar esta lista'), lin('Esc', 'Fechar janela'))),
+        h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'btn sec', onclick: () => { d.close(); d.remove(); } }, 'Fechar')));
+      document.body.append(d); d.showModal();
+    };
+    document.addEventListener('keydown', ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.altKey || !sessao) return;
+      const alvo = ev.target, tag = (alvo && alvo.tagName) || '';
+      if (/INPUT|TEXTAREA|SELECT/.test(tag) || (alvo && alvo.isContentEditable) || document.querySelector('dialog[open]')) return;
+      const k = ev.key.toLowerCase();
+      if (ev.key === '?') { ev.preventDefault(); ajuda(); return; }
+      if (prefixo) { const mapa = prefixo === 'g' ? IR : NOVO, dest = mapa[k]; prefixo = ''; clearTimeout(prefTimer); if (dest) { ev.preventDefault(); location.hash = dest[0]; } return; }
+      if (k === 'g' || k === 'n') { prefixo = k; prefTimer = setTimeout(() => { prefixo = ''; }, 1200); }
+    });
+  })();
 
   // celular: o menu lateral abre por cima da tela
   const lateralEl = document.getElementById('lateral'), fundoEl = document.getElementById('lateral-fundo'), menuCel = document.getElementById('menu-cel');
@@ -3177,6 +3252,52 @@
   }
 
   /** Painel da administração: o que a equipe conferiu e espera o OK. */
+  /* ---------- 8.36 Quem faz o quê (distribuição automática por área e tipo de trabalho) ---------- */
+  const AREAS_DIST = [['trabalhista', 'Trabalhista'], ['civel', 'Cível e consumidor'], ['familia', 'Família'], ['previdenciario', 'Previdenciário (INSS)'], ['criminal', 'Criminal'], ['outros', 'Outras áreas']];
+  async function telaDistribuicao() {
+    if (!sessao.usuario.pode.usuarios) { mostrar(h('div', { class: 'nota alerta' }, '"Quem faz o quê" é só da administração.')); return; }
+    carregando();
+    const [r, equipe] = await Promise.all([api('distribuicao.config', {}), api('equipe.listar', {})]);
+    const cargas = r.cargas || {};
+    const dist = JSON.parse(JSON.stringify(r.dist || {})); dist.prazo = dist.prazo || {}; dist.inicial = dist.inicial || {}; dist.secretaria = dist.secretaria || [];
+    const vazio = !Object.keys(dist.prazo).length && !Object.keys(dist.inicial).length && !dist.secretaria.length;
+    // sugestão (o que a usuária descreveu em 16/11/2026) — só quando ainda não há nada salvo; precisa conferir e salvar
+    if (vazio) {
+      const por = re => equipe.filter(x => re.test(semAcentoG(x.nome + ' ' + x.usuario)) && x.perfil !== 'administrador').map(x => x.usuario);
+      const sec = equipe.filter(x => ['secretario', 'rh'].includes(x.perfil)).map(x => x.usuario);
+      const lara = por(/\blara\b/), davi = por(/\bdavi\b/), jen = por(/\bjen+if+er\b/), gusAdv = por(/\bgustavo\b/).filter(u => !sec.includes(u));
+      const pz = { trabalhista: lara, civel: davi.concat(jen), familia: jen, previdenciario: gusAdv }, ini = { trabalhista: lara, civel: davi, familia: jen, previdenciario: gusAdv };
+      Object.entries(pz).forEach(([a, l]) => { if (l.length) dist.prazo[a] = l; });
+      Object.entries(ini).forEach(([a, l]) => { if (l.length) dist.inicial[a] = l; });
+      if (sec.length) dist.secretaria = sec;
+    }
+    const sugeriu = vazio && (Object.keys(dist.prazo).length || Object.keys(dist.inicial).length || dist.secretaria.length);
+    const chips = (lista, onChange) => h('div', { class: 'qf-chips' }, equipe.map(x => {
+      const on = lista.includes(x.usuario);
+      const b2 = h('button', { type: 'button', class: 'qf-chip' + (on ? ' on' : ''), 'aria-pressed': String(on), title: (cargas[x.usuario] || 0) + ' coisa(s) aberta(s) com ' + x.nome },
+        h('span', { class: 'quem-ini mini' }, iniciais(x.nome)), primeiroNome(x.nome), h('small', {}, String(cargas[x.usuario] || 0)));
+      b2.onclick = () => { const i = lista.indexOf(x.usuario); if (i >= 0) lista.splice(i, 1); else lista.push(x.usuario); b2.classList.toggle('on'); b2.setAttribute('aria-pressed', String(lista.includes(x.usuario))); onChange && onChange(); };
+      return b2;
+    }));
+    const tabelaTipo = (tipo, titulo, txt) => h('section', { class: 'caixa qf-caixa' }, h('h2', {}, titulo), h('p', { class: 'peq' }, txt),
+      h('div', { class: 'qf-linhas' }, AREAS_DIST.map(([a, nome]) => { dist[tipo][a] = dist[tipo][a] || []; return h('div', { class: 'qf-linha' }, h('b', {}, nome), chips(dist[tipo][a])); })));
+    const redis = h('input', { type: 'checkbox', checked: true });
+    mostrar(
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Quem faz o quê'), h('p', {}, 'Cada trabalho novo vai sozinho para a pessoa certa. Com duas ou mais pessoas na mesma área, vai para quem está com menos coisa aberta (o número ao lado do nome). Dá sempre para trocar à mão com "Passar para…".'))),
+      sugeriu ? h('div', { class: 'nota' }, '✨ Já deixei marcado como você descreveu (Lara no trabalhista, Davi e Jennifer no cível, Jennifer na família, Gustavo no previdenciário e a secretaria no resto). Confira e aperte "Salvar".') : null,
+      tabelaTipo('prazo', '⏱ Prazos e intimações', 'Quem recebe os prazos novos que o robô lê dos tribunais, conforme a área do processo.'),
+      tabelaTipo('inicial', '⚖ Petições iniciais', 'Quem faz a petição inicial quando o cliente assina a procuração e o contrato.'),
+      h('section', { class: 'caixa qf-caixa' }, h('h2', {}, '🗂 Secretaria'), h('p', { class: 'peq' }, 'Cobranças, WhatsApp, cadastros, procurações e contratos para assinar, aniversários, avisos de audiência ao cliente e pedidos de avaliação.'),
+        chips(dist.secretaria)),
+      h('p', { class: 'peq' }, 'Luís e Júlian (administração) veem tudo e dão o OK. Quem não estiver marcado em lugar nenhum só recebe o que alguém passar para ele.'),
+      h('div', { class: 'acoes' }, h('label', { class: 'marcar' }, redis, ' Distribuir agora os prazos abertos que estão sem responsável'),
+        botao('Salvar', async ev => {
+          ev.target.disabled = true;
+          try { const x = await api('distribuicao.config', { salvar: true, dist, redistribuir: redis.checked }); avisar('Salvo. ' + (x.distribuidos ? x.distribuidos + ' prazo(s) distribuído(s) agora.' : 'Os próximos trabalhos já seguem esta divisão.')); rota(); }
+          catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        })));
+  }
+
   /** 8.35.9 (pedido da usuária: "deixar o aguardando o OK no administrador"): sempre à vista para a administração — no Início (lista aberta,
       até 8 itens) e em Intimações; vazio mostra "✓ a equipe está em dia". opc = { inicio: true } */
   function blocoAguardandoOk(opc) {
@@ -3348,7 +3469,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.35.0';
+  const VERSAO_PAINEL = '8.36.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6123,6 +6244,7 @@ function main() {
         case 'processos': await telaProcessos(params); break;
         case 'processo': await telaProcesso(id, params); break;
         case 'usuarios': await telaUsuarios(); break;
+        case 'distribuicao': await telaDistribuicao(); break;
         case 'senha': telaSenha(); break;
         case 'agenda': await telaAgenda(params); break;
         case 'audiencias': await telaAudiencias(params); break;
