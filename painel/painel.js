@@ -1063,7 +1063,7 @@
         meu ? h('div', { class: 'md-semana' },
           h('div', { class: 'md-total' }, h('b', {}, String(meu.semana.total)), h('span', {}, meu.semana.total === 1 ? 'coisa feita' : 'coisas feitas'),
             meu.semana.posicao ? h('span', { class: 'tag mini-tag ok' }, `${meu.semana.posicao}º da equipe`) : null),
-          cats.length ? grafBarras(cats.map(c => ({ nome: c.nome, valor: meu.semana.grupos[c.id] })))
+          cats.length ? grafCols(cats.map(c => ({ nome: c.nome, valor: meu.semana.grupos[c.id] })), { alto: 130 })
             : vazio('Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.')) : vazio('Carregando…'));
       return h('section', { class: 'meu-dia' },
         h('header', {}, h('h2', {}, 'Seu dia'), h('span', { class: 'peq' }, [meu ? `${meu.abertas} com você` : '', meu && meu.atrasadas ? `${meu.atrasadas} atrasada(s)` : '', `${compromissos.length} compromisso(s) hoje`].filter(Boolean).join(' · '))),
@@ -1083,7 +1083,7 @@
       api('relatorio.semana', {}).then(rs => {
         const ps = (rs.pessoas || []).filter(x => x.total || x.perfil !== 'administrador').slice(0, 8);
         eqCard.replaceChildren(h('h3', {}, 'Equipe nesta semana'),
-          ps.length ? grafBarras(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.keys(x.grupos).length ? Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${((rs.categorias || []).find(c => c.id === k) || {}).nome || k}`.toLowerCase()).join(' · ') : '' })))
+          ps.length ? grafCols(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.keys(x.grupos).length ? Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${((rs.categorias || []).find(c => c.id === k) || {}).nome || k}`.toLowerCase()).join(' · ') : '' })))
             : vazio('Ninguém registrou trabalho nesta semana ainda.'),
           h('a', { class: 'md-mais', href: '#/relatorios?ver=equipe' }, 'ver o relatório da equipe →'));
       }).catch(() => eqCard.remove());
@@ -1339,6 +1339,48 @@
     const el = h('span', { class: 'selo-jornada' + (mini ? ' mini' : ''), title: 'Etapa do cliente (muda sozinha)' }, NOME_JORNADA[j] || j);
     el.style.setProperty('--cor', COR_JORNADA[j] || '#888'); return el;
   }
+  /** 8.37: topo da tela Clientes — gráficos de fechamento (semana/mês), contratos por período e números da carteira. */
+  function painelClientes(todos, procs, assins, params, ir) {
+    const per = params.get('per') === 'mes' ? 'mes' : 'semana';
+    const hoje = hojeISO(), dia = s => String(s || '').slice(0, 10);
+    const inicioPer = d => { if (per === 'mes') return d.slice(0, 8) + '01'; const dt = new Date(d + 'T12:00:00Z'); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); return dt.toISOString().slice(0, 10); };
+    const ini = inicioPer(hoje);
+    const noPer = d => d && d >= ini && d <= hoje;
+    const fecharam = assins.filter(a => a.situacao === 'assinado' && noPer(dia(a.assinado_em))).length;
+    const naoFecharam = assins.filter(a => /n[aã]o assinou|desist/i.test(a.situacao || '') && noPer(dia(a.assinado_em || a.gerado_em))).length;
+    const aguardando = assins.filter(a => a.situacao === 'aguardando').length;
+    const gerados = assins.filter(a => noPer(dia(a.gerado_em))).length;
+    const taxa = fecharam + naoFecharam ? Math.round(fecharam * 100 / (fecharam + naoFecharam)) : null;
+    const filtro = h('div', { class: 'seg-mini', role: 'group', 'aria-label': 'Período' },
+      [['semana', 'Semana'], ['mes', 'Mês']].map(([v, t]) => h('button', { type: 'button', class: per === v ? 'on' : '', 'aria-pressed': String(per === v), onclick: () => ir({ per: v === 'semana' ? '' : v }) }, t)));
+    const card1 = h('section', { class: 'pc-card pc-escuro' },
+      h('header', {}, h('h3', {}, per === 'mes' ? 'Fechamentos do mês' : 'Fechamentos da semana'), filtro),
+      grafCols([{ nome: 'Fecharam', valor: fecharam, cor: '#5FA37A' }, { nome: 'Não fecharam', valor: naoFecharam, cor: '#C4652F' }, { nome: 'Aguardando', valor: aguardando, cor: '#C9A46A', ir: () => ir({ grupo: 'assinatura' }) }], { alto: 150 }),
+      h('p', { class: 'pc-rodape' }, taxa === null ? `${gerados} procuração/contrato gerado(s) no período` : `${taxa}% de fechamento · ${gerados} documento(s) gerado(s) no período`));
+    // contratos assinados nas últimas 6 semanas (ou 6 meses)
+    const periodos = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(ini + 'T12:00:00Z');
+      if (per === 'mes') d.setUTCMonth(d.getUTCMonth() - i); else d.setUTCDate(d.getUTCDate() - 7 * i);
+      const a = d.toISOString().slice(0, 10), e = new Date(d); if (per === 'mes') e.setUTCMonth(e.getUTCMonth() + 1); else e.setUTCDate(e.getUTCDate() + 7);
+      const b = e.toISOString().slice(0, 10);
+      periodos.push({ nome: per === 'mes' ? new Date(a + 'T12:00:00Z').toLocaleDateString('pt-BR', { month: 'short', timeZone: 'UTC' }).replace('.', '') : a.slice(8, 10) + '/' + a.slice(5, 7),
+        valor: assins.filter(x => x.situacao === 'assinado' && dia(x.assinado_em) >= a && dia(x.assinado_em) < b).length, cor: i === 0 ? '#2A2622' : null });
+    }
+    const card2 = h('section', { class: 'pc-card' }, h('header', {}, h('h3', {}, per === 'mes' ? 'Contratos assinados · 6 meses' : 'Contratos assinados · 6 semanas')), grafCols(periodos, { alto: 150 }));
+    const ativos = new Set(procs.filter(p => p.status !== 'arquivado' && p.cliente_id).map(p => p.cliente_id)).size;
+    const num = (n, t, cls, f) => h(f ? 'button' : 'div', Object.assign({ class: 'pc-num ' + (cls || '') }, f ? { type: 'button', onclick: f } : {}), h('b', {}, String(n)), h('span', {}, t));
+    const card3 = h('section', { class: 'pc-card pc-nums' }, h('header', {}, h('h3', {}, 'Carteira')),
+      num(todos.length, 'clientes no total'),
+      num(ativos, 'com processo em andamento', 'ok'),
+      num(todos.filter(c => c.parc_atrasadas).length, 'com parcela atrasada', 'ruim', () => { location.hash = '#/financeiro?ver=atrasadas'; }),
+      num(todos.filter(c => c.situacao && c.situacao !== 'completo').length, 'cadastros a completar', 'atencao', () => ir({ conferir: '1' })));
+    return h('div', {},
+      h('header', { class: 'px-topo' }, h('div', { class: 'px-tit' }, h('h1', {}, 'Clientes'), h('span', {}, `${todos.length} clientes · ${procs.length} processos`)),
+        h('div', { class: 'px-topo-bts' }, h('a', { class: 'btn dourado', href: '#/cliente/novo' }, '+ Novo cliente'), h('a', { class: 'btn sec', href: '#/processo/novo' }, '+ Novo processo'), h('a', { class: 'btn sec', href: '#/organizar' }, '🔧 Organizar'))),
+      h('div', { class: 'pc-grade' }, card1, card2, card3));
+  }
+
   async function telaClientes(params) {
     carregando();
     const busca = params.get('busca') || '';
@@ -1348,7 +1390,8 @@
     const etapa = NOME_JORNADA[params.get('etapa')] ? params.get('etapa') : '';
     const limite = Math.max(100, parseInt(params.get('mais'), 10) || 100);
     lembrarVisao('clientes');
-    const [todos, procs, assins] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('documentos.assinaturas', {}).catch(() => [])]);
+    const [todos, procs, assinsTodas] = await Promise.all([api('clientes.listar', {}), api('processos.listar', {}).catch(() => []), api('documentos.assinaturas', { todas: true }).catch(() => [])]);
+    const assins = (assinsTodas || []).filter(a => a.situacao === 'aguardando');
     const aguarda = {}; (assins || []).forEach(a => { aguarda[a.cliente_id] = a; });
     const porCli = {};
     procs.forEach(p => { if (p.cliente_id) (porCli[p.cliente_id] = porCli[p.cliente_id] || []).push(p); });
@@ -1371,7 +1414,7 @@
     const areas = [...new Set(todos.map(c => c.area || 'Sem área'))].sort();
     const aConferir = todos.filter(c => c.situacao !== 'completo').length;
     const ir = (mud) => {
-      const qs = new URLSearchParams({ busca, area, grupo, etapa, conferir: soConferir ? '1' : '', mais: '', ...mud });
+      const qs = new URLSearchParams({ busca, area, grupo, etapa, conferir: soConferir ? '1' : '', per: params.get('per') || '', mais: '', ...mud });
       [...qs.keys()].forEach(k => { if (!qs.get(k)) qs.delete(k); });
       location.hash = '#/clientes' + (qs.toString() ? '?' + qs : '');
     };
@@ -1386,7 +1429,10 @@
       h('label', { class: 'filtro-sel' }, 'Área', h('select', { onchange: e => ir({ area: e.target.value }) },
         h('option', { value: '' }, `Todas (${todos.length})`), areas.map(a => h('option', { value: a, selected: area === a }, a)))),
       h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: soConferir, onchange: e => ir({ conferir: e.target.checked ? '1' : '' }) }), `Cadastros a completar (${aConferir})`),
-      (busca || area || soConferir || grupo || etapa) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null);
+      (busca || area || soConferir || grupo || etapa) ? h('button', { type: 'button', class: 'link escuro', onclick: () => { location.hash = '#/clientes'; } }, 'Limpar filtros') : null,
+      (() => { const f = h('form', { class: 'busca-peq', role: 'search' }, h('span', { 'aria-hidden': 'true' }, '⌕'),
+        h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar cliente', 'aria-label': 'Buscar cliente por nome, CPF, telefone ou nº do processo' }));
+        f.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: f.busca.value.trim() }); }); return f; })());
 
     const ORD = { contratado: 0, ajuizado: 1, andamento: 2, sentenca: 3, acordo: 3, homologacao: 3, recurso: 4, execucao: 5, extinto: 9 };
     const linha = c => {
@@ -1410,7 +1456,12 @@
     };
     const nAjuizar = procs.filter(p => p.fase === 'contratado' && p.status !== 'arquivado').length;
     mostrar(
-      ...cabCarteira('clientes', { busca, ir, filtros, nCli: todos.length, nProc: procs.length, nAjuizar }),
+      // 8.37 (pedido da usuária): no topo um painel com gráficos (fecharam × não fecharam, filtro Semana/Mês pequeno DENTRO do gráfico),
+      // ao lado os contratos por período e números da carteira; uma linha reta; os filtros numa linha com a busca PEQUENA; depois a lista
+      painelClientes(todos, procs, assinsTodas || [], params, ir),
+      h('hr', { class: 'px-linha' }),
+      faixaAssinaturas(),
+      filtros,
       grupo === 'assinatura' ? blocoAssinaturas((assins || []).filter(a => base.some(c => c.id === a.cliente_id)), '✍ Aguardando assinatura — marque quando o cliente assinar') : null,
       h('p', { class: 'peq contagem-lista' }, lista.length > limite ? `Mostrando ${limite} de ${lista.length}. Use a busca para achar mais rápido.` : `${lista.length} cliente${lista.length === 1 ? '' : 's'}${busca ? ' para "' + busca + '"' : ''}`),
       lista.length ? h('div', { class: 'cli-tab-caixa' }, h('table', { class: 'cli-tab' },
@@ -2437,14 +2488,10 @@
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar processo: número, cliente, parte contrária ou vara', 'aria-label': 'Buscar processos' }),
       h('button', { type: 'submit', class: 'btn mini' }, 'Buscar'));
     formBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: formBusca.busca.value.trim() }); });
-    const maxArea = Math.max(1, ...areas.map(a => porArea[a]));
-    const graficoAreas = h('div', { class: 'px-areas', role: 'group', 'aria-label': 'Processos por área' },
-      areas.map((a, i) => { const el = h('button', { type: 'button', class: 'px-area' + (area === a ? ' ativo' : ''), 'aria-pressed': String(area === a), onclick: () => ir({ area: area === a ? '' : a }) },
-        h('span', { class: 'px-area-n' }, String(porArea[a])), h('span', { class: 'px-area-nome' }, a),
-        h('span', { class: 'px-area-trilho' }, (() => { const f = h('i'); f.style.setProperty('width', Math.max(4, porArea[a] * 100 / maxArea) + '%'); f.style.setProperty('background', CORES_GRAF[i % CORES_GRAF.length]); return f; })()));
-        return el; }));
+    const graficoAreas = h('div', { class: 'px-areas-g pc-escuro' }, h('div', { class: 'px-g-tit' }, h('h3', {}, 'Processos por área'), area ? h('button', { type: 'button', class: 'link', onclick: () => ir({ area: '' }) }, 'ver todas') : null),
+      grafCols(areas.map((a, i) => ({ nome: a, valor: porArea[a], cor: CORES_GRAF[i % CORES_GRAF.length], ativo: area === a, ir: () => ir({ area: area === a ? '' : a }) })), { alto: 140 }));
     const totFases = Object.keys(FASES).reduce((t, f) => t + (porFaseArea[f] || 0), 0) || 1;
-    const etapas = h('div', { class: 'px-etapas' },
+    const etapas = h('div', { class: 'px-etapas' }, h('h3', {}, 'Etapas'),
       h('div', { class: 'px-pipe', 'aria-hidden': 'true' }, Object.keys(FASES).filter(f => porFaseArea[f]).map(f => { const seg = h('i', { title: `${FASES[f]}: ${porFaseArea[f]}` }); seg.style.setProperty('flex', String(porFaseArea[f] / totFases)); seg.style.setProperty('background', CORES_FASE[f] || '#9aa0aa'); return seg; })),
       h('div', { class: 'px-fases', role: 'group', 'aria-label': 'Etapas' },
         h('button', { type: 'button', class: 'px-fase' + (!fase ? ' ativo' : ''), onclick: () => ir({ fase: '' }) }, 'Todas', h('b', {}, String(todos.filter(p => !area || nomeArea(p) === area).length))),
@@ -2472,8 +2519,7 @@
         h('a', { class: 'btn dourado', href: '#/processo/novo' }, '+ Novo processo')),
       h('hr', { class: 'px-linha' }),
       faixaAssinaturas(),
-      graficoAreas,
-      etapas,
+      h('div', { class: 'px-graficos' }, graficoAreas, etapas),
       h('div', { class: 'px-corpo' },
         h('div', { class: 'px-main' },
           h('p', { class: 'peq contagem-lista' }, `${lista.length} processo${lista.length === 1 ? '' : 's'}${area ? ' em ' + area : ''}${fase ? ' · ' + FASES[fase] : ''}${trib ? ' · ' + trib : ''}${busca ? ' · busca "' + busca + '"' : ''}`),
@@ -4393,8 +4439,8 @@
         { nome: 'A receber', valor: falta, cor: '#C9A46A', ir: () => ir({ ver: 'mes' }) },
         { nome: 'Em atraso', valor: atr, cor: '#B42318', ir: () => ir({ ver: 'atrasadas' }) }], { dinheiro: true, rotulo: 'no mês', centro: pct + '%', titulo: 'Situação do mês', vazio: 'Nada previsto no mês.' }));
       const faixasCard = h('div', { class: 'cbx-card' }, h('h3', {}, 'Atraso por tempo'),
-        (r.faixas || []).some(f => f.valor) ? grafBarras((r.faixas || []).map(f => ({ nome: f.nome, valor: +f.valor || 0, extra: `${f.qtd} parcela(s)` })), { dinheiro: true }) : h('p', { class: 'peq' }, 'Ninguém atrasado. 🎉'));
-      const meses = h('div', { class: 'cbx-card cbx-largo' }, h('h3', {}, 'Recebido nos últimos 6 meses'), h('p', { class: 'peq' }, 'Carregando…'));
+        (r.faixas || []).some(f => f.valor) ? grafCols((r.faixas || []).map((f, i) => ({ nome: f.nome, valor: +f.valor || 0, extra: `${f.qtd} parcela(s)`, cor: ['#D9A24A', '#C4652F', '#8F1D14'][i] })), { dinheiro: true, alto: 150 }) : h('p', { class: 'peq' }, 'Ninguém atrasado. 🎉'));
+      const meses = h('div', { class: 'cbx-card cbx-largo pc-escuro' }, h('h3', {}, 'Recebido nos últimos 6 meses'), h('p', { class: 'peq' }, 'Carregando…'));
       api('fin.painel', {}).then(fp => {
         const fl = ((fp && fp.fluxo) || []).filter(x => x.mes <= hoje.slice(0, 7)).slice(-6);
         const max = Math.max(1, ...fl.map(x => +x.entradas || 0));
@@ -4935,6 +4981,22 @@
       lista.length ? h('ul', { class: 'rosca-leg' }, lista.map(x => h('li', { class: x.ir ? 'clicavel' : '', onclick: x.ir || null, tabindex: x.ir ? 0 : null, onkeydown: x.ir ? (e => { if (e.key === 'Enter') x.ir(); }) : null },
         (() => { const i = h('i', {}); i.style.background = x._cor; return i; })(), h('span', { class: 'rosca-nome' }, x.nome),
         h('b', {}, opc.dinheiro ? reais(x.valor) : String(x.valor)), h('small', {}, total ? Math.round(x.valor * 100 / total) + '%' : '')))) : h('p', { class: 'peq' }, opc.vazio || 'Sem dados ainda.'));
+  }
+
+  /** 8.37 (pedido da usuária: "use também gráfico de colunas"): colunas em HTML (sem biblioteca; cor pelo CSSOM, a CSP bloqueia style="…").
+      itens = [{ nome, valor, cor?, ir?, extra? }]; opc = { dinheiro, alto (px) }. */
+  function grafCols(itens, opc) {
+    opc = opc || {};
+    const max = Math.max(1, ...itens.map(x => +x.valor || 0));
+    const fmt = v => opc.dinheiro ? reais(v).replace(/,\d\d$/, '') : String(v);
+    const el = h('div', { class: 'gcol' + (itens.length > 8 ? ' muitas' : '') }, itens.map((x, i) => {
+      const c = h(x.ir ? 'button' : 'div', Object.assign({ class: 'gcol-c' + (x.ativo ? ' ativo' : ''), title: `${x.nome}: ${opc.dinheiro ? reais(+x.valor || 0) : x.valor}${x.extra ? ' · ' + x.extra : ''}` }, x.ir ? { type: 'button', onclick: x.ir } : {}),
+        h('span', { class: 'gcol-v' }, fmt(+x.valor || 0)), h('span', { class: 'gcol-b' }, h('i')), h('span', { class: 'gcol-n' }, x.nome));
+      const b = c.querySelector('i'); b.style.setProperty('height', Math.max(3, (+x.valor || 0) * 100 / max) + '%');
+      if (x.cor) b.style.setProperty('background', x.cor);
+      return c; }));
+    if (opc.alto) el.style.setProperty('height', opc.alto + 'px');
+    return el;
   }
 
   function grafBarras(itens, opc) {
@@ -5537,7 +5599,7 @@
           const ps = (rs.pessoas || []).filter(x => x.total).slice(0, 10);
           const cat = id => ((rs.categorias || []).find(c => c.id === id) || {}).nome || id;
           eq.replaceChildren(h('h2', {}, 'Desempenho de cada pessoa'), h('p', { class: 'peq' }, 'Mês atual · o que cada um registrou no painel.'),
-            ps.length ? grafBarras(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${v} ${cat(k)}`.toLowerCase()).join(' · ') })))
+            ps.length ? grafCols(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${v} ${cat(k)}`.toLowerCase()).join(' · ') })))
               : h('p', { class: 'peq' }, 'Ninguém registrou trabalho neste mês ainda.'),
             h('a', { class: 'md-mais', href: '#/relatorios?ver=equipe' }, 'ver por semana e por dia →'));
         }).catch(() => eq.remove());
@@ -6039,7 +6101,7 @@ function main() {
   /* 8.12: telas de gestão (gestao.js). Sem o arquivo (cache velho), pede para atualizar. */
   function G() { if (!window.GESTAO) throw new Error('Atualize a página (F5) para abrir esta tela.'); return window.GESTAO; }
   /* Ferramentas do painel para o módulo do Edifício Future (future.js) e as telas de gestão (gestao.js) */
-  window.PAINEL_KIT = { ditado, h, s, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao, telefoneWhats, grafRosca, grafBarras, comSetas,
+  window.PAINEL_KIT = { ditado, h, s, api, apiFresco, mostrar, avisar, carregando, campo, aoEnviar, botao, tabela, reais, dataBR, hojeISO, secao, telefoneWhats, grafRosca, grafBarras, grafCols, comSetas,
     nomeProprioJS, primeiroNome, icone, get sessao() { return sessao; }, rota: () => rota() };
 
   window.addEventListener('hashchange', rota);

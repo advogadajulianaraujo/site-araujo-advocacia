@@ -217,6 +217,11 @@
         numero('verde', String(m.ganhosMes), 'Fechados no mês', 'contratos assinados'),
         numero(m.conversao !== null && m.conversao < 30 ? 'vermelho' : 'verde', m.conversao === null ? '—' : m.conversao + '%', 'Taxa de fechamento', 'últimos 180 dias'),
         numero(m.respostaHoras !== null && m.respostaHoras > 2 ? 'vermelho' : 'azul', m.respostaHoras === null ? '—' : (m.respostaHoras < 1 ? Math.round(m.respostaHoras * 60) + ' min' : m.respostaHoras + ' h'), 'Tempo de resposta', 'mediana até o 1º contato')),
+      // 8.37 (pedido da usuária: "gráfico em barra no CRM, como no processo e nos clientes"): onde estão os contatos, por etapa
+      (() => { const conta = {}; (r.leads || []).forEach(l => { conta[l.etapa] = (conta[l.etapa] || 0) + 1; });
+        const G = K().grafCols; if (!G) return null;
+        return h('section', { class: 'pc-card pc-escuro crm-grafico' }, h('header', {}, h('h3', {}, 'Contatos por etapa')),
+          G((r.etapas || []).map(([id, nome]) => ({ nome, valor: conta[id] || 0, cor: id === 'ganho' ? '#5FA37A' : id === 'perdido' ? '#8C8274' : (COR_ETAPA[id] || '#C9A46A') })), { alto: 140 })); })(),
       sinal,
       h('section', { class: 'caixa crm-corpo' },
         h('div', { class: 'crm-barra' }, h('div', { class: 'visoes', role: 'tablist' }, aba('funil', 'Funil'), aba('lista', 'Lista'), aba('metricas', 'Números e motivos')), visao !== 'metricas' ? fBusca : null),

@@ -2601,3 +2601,77 @@ body[data-tela="prazos"] .bloco-prazos .mini-acoes{flex-wrap:nowrap;max-width:no
 .crm-alerta{padding:8px 12px!important;font-size:13px}
 .crm-col header{font-size:13px}
 @media (max-width:980px){.px-corpo{grid-template-columns:1fr}.px-lado{position:static}}@media (max-width:600px){.px-areas{grid-template-columns:1fr 1fr}}
+/* ===== 8.37 gráfico de colunas (grafCols) ===== */
+.gcol{display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:4px}
+.gcol-c{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;background:none;border:0;padding:0;font:inherit;color:inherit}
+button.gcol-c{cursor:pointer}
+.gcol-b{flex:1;width:100%;max-width:46px;display:flex;align-items:flex-end;background:#F4F1EB;border-radius:7px 7px 0 0;overflow:hidden}
+.gcol-b i{display:block;width:100%;background:linear-gradient(180deg,#D8BC8A,#A9824A);border-radius:7px 7px 0 0;transition:filter .12s}
+button.gcol-c:hover .gcol-b i{filter:brightness(1.12)}
+.gcol-c.ativo .gcol-b{box-shadow:0 0 0 2px var(--preto)}
+.gcol-v{font-size:11px;color:var(--tinta);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gcol-n{font-size:11px;color:var(--mudo);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.gcol.muitas{gap:5px}
+.px-graficos{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.6fr);gap:12px;margin-bottom:14px;align-items:stretch}
+.px-areas-g{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:10px 14px}
+.px-g-tit{display:flex;justify-content:space-between;align-items:baseline}
+.px-g-tit h3,.px-etapas h3{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mudo);margin:0 0 6px;font-weight:600}
+.px-graficos .px-etapas{margin-bottom:0}
+@media (max-width:980px){.px-graficos{grid-template-columns:1fr}}
+/* ===== 8.37 Clientes: painel de gráficos no topo ===== */
+body[data-tela="clientes"] .barra-topo{display:none}body[data-tela="clientes"] .app{padding-top:18px}
+.px-topo-bts{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.pc-grade{display:grid;grid-template-columns:1.3fr 1.3fr 1fr;gap:12px;margin-top:14px}
+.pc-card{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;min-width:0}
+.pc-card>header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.pc-card h3{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mudo);margin:0;font-weight:600}
+.pc-escuro{background:linear-gradient(135deg,#1C1916,#2C2621);border-color:#2C2621;color:#EDE4D3}
+.pc-escuro h3{color:#C9A46A}
+.pc-escuro .gcol-b{background:rgba(255,255,255,.07)}
+.pc-escuro .gcol-v{color:#fff}.pc-escuro .gcol-n{color:#B9AF9F}
+.pc-rodape{margin:8px 0 0;font-size:12px;color:var(--mudo)}.pc-escuro .pc-rodape{color:#B9AF9F}
+.seg-mini{display:inline-flex;background:rgba(0,0,0,.06);border-radius:7px;padding:2px}
+.pc-escuro .seg-mini{background:rgba(255,255,255,.1)}
+.seg-mini button{border:0;background:none;font:600 11.5px/1 var(--sans);padding:5px 9px;border-radius:5px;color:inherit;cursor:pointer;opacity:.75}
+.seg-mini button.on{background:#C9A46A;color:#171513;opacity:1}
+.pc-nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.pc-nums>header{grid-column:1/-1}
+.pc-num{display:flex;flex-direction:column;gap:2px;text-align:left;background:#F8F6F2;border:0;border-radius:9px;padding:9px 10px;font:inherit;color:inherit}
+button.pc-num{cursor:pointer}button.pc-num:hover{background:#F2ECE2}
+.pc-num b{font-size:20px;color:var(--tinta);font-variant-numeric:tabular-nums}
+.pc-num span{font-size:11.5px;color:var(--mudo)}
+.pc-num.ok b{color:#2F6B47}.pc-num.ruim b{color:var(--vermelho)}.pc-num.atencao b{color:#8A6100}
+.busca-peq{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--linha);border-radius:8px;padding:0 8px;height:32px;margin-left:auto;width:220px;max-width:100%}
+.busca-peq:focus-within{border-color:var(--acento);box-shadow:0 0 0 3px var(--acento-f)}
+.busca-peq input{border:0;outline:0;background:transparent;font-size:13px;width:100%;padding:0}
+.busca-peq span{color:var(--mudo)}
+body[data-tela="clientes"] .cli-filtros{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:8px 12px;margin-bottom:10px}
+@media (max-width:1100px){.pc-grade{grid-template-columns:1fr 1fr}.pc-nums{grid-column:1/-1;grid-template-columns:repeat(4,1fr)}}
+@media (max-width:700px){.pc-grade{grid-template-columns:1fr}.pc-nums{grid-template-columns:1fr 1fr}.busca-peq{width:100%;margin-left:0}}
+/* ===== 8.37 "mais sombrio" (pedido da usuária: "está muito claro; use mais preto") ===== */
+:root{--marfim:#ECE8E1;--linha:#DDD6CA}
+body{background:var(--marfim)}
+.barra-topo{background:rgba(236,232,225,.95)}
+.tabela th,.cli-tab th,.agm-tab th{background:#24201C!important;color:#E9DFCC!important;border-bottom-color:#24201C!important}
+.tabela th .ordenar,.tabela th button{color:#E9DFCC}
+.px-linha{border-top-color:#BFB5A6}
+.px-areas-g.pc-escuro .px-g-tit h3{color:#C9A46A}
+.px-areas-g.pc-escuro .link{color:#E9DFCC}
+.int-barra{background:#24201C;border-color:#24201C;color:#E9DFCC}
+.int-barra .int-fila{color:#CFC5B5}.int-barra .int-fila:hover{background:#332D27;color:#fff}
+.int-barra .int-fila.ativo{background:#C9A46A;color:#171513}.int-barra .int-fila.ativo .cb-n{background:rgba(0,0,0,.15);color:#171513}
+.int-barra .int-filas{border-bottom-color:#3A332C}
+.int-barra .filtro-sel,.int-barra .marcar{color:#CFC5B5}
+.int-barra select{background:#2E2924;color:#F1EBE0;border-color:#4A4239}
+.int-barra .chip-filtro{background:#2E2924;border-color:#4A4239;color:#E9DFCC}
+.int-barra .chip-filtro.ativo{background:#C9A46A;border-color:#C9A46A;color:#171513}
+.cbx-kpi.ok{background:linear-gradient(135deg,#1C1916,#2C2621);border-color:#2C2621;color:#EDE4D3}
+.cbx-kpi.ok small,.cbx-kpi.ok span{color:#B9AF9F}.cbx-kpi.ok b{color:#9FD3B0}
+.cbx-kpi.ok .cbx-barra{background:rgba(255,255,255,.1)}
+body[data-tela="clientes"] .cli-filtros select{max-width:190px}
+.crm-grafico{margin:0 0 12px}
+.cbx-card.pc-escuro h3{color:#C9A46A}
+.cbx-card.pc-escuro .cbx-col-b{background:rgba(255,255,255,.07)}
+.cbx-card.pc-escuro .cbx-col-v,.cbx-card.pc-escuro .cbx-col-m{color:#E9DFCC}
+.cbx-card.pc-escuro .cbx-col.atual .cbx-col-b i{background:linear-gradient(180deg,#F1E3C6,#C9A46A)}
+.cbx-card.pc-escuro .cbx-rodape{color:#B9AF9F}

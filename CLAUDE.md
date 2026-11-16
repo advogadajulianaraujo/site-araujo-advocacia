@@ -1287,3 +1287,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - "Atendimento" virou "CRM" (sub-aba "Funil"); topo do CRM mais curto, instruções escondidas.
 - Relatórios: "Desempenho de cada pessoa" (mês, `relatorio.semana` per=mes) e "Funil do CRM" (etapas, novos e fechados no mês, % de fechamento).
 - Paleta dos gráficos (`CORES_GRAF`, `.c-verde/.c-azul/...`) no grafite + dourado.
+
+## 8.35.3 Velocidade com versões diferentes + Clientes com gráficos + visual mais escuro (só painel) — 16/11/2026
+
+- CAUSA da lentidão de 15–16/11: o painel publicado (motor.js 8.35) ficou à frente do Code.gs instalado (8.34; a atualização automática falhava
+  por falta da API do Apps Script). Com versões diferentes o banco era recusado e CADA tela ia duas vezes ao Google. Correção em banco.js:
+  `carregarMotor(versão)` carrega `/painel/motor-<versão do servidor>.js` e o banco continua ligado; a versão do servidor fica em localStorage
+  `painel_versao_servidor` (o motor certo já vem antes da entrada); sem o arquivo, `desligarPor(10 min)` (uma ida ao Google por tela, sem
+  perguntar o banco de novo). REGRA: ao publicar Code.gs novo, GUARDE o motor anterior como painel/motor-<versão anterior>.js
+  (`git show <commit>:painel/motor.js`) — é o que mantém o painel rápido enquanto o Google não instala a versão nova.
+- Clientes (`painelClientes`): topo com 3 cartões — "Fechamentos da semana/mês" (escuro, filtro Semana|Mês pequeno DENTRO do cartão, `?per=mes`;
+  colunas Fecharam × Não fecharam × Aguardando, pela aba Assinaturas `documentos.assinaturas` todas), "Contratos assinados · 6 semanas/meses"
+  (colunas) e "Carteira" (total, com processo, parcela atrasada, cadastros a completar); linha reta; filtros numa linha com a busca PEQUENA
+  (`busca-peq`); a barra de busca geral some em Clientes e Processos.
+- Gráfico de colunas `grafCols` (HTML, cor pelo CSSOM; exportado no PAINEL_KIT): Processos por área (cartão escuro), Início (sua semana,
+  equipe), Cobranças (atraso por tempo), Relatórios (desempenho), CRM ("Contatos por etapa", cartão escuro).
+- Mais escuro (pedido da usuária: "muito claro"): fundo #ECE8E1, cabeçalho das tabelas grafite, barra de filtros de Intimações grafite,
+  cartão "Recebido no mês" e "Recebido nos últimos 6 meses" escuros (`pc-escuro`).
