@@ -1331,4 +1331,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   sempre que o Início ainda tem "Carregando…" quando o resto chega. TESTE NO PAINEL REAL: navegador com timezoneId America/Sao_Paulo (fora
   do fuso de Brasília o banco desliga de propósito). A função do Supabase (Etapa C/D) ficou DESLIGADA (painel_estado edge/login_edge = nao)
   até ser testada de novo; leituras = motor do navegador, gravações = Apps Script.
+- 8.35.8 Calculadora de rescisão (site e painel, pedido da usuária): "A empresa depositou o FGTS?" Sim / Não (nenhum mês) / Só em parte (meses) /
+  Não sei. Não depositado = 8% × salário × meses × (1 + 1/12 do 13º + 1/36 do 1/3 de férias), no máximo os últimos 60 meses (STF, Tema 608);
+  o saldo estimado da conta conta só os meses depositados; bloco próprio "FGTS não pago — o que a empresa deve (separado da multa)":
+  depósitos que faltaram, multa de 40%/20% sobre eles e o total.
 
