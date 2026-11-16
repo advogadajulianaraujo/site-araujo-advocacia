@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.36.3';
+var VERSAO = '8.36.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -9293,11 +9293,18 @@ function aquecerGatilho() {
   var t0 = Date.now();
   try { autoAtualizar_(false); } catch (eU) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
-  try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   // 8.36.3: com o motor do Supabase ligado a memória do Google não é usada (comMemoria_ só roda a conta): aquecer era trabalho jogado fora
   // — milhares de leituras de tabelas inteiras por dia, que deixavam o banco lento e gastavam o tempo de robô do Google.
   if (!sbEdge_()) { try { aquecerMemoria_(); } catch (e) { /* segue */ } }
-  try { aquecerAgenda_(); } catch (e) { /* segue */ }
+  // 8.36.3: o Google para TODOS os robôs depois de 90 min/dia (16/11 chegou a 110 min). A cópia da agenda e o estado do robô agora são
+  // refeitos de 30 em 30 min aqui (o robô de hora em hora também faz); a agenda sai antes se o painel mudou algo (marca apagada).
+  var P = PropertiesService.getScriptProperties(), ult = +(P.getProperty('AQUECER_PESADO_EM') || 0);
+  var agendaMudou = !config_('AGENDA_COPIA');
+  if (agendaMudou || Date.now() - ult >= 29 * 60000) { try { aquecerAgenda_(); } catch (e) { /* segue */ } }
+  if (Date.now() - ult >= 29 * 60000) {
+    P.setProperty('AQUECER_PESADO_EM', String(Date.now()));
+    try { roboExtrasAtualizar_(); } catch (eX2) { /* segue */ }
+  }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
   contarTempoRobo_(Date.now() - t0);
 }

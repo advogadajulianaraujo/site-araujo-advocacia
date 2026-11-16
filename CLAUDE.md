@@ -1412,3 +1412,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   FGTS não depositado não conta mais duas vezes o mês da saída e o 13º do ano da saída (site e painel).
 - Token de gestão do Supabase: NÃO precisa trocar mais (só trocamos porque ele apareceu no chat). Fica no formulário seguro desta nuvem e em
   Gerenciar acessos › Banco novo (SUPABASE_GESTAO).
+- 8.36.4: TEMPO DE ROBÔ — em 16/11 os gatilhos usaram 110 min (o Google para TODOS os robôs aos 90 min/dia; o robô de hora em hora parou às
+  14h12). `aquecerGatilho` (10 em 10 min) ficou leve: `aquecerAgenda_` e `roboExtrasAtualizar_` só de 30 em 30 min (Properties
+  AQUECER_PESADO_EM) — a agenda sai antes se o painel mudou algo (Config AGENDA_COPIA vazia); sem aquecerMemoria_ com o motor ligado.
+  Depois da correção, pg_stat_statements: ~2 s de trabalho do banco em 10 min (antes: horas).

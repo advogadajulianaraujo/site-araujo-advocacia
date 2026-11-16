@@ -3507,7 +3507,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.36.3';
+  const VERSAO_PAINEL = '8.36.4';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
