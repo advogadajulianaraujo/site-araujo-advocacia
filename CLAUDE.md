@@ -1321,4 +1321,14 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pendência com explicação curta e um botão: Ler agora, Ler o DJEN agora, Ver os N prazos → #/prazos?fila=conferir, Passo a passo para
   publicar a Nova versão no Google, "Já fiz: tentar de novo" → `sistema.atualizar`) e cartões por robô (Gmail, DJEN, Andamentos, Agenda,
   IA, tempo de robô, programa do Google). Aviso da API e da versão viram UM item; pendências do sistema só para a administração.
+- 8.35.8 TRAVAMENTO de 16/11 (achado no painel REAL, entrando como Luis num navegador de teste): (1) a 1ª carga do banco levou 9,5 s e o
+  limite era 9 s → 10 telas esperando a mesma carga contavam "3 falhas" e o banco era DESLIGADO por 5 min → tudo ia ao Google (10–80 s por
+  pedido). Agora (banco.js): demorar NÃO é falha (`demorou`), várias telas contam UMA falha (3 s), TEMPO_PRIMEIRA 30 s / TEMPO_DEPOIS 8 s;
+  a carga vai em PARTES em paralelo (tabela grande sozinha, pequenas de 4 em 4; "statement timeout" do Supabase → pede de novo uma vez);
+  tabela lida há < 20 s não é pedida de novo (NO_LOTE_MS; antes 1,5 s) e qualquer gravação chama `PAINEL_BANCO.envelhecer()`.
+  (2) o Início nunca se redesenhava: um <details> criado já aberto dispara "toggle" com isTrusted e ligava `sujo` → "Seu dia" ficava em
+  "Carregando…" para sempre. Agora só conta como mexer o toggle até 1,5 s depois de clique/tecla (`ultimoGesto`), e o redesenho acontece
+  sempre que o Início ainda tem "Carregando…" quando o resto chega. TESTE NO PAINEL REAL: navegador com timezoneId America/Sao_Paulo (fora
+  do fuso de Brasília o banco desliga de propósito). A função do Supabase (Etapa C/D) ficou DESLIGADA (painel_estado edge/login_edge = nao)
+  até ser testada de novo; leituras = motor do navegador, gravações = Apps Script.
 

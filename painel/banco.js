@@ -12,7 +12,7 @@
   let S = null;            // sessão do banco: { url, chave, token, expira, u, permissoes, asaas, versao, tarefasFiltradasOk }
   let pedindo = null;      // pedido da sessão em andamento
   let chamarApps = null;   // (acao, dados) → Promise, do painel.js
-  let falhasSeguidas = 0, desligadoAte = 0, motivoOff = '';
+  let falhasSeguidas = 0, desligadoAte = 0, motivoOff = '', ultimaFalha = 0;
   const rotaFora = new Map();  // rota → motivo (esta aba vai sempre ao Apps Script para ela)
   /* 8.33 velocidade: o que cada tela precisa do Google fica lembrado NESTE computador por 12 h (por perfil e versão), para não
      tentar o caminho que não dá a cada F5 ou aba nova (antes: navegador → função do Supabase → Google, um depois do outro).
@@ -27,8 +27,8 @@
   const cache = new Map();     // tabela → { linhas: Map(chave → linha), desde, pronto, n, em }
   const emVoo = new Map();     // sincronizações em andamento (várias telas pedem a mesma tabela juntas)
   const medidas = [];          // { acao, fonte: 'banco'|'google', ms, quando, obs }
-  const NO_LOTE_MS = 1500;     // tabela lida há menos disso não é pedida de novo
-  const TEMPO_PRIMEIRA = 9000, TEMPO_DEPOIS = 4500; // passou disso → planilha
+  const NO_LOTE_MS = 20000;    // 8.35.8: tabela lida há menos disso não é pedida de novo (antes 1,5 s: cada tela relia tudo). Gravou → envelhecer()
+  const TEMPO_PRIMEIRA = 30000, TEMPO_DEPOIS = 8000; // passou disso → planilha (8.35.8: a 1ª carga real leva ~10 s; o Google leva 10–80 s)
 
   const guardar = (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* privado */ } };
   const lerS = k => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch (e) { return null; } };
@@ -165,11 +165,20 @@
       else if (!c || !c.pronto || agora - c.em > NO_LOTE_MS) pedir.push(t);
     });
     if (pedir.length) {
-      const p = (async () => {
-        const j = await rpc(pedir.map(t => { const c = cache.get(t); return { t, desde: c && c.pronto ? c.desde : null }; }), limiteMs);
+      // 8.35.8: em PARTES. Uma consulta só com todas as tabelas (milhares de linhas) passava do tempo-limite do banco ("canceling statement
+      // due to statement timeout") e tudo caía no Google. Agora: tabela grande sozinha, as pequenas de 4 em 4, todas em paralelo;
+      // a parte que estourar o tempo é pedida de novo uma vez.
+      const GRANDES = new Set(['intimacoes', 'log', 'clientes', 'processos', 'prazos', 'tarefas', 'honorarios', 'parcelas', 'eventos', 'leads']);
+      const grupos = [], miudas = [];
+      pedir.forEach(t => { const c = cache.get(t); if (GRANDES.has(t) && !(c && c.pronto)) grupos.push([t]); else miudas.push(t); });
+      for (let k = 0; k < miudas.length; k += 4) grupos.push(miudas.slice(k, k + 4));
+      const umGrupo = async (g, tentativa) => {
+        let j;
+        try { j = await rpc(g.map(t => { const c = cache.get(t); return { t, desde: c && c.pronto ? c.desde : null }; }), limiteMs); }
+        catch (e) { if (!tentativa && /statement timeout|demor|abort/i.test(String(e && e.message || e))) return umGrupo(g, 1); throw e; }
         if (j.pendente) throw Object.assign(new Error('alguma mudança ainda está chegando ao banco'), { pendente: true });
         const servidor = Date.parse(j.agora), recheck = [];
-        pedir.forEach(t => {
+        g.forEach(t => {
           const x = j.tabelas[t];
           if (!x || x.negado) { cache.set(t, { negada: true, pronto: false }); return; }
           let c = cache.get(t);
@@ -177,7 +186,7 @@
           x.linhas.forEach(o => { Object.keys(o).forEach(k => c.cols.add(k)); });
           x.linhas.forEach(o => c.linhas.set(chaveDaLinha(c, o), o));
           c.desde = new Date(servidor - 120000).toISOString(); // 2 min de folga: nenhuma gravação em andamento fica para trás
-          c.em = Date.now(); c.n = x.n; c.pronto = true; c.lista = null;
+          c.em = Date.now(); c.n = x.n; c.pronto = true; if (x.linhas.length || c.lista === undefined) c.lista = null; // nada novo = mantém a lista já ordenada
           cache.set(t, c);
           if (c.linhas.size !== x.n) recheck.push(t);
         });
@@ -191,9 +200,10 @@
             c.lista = null;
           });
         }
-      })();
-      pedir.forEach(t => emVoo.set(t, p));
-      try { await p; } finally { pedir.forEach(t => { if (emVoo.get(t) === p) emVoo.delete(t); }); }
+      };
+      const ps = grupos.map(g => { const p = umGrupo(g, 0); g.forEach(t => emVoo.set(t, p)); return [g, p]; });
+      try { await Promise.all(ps.map(x => x[1])); }
+      finally { ps.forEach(([g, p]) => g.forEach(t => { if (emVoo.get(t) === p) emVoo.delete(t); })); }
     }
     if (esperar.length) await Promise.all(esperar);
   }
@@ -339,11 +349,14 @@
       let timer;
       try {
         const lendo = ler(acao, dados); lendo.catch(() => {}); // se a planilha responder antes, o erro tardio do banco não aparece no console
-        const r = await Promise.race([lendo, new Promise((_, nao) => { timer = setTimeout(() => nao(new Error('o banco demorou mais de ' + limite / 1000 + ' s')), limite); })]);
+        const r = await Promise.race([lendo, new Promise((_, nao) => { timer = setTimeout(() => nao(Object.assign(new Error('o banco demorou mais de ' + limite / 1000 + ' s'), { demorou: true })), limite); })]);
         falhasSeguidas = 0; return r;
       }
       catch (e) {
-        if (!(e && e.motor) && !/banco desligado/.test(e.message || '')) {
+        // 8.35.8: DEMORAR não é falhar (a carga continua por trás e serve a próxima tela); várias telas esperando a mesma carga contam UMA vez
+        const agoraF = Date.now();
+        if (!(e && e.motor) && !(e && e.demorou) && !/banco desligado/.test(e.message || '') && agoraF - ultimaFalha > 3000) {
+          ultimaFalha = agoraF;
           falhasSeguidas++;
           if (e && e.pendente) desligadoAte = Date.now() + 20000; // espera a mudança chegar
           else if (falhasSeguidas >= 3) { desligadoAte = Date.now() + 5 * 60000; motivoOff = 'o banco falhou 3 vezes seguidas (' + (e.message || e) + '); volta a tentar em 5 min'; falhasSeguidas = 0; }
@@ -383,5 +396,7 @@
       tabelas: [...cache.entries()].filter(([, c]) => c.pronto).map(([t, c]) => [t, c.linhas.size]), medidas: medidas.slice(), edge: edgeLigada(), edgeFora: [...edgeFora] };
   }
 
-  window.PAINEL_BANCO = { configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
+  /** Depois de qualquer gravação: a próxima leitura busca o que mudou (incremental, rápido). */
+  function envelhecer() { cache.forEach(c => { if (c) c.em = 0; }); }
+  window.PAINEL_BANCO = { envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
 })();

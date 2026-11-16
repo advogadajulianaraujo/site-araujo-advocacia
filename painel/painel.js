@@ -70,7 +70,7 @@
     Object.keys(dados || {}).sort().forEach(k => { const v = dados[k]; if (v !== '' && v !== null && v !== undefined && v !== false) d[k] = v; });
     return acao + '|' + JSON.stringify(d);
   }
-  function esquecerTudo() { memoria.clear(); geracao++; salvarMemoria(); }
+  function esquecerTudo() { try { if (window.PAINEL_BANCO && window.PAINEL_BANCO.envelhecer) window.PAINEL_BANCO.envelhecer(); } catch (e) { /* ok */ } memoria.clear(); geracao++; salvarMemoria(); }
   /* A memória sobrevive ao F5 (só nesta aba; some ao sair ou fechar o navegador): as telas abrem na hora e são conferidas por trás. */
   let salvarTimer = null;
   function salvarMemoria() {
@@ -99,6 +99,7 @@
     advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
   };
   function esquecerDepois(acao) {
+    try { if (window.PAINEL_BANCO && window.PAINEL_BANCO.envelhecer) window.PAINEL_BANCO.envelhecer(); } catch (e) { /* ok */ }
     const lista = AFETA[acao.split('.')[0]];
     if (!lista) { esquecerTudo(); return; }
     geracao++;
@@ -183,7 +184,11 @@
   }
   app.addEventListener('input', () => { sujo = true; });
   // quem abriu uma parte da tela (ex.: "+ Nova tarefa") não perde o que abriu com o redesenho
-  app.addEventListener('toggle', ev => { if (ev.target.open && ev.target.tagName === 'DETAILS' && ev.isTrusted) sujo = true; }, true);
+  // 8.35.8: só conta como "mexendo" o abrir que veio de um clique/tecla de verdade (um <details> criado já aberto também dispara
+  // "toggle" com isTrusted, e isso travava o redesenho do Início para sempre — o "Seu dia" ficava em "Carregando…")
+  let ultimoGesto = 0;
+  ['pointerdown', 'keydown'].forEach(t => app.addEventListener(t, () => { ultimoGesto = Date.now(); }, true));
+  app.addEventListener('toggle', ev => { if (ev.target.open && ev.target.tagName === 'DETAILS' && ev.isTrusted && Date.now() - ultimoGesto < 1500) sujo = true; }, true);
 
   // acorda o programa do Google logo que a página abre: a primeira resposta de verdade vem bem mais rápida
   try { if (window.PAINEL_API_URL) setTimeout(() => fetch(window.PAINEL_API_URL, { method: 'GET', credentials: 'omit', cache: 'no-store' }).catch(() => {}), 50); } catch (e) { /* sem problema */ }
@@ -868,7 +873,12 @@
     const [r, ag, meu, aguarda, extras] = await Promise.all([api('resumo'), ate(api('agenda.listar', { inicio: hoje, fim: isoSoma(hoje, 14) }), null),
       ate(api('eu.painel'), null), sessao.usuario.pode.usuarios ? ate(api('trabalho.aguardando'), []) : Promise.resolve([]),
       secretaria || sessao.usuario.pode.usuarios ? ate(api('inicio.extras', { dia: hoje }), null) : Promise.resolve(null)]);
-    if (tardes.length) { const n0 = rotaN; Promise.all(tardes).then(() => { if (n0 === rotaN && !sujo && /^\/?(inicio)?(\?|$)/.test(location.hash.replace('#', ''))) rota(); }); }
+    // 8.35.8: redesenha quando o resto chegar SEMPRE que o Início ainda estiver na tela com algo "Carregando…" (antes desistia se qualquer
+    // outra coisa tivesse redesenhado a tela no meio, e o "Seu dia" ficava carregando para sempre)
+    if (tardes.length) Promise.allSettled(tardes).then(() => {
+      const app = document.querySelector('.app');
+      if (!sujo && /^\/?(inicio)?(\?|$)/.test(location.hash.replace('#', '')) && app && /Carregando/.test(app.innerText)) rota();
+    });
     const procsIni = [];
     const t = r.totais, pode = sessao.usuario.pode;
     const pz = Object.assign({ vencendo: 0, aDefinir: 0, aConferir: 0, vencidos: 0, proximos: [], atrasados: [] }, r.prazos);
@@ -1049,7 +1059,7 @@
           x.vence_em ? selo(x.vence_em, x.atrasada ? 'faixa-vencido' : x.vence_em === hoje ? 'faixa-hoje' : '') : h('div', { class: 'selo-data' }, h('b', {}, '—'), h('span', {}, 'sem data')),
           x.titulo, [x.tipo === 'prazo' ? 'prazo' : x.inicial ? 'petição inicial' : 'tarefa', x.cliente].filter(Boolean).join(' · '),
           botaoConferido(x.tipo === 'prazo' ? 'prazo' : 'tarefa', x.id, 'Quem fez?', null, '✓'))))
-          : vazio(meu ? 'Nada com você agora. 🎉' : 'Carregando…'),
+          : vazio(meu ? 'Nada com você agora. 🎉' : tardes.length ? 'Carregando…' : 'Não carregou agora: aperte F5.'),
         h('a', { class: 'md-mais', href: '#/tarefas?quem=eu' }, 'todas as minhas tarefas →'));
       const compromissos = deHoje.map(e => ({ hora: hora(e), tit: e.titulo, sub: [NOME_CURTO[e.agenda] || e.agenda, e.local].filter(Boolean).join(' · '), ir: () => { location.hash = '#/agenda?visao=dia'; } }))
         .concat(audHoje.filter(a => !deHoje.some(e => a.hora && hora(e) === a.hora)).map(a => ({ hora: a.hora || '', tit: `${NOME_A[a.tipo] || 'Audiência'} — ${a.cliente || 'cliente'}`, sub: a.numero || '', ir: () => { location.hash = '#/audiencias'; } })))
@@ -1064,7 +1074,7 @@
           h('div', { class: 'md-total' }, h('b', {}, String(meu.semana.total)), h('span', {}, meu.semana.total === 1 ? 'coisa feita' : 'coisas feitas'),
             meu.semana.posicao ? h('span', { class: 'tag mini-tag ok' }, `${meu.semana.posicao}º da equipe`) : null),
           cats.length ? grafCols(cats.map(c => ({ nome: c.nome, valor: meu.semana.grupos[c.id] })), { alto: 130 })
-            : vazio('Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.')) : vazio('Carregando…'));
+            : vazio('Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.')) : vazio(tardes.length ? 'Carregando…' : 'Não carregou agora: aperte F5.'));
       return h('section', { class: 'meu-dia' },
         h('header', {}, h('h2', {}, 'Seu dia'), h('span', { class: 'peq' }, [meu ? `${meu.abertas} com você` : '', meu && meu.atrasadas ? `${meu.atrasadas} atrasada(s)` : '', `${compromissos.length} compromisso(s) hoje`].filter(Boolean).join(' · '))),
         h('div', { class: 'md-cols' }, colFazer, colHoje, colSemana));
