@@ -8,12 +8,19 @@ import { criarMotor, VERSAO_MOTOR } from './motor.js';
 // nunca aqui: login/sessão e senhas (Apps Script), configuração do banco, rotas públicas e de outros caminhos
 const NUNCA = /^(login|logout|sessao|primeiroAcesso|situacao|lote|banco\.|usuarios\.|senha\.|ext\.|future\.|consulta\.|site\.|djen\.robo|whats\.webhook|marketing\.ads)$|^(banco|usuarios|senha|ext|future|consulta|site)\./;
 
-export function criarServidor({ rpc, base }) {
-  const M = criarMotor(base);
-  const aprendidas = new Map(); // rota → abas que ela usou (a próxima vez busca tudo numa ida só)
+export function criarServidor({ rpc, base, extras }) {
+  /* 8.37.5: mais de um motor. O motor.js é o da versão nova; extras = motores de outras versões (motor-anterior.js = a versão que o
+     GOOGLE está rodando, quando a atualização dele atrasa). O navegador manda a versão do motor que ele usa e a função roda o MESMO;
+     sem esse motor aqui → { voltar } como antes. Cada motor só é montado na primeira vez que alguém precisa dele. */
+  const fabricas = new Map([[VERSAO_MOTOR, criarMotor]]);
+  (extras || []).forEach(x => { if (x && x.VERSAO_MOTOR && x.criarMotor && !fabricas.has(x.VERSAO_MOTOR)) fabricas.set(x.VERSAO_MOTOR, x.criarMotor); });
+  const prontos = new Map();
+  const tem = v => fabricas.has(v);
+  function motor(v) { v = v || VERSAO_MOTOR; if (!prontos.has(v)) prontos.set(v, fabricas.get(v)(base)); return prontos.get(v); }
+  const aprendidas = new Map(); // versão|rota → abas que ela usou (a próxima vez busca tudo numa ida só)
 
-  function abasDe(raw) { const porAba = {}; Object.keys(M.esquema).forEach(aba => { const t = M.tabelaDe(aba); if (raw[t]) porAba[aba] = raw[t]; }); return porAba; }
-  function criarAmb(porAba, extra) {
+  function abasDe(M, raw) { const porAba = {}; Object.keys(M.esquema).forEach(aba => { const t = M.tabelaDe(aba); if (raw[t]) porAba[aba] = raw[t]; }); return porAba; }
+  function criarAmb(M, porAba, extra) {
     const versoes = {};
     const amb = Object.assign({
       motivo: '', raw: porAba,
@@ -55,16 +62,19 @@ export function criarServidor({ rpc, base }) {
   /* 8.33 Etapa D: entrar no painel sem o Google (o mesmo login_ do Code.gs; a chave das senhas vem do cofre do Supabase).
      Devolve o que o Apps Script devolveria ({ token, usuario }) + a sessão do banco pronta (o que banco.sessao daria). */
   async function entrar(b) {
-    if (b.versao && b.versao !== VERSAO_MOTOR) return { voltar: true, motivo: 'versões diferentes (' + b.versao + ' × ' + VERSAO_MOTOR + ')' };
     let info;
     try { info = await rpc('painel_login_info', {}); } catch (e) { return { voltar: true, motivo: 'entrar: ' + String(e.message || e).slice(0, 120) }; }
     if (!info || !info.segredo) return { voltar: true, motivo: 'entrar pelo Supabase está desligado' };
     const est = info.estado || {}, esc = info.escritorio_id;
+    // 8.37.5: entra com o motor da versão que o GOOGLE roda (painel_estado google); sem a marca, a que o navegador pediu; senão a nova
+    const ver = tem(est.google) ? est.google : (!b.versao ? VERSAO_MOTOR : (tem(b.versao) ? b.versao : null));
+    if (!ver) return { voltar: true, motivo: 'versões diferentes (' + b.versao + ' × ' + [...fabricas.keys()].join('/') + ')' };
+    const M = motor(ver);
     if (est.edge !== 'sim') return { voltar: true, motivo: 'motor do Supabase desligado' };
     if (est.pendente) return { voltar: true, motivo: 'há mudança chegando ao banco' };
     for (let vez = 0; vez < 3; vez++) {
       const raw = await carregar(esc, ['config', 'usuarios'], vez > 0);
-      const amb = criarAmb(abasDe(raw), { segredo: info.segredo, falhas: +info.falhas || 0, asaas: est.asaas === 'sim' });
+      const amb = criarAmb(M, abasDe(M, raw), { segredo: info.segredo, falhas: +info.falhas || 0, asaas: est.asaas === 'sim' });
       let r = null, erro = null;
       if (base.antesDeRodar) base.antesDeRodar();
       try { r = M.entrar(b.dados, amb); } catch (e) { erro = e; }
@@ -82,7 +92,7 @@ export function criarServidor({ rpc, base }) {
       await rpc('painel_sessao_nova', { p_escritorio: esc, p_token_hash: sha(codigo), p_usuario_id: u.id, p_usuario: u.usuario, p_perfil: u.perfil,
         p_permissoes: r.perm, p_expira: expira, p_versao: r.versao, p_sessao: sha(r.res.token) });
       const dados = JSON.parse(JSON.stringify(r.res));
-      dados.banco = { ligado: true, url: base.url, chave: est.publica || '', token: codigo, expira, versao: VERSAO_MOTOR, u, asaas: est.asaas === 'sim',
+      dados.banco = { ligado: true, url: base.url, chave: est.publica || '', token: codigo, expira, versao: ver, u, asaas: est.asaas === 'sim',
         permissoes: r.perm, tarefasFiltradasOk: r.tarefasOk, edge: base.url + '/functions/v1/painel' };
       return { ok: true, dados };
     }
@@ -92,15 +102,16 @@ export function criarServidor({ rpc, base }) {
   async function atender(b) {
     b = b || {};
     if (b.ping) {
-      const p = { ok: true, versao: VERSAO_MOTOR };
+      const p = { ok: true, versao: VERSAO_MOTOR, versoes: [...fabricas.keys()] };
       if (b.entrar) { try { const i = await rpc('painel_login_info', {}); p.entrar = !!(i && i.segredo); } catch (e) { p.entrar = false; p.erro = String(e.message || e).slice(0, 120); } }
       return p;
     }
     if (b.acao === 'login' && b.entrar) return entrar(b);
     if (b.acao === 'logout' && b.sair) { try { await rpc('painel_sessao_sair', { p_token: String(b.token || '') }); } catch (e) { /* expira sozinha */ } return { ok: true }; }
-    const acao = String(b.acao || ''), rota = M.rotas[acao];
+    const ver = b.versao || VERSAO_MOTOR;
+    if (!tem(ver)) return { voltar: true, motivo: 'versões diferentes (' + b.versao + ' × ' + [...fabricas.keys()].join('/') + ')' };
+    const M = motor(ver), acao = String(b.acao || ''), rota = M.rotas[acao];
     if (!rota || rota.publica || rota.ext || rota.future || NUNCA.test(acao)) return { voltar: true, motivo: 'esta rota fica no Google' };
-    if (b.versao && b.versao !== VERSAO_MOTOR) return { voltar: true, motivo: 'versões diferentes (' + b.versao + ' × ' + VERSAO_MOTOR + ')' };
     let quem;
     try { quem = await rpc('painel_quem', { p_token: String(b.token || '') }); }
     catch (e) { return { voltar: true, sessao: true, motivo: 'sessão do banco: ' + e.message }; }
@@ -108,19 +119,19 @@ export function criarServidor({ rpc, base }) {
     if (est.edge !== 'sim') return { voltar: true, motivo: 'motor do Supabase desligado' };
     if (est.pendente) return { voltar: true, motivo: 'há mudança chegando ao banco' };
     const esc = quem.escritorio_id, u = quem.usuario;
-    const precisa = new Set(['config', 'usuarios'].concat(aprendidas.get(acao) || []));
+    const precisa = new Set(['config', 'usuarios'].concat(aprendidas.get(ver + '|' + acao) || []));
     let raw = {}, conflitos = 0, forcar = false;
     for (let volta = 0; volta < 25; volta++) { // cada volta pode descobrir uma tabela que a tela usa (a próxima vez já busca todas juntas)
       const faltam = [...precisa].filter(t => !raw[t]);
       if (faltam.length) Object.assign(raw, await carregar(esc, faltam, forcar));
-      const amb = criarAmb(abasDe(raw), { asaas: est.asaas === 'sim' });
+      const amb = criarAmb(M, abasDe(M, raw), { asaas: est.asaas === 'sim' });
       let r = null, erro = null;
       if (base.antesDeRodar) base.antesDeRodar(); // (só nos testes: códigos novos em sequência a cada tentativa)
       try { r = M.rodar(acao, b.dados, u, amb); } catch (e) { erro = e; }
       if (amb.motivo.startsWith('falta:')) { precisa.add(M.tabelaDe(amb.motivo.slice(6))); continue; }
       if (amb.motivo) return { voltar: true, motivo: amb.motivo };
       if (erro && !erro.publico) return { voltar: true, motivo: 'erro: ' + String(erro.message || erro).slice(0, 200) };
-      aprendidas.set(acao, [...precisa]);
+      aprendidas.set(ver + '|' + acao, [...precisa]);
       const resposta = erro ? { ok: false, erro: erro.message } : { ok: true, dados: r.res === undefined ? null : JSON.parse(JSON.stringify(r.res)) };
       const ops = erro ? (erro.ops || []) : r.ops;
       if (ops.length) {

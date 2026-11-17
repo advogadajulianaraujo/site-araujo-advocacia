@@ -17,7 +17,11 @@ async function rpc(nome: string, args: unknown) {
   return j;
 }
 
-const S = criarServidor({ rpc, base: { url: URL_BANCO, createHash, createHmac, randomUUID, b64: (u: Uint8Array, w: boolean) => Buffer.from(u).toString(w ? 'base64url' : 'base64') } });
+// 8.37.5: o motor da versão que o Google roda (quando a atualização dele atrasa). Faltando o arquivo, a função segue só com o motor.js.
+const extras: unknown[] = [];
+try { extras.push(await import('./motor-anterior.js')); } catch (_e) { /* sem motor anterior */ }
+
+const S = criarServidor({ rpc, extras, base: { url: URL_BANCO, createHash, createHmac, randomUUID, b64: (u: Uint8Array, w: boolean) => Buffer.from(u).toString(w ? 'base64url' : 'base64') } });
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 
 Deno.serve(async (req: Request) => {

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.37.4';
+var VERSAO = '8.37.5';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -9697,6 +9697,7 @@ function aquecerGatilho() {
   if (!util) return;
   var t0 = Date.now();
   try { autoAtualizar_(false); } catch (eU) { /* segue */ }
+  try { sbVersaoGoogle_(); } catch (eV) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   // 8.36.3: com o motor do Supabase ligado a memória do Google não é usada (comMemoria_ só roda a conta): aquecer era trabalho jogado fora
   // — milhares de leituras de tabelas inteiras por dia, que deixavam o banco lento e gastavam o tempo de robô do Google.
@@ -11038,6 +11039,7 @@ function marketingResumo_(d) {
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
   try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
+  try { sbVersaoGoogle_(); } catch (eV) { /* segue */ }
   if (!sbEdge_()) { try { aquecerMemoria_(); } catch (eQ) { /* segue */ } } // 8.36.3: com o motor do Supabase não serve para nada
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
@@ -15013,6 +15015,17 @@ function sbEnviarSujas_() {
     sbEstado_('pendente', null);
   }
 }
+/* 8.37.5: diz à função do Supabase qual versão o Google está rodando (painel_estado google). A função leva o motor da versão nova e o
+   da que o Google roda (motor-anterior.js) e, na entrada, usa o do Google: quando a atualização do Google atrasa, nada vai ao Google
+   por causa disso. Só grava quando muda (Properties SB_GOOGLE_VER). */
+function sbVersaoGoogle_(v) {
+  v = v || VERSAO;
+  var P = PropertiesService.getScriptProperties();
+  var ult = (P.getProperty('SB_GOOGLE_VER') || '').split('|'); // "versão|quando": grava de novo a cada 6 h (se uma gravação falhou)
+  if ((ult[0] === v && Date.now() - (+ult[1] || 0) < 6 * 3600000) || !sbLigado_()) return;
+  sbEstado_('google', v);
+  P.setProperty('SB_GOOGLE_VER', v + '|' + Date.now());
+}
 /** painel_estado (o navegador lê junto com os dados): "pendente" = alguma mudança ainda não chegou ao banco. */
 function sbEstado_(chave, valor) {
   try {
@@ -15802,6 +15815,7 @@ function autoAtualizar_(forcar) {
     return erro('a versão ' + nova + ' não respondeu depois de publicada; voltei para a ' + VERSAO);
   }
   P.deleteProperty('AUTO_FALHOU');
+  try { sbVersaoGoogle_(nova); } catch (eV) { /* o aquecedor marca */ }
   try {
     setConfig_('AUTO_ATUALIZADO', nova + ' em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm') + (sb.feito ? ' (com o Supabase)' : ''), 'Atualização automática: última versão instalada');
     setConfig_('AUTO_ATUALIZAR_ERRO', '', 'Atualização automática: último problema');
@@ -15831,8 +15845,9 @@ function supabasePublicar_(nova) {
   var b = 'painel' + Utilities.getUuid().replace(/-/g, ''), partes = [];
   var parte = function (cab, conteudo) { partes.push(Utilities.newBlob('--' + b + '\r\n' + cab + '\r\n\r\n').getBytes(), Utilities.newBlob(conteudo).getBytes(), Utilities.newBlob('\r\n').getBytes()); };
   parte('Content-Disposition: form-data; name="metadata"', JSON.stringify({ entrypoint_path: 'index.ts', name: 'painel', verify_jwt: false }));
-  ['index.ts', 'servidor.js', 'motor.js'].forEach(function (f) {
-    parte('Content-Disposition: form-data; name="file"; filename="' + f + '"\r\nContent-Type: ' + (/\.ts$/.test(f) ? 'application/typescript' : 'application/javascript'), rawGithub_('supabase/functions/painel/' + f));
+  ['index.ts', 'servidor.js', 'motor.js', 'motor-anterior.js'].forEach(function (f) {
+    var txt; try { txt = rawGithub_('supabase/functions/painel/' + f); } catch (eF) { if (f === 'motor-anterior.js') return; throw eF; } // 8.37.5: o anterior é opcional
+    parte('Content-Disposition: form-data; name="file"; filename="' + f + '"\r\nContent-Type: ' + (/\.ts$/.test(f) ? 'application/typescript' : 'application/javascript'), txt);
   });
   partes.push(Utilities.newBlob('--' + b + '--\r\n').getBytes());
   var tudo = []; partes.forEach(function (p) { for (var i = 0; i < p.length; i++) tudo.push(p[i]); });

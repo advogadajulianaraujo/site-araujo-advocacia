@@ -86,7 +86,10 @@
     if (!M()) { motivoOff = 'motor não carregou'; return null; }
     if (!fusoOk()) return desligarPor(60, 'o relógio do computador não está no horário de Brasília');
     const salvo = lerS('painel_banco');
-    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && salvo.versao === versaoPublicada() && await carregarMotor(salvo.versao)) { S = salvo; lembrarEdge(S); return S; }
+    // 8.37.5: a sessão guardada vale também quando é da versão que o Google roda (lembrada): antes, com o Google atrasado, CADA F5
+    // pedia a sessão de novo ao Google (4 a 10 s com a tela parada)
+    let vServ = ''; try { vServ = localStorage.getItem(VER_SERV) || ''; } catch (e) { /* privado */ }
+    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && (salvo.versao === versaoPublicada() || salvo.versao === vServ) && await carregarMotor(salvo.versao)) { S = salvo; lembrarEdge(S); return S; }
     pedindo = (async () => {
       try {
         const r = await chamarApps('banco.sessao', {});

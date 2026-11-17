@@ -397,7 +397,7 @@ begin
   select decrypted_secret into seg from vault.decrypted_secrets where name = 'painel_senhas_' || esc::text;
   if coalesce(seg, '') = '' then return null; end if;
   select coalesce(jsonb_object_agg(e.chave, e.valor), '{}'::jsonb) into est from painel_estado e
-   where e.escritorio_id = esc and e.chave in ('pendente', 'asaas', 'edge', 'publica');
+   where e.escritorio_id = esc and e.chave in ('pendente', 'asaas', 'edge', 'publica', 'google');
   return jsonb_build_object('escritorio_id', esc, 'segredo', seg, 'estado', est,
     'falhas', painel_login_falhas_((select valor from painel_estado where escritorio_id = esc and chave = 'login_falhas')));
 end $$;

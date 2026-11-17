@@ -1495,3 +1495,17 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   endereço que pede login: toda atualização automática "não respondia" e voltava (de 8.36.8 a 8.37.3 ficou na 8.36.7; só o botão "Atualizar agora"
   instalava). Agora confere em https://script.google.com/macros/s/<implantação>/exec e espera até ~1 min (6 tentativas). A 1ª instalação desta
   correção precisa do botão (o código antigo ainda confere do jeito errado).
+
+## 8.37.5 Função do Supabase com DOIS motores (pedido da usuária: "olhe tudo para não travar mais", 17/11/2026)
+
+- CAUSA achada: o Google ficou na 8.36.7 (a atualização automática falhava; a correção 8.37.4 precisa de UM clique em "Atualizar agora") e a
+  função do Supabase estava na 8.37.4. Com versões diferentes a função recusava tudo: a ENTRADA e CADA GRAVAÇÃO iam ao Google (4 a 40 s), e
+  cada F5 pedia a sessão do banco de novo ao Google.
+- Agora a função leva `motor.js` (versão nova) + `motor-anterior.js` (a versão que o GOOGLE roda), e roda o motor da versão que o navegador
+  pede (`servidor.js`: `extras`, `motor(v)`, ping devolve `versoes`). Na entrada usa a marca painel_estado `google` (o Code.gs grava com
+  `sbVersaoGoogle_` no aquecedor, no robô de hora em hora e logo depois de se atualizar; painel_login_info devolve a marca). index.ts carrega o
+  anterior por import dinâmico (faltando, segue só com o novo). `supabasePublicar_` e publicar-edge.mjs mandam também o motor-anterior.js.
+- Gerar o anterior: `node .github/motor/motor-anterior.mjs <versão que o Google roda>` (usa o Code.gs e o gerar-edge.mjs daquela versão,
+  tirados do git). REGRA ao publicar: se o Google ainda não está na versão nova, gere o anterior com a versão dele antes de publicar a função.
+- banco.js: a sessão guardada vale também quando é da versão do servidor lembrada (F5 não vai mais ao Google).
+- Teste: `.github/motor/teste/etapaVersoes.mjs` (telas e gravação pelos dois motores; versão desconhecida volta ao Google).
