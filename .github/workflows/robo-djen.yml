@@ -1,8 +1,8 @@
-name: Robô do DJEN (de 2 em 2 horas)
+name: Robô do DJEN (só à mão)
 
+# 17/11/2026: o CNJ recusa (403) os servidores do GitHub, do Google e do Supabase (São Paulo) — testado. O DJEN é lido pelo painel
+# aberto em qualquer computador do escritório (de 2 em 2 h). Este robô fica só para rodar à mão, caso o CNJ libere no futuro.
 on:
-  schedule:
-    - cron: '23 */2 * * *'
   workflow_dispatch:
 
 permissions:

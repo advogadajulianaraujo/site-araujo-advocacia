@@ -1525,3 +1525,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   e confere o que mudou por trás; gravar (`envelhecer`) força a conferência antes da próxima tela.
 - Teste: `.github/motor/teste/copiaLocal.js` (Chromium com perfil guardado: 2ª entrada 2 KB × 1.749 KB; o que mudou com o navegador fechado
   aparece; senha trocada não usa a cópia). Precisa de `python3 -m http.server 8099` na pasta do site.
+
+## 8.38.0 (cont.) Conferência geral de 17/11/2026 (pedido da usuária: "deixe tudo alinhado")
+
+- Tudo na 8.38.0: Google (instalou sozinho às 10:39), função "painel" do Supabase (8.38.0 + motor anterior 8.37.5) e o site. painel_estado
+  google = 8.38.0. esquema.sql e leitura-rapida.sql rodados de novo no banco real sem erro. Planilha de reserva = banco (mesma última linha e
+  mesmo id em Clientes, Processos, Prazos, Intimações e Tarefas). Banco: 23 MB, região São Paulo, sem complementos pagos.
+- DJEN: o CNJ recusa (403) GitHub, Google E Supabase São Paulo (teste com função temporária, já apagada). O robô do DJEN no GitHub saiu do
+  horário automático (só à mão); o DJEN é lido pelo painel aberto em qualquer computador do escritório. Os avisos do PJe/eproc chegam pelo Gmail.
