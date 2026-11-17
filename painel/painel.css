@@ -2929,3 +2929,12 @@ body.sem-sessao .chatf{display:none}
 }
 @media print{.chatf{display:none!important}}
 .notifs{bottom:80px}
+/* 8.39.2: janela do chat um pouco menor (pedido da usuária) */
+.chatf[data-modo="pequeno"] .chatf-janela{width:320px;height:min(420px,calc(100vh - 110px))}
+.chatf[data-modo="grande"] .chatf-janela{width:min(680px,calc(100vw - 36px));height:min(520px,calc(100vh - 90px))}
+.chatf[data-vista="ambas"] .chat-salas{width:220px}
+.chatf .chat-sala{padding:7px 8px;gap:8px}
+.chatf .chat-av{width:30px;height:30px;font-size:11px}
+.chatf .chat-sala-txt b{font-size:13px}
+.chatf .chat-txt{font-size:13px}
+.chatf-bolha{height:42px;padding:0 15px 0 12px;font-size:13px}
