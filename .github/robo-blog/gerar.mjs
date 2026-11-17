@@ -213,7 +213,9 @@ export function gerar() {
   s = s.replace(/(<!--BLOG:INICIO-->)[\s\S]*?(<!--BLOG:FIM-->)/, `$1\n${urls}\n$2`);
   fs.writeFileSync(sm, s);
   // Início e páginas de área
-  trocarEntreMarcas('index.html', blocoDoBlog(posts.slice(0, 3), 'Decisões que <em>importam.</em>'));
+  // o guia que já está em destaque no Início (cartão "Guia em destaque") não se repete na lista do blog logo abaixo
+  const destaque = ((/class="guia-card" href="\/blog\/([^/"]+)\//.exec(fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8')) || [])[1]) || '';
+  trocarEntreMarcas('index.html', blocoDoBlog(posts.filter(p => p.slug !== destaque).slice(0, 3), 'Decisões que <em>importam.</em>'));
   if (posts[0]) trocarEntreMarcas('index.html', `<a class="blog-faixa" href="/blog/${posts[0].slug}/"><div class="wrap"><span class="blog-faixa-tag">Novo no blog</span><span class="blog-faixa-tit">${esc(posts[0].titulo)}</span><span class="blog-faixa-ler">Ler ${SETA}</span></div></a>`, 'BLOGFAIXA');
   for (const [k, a] of Object.entries(AREAS)) {
     const daArea = posts.filter(p => p.area === k).slice(0, 3);
