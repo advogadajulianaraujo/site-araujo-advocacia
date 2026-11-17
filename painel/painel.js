@@ -718,7 +718,6 @@
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
-    ['chat', 'Chat da equipe', null, 'chat', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -864,7 +863,7 @@
     const eu = sessao.usuario.usuario;
     const st = { modo: lerLSc('chat_modo', 'fechado'), sala: lerLSc('chat_sala', 'geral'), vista: lerLSc('chat_vista', 'lista'), dados: null, desenho: '' };
     if (!['fechado', 'pequeno', 'grande'].includes(st.modo)) st.modo = 'fechado';
-    const bolha = h('button', { type: 'button', class: 'chatf-bolha', title: 'Chat da equipe', 'aria-label': 'Abrir o chat da equipe', onclick: () => modo('pequeno') },
+    const bolha = h('button', { type: 'button', class: 'chatf-bolha', title: 'Chat da equipe', 'aria-label': 'Abrir o chat da equipe', onclick: () => { if (arrastou) return; modo('pequeno'); } },
       h('span', { 'aria-hidden': 'true' }, '💬'), h('span', { class: 'chatf-bolha-txt' }, 'Chat'));
     const voltar = h('button', { type: 'button', class: 'chatf-bt', title: 'Ver as conversas', 'aria-label': 'Voltar para as conversas', onclick: () => vista('lista') }, '‹');
     const tit = h('div', { class: 'chatf-tit' });
@@ -877,10 +876,56 @@
     const form = h('form', { class: 'chat-form' }, ta, enviarBt);
     const conversa = h('div', { class: 'chatf-conversa' }, msgsEl, form);
     const janela = h('section', { class: 'chatf-janela', role: 'dialog', 'aria-label': 'Chat da equipe' },
-      h('header', { class: 'chatf-topo' }, voltar, tit, btTam, btMin), h('div', { class: 'chatf-corpo' }, listaEl, conversa));
+      h('header', { class: 'chatf-topo', title: 'Arraste por aqui para mudar o chat de lugar' }, voltar, tit, btTam, btMin), h('div', { class: 'chatf-corpo' }, listaEl, conversa));
     const raiz = h('div', { class: 'chatf', id: 'chatf' }, janela, bolha);
     document.body.append(raiz);
     chatF = { raiz, bolha, st, carregar: () => carregar(), abrir: (m, sala) => { if (sala) { st.sala = sala; st.vista = 'conversa'; st.desenho = ''; } modo(m || 'pequeno'); } };
+
+    // 8.39.4 (pedido da usuária: "deixe esse botão ajustável, pra poder mover"): ARRASTA a bolinha (ou a janela pelo topo escuro)
+    // para qualquer lugar da tela; a posição fica neste computador (localStorage chat_pos = distância da direita e de baixo).
+    // Duplo clique na bolinha volta para o canto direito de baixo. A janela aberta nunca sai da tela (posicionar).
+    let pos = null, arr = null, arrastou = false;
+    try { pos = JSON.parse(localStorage.getItem('chat_pos') || 'null'); } catch (e) { pos = null; }
+    if (!pos || !isFinite(pos.r) || !isFinite(pos.b)) pos = null;
+    function posicionar() {
+      if (!pos) { raiz.style.removeProperty('right'); raiz.style.removeProperty('bottom'); return; }
+      raiz.style.setProperty('right', pos.r + 'px'); raiz.style.setProperty('bottom', pos.b + 'px');
+      const q = raiz.getBoundingClientRect();
+      const r = Math.max(6, Math.min(pos.r, window.innerWidth - q.width - 6));
+      const b = Math.max(6, Math.min(pos.b, window.innerHeight - q.height - 6));
+      raiz.style.setProperty('right', r + 'px'); raiz.style.setProperty('bottom', b + 'px');
+    }
+    function comecar(ev) {
+      if (ev.button !== 0) return;
+      if (ev.currentTarget !== bolha && ev.target.closest('button')) return;
+      const q = raiz.getBoundingClientRect();
+      arr = { x: ev.clientX, y: ev.clientY, r: window.innerWidth - q.right, b: window.innerHeight - q.bottom, id: ev.pointerId };
+      arrastou = false;
+      try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    }
+    function mover(ev) {
+      if (!arr || ev.pointerId !== arr.id) return;
+      const dx = ev.clientX - arr.x, dy = ev.clientY - arr.y;
+      if (!arrastou && Math.abs(dx) + Math.abs(dy) < 6) return;
+      arrastou = true; raiz.classList.add('arrastando');
+      pos = { r: Math.round(arr.r - dx), b: Math.round(arr.b - dy) }; posicionar();
+      ev.preventDefault();
+    }
+    function soltar(ev) {
+      if (!arr || ev.pointerId !== arr.id) return;
+      arr = null; raiz.classList.remove('arrastando');
+      if (!arrastou) return;
+      pos = { r: parseInt(raiz.style.right, 10) || 18, b: parseInt(raiz.style.bottom, 10) || 18 };
+      gravarLSc('chat_pos', JSON.stringify(pos));
+      setTimeout(() => { arrastou = false; }, 0);
+    }
+    const topo = janela.querySelector('.chatf-topo');
+    [bolha, topo].forEach(el => {
+      el.addEventListener('pointerdown', comecar); el.addEventListener('pointermove', mover);
+      el.addEventListener('pointerup', soltar); el.addEventListener('pointercancel', soltar);
+    });
+    bolha.addEventListener('dblclick', () => { pos = null; try { localStorage.removeItem('chat_pos'); } catch (e) { /* ok */ } posicionar(); modo('fechado'); });
+    if (window.addEventListener) window.addEventListener('resize', () => { if (chatF && chatF.raiz === raiz) posicionar(); });
 
     function aplicar() {
       raiz.dataset.modo = st.modo; raiz.dataset.vista = st.modo === 'grande' && window.innerWidth > 760 ? 'ambas' : st.vista;
@@ -888,6 +933,7 @@
       btTam.title = st.modo === 'grande' ? 'Diminuir' : 'Aumentar'; btTam.setAttribute('aria-label', btTam.title + ' o chat');
       gravarLSc('chat_modo', st.modo); gravarLSc('chat_sala', st.sala); gravarLSc('chat_vista', st.vista);
       desenharTitulo();
+      posicionar();
     }
     function modo(m) { st.modo = m; aplicar(); if (m !== 'fechado') carregar(); }
     function vista(v) { st.vista = v; aplicar(); if (v === 'conversa') carregar(); }

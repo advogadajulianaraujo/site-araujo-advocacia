@@ -1552,6 +1552,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
   (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
   clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).
+- 8.39.4 (pedido da usuária): "Chat da equipe" SAIU do menu da esquerda (só a bolinha de baixo; #/chat continua abrindo). A bolinha e o topo da
+  janela se ARRASTAM para qualquer lugar (pointer events; localStorage `chat_pos` = {r, b} distância da direita/de baixo; `posicionar` nunca
+  deixa a janela sair da tela); duplo clique na bolinha volta ao canto.
 - 8.39.3: Início SEM relatório (pedido da usuária): saíram "A sua semana" (Seu dia) e "Equipe nesta semana"; ficam em Relatórios. Colaborador continua com "O que eu fiz nesta semana".
 - 8.39.1 (pedido da usuária, com print: "chat pequeno no canto direito de baixo, que dê para aumentar e diminuir, e quando alguém mandar
   mensagem aparecer"): o chat virou JANELA FLUTUANTE (`montarChatFlutuante` em painel.js, classes `chatf-*`): bolinha "💬 Chat" no canto
