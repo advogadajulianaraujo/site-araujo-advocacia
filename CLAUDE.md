@@ -1467,3 +1467,27 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   painel + `abrirWhats` no bg.js): o painel manda `postMessage({araujo:'whats'})` e a extensão abre a conversa NA ABA JÁ ABERTA (chrome.tabs.update),
   com a mensagem escrita. Sem a extensão, continua o caminho antigo + uma dica. Zip refeito (painel/extensao-whatsapp.zip).
 - Ação de cobrança 8.37.1: etapas WhatsApp → notificação → ação ajuizada de volta na tabela (ver acima).
+
+## 8.37.3 Processos (desfazer, apagar, várias ações, partes), petição inicial automática, PIX, prazo pelo texto (pedidos da usuária, 17/11/2026)
+
+- Desfazer: "↩ Fechou sim" (rota `processos.fechouSim` / `documentos.assinatura` acao=fechou: `reabrirInicial_` volta a inicial arquivada pelo
+  "Não vai fechar", reabre a tarefa e relança o honorário do JSON da Assinatura) e "↩ Desfazer 'Assinado'" (acao=desfazer_assinado: volta para
+  aguardando, APAGA a inicial sem número e tira o honorário lançado ao assinar se nada foi pago). Na jornada da ficha e na tela do processo.
+- "🗑 Apagar este processo (não foi protocolado)" (`processos.apagar`, `apagarProcessoSemNumero_`): só processo SEM número; cancela as tarefas
+  dele; honorário não é mexido. `caixaDesfazerProcesso` na tela do processo.
+- Várias ações por cliente: aviso na ficha quando a área do cadastro não tem processo ("＋ Abrir a ação de …"). Caso do Jucemar: o contrato
+  trabalhista de 05/11 foi juntado ao previdenciário pela regra antiga (corrigida na 8.21).
+- `identificarPartes_` (robôs do escritório, 12 por rodada; Properties PARTES_TENTADAS, 20 dias): processo ativo sem cliente → lê o DJEN
+  (Intimacoes.texto) e o e-mail do PJe no Gmail ("RECLAMANTE(S): - FULANO ADVOGADO(S): - JULIAN…"); `parteDoEscritorio_` acha a parte
+  da Dra. Júlian → liga ao cadastro de mesmo nome ou cria (origem "processo (identificado pelo robô)") e grava o polo. O e-mail do eproc
+  não traz as partes; SIGILO fica de fora.
+- Petição inicial: tarefa `[inicial:]` tem `wa` = inicial ("📄 Mandar a inicial ao cliente", mensagem para aprovar). Protocolou
+  (`concluirPeticaoInicial_`) → tarefa "📣 Avisar o cliente: processo protocolado" (`[protocolo:procId]`, botão abre o processo com
+  ?avisar=1: número + link + código); fecha sozinha quando a mensagem é mandada (`registro.whatsapp` com processo_id). `iniciaisComNumero_`
+  (robôs): processo na etapa Petição inicial COM número → Em andamento. `salvarProcesso_`: processo novo com número para cliente que tem a
+  inicial sem número (mesma área) → o número entra nessa inicial (`juntou`), sem processo repetido (`d.separado` evita).
+- PIX: `explicarPixDesconhecido_` (parte contrária de um processo = acordo/condenação; transferência do escritório; pagador recorrente;
+  mesmo sobrenome) e "É de X, mas não tem parcela em aberto" com "＋ Lançar como recebimento deste cliente" (`fin.pixAvulso`: parcela paga
+  avulsa no honorário mais recente ou num "Recebimentos avulsos (PIX)", com recibo).
+- Prazo divergente: `prazoPublico_` devolve `fatal_texto`/`dias_texto` (data pela conta com os dias que a IA leu no texto) → etiqueta
+  "✓ pelo texto: dd/mm" ao lado; a data do painel continua valendo (a mais curta).

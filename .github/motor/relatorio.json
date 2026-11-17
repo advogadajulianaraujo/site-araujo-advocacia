@@ -1,5 +1,5 @@
 {
- "versao": "8.37.2",
+ "versao": "8.37.3",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -37,6 +37,7 @@
   "resumo": {
    "tabelas": [
     "Clientes",
+    "Feriados",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -49,7 +50,7 @@
     "Session",
     "Utilities"
    ],
-   "funcoes": 31
+   "funcoes": 40
   },
   "clientes.listar": {
    "tabelas": [
@@ -94,6 +95,7 @@
   "prazos.listar": {
    "tabelas": [
     "Clientes",
+    "Feriados",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -102,7 +104,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 19
+   "funcoes": 28
   },
   "intimacoes.listar": {
    "tabelas": [
@@ -376,6 +378,7 @@
    "tabelas": [
     "AgendaEventos",
     "Clientes",
+    "Feriados",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -386,7 +389,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 30
+   "funcoes": 39
   },
   "inicio.extras": {
    "tabelas": [
@@ -443,5 +446,5 @@
    "funcoes": 38
   }
  },
- "funcoes": 144
+ "funcoes": 146
 }

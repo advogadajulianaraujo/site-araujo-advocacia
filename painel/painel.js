@@ -2283,11 +2283,19 @@
           passo(desist ? 'Não vai assinar' : 'Assinatura', desist ? '' : ass ? '' : `aguardando há ${a.dias || 0} dia(s)`, desist ? 'parou' : ass ? 'ok' : 'agora'),
           passo('Assinado', ass && a.assinado_em ? dataBR(String(a.assinado_em).slice(0, 10)) : '', ass ? 'ok' : 'falta'),
           passo(fin[0], fin[1], desist ? 'falta' : fin[2])),
-        ass ? h('p', { class: 'peq' }, 'Marcou "Assinado" por engano ou o cliente desistiu? ', botao('Não vai fechar', async ev => {
+        ass ? h('p', { class: 'peq' }, 'Marcou "Assinado" por engano ou o cliente desistiu? ', botao('↩ Desfazer "Assinado"', async ev => {
+          if (!confirm(`Voltar ${c.nome} para "aguardando assinatura"? A petição inicial sem número criada no "Assinado" é APAGADA e o honorário lançado ao assinar sai do Financeiro (parcelas pagas ficam).`)) return;
+          ev.target.disabled = true;
+          try { await api('documentos.assinatura', { id: a.id, acao: 'desfazer_assinado' }); avisar('Pronto: voltou para "aguardando assinatura".'); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'mini sec'), ' ', botao('Não vai fechar', async ev => {
           if (!confirm(`${c.nome} não vai fechar? A petição inicial sem número é arquivada e o honorário lançado ao assinar sai do Financeiro (parcelas pagas ficam).`)) return;
           ev.target.disabled = true;
           try { const r = await api('documentos.assinatura', { id: a.id, acao: 'desistiu' }); avisar('Pronto: não fechou.' + (r && r.honorarios ? '' : '')); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
-        }, 'mini sec')) : null));
+        }, 'mini sec')) : desist ? h('p', { class: 'peq' }, 'Marcou "Não vai fechar" e o cliente fechou? ', botao('↩ Fechou sim', async ev => {
+          if (!confirm(`${c.nome} fechou? Volta a petição inicial (com a tarefa) e o honorário combinado no contrato entra no Financeiro.`)) return;
+          ev.target.disabled = true;
+          try { const r = await api('documentos.assinatura', { id: a.id, acao: 'fechou' }); avisar('Pronto: fechou.' + (r && r.lancados ? ' Honorário lançado no Financeiro.' : '')); rota(); } catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        }, 'mini')) : null));
     }).catch(() => {});
     api('documentos.assinaturas', { cliente_id: c.id }).then(l => {
       const b = blocoAssinaturas(l, '✍ Documentos aguardando assinatura');
@@ -2336,7 +2344,16 @@
       fRap.addEventListener('submit', async ev => { ev.preventDefault(); const t = taRap.value.trim(); if (!t) return;
         try { const x = await api('clientes.nota', { id: c.id, texto: t }); c.observacoes = x.observacoes; avisar('Anotação salva.'); rota(); } catch (e) { avisar(e.message, true); } });
       const notasCard = card(`Anotações (${obs.length})`, h('button', { type: 'button', class: 'link fg-link', onclick: () => abrirAba('anotacoes') }, 'ver todas'), fRap, listaObs);
-      return h('div', { class: 'fg' }, h('div', { class: 'fg-col' }, procCard, notasCard, jornada, assinBox), h('div', { class: 'fg-col fg-lado' }, dados, finCard));
+      // 8.37.3 (pedido da usuária: "fiz procuração e contrato para trabalhista e previdenciário, mas só tem previdenciário — são duas ações"):
+      // o cadastro diz uma área e não há processo dela → aviso com o botão para abrir a outra ação
+      const semAr = s0 => String(s0 || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 6);
+      const areaCad = c.area || ((/trabalh/i.test(c.tipo_acao || '') && 'Trabalhista') || (/previd|inss|aposent|benef/i.test(c.tipo_acao || '') && 'Previdenciário') || '');
+      const temArea = !areaCad || (r.processos || []).some(p => p.status !== 'arquivado' && semAr(p.area) === semAr(areaCad));
+      const avisoOutraAcao = !temArea && (r.processos || []).some(p => p.status !== 'arquivado') ? h('div', { class: 'nota alerta outra-acao' },
+        h('strong', {}, `O cadastro diz ${areaCad}, mas não há processo de ${areaCad}. `),
+        'Se são duas ações (ex.: trabalhista e previdenciária), abra a outra: cada ação tem o seu processo, a sua etapa e o seu honorário. ',
+        h('button', { type: 'button', class: 'btn mini', onclick: () => caixaAbrirAcao(c, true) }, `＋ Abrir a ação de ${areaCad}`)) : null;
+      return h('div', { class: 'fg' }, h('div', { class: 'fg-col' }, avisoOutraAcao, procCard, notasCard, jornada, assinBox), h('div', { class: 'fg-col fg-lado' }, dados, finCard));
     };
     const iniciais = String(c.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
     const mais = h('details', { class: 'cb-mais fg-mais' }, h('summary', { title: 'Mais ações' }, '⋯'),
@@ -2443,6 +2460,26 @@
     } }, 'Não vai fechar');
   }
 
+  /** 8.37.3 (pedido da usuária: "botei não fechar e fechou"; "um sinalzinho de apagar a petição, às vezes nem foi protocolado"):
+   *  processo SEM número → "🗑 Apagar este processo"; arquivado pelo "Não vai fechar" → "↩ Fechou sim". */
+  function caixaDesfazerProcesso(p) {
+    if (p.numero) return null;
+    const naoFechou = p.status === 'arquivado' && /Não fechou:/.test(p.observacoes || '');
+    const apagar = h('button', { type: 'button', class: 'btn mini sec perigo', title: 'Ainda não foi protocolado: apaga o processo e cancela as tarefas dele', onclick: async ev => {
+      if (!confirm(`Apagar este processo de ${p.cliente_nome || 'cliente'}${p.tipo_acao ? ' (' + p.tipo_acao + ')' : ''}?\n\nSó dá porque ainda não tem número (não foi protocolado). As tarefas dele são canceladas. O honorário NÃO é mexido: se for o caso, use "Retirar honorário" em Cobranças.`)) return;
+      ev.target.disabled = true;
+      try { const r = await api('processos.apagar', { id: p.id }); avisar('Processo apagado.' + (r.tarefas ? ` ${r.tarefas} tarefa(s) cancelada(s).` : '')); location.hash = p.cliente_id ? '#/cliente/' + p.cliente_id : '#/processos'; }
+      catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+    } }, '🗑 Apagar este processo (não foi protocolado)');
+    const fechou = naoFechou ? h('button', { type: 'button', class: 'btn mini', onclick: async ev => {
+      if (!confirm('O cliente fechou? A petição inicial volta (etapa "Petição inicial"), a tarefa da inicial é reaberta e o honorário combinado no contrato volta para o Financeiro.')) return;
+      ev.target.disabled = true;
+      try { const r = await api('processos.fechouSim', { id: p.id }); avisar('Pronto: voltou para a petição inicial.' + (r.lancados ? ' Honorário lançado no Financeiro.' : '')); rota(); }
+      catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+    } }, '↩ Fechou sim (voltar para a petição inicial)') : null;
+    return h('div', { class: 'acoes-sec desfazer-proc' }, naoFechou ? h('span', { class: 'peq' }, 'Este processo foi arquivado pelo "Não vai fechar". ') : h('span', { class: 'peq' }, 'Sem número (ainda não protocolado). '), fechou, apagar);
+  }
+
   /** Processo "a ajuizar": 1) avisar o cliente no WhatsApp; 2) Conferido (quem fez a inicial e, se já tiver, o número). */
   function caixaPeticaoInicial(p, cliente) {
     // 8.11.2 (pedido da usuária): primeiro a petição inicial vai para o CLIENTE ler e aprovar; depois de mandar no WhatsApp,
@@ -2477,7 +2514,7 @@
   function caixaAvisarCliente(p, cliente, novo) {
     const saida = h('div', { class: 'barra' });
     const prot = PROTOCOLOS[p.id] || null;
-    const desenhar = cod => { const l = whatsProcesso(p, cliente, cod, prot && prot.ja_tinha_codigo); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'processo protocolado') }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
+    const desenhar = cod => { const l = whatsProcesso(p, cliente, cod, prot && prot.ja_tinha_codigo); saida.replaceChildren(l ? h('a', { class: 'btn wa', href: l, target: '_blank', rel: 'noopener noreferrer', onclick: () => registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome, processo_id: p.id }, 'processo protocolado') }, 'Informar o cliente no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.')); };
     desenhar(prot && prot.codigo || '');
     const notaProt = prot ? h('div', { class: 'nota' }, prot.codigo ? h('span', {}, 'Código do "Acompanhe seu processo" gerado agora: ', h('strong', { class: 'num' }, prot.codigo), ' — já está na mensagem. Ele não aparece de novo.')
       : prot.ja_tinha_codigo ? 'O cliente já tinha código de acesso ao site: a mensagem pede para usar o mesmo (se perdeu, marque "Incluir código" para gerar outro).'
@@ -2687,7 +2724,7 @@
       dados.cliente_nome = dados.cliente_id ? '' : 'a identificar';
       const res = await api('processos.salvar', { processo: dados });
       if (res.protocolado) guardarProtocolo(res.id, res);
-      avisar(novo ? 'Processo cadastrado.' : 'Alterações salvas.');
+      avisar(res.juntou ? 'Este cliente tinha a petição inicial sem número: o número entrou nela (não ficou processo repetido).' : novo ? 'Processo cadastrado.' : 'Alterações salvas.');
       location.hash = '#/processo/' + res.id + (novo || (!p.numero && dados.numero) ? '?avisar=1' : '');
       if (!novo) telaProcesso(res.id, new URLSearchParams());
     });
@@ -2736,6 +2773,7 @@
         p.numero && !cnjValido(p.numero) ? h('div', { class: 'nota alerta' }, h('strong', {}, '⚠ Número com o dígito verificador errado. '), 'O PJe/eproc e o DataJud não acham este processo. Confira no tribunal e corrija em "Editar".') : null,
         agora,
         p.fase === 'contratado' ? caixaPeticaoInicial(p, cli) : null,
+        caixaDesfazerProcesso(p),
         detalhes, blocoFluxo(p),
         p.cliente_id && p.fase !== 'contratado' ? caixaAvisarCliente(p, cli, params.get('avisar') === '1') : null),
       h('div', { class: 'fg-col fg-lado' }, cliCard));
@@ -3452,7 +3490,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  function registrarWhats(z, motivo, chave) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo, chave: chave || '' }).catch(() => {}); }
+  function registrarWhats(z, motivo, chave) { api('registro.whatsapp', { numero: z.numero || '', cliente: z.cliente || '', motivo, chave: chave || '', processo_id: z.processo_id || '' }).catch(() => {}); }
   // 8.20 (pedido da usuária): botão de aviso no WhatsApp que, ao clicar, vira "✓ Já avisado" na hora e fica assim (pode clicar de novo)
   function quandoAvisado(em, por) { if (!em) return ''; const d = new Date(em); return 'Avisado' + (por ? ' por ' + por : '') + (isNaN(d) ? '' : ' em ' + d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) + ' · clique para mandar de novo'; }
   function botaoAvisar(link, texto, feito, aoClicar, cls, textoFeito) {
@@ -3529,7 +3567,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.37.2';
+  const VERSAO_PAINEL = '8.37.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3557,6 +3595,8 @@
       h('div', { class: 'oqf-tags' },
         o.prov ? h('span', { class: 'tag conferir mini-tag', title: 'O tribunal não disse o ato: o robô usou o prazo mais curto. Confira no sistema.' }, 'provisório · ' + textoDias(z)) : h('span', { class: 'oqf-dias' }, textoDias(z)),
         div ? h('span', { class: 'tag urgente mini-tag', title: z.resumo_ia }, '⚠ IA leu outro prazo') : null,
+        z.fatal_texto ? h('span', { class: 'tag mini-tag ' + (z.fatal_texto >= hojeISO() ? 'ok' : 'urgente'), title: `O texto do ato fala em ${z.dias_texto} dias: pela conta do painel com esse número, a data final seria ${dataBR(z.fatal_texto)}. Confira no tribunal; até lá vale a data mais curta.` },
+          (z.fatal_texto >= hojeISO() ? '✓ pelo texto: ' : 'pelo texto: ') + dataBR(z.fatal_texto).slice(0, 5)) : null,
         z.ciencia ? h('span', { class: 'oqf-meta' }, 'ciência ' + dataBR(z.ciencia).slice(0, 5)) : null,
         z.responsavel ? h('span', { class: 'oqf-quem', title: 'Quem cuida: ' + z.responsavel }, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), primeiroNome(z.responsavel)) : h('span', { class: 'oqf-meta sem' }, 'sem responsável')),
       o.ia ? h('div', { class: 'oqf-ia' + (/⚠/.test(z.resumo_ia || '') ? ' alerta' : ''), title: z.resumo_ia }, 'IA: ' + o.ia) : null);
@@ -4642,6 +4682,14 @@
               try { const res = await api('fin.pixBaixar', { id: x.id, parcela_id: sel.value }); avisar('Baixa feita' + (res.recibo ? ' e recibo gerado.' : '.')); if (res.recibo) mostrarRecibo(res.recibo); rota(); }
               catch (e) { ev.target.disabled = false; avisar(e.message, true); }
             }, 'mini'),
+            // 8.37.3: PIX de cliente sem parcela em aberto → vira parcela paga (com recibo) no honorário dele
+            x.cliente_id && !(x.abertas && x.abertas.length) ? botao('＋ Lançar como recebimento deste cliente', async ev => {
+              const obs = prompt(`Lançar ${valorTxt(x.valor)} como recebimento de ${x.cliente}?\n\nVira uma parcela paga (com recibo) no honorário mais recente dele (ou num honorário "Recebimentos avulsos").\n\nObservação (opcional, ex.: "entrada do contrato"):`, '');
+              if (obs === null) return;
+              ev.target.disabled = true;
+              try { const res = await api('fin.pixAvulso', { id: x.id, cliente_id: x.cliente_id, obs }); avisar('Lançado como recebimento' + (res.recibo ? ' e recibo gerado.' : '.')); if (res.recibo) mostrarRecibo(res.recibo); rota(); }
+              catch (e) { ev.target.disabled = false; avisar(e.message, true); }
+            }, 'mini sec') : null,
             (() => { // 8.7.0: "não é honorário" com o motivo; o robô aprende o pagador
               const cat = h('select', { 'aria-label': 'O que é este PIX', class: 'mini' }, h('option', { value: '' }, 'Não é honorário: o que é?'),
                 ['Reembolso de custas/despesa do cliente', 'Transferência entre contas do escritório', 'Pessoal', 'Aluguel/Edifício Future', 'Outro'].map(c => h('option', { value: c }, c)));
@@ -5435,7 +5483,7 @@
   }
   /* Tarefas dos robôs do escritório: mensagem pronta conforme o tipo ([wa:tipo] na tarefa). */
   let LINK_AVAL = 'https://www.google.com/maps/search/?api=1&query=Ara%C3%BAjo%20Advocacia%2C%20Tubar%C3%A3o%20-%20SC';
-  const MOTIVO_WA = { retomar: 'retomar contato', assinar: 'cobrar assinatura', avaliacao: 'pedido de avaliação', valor: 'aviso de alvará/RPV' };
+  const MOTIVO_WA = { retomar: 'retomar contato', assinar: 'cobrar assinatura', avaliacao: 'pedido de avaliação', valor: 'aviso de alvará/RPV', inicial: 'petição inicial para o cliente aprovar', protocolo: 'processo protocolado' };
   function whatsTarefa(x) {
     let tel = telefoneWhats(x.telefone || '');
     if (!tel || !x.wa) return null;
@@ -5446,14 +5494,17 @@
       retomar: `${ola} Passando para saber se ficou alguma dúvida depois do nosso atendimento e se podemos ajudar no próximo passo do seu caso. Estamos à disposição!`,
       assinar: `${ola} Os documentos do seu caso já estão prontos e aguardam a sua assinatura. Qual o melhor dia e horário para você passar no escritório para assinar? Se preferir, combinamos outro jeito.`,
       avaliacao: `${ola} Foi uma satisfação acompanhar o seu processo. Se puder, deixe a sua avaliação sobre o nosso atendimento no Google — leva menos de um minuto e ajuda outras pessoas a nos encontrarem:\n${LINK_AVAL}\n\nMuito obrigada pela confiança!`,
-      valor: `${ola} Houve uma movimentação sobre a liberação de valores no seu processo${x.numero ? ' nº ' + x.numero : ''}. Já estamos conferindo e, em breve, entramos em contato com os detalhes.`
+      valor: `${ola} Houve uma movimentação sobre a liberação de valores no seu processo${x.numero ? ' nº ' + x.numero : ''}. Já estamos conferindo e, em breve, entramos em contato com os detalhes.`,
+      inicial: `${ola} Sua petição inicial ficou pronta e vou te enviar o arquivo logo abaixo para você ler com calma. Veja se está tudo certo, se ficou alguma informação de fora ou se você quer mudar alguma coisa. Assim que você aprovar, damos entrada no processo e te mandamos o número para acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`
     }[x.wa];
     return msg ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) : null;
   }
   function botaoWhatsTarefa(x) {
     if (!x.wa || !MOTIVO_WA[x.wa]) return null;
+    // 8.37.3: aviso do protocolo abre a tela do processo com a mensagem (número + link + código do Acompanhe)
+    if (x.wa === 'protocolo') return x.processo_id ? h('a', { class: 'btn mini wa', href: '#/processo/' + x.processo_id + '?avisar=1', onclick: ev => ev.stopPropagation() }, '📣 Mandar nº e código ao cliente') : null;
     const l = whatsTarefa(x);
-    return l ? botaoAvisar(l, x.wa === 'avaliacao' ? '⭐ Pedir avaliação' : x.wa === 'assinar' ? 'Cobrar assinatura' : 'WhatsApp ao cliente', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null,
+    return l ? botaoAvisar(l, x.wa === 'avaliacao' ? '⭐ Pedir avaliação' : x.wa === 'assinar' ? 'Cobrar assinatura' : x.wa === 'inicial' ? '📄 Mandar a inicial ao cliente' : 'WhatsApp ao cliente', x.avisado_em ? { em: x.avisado_em, por: x.avisado_por } : null,
       () => { registrarWhats({ numero: x.numero, cliente: x.cliente }, MOTIVO_WA[x.wa], x.id ? 'tarefa:' + x.id : ''); if (x.id) x.avisado_em = new Date().toISOString(); })
       : h('span', { class: 'peq' }, 'Cliente sem telefone');
   }
