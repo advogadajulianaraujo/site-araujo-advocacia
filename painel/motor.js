@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.38.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.39.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.38.0';
+var MOTOR_VERSAO = '8.39.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.38.0';
+var VERSAO = '8.39.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -150,6 +150,8 @@ var ESQUEMA = {
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
   Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
+  Chat: ['id', 'sala', 'de', 'texto', 'em', 'apagado'], // 8.39: chat da equipe (sala "geral" ou "dm:<usuário>|<usuário>")
+  ChatLidos: ['id', 'usuario', 'sala', 'em'],          // até onde cada pessoa leu cada sala (id = usuário|sala)
   AgendaEventos: ['id', 'mes', 'agenda', 'ev_id', 'titulo', 'local', 'descricao', 'dia_todo', 'inicio', 'fim', 'dia'], // 8.35: cópia do Google Agenda
   Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
@@ -1876,6 +1878,11 @@ function listarEquipe_() {
     .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
 }
 
+/* ---------- 8.39 Chat da equipe (pedido da usuária: "tipo um WhatsApp, só que mais fácil") ----------
+   Aba Chat: sala "geral" (todo mundo) ou "dm:<usuário>|<usuário>" (conversa a dois, nomes em ordem). Cada um só vê a geral e as
+   conversas de que participa (conferido no servidor). ChatLidos guarda até onde cada pessoa leu cada sala (não lidas = mensagens dos
+   outros depois disso). O navegador pergunta de 15 em 15 s ao banco se há novidade (painel_chat_ping, consulta pequena) e só então
+   busca as mensagens. Nada vai para a IA nem para fora do painel. */
 function aguardandoOk_() {
   var procs = {}, nomes = {};
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });

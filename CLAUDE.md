@@ -1533,3 +1533,22 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   mesmo id em Clientes, Processos, Prazos, Intimações e Tarefas). Banco: 23 MB, região São Paulo, sem complementos pagos.
 - DJEN: o CNJ recusa (403) GitHub, Google E Supabase São Paulo (teste com função temporária, já apagada). O robô do DJEN no GitHub saiu do
   horário automático (só à mão); o DJEN é lido pelo painel aberto em qualquer computador do escritório. Os avisos do PJe/eproc chegam pelo Gmail.
+
+## 8.39.0 WhatsApp sem Cloudflare, DJEN pela extensão, chat da equipe (pedidos da usuária, 17/11/2026)
+
+- Ponte do WhatsApp no SUPABASE (função `whatsapp`, supabase/functions/whatsapp/index.ts; publicar com `FUNCAO=whatsapp node .github/motor/publicar-edge.mjs`):
+  verificação do Meta (GET hub.challenge com o token de verificação), assinatura X-Hub-Signature-256 com o App Secret, responde 200 na hora e
+  entrega em segundo plano ao Apps Script (whats.webhook). Segredos no COFRE do Supabase (`painel_whats_gravar`/`painel_whats_info`: verify,
+  secret, ponte, url). `whatsConfig_` aceita `app_secret` (Properties WHATS_APP_SECRET), gera WHATS_VERIFY e manda tudo ao cofre
+  (`whatsPonteSupabase_`, só quando muda: WHATS_SB_SYNC); devolve `urlRetorno` (…/functions/v1/whatsapp) e `verifyToken` para colar no Meta.
+  A Cloudflare (chatbot/worker.js) fica só de reserva. Em 17/11: WHATS_PHONE_ID já salvo, nenhuma conversa recebida (faltava o webhook).
+- DJEN pela EXTENSÃO do Chrome 1.3.0 (`lerDjen` em extensao-whatsapp/bg.js, `chrome.alarms` de 15 em 15 min, lê se passou 2 h): basta o Chrome
+  aberto no escritório (o CNJ recusa Google/GitHub/Supabase). Rotas `ext.djenConfig` (devolve também `ultima` leitura boa: se o painel leu há
+  < 2 h, ela não lê) e `ext.djenImportar` (= djenImportar_; Config DJEN_EXT_ULTIMA). Popup: "Ler o DJEN deste computador" (storage `djen`) e
+  "Ler o DJEN agora". Manifest ganhou `alarms` e comunicaapi.pje.jus.br — a extensão precisa ser atualizada no Chrome (zip novo).
+- CHAT DA EQUIPE (#/chat, menu Escritório › "Chat da equipe"): abas Chat (id, sala, de, texto, em, apagado) e ChatLidos (id = usuário|sala, em).
+  Sala "geral" (Equipe toda) e "dm:<usuário>|<usuário>" (em ordem; só os dois veem — `chatSalaOk_`). Rotas `chat.listar` (leitura), `chat.enviar`,
+  `chat.lido`, `chat.apagar` (só quem escreveu). Navegador: `iniciarChat` pergunta de 15 em 15 s ao banco `painel_chat_ping(p_token)` (chave
+  pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
+  (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
+  clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).

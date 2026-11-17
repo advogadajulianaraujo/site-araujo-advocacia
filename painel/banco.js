@@ -524,7 +524,19 @@
       tabelas: [...cache.entries()].filter(([, c]) => c.pronto).map(([t, c]) => [t, c.linhas.size]), medidas: medidas.slice(), edge: edgeLigada(), edgeFora: [...edgeFora] };
   }
 
+  /** 8.39: chat da equipe — pergunta pequena ao banco (não lidas + última mensagem). null = sem o banco agora. */
+  async function chatPing() {
+    if (!pronto()) await iniciar();
+    if (!pronto()) return null;
+    const cab = { apikey: S.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(S.url + '/rest/v1/rpc/painel_chat_ping', { method: 'POST', headers: cab, body: JSON.stringify({ p_token: S.token }),
+        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal });
+      return r.ok ? await r.json() : null;
+    } catch (e) { return null; } finally { clearTimeout(timer); }
+  }
   /** Depois de qualquer gravação: a próxima leitura busca o que mudou (incremental, rápido). */
   function envelhecer() { cache.forEach(c => { if (c) c.em = 0; }); }
-  window.PAINEL_BANCO = { envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
+  window.PAINEL_BANCO = { chatPing, envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
 })();

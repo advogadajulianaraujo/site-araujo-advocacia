@@ -1055,12 +1055,18 @@
     const form = h('form', { class: 'g-form form-grade' },
       h('h2', { class: 'largo' }, '⚙ Ligar o WhatsApp'),
       h('ol', { class: 'largo wz-passos' },
-        h('li', {}, 'No Meta (developers.facebook.com › Meus apps › Criar app › Empresa › WhatsApp), ligue o número do escritório. Se ele continua no aplicativo do celular, escolha a opção de usar o mesmo número no aplicativo e na API ("coexistência").'),
-        h('li', {}, 'Crie a ponte grátis na Cloudflare (Workers › Criar › colar o arquivo chatbot/worker.js do site) e coloque nas variáveis: VERIFY_TOKEN (uma senha que você inventar), APP_SECRET (do app no Meta), e as duas abaixo:'),
-        h('li', { class: 'wz-copias' }, copiar1('PAINEL_URL', window.PAINEL_API_URL || c.urlPainel || '(o endereço /exec do programa do Google)'), copiar1('PAINEL_CHAVE', c.chavePonte)),
-        h('li', {}, 'No Meta › WhatsApp › Configuração: URL de retorno = endereço da ponte, token de verificação = o VERIFY_TOKEN; assine o campo "messages" (e "smb_message_echoes" se usar o celular junto).'),
-        h('li', {}, 'Cole aqui o token permanente (usuário do sistema do Meta) e o "Phone number ID", salve, teste e ligue o robô.')),
+        h('li', {}, 'No Meta (developers.facebook.com › Meus apps › Criar app › Empresa › adicionar o produto WhatsApp), ligue o número do escritório. Se ele continua no aplicativo WhatsApp Business do celular, escolha usar o mesmo número no aplicativo e na API ("coexistência").'),
+        h('li', {}, 'Copie do Meta e cole aqui embaixo: o token permanente (Configurações do negócio › Usuários do sistema › Gerar token), o "Phone number ID" (WhatsApp › Configuração da API) e a "Chave secreta do aplicativo" (Configurações do app › Básico). Salve.'),
+        h('li', {}, 'No Meta › WhatsApp › Configuração › Webhook › Editar, cole estes dois e clique em "Verificar e salvar"; depois assine o campo "messages" (e "smb_message_echoes" se o número também fica no celular):'),
+        h('li', { class: 'wz-copias' },
+          c.urlRetorno ? copiar1('URL de retorno', c.urlRetorno) : h('span', { class: 'erro' }, 'Ligue antes o banco novo (Supabase).'),
+          c.verifyToken ? copiar1('Token de verificação', c.verifyToken) : null),
+        h('li', {}, '"Mandar um teste" para o seu celular, depois "🧪 Testar o robô" e marque "Robô respondendo sozinho".')),
+      h('p', { class: 'largo peq ' + (c.ponte && c.ponte.ok && c.temSecret ? 'ok' : 'alerta') },
+        c.ponte && c.ponte.ok ? (c.temSecret ? '✓ Ponte do Supabase pronta (não precisa mais da Cloudflare).' : 'Falta a "Chave secreta do aplicativo" para a ponte conferir as mensagens do Meta.')
+          : 'Ponte do Supabase: ' + ((c.ponte && c.ponte.motivo) || 'não ligada')),
       campo('token', c.temToken ? 'Token do Meta (já cadastrado; cole outro para trocar)' : 'Token do Meta (permanente)', '', { tipo: 'password', auto: 'off', largo: true }),
+      campo('app_secret', c.temSecret ? 'Chave secreta do aplicativo (já cadastrada; cole outra para trocar)' : 'Chave secreta do aplicativo (App Secret)', '', { tipo: 'password', auto: 'off', largo: true }),
       campo('phone_id', 'Phone number ID', c.phone_id, { modo: 'numeric' }),
       campo('resp', 'Quem recebe as tarefas do WhatsApp', c.resp, { opcoes: [['', 'Secretaria / padrão']].concat(equipe.map(p => [p.usuario, p.nome])) }),
       campo('valor', 'Valor da consulta (R$) — trabalhista do empregado e INSS não pagam', String(c.valor || 300), { modo: 'numeric' }),
@@ -1071,13 +1077,17 @@
       c.iaLigada ? null : h('p', { class: 'largo nota alerta' }, 'A IA (chave do Gemini) não está cadastrada: o robô só consegue passar as mensagens para a equipe. Cadastre em Gerenciar acessos › IA.'),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
         h('button', { type: 'button', class: 'btn sec', onclick: async () => { const n = prompt('Mandar uma mensagem de teste para qual número? (com 55 e DDD, ex.: 5548999998888)'); if (!n) return; try { await api('whats.config', { testar: n }); avisar('Mensagem de teste enviada.'); } catch (e) { avisar(e.message, true); } } }, 'Mandar um teste'),
-        h('button', { type: 'button', class: 'btn sec', onclick: async () => { if (!confirm('Gerar uma chave nova da ponte? Depois troque PAINEL_CHAVE na Cloudflare.')) return; await api('whats.config', { novaChave: true }); d.close(); dialogoWhatsConfig(); } }, 'Gerar nova chave da ponte')),
+        h('button', { type: 'button', class: 'btn sec', onclick: async () => { if (!confirm('Gerar uma chave nova da ponte? (Só se a ponte da Cloudflare antiga estiver em uso: troque também o PAINEL_CHAVE lá.)')) return; await api('whats.config', { novaChave: true }); d.close(); dialogoWhatsConfig(); } }, 'Gerar nova chave da ponte')),
+      h('details', { class: 'largo peq' }, h('summary', {}, 'Já usava a ponte antiga da Cloudflare?'),
+        h('p', {}, 'Não precisa mais dela: troque no Meta a URL de retorno pela de cima. Se quiser mantê-la, as variáveis continuam estas:'),
+        copiar1('PAINEL_URL', window.PAINEL_API_URL || c.urlPainel || ''), copiar1('PAINEL_CHAVE', c.chavePonte)),
       c.ultima ? h('p', { class: 'peq largo' }, 'Última mensagem recebida: ' + new Date(c.ultima).toLocaleString('pt-BR')) : null,
       c.erro ? h('p', { class: 'peq largo erro' }, 'Último problema: ' + c.erro) : null, h('p', { class: 'erro largo' }));
     const d = dialogo('wz-config', form);
     K().aoEnviar(form, async f => {
       const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on', valor: f.get('valor') || '300', pix_txt: f.get('pix_txt') || '' };
       if (f.get('token')) dados.token = f.get('token');
+      if (f.get('app_secret')) dados.app_secret = f.get('app_secret');
       await api('whats.config', dados); d.close(); avisar('WhatsApp salvo.'); location.reload();
     });
   }

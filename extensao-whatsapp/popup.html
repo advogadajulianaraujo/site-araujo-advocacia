@@ -10,6 +10,7 @@ label{display:flex;gap:8px;align-items:flex-start;margin:10px 0;cursor:pointer}
 input[type=text]{width:100%;box-sizing:border-box;border:1px solid #d7d3ca;border-radius:8px;padding:9px;font-size:16px;letter-spacing:.2em;text-transform:uppercase;text-align:center}
 button{display:block;width:100%;margin:8px 0 0;padding:9px;border-radius:9px;border:1px solid #1c1a17;background:#1c1a17;color:#fff;font-size:13px;cursor:pointer}
 button.ouro{background:#b58d52;border-color:#b58d52;color:#1c1a17;font-weight:600}
+button.sec2{background:#fff;color:#1c1a17}
 button.sec{background:#fff;color:#a3221a;border-color:#e3c7c3}
 .erro{color:#a3221a}.ok{color:#1d6b3a;font-weight:600}
 [hidden]{display:none!important}
@@ -29,6 +30,9 @@ button.sec{background:#fff;color:#a3221a;border-color:#e3c7c3}
     <label><input type="checkbox" id="escrever"> <span><b>Escrever as respostas sozinho</b>: quando chega mensagem, o robô escreve na caixa e você só confere e aperta Enviar</span></label>
     <label><input type="checkbox" id="auto"> <span>Pôr no funil sozinho quem chega falando de um caso</span></label>
     <label><input type="checkbox" id="etiquetas"> <span>Mostrar a etapa na lista de conversas</span></label>
+    <label><input type="checkbox" id="djen"> <span><b>Ler o DJEN deste computador</b> de 2 em 2 horas (basta o Chrome aberto; o CNJ só aceita a internet do escritório)</span></label>
+    <p class="peq" id="djenMsg"></p>
+    <button id="djenAgora" class="sec2">Ler o DJEN agora</button>
     <button id="abrirWa">Abrir o WhatsApp Web</button>
     <button id="sair" class="sec">Desligar este computador</button>
   </section>

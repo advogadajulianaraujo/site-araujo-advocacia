@@ -492,3 +492,65 @@ begin
 end $$;
 revoke all on function painel_cache_chave(text) from public;
 grant execute on function painel_cache_chave(text) to anon, authenticated, service_role;
+
+-- 8.39: ponte do WhatsApp DENTRO do Supabase (função "whatsapp"; substitui a Cloudflare). Os segredos da ponte ficam no COFRE (Vault):
+-- whats_verify_<esc> (token de verificação do Meta), whats_secret_<esc> (App Secret, confere a assinatura), whats_ponte_<esc> (chave entre a
+-- ponte e o painel) e whats_url_<esc> (endereço /exec do Apps Script). Só a chave secreta do Supabase (service_role) lê e grava.
+create or replace function painel_whats_gravar(p_escritorio uuid, p_chave text, p_valor text) returns void
+language plpgsql security definer set search_path = public, vault as $$
+declare nome text; sid uuid;
+begin
+  if p_chave not in ('verify', 'secret', 'ponte', 'url') then raise exception 'chave inválida'; end if;
+  nome := 'whats_' || p_chave || '_' || p_escritorio::text;
+  select id into sid from vault.secrets where name = nome;
+  if coalesce(p_valor, '') = '' then
+    if sid is not null then delete from vault.secrets where id = sid; end if;
+    return;
+  end if;
+  if sid is null then perform vault.create_secret(p_valor, nome, 'ponte do WhatsApp do painel (não compartilhar)');
+  else perform vault.update_secret(sid, p_valor); end if;
+end $$;
+create or replace function painel_whats_info() returns jsonb
+language plpgsql security definer set search_path = public, vault as $$
+declare esc text; r jsonb := '{}'::jsonb; s record;
+begin
+  select substring(name from 'whats_ponte_(.*)$') into esc from vault.secrets where name like 'whats_ponte_%' order by created_at limit 1;
+  if esc is null then return null; end if;
+  for s in select name, decrypted_secret from vault.decrypted_secrets where name in
+    ('whats_verify_' || esc, 'whats_secret_' || esc, 'whats_ponte_' || esc, 'whats_url_' || esc) loop
+    r := r || jsonb_build_object(split_part(s.name, '_', 2), s.decrypted_secret);
+  end loop;
+  return r || jsonb_build_object('escritorio', esc);
+end $$;
+revoke all on function painel_whats_gravar(uuid, text, text) from public, anon, authenticated;
+revoke all on function painel_whats_info() from public, anon, authenticated;
+grant execute on function painel_whats_gravar(uuid, text, text) to service_role;
+grant execute on function painel_whats_info() to service_role;
+
+-- 8.39: chat da equipe — o navegador pergunta de 15 em 15 s se há mensagem nova (consulta pequena, sem a função "painel").
+-- Só conta a sala geral e as conversas a dois da própria pessoa; devolve quantas não lidas e a última mensagem (para o aviso no canto).
+create or replace function painel_chat_ping(p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; ok boolean; r jsonb; ult record; n integer;
+begin
+  select * into s from painel_sessoes where token_hash = encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex');
+  if not found or s.expira_em < now() or s.ultimo_uso < now() - interval '6 hours' then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  select true into ok from usuarios x
+   where x.escritorio_id = s.escritorio_id and x.id = s.usuario_id and x.ativo = 'sim' and x.perfil = s.perfil and coalesce(nullif(x.sessao_versao, ''), '0') = s.versao;
+  if ok is null then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  if to_regclass('public.chat') is null then return jsonb_build_object('naoLidas', 0); end if;
+  select count(*) into n from chat c
+   left join chat_lidos l on l.escritorio_id = c.escritorio_id and l.id = s.usuario || '|' || c.sala
+   where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and c.de <> s.usuario
+     and (c.sala = 'geral' or (left(c.sala, 3) = 'dm:' and (substr(split_part(c.sala, '|', 1), 4) = s.usuario or split_part(c.sala, '|', 2) = s.usuario)))
+     and c.em > coalesce(l.em, '');
+  select c.sala, c.de, left(c.texto, 90) texto, c.em into ult from chat c
+   where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim'
+     and (c.sala = 'geral' or (left(c.sala, 3) = 'dm:' and (substr(split_part(c.sala, '|', 1), 4) = s.usuario or split_part(c.sala, '|', 2) = s.usuario)))
+   order by c.em desc limit 1;
+  r := jsonb_build_object('naoLidas', n);
+  if ult.em is not null then r := r || jsonb_build_object('ultima', jsonb_build_object('sala', ult.sala, 'de', ult.de, 'texto', ult.texto, 'em', ult.em)); end if;
+  return r;
+end $$;
+revoke all on function painel_chat_ping(text) from public;
+grant execute on function painel_chat_ping(text) to anon, authenticated, service_role;

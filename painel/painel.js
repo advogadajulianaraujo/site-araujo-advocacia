@@ -58,7 +58,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -717,6 +717,7 @@
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
+    ['chat', 'Chat da equipe', null, 'chat', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -732,6 +733,7 @@
   };
   const SECAO_DA_TELA = { compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
     processo: 'processos', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
+  ICONES.chat = 'M3.5 5h12v8.5h-7L3.5 17zM18 9.5h2.5V20L17.5 17.5H11v-2';
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
   ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
@@ -785,6 +787,7 @@
     abasEl.hidden = false;
     quemEl.hidden = false;
     iniciarNotificacoes();
+    iniciarChat();
   }
 
   /* ---------- 8.36 Avisos discretos no canto da tela (administração e secretaria) ----------
@@ -833,6 +836,117 @@
     caixa.append(el);
     while (caixa.children.length > 4) caixa.firstChild.remove();
     setTimeout(fechar, 12000);
+  }
+
+  /* ---------- 8.39 Chat da equipe (pedido da usuária: "tipo um WhatsApp, só que mais fácil") ----------
+     Sala "Equipe toda" + conversa a dois com cada colega. De 15 em 15 s (aba visível) pergunta ao banco se há mensagem nova
+     (painel_chat_ping, consulta pequena): conta as não lidas no menu e mostra o aviso no canto; na tela do chat, redesenha. */
+  let chatTimer = null, chatNaTela = null, chatEquipe = null;
+  const CHAT_ULT = () => 'chat_ult_' + ((sessao && sessao.usuario.usuario) || '');
+  function chatBadge(n) {
+    const a = abasEl && abasEl.querySelector('a[data-aba="chat"]'); if (!a) return;
+    let b = a.querySelector('.chat-badge');
+    if (!n) { if (b) b.remove(); return; }
+    if (!b) { b = h('span', { class: 'chat-badge' }); a.append(b); }
+    b.textContent = n > 99 ? '99+' : String(n);
+  }
+  async function nomesEquipe() {
+    if (!chatEquipe) { try { const l = await api('equipe.listar', {}); chatEquipe = {}; (l || []).forEach(p => { chatEquipe[p.usuario] = p.nome; }); } catch (e) { return {}; } }
+    return chatEquipe;
+  }
+  function iniciarChat() {
+    clearInterval(chatTimer);
+    if (!sessao) return;
+    const vigiar = async () => {
+      if (document.hidden || !sessao) return;
+      let r = null;
+      try { r = BANCO && BANCO.chatPing ? await BANCO.chatPing() : null; } catch (e) { r = null; }
+      if (!r) { // sem o banco: pergunta ao servidor, mas bem menos vezes
+        vigiar.n = (vigiar.n || 0) + 1; if (vigiar.n % 4) return;
+        try { const l = await apiFresco('chat.listar', {}); const nl = (l.salas || []).reduce((a, x) => a + (x.naoLidas || 0), 0);
+          const u = (l.salas || []).map(x => x.ultima && Object.assign({ sala: x.sala }, x.ultima)).filter(Boolean).sort((a, b) => a.em < b.em ? 1 : -1)[0];
+          r = { naoLidas: nl, ultima: u && { sala: u.sala, de: u.de, texto: u.texto, em: u.em } }; } catch (e) { return; }
+      }
+      chatBadge(r.naoLidas || 0);
+      const u = r.ultima; if (!u) return;
+      let visto = ''; try { visto = localStorage.getItem(CHAT_ULT()) || ''; } catch (e) { /* ok */ }
+      if (u.em <= visto) return;
+      try { localStorage.setItem(CHAT_ULT(), u.em); } catch (e) { /* ok */ }
+      if (chatNaTela && /^#\/chat(\?|$)/.test(location.hash)) { chatNaTela(); return; }
+      chatNaTela = null;
+      if (!visto || u.de === sessao.usuario.usuario || !r.naoLidas) return; // 1ª vez neste computador: só anota
+      const nomes = await nomesEquipe();
+      mostrarNotif({ ico: '💬', tit: (u.sala === 'geral' ? 'Equipe · ' : '') + (nomes[u.de] || u.de), sub: u.texto, ir: '#/chat?sala=' + encodeURIComponent(u.sala) });
+    };
+    setTimeout(vigiar, 2500); chatTimer = setInterval(vigiar, 15000);
+  }
+  async function telaChat(params) {
+    const eu = sessao.usuario.usuario;
+    let sala = params.get('sala') || (() => { try { return localStorage.getItem('chat_sala') || 'geral'; } catch (e) { return 'geral'; } })();
+    const listaEl = h('nav', { class: 'chat-salas', 'aria-label': 'Conversas' });
+    const msgsEl = h('div', { class: 'chat-msgs', 'aria-live': 'polite' });
+    const titEl = h('div', { class: 'chat-tit' });
+    const ta = h('textarea', { rows: 2, placeholder: 'Escreva uma mensagem… (Enter envia, Shift+Enter pula linha)', 'aria-label': 'Mensagem', maxlength: 4000 });
+    const enviarBt = h('button', { type: 'submit', class: 'btn' }, 'Enviar');
+    const form = h('form', { class: 'chat-form' }, ta, enviarBt);
+    mostrar(h('div', { class: 'chat' }, listaEl, h('section', { class: 'chat-conversa' }, titEl, msgsEl, form)));
+    const dia = iso => { const d = new Date(iso), hj = new Date(); const ont = new Date(); ont.setDate(hj.getDate() - 1);
+      return d.toDateString() === hj.toDateString() ? 'Hoje' : d.toDateString() === ont.toDateString() ? 'Ontem' : d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }); };
+    const hora = iso => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const comLinks = t => { const out = []; String(t).split(/(https?:\/\/[^\s]+)/g).forEach((p, i) => out.push(i % 2 ? h('a', { href: p, target: '_blank', rel: 'noopener' }, p) : p)); return out; };
+    let ultimoDesenho = '';
+    const carregar = async () => {
+      if (!document.body.contains(msgsEl)) { chatNaTela = null; return; }
+      let r;
+      try { r = await apiFresco('chat.listar', { sala }); } catch (e) { msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      if (!document.body.contains(msgsEl)) return;
+      sala = r.sala || 'geral';
+      try { localStorage.setItem('chat_sala', sala); } catch (e) { /* ok */ }
+      chatBadge((r.salas || []).reduce((a, x) => a + (x.sala === sala ? 0 : x.naoLidas || 0), 0));
+      listaEl.replaceChildren(...(r.salas || []).map(x => h('button', { type: 'button', class: 'chat-sala' + (x.sala === sala ? ' atual' : '') + (x.naoLidas && x.sala !== sala ? ' nova' : ''),
+        onclick: () => { sala = x.sala; ultimoDesenho = ''; history.replaceState(null, '', '#/chat?sala=' + encodeURIComponent(sala)); carregar(); ta.focus(); } },
+        h('span', { class: 'chat-av' + (x.tipo === 'geral' ? ' geral' : '') }, x.tipo === 'geral' ? '👥' : String(x.nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase()),
+        h('span', { class: 'chat-sala-txt' }, h('b', {}, x.nome), h('small', {}, x.ultima ? (x.ultima.de === eu ? 'Você: ' : x.tipo === 'geral' ? primeiroNome(x.ultima.nome) + ': ' : '') + x.ultima.texto : x.tipo === 'geral' ? 'recados para todos' : 'sem mensagens')),
+        x.naoLidas && x.sala !== sala ? h('span', { class: 'chat-n' }, String(x.naoLidas)) : null)));
+      const atual = (r.salas || []).find(x => x.sala === sala) || {};
+      titEl.replaceChildren(h('b', {}, atual.nome || 'Equipe toda'), h('small', {}, atual.tipo === 'geral' ? 'Todo mundo do escritório vê' : 'Só vocês dois veem'));
+      const assinatura = JSON.stringify((r.mensagens || []).map(m => m.id + m.texto.length));
+      if (assinatura !== ultimoDesenho) {
+        ultimoDesenho = assinatura;
+        const perto = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+        const itens = []; let ultDia = '', ultDe = '';
+        (r.mensagens || []).forEach(m => {
+          const dd = dia(m.em); if (dd !== ultDia) { itens.push(h('div', { class: 'chat-dia' }, dd)); ultDia = dd; ultDe = ''; }
+          itens.push(h('div', { class: 'chat-msg' + (m.meu ? ' meu' : '') },
+            !m.meu && atual.tipo === 'geral' && m.de !== ultDe ? h('b', { class: 'chat-de' }, primeiroNome(m.nome)) : null,
+            h('span', { class: 'chat-txt' }, ...comLinks(m.texto)),
+            h('span', { class: 'chat-hora' }, hora(m.em),
+              m.meu ? h('button', { type: 'button', class: 'chat-apagar', title: 'Apagar esta mensagem', onclick: async () => { if (!confirm('Apagar esta mensagem para todos?')) return; try { await api('chat.apagar', { id: m.id }); carregar(); } catch (e) { avisar(e.message, true); } } }, 'apagar') : null)));
+          ultDe = m.de;
+        });
+        if (!itens.length) itens.push(h('p', { class: 'chat-vazio' }, atual.tipo === 'geral' ? 'Nenhuma mensagem ainda. Escreva um recado para a equipe toda.' : 'Nenhuma mensagem ainda com ' + (atual.nome || 'esta pessoa') + '.'));
+        msgsEl.replaceChildren(...itens);
+        if (perto || !carregar.feito) msgsEl.scrollTop = msgsEl.scrollHeight;
+        carregar.feito = true;
+      }
+      const ult = (r.mensagens || []).slice(-1)[0];
+      if (ult && atual.naoLidas) api('chat.lido', { sala, em: ult.em }).catch(() => {});
+    };
+    chatNaTela = carregar;
+    const enviar = async () => {
+      const texto = ta.value.trim(); if (!texto) return;
+      enviarBt.disabled = true;
+      // aparece na hora; o servidor confirma por trás
+      const prov = h('div', { class: 'chat-msg meu enviando' }, h('span', { class: 'chat-txt' }, ...comLinks(texto)), h('span', { class: 'chat-hora' }, 'enviando…'));
+      msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = '';
+      try { await api('chat.enviar', { sala, texto }); ultimoDesenho = ''; await carregar(); }
+      catch (e) { prov.remove(); ta.value = texto; avisar(e.message, true); }
+      finally { enviarBt.disabled = false; ta.focus(); }
+    };
+    form.addEventListener('submit', ev => { ev.preventDefault(); enviar(); });
+    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } });
+    await carregar();
+    ta.focus();
   }
 
   // 8.36.1: atalhos de teclado (g/n/?) retirados a pedido da usuária; fica só o Ctrl+K da busca
@@ -3567,7 +3681,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.38.0';
+  const VERSAO_PAINEL = '8.39.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6469,6 +6583,7 @@ function main() {
         case 'senha': telaSenha(); break;
         case 'agenda': await telaAgenda(params); break;
         case 'audiencias': await telaAudiencias(params); break;
+        case 'chat': await telaChat(params); break;
         case 'compromisso': await telaCompromisso(params); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;

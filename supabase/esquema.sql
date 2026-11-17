@@ -1541,3 +1541,44 @@ alter table agenda_eventos add column if not exists "dia" text;
 alter table agenda_eventos enable row level security;
 drop policy if exists "agenda_eventos: só o próprio escritório" on agenda_eventos;
 create policy "agenda_eventos: só o próprio escritório" on agenda_eventos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+
+-- 8.39: chat da equipe
+create table if not exists chat (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "sala" text,
+  "de" text,
+  "texto" text,
+  "em" text,
+  "apagado" text,
+  primary key (escritorio_id, "id")
+);
+alter table chat add column if not exists "id" text;
+alter table chat add column if not exists "sala" text;
+alter table chat add column if not exists "de" text;
+alter table chat add column if not exists "texto" text;
+alter table chat add column if not exists "em" text;
+alter table chat add column if not exists "apagado" text;
+alter table chat enable row level security;
+drop policy if exists "chat: só o próprio escritório" on chat;
+create policy "chat: só o próprio escritório" on chat for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+
+create table if not exists chat_lidos (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "usuario" text,
+  "sala" text,
+  "em" text,
+  primary key (escritorio_id, "id")
+);
+alter table chat_lidos add column if not exists "id" text;
+alter table chat_lidos add column if not exists "usuario" text;
+alter table chat_lidos add column if not exists "sala" text;
+alter table chat_lidos add column if not exists "em" text;
+alter table chat_lidos enable row level security;
+drop policy if exists "chat_lidos: só o próprio escritório" on chat_lidos;
+create policy "chat_lidos: só o próprio escritório" on chat_lidos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);

@@ -23,31 +23,26 @@ Tempo total: cerca de 1 hora (a maior parte é esperar o Meta aprovar).
    escolha o app, marque `whatsapp_business_messaging` e `whatsapp_business_management`, validade **Nunca**. Copie o token (começa com EAA).
 6. **Chave secreta do app**: no app › Configurações › Básico › **Chave secreta do aplicativo** (App Secret). Copie.
 
-## 2. Ponte gratuita na Cloudflare (recebe as mensagens)
+## 2. No painel (a ponte agora é o próprio Supabase — não precisa de Cloudflare)
 
-1. Crie uma conta grátis em **dash.cloudflare.com** › **Workers e Pages** › **Criar** › **Worker** › nome `whatsapp-araujo` › Implantar.
-2. Clique em **Editar código**, apague tudo e cole o arquivo **`chatbot/worker.js`** deste site
-   (https://raw.githubusercontent.com/advogadajulianaraujo/site-araujo-advocacia/main/chatbot/worker.js). **Implantar**.
-3. Worker › Configurações › **Variáveis e segredos** › adicione como **Segredo**:
-   - `VERIFY_TOKEN`: uma senha que você inventa (ex.: uma frase sem espaços);
-   - `APP_SECRET`: a chave secreta do app (passo 1.6);
-   - `PAINEL_URL` e `PAINEL_CHAVE`: copie do painel em **Conversas do WhatsApp › ⚙ Ligar / configurar**.
-4. Anote o endereço da ponte (ex.: `https://whatsapp-araujo.SEU-NOME.workers.dev`).
+**CRM › Chatbot do WhatsApp › ⚙ Ligar / configurar**:
+1. Cole o **token permanente**, o **Phone number ID** e a **Chave secreta do aplicativo** (App Secret, passo 1.6). **Salvar**.
+   O painel mostra "✓ Ponte do Supabase pronta" e dois campos para copiar: **URL de retorno** e **Token de verificação**.
 
 ## 3. Ligar o retorno no Meta
 
 No app do Meta › WhatsApp › **Configuração** › Webhook › Editar:
-- **URL de retorno**: o endereço da ponte;
-- **Token de verificação**: o mesmo `VERIFY_TOKEN`;
-- Verificar e salvar. Depois, em "Campos do webhook", **assine `messages`** (e `smb_message_echoes` se usar a coexistência).
+- **URL de retorno**: a do painel (termina em `/functions/v1/whatsapp`);
+- **Token de verificação**: o do painel;
+- **Verificar e salvar**. Depois, em "Campos do webhook", **assine `messages`** (e `smb_message_echoes` se usar a coexistência).
 
-## 4. No painel
+## 4. Testar e ligar
 
-**Relacionamento › Conversas do WhatsApp › ⚙ Ligar / configurar**:
-1. Cole o **token** e o **Phone number ID**; escolha quem recebe as tarefas; **Salvar**.
-2. **Mandar um teste** para o seu celular.
-3. Use **🧪 Testar o robô** para ver como ele responde (não manda nada a ninguém).
-4. Marque **Robô respondendo sozinho** e salve. Pronto.
+1. **Mandar um teste** para o seu celular.
+2. **🧪 Testar o robô** (não manda nada a ninguém).
+3. Marque **Robô respondendo sozinho** e salve. Pronto.
+
+(A ponte antiga da Cloudflare, `chatbot/worker.js`, continua funcionando para quem já usava; basta trocar a URL de retorno no Meta.)
 
 Precisa também da chave do Gemini (Gerenciar acessos › IA), que o painel já usa nos resumos.
 

@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.38.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.38.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.39.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.39.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.38.0';
+var VERSAO = '8.39.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -136,6 +136,8 @@ var ESQUEMA = {
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
   Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
+  Chat: ['id', 'sala', 'de', 'texto', 'em', 'apagado'], // 8.39: chat da equipe (sala "geral" ou "dm:<usuário>|<usuário>")
+  ChatLidos: ['id', 'usuario', 'sala', 'em'],          // até onde cada pessoa leu cada sala (id = usuário|sala)
   AgendaEventos: ['id', 'mes', 'agenda', 'ev_id', 'titulo', 'local', 'descricao', 'dia_todo', 'inicio', 'fim', 'dia'], // 8.35: cópia do Google Agenda
   Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
   Assinaturas: ['id', 'cliente_id', 'cliente_nome', 'documentos', 'tipo_acao', 'parte_contraria', 'gerado_em', 'gerado_por', 'situacao', 'assinado_em', 'assinado_por',
@@ -448,6 +450,10 @@ var ROTAS = {
   'agenda.marcarAto': { fn: marcarAtoPainel_ },
   'intimacoes.terminar': { fn: terminarIntimacao_ },
   'equipe.listar': { fn: listarEquipe_ },
+  'chat.listar': { fn: chatListar_ },   // 8.39: chat da equipe
+  'chat.enviar': { fn: chatEnviar_ },
+  'chat.lido': { fn: function (d, u) { if (!chatSalaOk_(d.sala, u)) throw falha_('Conversa não encontrada.'); chatMarcarLido_(d.sala, u, d.em); return { ok: true }; } },
+  'chat.apagar': { fn: chatApagar_ },
   'trabalho.conferir': { fn: conferirTrabalho_ },
   'trabalho.aguardando': { permissao: 'usuarios', fn: aguardandoOk_ },
   'trabalho.ok': { permissao: 'usuarios', fn: darOk_ },
@@ -598,6 +604,13 @@ var ROTAS = {
   'ext.linkCadastro': { ext: true, permissao: 'usuarios', fn: crmLinkCadastro_ },
   'ext.evento': { ext: true, permissao: 'usuarios', fn: extEvento_ },
   'ext.analisar': { ext: true, permissao: 'usuarios', fn: extAnalisar_ },
+  // 8.39: a extensão do Chrome lê o DJEN de 2 em 2 h com o Chrome aberto (sem precisar do painel aberto); o CNJ recusa servidores
+  'ext.djenConfig': { ext: true, fn: function () { var c = djenConfig_(); c.ultima = config_('DJEN_NAVEGADOR_ULTIMA') || ''; return c; } },
+  'ext.djenImportar': { ext: true, fn: function (d, u) {
+    var r = djenImportar_(d, { usuario: 'extensão (' + u.usuario + ')', nome: u.nome, perfil: u.perfil });
+    if (d.fim || d.erro) setConfig_('DJEN_EXT_ULTIMA', new Date().toISOString() + (d.erro ? ' erro: ' + String(d.erro).slice(0, 150) : ''), 'Última leitura do DJEN pela extensão do Chrome');
+    return r;
+  } },
   'whats.conversas': { permissao: 'usuarios', fn: whatsConversas_ },
   'whats.acao': { permissao: 'usuarios', fn: whatsAcao_ },
   'whats.config': { permissao: 'usuarios', fn: whatsConfig_ },
@@ -624,7 +637,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -9889,6 +9902,74 @@ function listarEquipe_() {
     .sort(function (a, b) { return a.nome < b.nome ? -1 : 1; });
 }
 
+/* ---------- 8.39 Chat da equipe (pedido da usuária: "tipo um WhatsApp, só que mais fácil") ----------
+   Aba Chat: sala "geral" (todo mundo) ou "dm:<usuário>|<usuário>" (conversa a dois, nomes em ordem). Cada um só vê a geral e as
+   conversas de que participa (conferido no servidor). ChatLidos guarda até onde cada pessoa leu cada sala (não lidas = mensagens dos
+   outros depois disso). O navegador pergunta de 15 em 15 s ao banco se há novidade (painel_chat_ping, consulta pequena) e só então
+   busca as mensagens. Nada vai para a IA nem para fora do painel. */
+function chatSalaDm_(a, b) { return 'dm:' + [String(a), String(b)].sort().join('|'); }
+function chatSalaOk_(sala, u) {
+  sala = String(sala || '');
+  if (sala === 'geral') return true;
+  var m = /^dm:([^|]+)\|([^|]+)$/.exec(sala);
+  return !!m && m[1] !== m[2] && (m[1] === u.usuario || m[2] === u.usuario);
+}
+function chatMarcarLido_(sala, u, em) {
+  em = /^\d{4}-\d{2}-\d{2}T/.test(String(em || '')) ? String(em) : new Date().toISOString();
+  var t = tabela_('ChatLidos'), id = u.usuario + '|' + sala;
+  var l = t.linhas.filter(function (x) { return x.id === id; })[0];
+  if (l) { if (String(l.em || '') < em) atualizarLinha_(t, l, { em: em }); }
+  else inserirLinha_(t, { id: id, usuario: u.usuario, sala: sala, em: em });
+}
+function chatListar_(d, u) {
+  var pessoas = listarEquipe_(), nomes = {};
+  pessoas.forEach(function (p) { nomes[p.usuario] = p.nome; });
+  var lidos = {};
+  tabela_('ChatLidos').linhas.forEach(function (l) { if (l.usuario === u.usuario) lidos[l.sala] = String(l.em || ''); });
+  var salas = { geral: { sala: 'geral', nome: 'Equipe toda', tipo: 'geral', ultima: null, naoLidas: 0 } };
+  pessoas.forEach(function (p) {
+    if (p.usuario === u.usuario) return;
+    var s2 = chatSalaDm_(u.usuario, p.usuario);
+    salas[s2] = { sala: s2, nome: p.nome, usuario: p.usuario, perfil: p.perfil, tipo: 'dm', ultima: null, naoLidas: 0 };
+  });
+  var sala = d.sala && chatSalaOk_(d.sala, u) ? String(d.sala) : '', lista = [];
+  tabela_('Chat').linhas.forEach(function (m) {
+    if (m.apagado === 'sim' || !salas[m.sala]) return;
+    var s3 = salas[m.sala], em = String(m.em || '');
+    if (!s3.ultima || em > s3.ultima.em) s3.ultima = { de: m.de, nome: nomes[m.de] || m.de, texto: String(m.texto || '').slice(0, 90), em: em };
+    if (m.de !== u.usuario && em > (lidos[m.sala] || '')) s3.naoLidas++;
+    if (m.sala === sala) lista.push({ id: m.id, de: m.de, nome: nomes[m.de] || m.de, texto: String(m.texto || ''), em: em, meu: m.de === u.usuario });
+  });
+  lista.sort(function (a, b) { return a.em < b.em ? -1 : a.em > b.em ? 1 : 0; });
+  var ordem = Object.keys(salas).map(function (k) { return salas[k]; }).sort(function (a, b) {
+    if (a.tipo !== b.tipo) return a.tipo === 'geral' ? -1 : 1;
+    var ea = a.ultima ? a.ultima.em : '', eb = b.ultima ? b.ultima.em : '';
+    return ea !== eb ? (ea < eb ? 1 : -1) : (a.nome < b.nome ? -1 : 1);
+  });
+  return { eu: u.usuario, sala: sala, salas: ordem, mensagens: lista.slice(-200), lidoAte: lidos[sala] || '' };
+}
+function chatEnviar_(d, u) {
+  var sala = String(d.sala || ''), texto = String(d.texto || '').replace(/\r/g, '').trim();
+  if (!texto) throw falha_('Escreva a mensagem.');
+  if (texto.length > 4000) throw falha_('Mensagem grande demais (até 4.000 letras).');
+  if (!chatSalaOk_(sala, u)) throw falha_('Conversa não encontrada.');
+  if (sala !== 'geral') {
+    var outro = sala.slice(3).split('|').filter(function (x) { return x !== u.usuario; })[0];
+    if (!usuarios_().some(function (x) { return x.usuario === outro && x.ativo === 'sim'; })) throw falha_('Essa pessoa não está mais na equipe.');
+  }
+  var em = new Date().toISOString(), id = 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  inserirLinha_(tabela_('Chat'), { id: id, sala: sala, de: u.usuario, texto: texto, em: em, apagado: '' });
+  chatMarcarLido_(sala, u, em);
+  return { ok: true, id: id, em: em };
+}
+function chatApagar_(d, u) {
+  var t = tabela_('Chat'), m = t.linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!m || m.apagado === 'sim' || !chatSalaOk_(m.sala, u)) throw falha_('Mensagem não encontrada.');
+  if (m.de !== u.usuario) throw falha_('Só quem escreveu pode apagar a mensagem.');
+  atualizarLinha_(t, m, { apagado: 'sim', texto: '' });
+  return { ok: true };
+}
+
 function pessoaDaEquipe_(usuario, u) {
   var x = usuarios_().filter(function (r) { return r.usuario === (usuario || u.usuario) && r.ativo === 'sim'; })[0];
   if (!x) throw falha_('Escolha quem fez, na lista da equipe.');
@@ -14591,8 +14672,16 @@ function whatsConfig_(d, u) {
   if (d.pix_txt !== undefined) setConfig_('WHATS_PIX_TXT', String(d.pix_txt).slice(0, 400), 'Dados do Pix que o robô manda (consulta e checagem)');
   if (d.valor !== undefined) { var vv = +String(d.valor).replace(/\D/g, ''); if (!vv) throw falha_('Informe o valor da consulta (só números).'); setConfig_('WHATS_VALOR', String(vv), 'Valor da consulta (R$)'); }
   if (d.ligado !== undefined) setConfig_('WHATS_BOT', d.ligado ? 'sim' : 'nao', 'Robô do WhatsApp respondendo sozinho?');
+  if (d.app_secret !== undefined) {
+    var sec = String(d.app_secret || '').replace(/[\s"'`<>]/g, '');
+    if (sec && !/^[0-9a-f]{32}$/i.test(sec)) throw falha_('A "Chave secreta do aplicativo" do Meta tem 32 letras e números (no app do Meta: Configurações do app › Básico › Chave secreta do aplicativo › Mostrar).');
+    if (sec) props.setProperty('WHATS_APP_SECRET', sec); else props.deleteProperty('WHATS_APP_SECRET');
+    registrar_(u.usuario, 'whatsapp: chave secreta do app', sec ? 'cadastrada' : 'apagada');
+  }
   if (d.novaChave || !props.getProperty('WHATS_PONTE_CHAVE')) props.setProperty('WHATS_PONTE_CHAVE', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 16));
-  var r = { temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
+  var ponteSb; try { ponteSb = whatsPonteSupabase_(!!(d.novaChave || d.app_secret !== undefined)); } catch (eP) { ponteSb = { ok: false, motivo: String(eP && eP.message || eP).slice(0, 200) }; }
+  var r = { ponte: ponteSb, temSecret: !!props.getProperty('WHATS_APP_SECRET'), verifyToken: props.getProperty('WHATS_VERIFY') || '',
+    urlRetorno: sbConf_().url ? sbConf_().url + '/functions/v1/whatsapp' : '', temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
     pix_txt: pixTexto_(), valor: valorConsulta_(), chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_() };
   if (d.testar) {
     var tel = String(d.testar).replace(/\D/g, ''); if (tel.length < 12) throw falha_('Informe o seu número com DDI e DDD (ex.: 5548999998888).');
@@ -14600,6 +14689,23 @@ function whatsConfig_(d, u) {
   }
   if (d.simular !== undefined || d.reiniciar) r.simulacao = whatsSimular_({ texto: d.simular, reiniciar: d.reiniciar }, u);
   return r;
+}
+/* 8.39: a ponte do WhatsApp agora é a função "whatsapp" do Supabase (sem Cloudflare). Os segredos dela vão para o COFRE do Supabase:
+   token de verificação do Meta (gerado aqui, Properties WHATS_VERIFY), App Secret (WHATS_APP_SECRET), chave da ponte (WHATS_PONTE_CHAVE) e
+   o endereço /exec do painel. Só grava quando algo mudou (Properties WHATS_SB_SYNC). */
+function whatsPonteSupabase_(forcar) {
+  if (!sbLigado_()) return { ok: false, motivo: 'o banco novo (Supabase) não está ligado' };
+  var P = PropertiesService.getScriptProperties();
+  if (!P.getProperty('WHATS_VERIFY')) P.setProperty('WHATS_VERIFY', 'araujo' + Utilities.getUuid().replace(/-/g, '').slice(0, 24));
+  var dep = ''; try { dep = idImplantacao_() || ''; } catch (e) { dep = ''; }
+  var vals = { verify: P.getProperty('WHATS_VERIFY'), secret: P.getProperty('WHATS_APP_SECRET') || '', ponte: P.getProperty('WHATS_PONTE_CHAVE') || '',
+    url: dep ? 'https://script.google.com/macros/s/' + dep + '/exec' : '' };
+  var dig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(vals), Utilities.Charset.UTF_8));
+  if (!forcar && P.getProperty('WHATS_SB_SYNC') === dig) return { ok: true, url: !!vals.url, secret: !!vals.secret };
+  var esc = sbEscritorio_();
+  Object.keys(vals).forEach(function (k) { supabase_('post', 'rpc/painel_whats_gravar', { p_escritorio: esc, p_chave: k, p_valor: vals[k] }); });
+  P.setProperty('WHATS_SB_SYNC', dig);
+  return { ok: true, url: !!vals.url, secret: !!vals.secret };
 }
 /** "Testar o robô" no painel: conversa de mentira com o robô (guardada 1 h na memória do servidor). Nada é gravado, marcado nem enviado. */
 function whatsSimular_(d, u) {

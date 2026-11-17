@@ -26,7 +26,94 @@ chrome.runtime.onMessage.addListener((msg, _de, responder) => {
       if (r.ok) await chrome.storage.local.set({ token: r.dados.token, usuario: r.dados.usuario });
       return responder(r);
     }
+    if (msg.tipo === 'djenAgora') return; // (respondido pelo ouvinte do DJEN)
     responder({ ok: false, erro: 'Pedido desconhecido.' });
   })();
+  return true;
+});
+
+/* ---------- 1.3.0: DJEN lido pela extensão (Chrome aberto basta; o painel pode estar fechado) ----------
+   O CNJ recusa os servidores (Google, GitHub, Supabase): só aceita a internet do escritório. Com o Chrome aberto, a extensão lê as
+   comunicações das OABs do escritório de 2 em 2 horas e manda ao painel (rotas ext.djenConfig / ext.djenImportar). Se o painel aberto
+   em algum computador já leu há menos de 2 horas, ela não lê de novo. Liga/desliga no popup ("Ler o DJEN deste computador"). */
+const DJEN_API = 'https://comunicaapi.pje.jus.br/api/v1/comunicacao';
+const espera = ms => new Promise(r => setTimeout(r, ms));
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+async function buscarDjen(url) {
+  let ultimo = null;
+  for (let t = 0; t < 4; t++) {
+    if (t) await espera([0, 3000, 8000, 15000][t]);
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 25000);
+    try {
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store', signal: ctl.signal });
+      if (r.ok) return await r.json();
+      ultimo = new Error('o CNJ respondeu com o código ' + r.status);
+      if (!(r.status === 429 || r.status >= 500)) throw ultimo;
+    } catch (e) {
+      if (e === ultimo && !/código (429|5\d\d)/.test(e.message)) throw e;
+      ultimo = e.name === 'AbortError' ? new Error('o CNJ demorou demais para responder') : e;
+    } finally { clearTimeout(timer); }
+  }
+  throw ultimo || new Error('falha ao ler o DJEN');
+}
+let djenRodando = false;
+async function lerDjen(forcar) {
+  const st = await chrome.storage.local.get(['token', 'djen', 'djen_ultimo']);
+  if (!st.token || st.djen === false || djenRodando) return { ok: false, erro: st.token ? 'desligado' : 'extensão não ligada' };
+  if (!forcar && Date.now() - (+st.djen_ultimo || 0) < 2 * 3600e3) return { ok: true, pulou: true };
+  djenRodando = true;
+  const falhas = []; let novas = 0, prazos = 0, total = 0;
+  try {
+    const c = await chamar('ext.djenConfig', {});
+    if (!c.ok) throw new Error(c.erro || 'o painel não respondeu');
+    const cfg = c.dados;
+    if (!forcar && cfg.ultima && Date.now() - Date.parse(cfg.ultima) < 2 * 3600e3) { await chrome.storage.local.set({ djen_ultimo: Date.parse(cfg.ultima) }); return { ok: true, pulou: true }; }
+    const janelas = [];
+    for (let ini = cfg.desde; ini <= cfg.hoje; ini = somaDias(ini, 7)) janelas.push([ini, somaDias(ini, 6) > cfg.hoje ? cfg.hoje : somaDias(ini, 6)]);
+    let lote = [], tam = 0;
+    const enviar = async fim => {
+      if (!lote.length && !fim) return;
+      const r = await chamar('ext.djenImportar', { itens: lote, fim });
+      if (!r.ok) throw new Error(r.erro || 'o painel não gravou');
+      novas += r.dados.novas || 0; prazos += r.dados.prazos || 0; lote = []; tam = 0;
+    };
+    for (const o of cfg.oabs) {
+      for (const [ini, fim] of janelas) {
+        try {
+          for (let pg = 1; pg <= 20; pg++) {
+            const j = await buscarDjen(`${DJEN_API}?numeroOab=${encodeURIComponent(o.numero)}&ufOab=${encodeURIComponent(o.uf)}&dataDisponibilizacaoInicio=${ini}&dataDisponibilizacaoFim=${fim}&pagina=${pg}&itensPorPagina=100`);
+            const lista = j.items || j.itens || [];
+            for (const it of lista) {
+              const x = { id: it.id, hash: it.hash, numeroprocessocommascara: it.numeroprocessocommascara, numero_processo: it.numero_processo,
+                data_disponibilizacao: it.data_disponibilizacao || it.dataDisponibilizacao, siglaTribunal: it.siglaTribunal,
+                tipoComunicacao: it.tipoComunicacao, nomeOrgao: it.nomeOrgao, texto: String(it.texto || '').slice(0, 20000) };
+              const t = JSON.stringify(x).length;
+              if (lote.length && (tam + t > 140000 || lote.length >= 150)) await enviar(false);
+              lote.push(x); tam += t; total++;
+            }
+            if (lista.length < 100) break;
+            await espera(500);
+          }
+        } catch (e) { falhas.push(`OAB ${o.numero}/${o.uf} ${ini}–${fim}: ${e.message}`); }
+        await espera(300);
+      }
+    }
+    await enviar(!falhas.length); // "lido até hoje" só quando tudo deu certo
+    if (falhas.length) throw new Error(falhas.length + ' consulta(s) falharam (o resto foi lido): ' + falhas[0]);
+    await chrome.storage.local.set({ djen_ultimo: Date.now(), djen_msg: `Lido em ${new Date().toLocaleString('pt-BR')}: ${total} publicação(ões), ${novas} nova(s), ${prazos} prazo(s) novo(s).` });
+    return { ok: true, total, novas, prazos };
+  } catch (e) {
+    const msg = e.message || String(e);
+    chamar('ext.djenImportar', { erro: msg }).catch(() => {});
+    await chrome.storage.local.set({ djen_ultimo: Date.now() - 1.75 * 3600e3, djen_msg: 'Problema em ' + new Date().toLocaleString('pt-BR') + ': ' + msg }); // tenta de novo em 15 min
+    return { ok: false, erro: msg };
+  } finally { djenRodando = false; }
+}
+chrome.alarms.create('djen', { periodInMinutes: 15, delayInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(a => { if (a.name === 'djen') lerDjen(false); });
+chrome.runtime.onStartup.addListener(() => chrome.alarms.create('djen', { periodInMinutes: 15, delayInMinutes: 1 }));
+chrome.runtime.onMessage.addListener((msg, _de, responder) => {
+  if (msg.tipo !== 'djenAgora') return false;
+  lerDjen(true).then(responder);
   return true;
 });
