@@ -479,6 +479,9 @@ create table if not exists audiencias (
   "criado_em" text,
   "atualizado_em" text,
   "atualizado_por" text,
+  "visto_em" text,
+  "aviso_nova_em" text,
+  "aviso_nova_por" text,
   primary key (escritorio_id, _n)
 );
 alter table audiencias add column if not exists "chave" text;
@@ -501,6 +504,9 @@ alter table audiencias add column if not exists "aviso_dia_por" text;
 alter table audiencias add column if not exists "criado_em" text;
 alter table audiencias add column if not exists "atualizado_em" text;
 alter table audiencias add column if not exists "atualizado_por" text;
+alter table audiencias add column if not exists "visto_em" text;
+alter table audiencias add column if not exists "aviso_nova_em" text;
+alter table audiencias add column if not exists "aviso_nova_por" text;
 alter table audiencias enable row level security;
 drop policy if exists "audiencias: só o próprio escritório" on audiencias;
 create policy "audiencias: só o próprio escritório" on audiencias for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);

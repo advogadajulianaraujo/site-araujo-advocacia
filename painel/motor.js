@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.37.1 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.37.2 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.37.1';
+var MOTOR_VERSAO = '8.37.2';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.37.1';
+var VERSAO = '8.37.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -137,7 +137,7 @@ var ESQUEMA = {
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
-    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por'],
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -1145,7 +1145,7 @@ function atosDaAgenda_(hoje, ate, eventos, fresco) {
  * 1 semana antes (se o dia cair em sábado, domingo ou feriado → o dia útil ANTERIOR), na véspera útil (audiência na segunda → avisa
  * na sexta) e NO DIA. Cada aviso vira tarefa da secretaria com o WhatsApp pronto; a tela Audiências (#/audiencias) mostra os três
  * checks, a ciência da equipe, se é online ou presencial e as testemunhas (nome, CPF, telefone) da instrução. */
-var NOME_AVISO_ATO = { semana: '1 semana antes', vespera: 'véspera', dia: 'no dia' };
+var NOME_AVISO_ATO = { nova: 'audiência nova', semana: '1 semana antes', vespera: 'véspera', dia: 'no dia' };
 function utilAteh_(iso, fer) { var d = iso; for (var i = 0; i < 15 && !ehUtil_(d, 'todos', fer, true); i++) d = somarDias_(d, -1); return d; }
 function utilAntes_(iso, fer) { return utilAteh_(somarDias_(iso, -1), fer); }
 /** Dias em que cada aviso deve sair. */
@@ -1154,13 +1154,21 @@ function diasDosAvisos_(data, fer) {
   return { semana: semana < vespera ? semana : vespera, vespera: vespera, dia: data };
 }
 /** Qual aviso está na hora (o mais urgente que ainda falta). */
-function avisoDevido_(data, hoje, feitos, fer) {
+function avisoDevido_(data, hoje, feitos, fer, nova) {
   var d = diasDosAvisos_(data, fer);
   if (hoje === data) return feitos.dia ? '' : 'dia';
   if (hoje > data) return '';
   if (hoje >= d.vespera) return feitos.vespera ? '' : 'vespera';
   if (hoje >= d.semana) return feitos.semana ? '' : 'semana';
+  // 8.37.2 (pedido da usuária: "quando sair a audiência, uma semana antes, um dia antes e no dia"): o 1º aviso é assim que a audiência aparece
+  if (nova && !feitos.nova) return 'nova';
   return '';
+}
+/** O ato apareceu depois que o aviso "audiência nova" foi ligado (Config AVISO_NOVA_DESDE)? Os que já existiam não geram aviso. */
+function atoNovo_(a, fichas) {
+  var desde = config_('AVISO_NOVA_DESDE'); if (!desde) return false;
+  var visto = (a.ev && a.ev.criado_em) || (fichas.porChave[a.chave] || {}).visto_em || '';
+  return !!visto && visto >= desde;
 }
 function fichasAtos_() {
   var r = {}, tab = tabela_('Audiencias');
@@ -1177,7 +1185,8 @@ function fichaDoAto_(fichas, a) {
 /** Estado dos três avisos de um ato: Eventos (antigo) + ficha + tarefas do robô concluídas. */
 function estadoAvisosAto_(a, tarefasAviso, fichas) {
   var f = fichas.porChave[a.chave] || {}, e = a.ev || {}, r = {};
-  var tS = tarefasAviso[a.chave] || {}, tV = tarefasAviso[a.chave + '|vespera'] || {}, tD = tarefasAviso[a.chave + '|dia'] || {};
+  var tS = tarefasAviso[a.chave] || {}, tV = tarefasAviso[a.chave + '|vespera'] || {}, tD = tarefasAviso[a.chave + '|dia'] || {}, tN = tarefasAviso[a.chave + '|nova'] || {};
+  r.nova = { em: f.aviso_nova_em || (tN.feita ? tN.em : ''), por: f.aviso_nova_por || tN.por || '' };
   r.semana = { em: f.aviso_semana_em || e.avisado_em || (tS.feita ? tS.em : ''), por: f.aviso_semana_por || e.avisado_por || tS.por || '' };
   r.vespera = { em: f.aviso_vespera_em || (tV.feita ? tV.em : ''), por: f.aviso_vespera_por || tV.por || '' };
   r.dia = { em: f.aviso_dia_em || e.avisado_dia_em || (tD.feita ? tD.em : ''), por: f.aviso_dia_por || e.avisado_dia_por || tD.por || '' };
@@ -1202,14 +1211,27 @@ function audienciasLista_(dias) {
   var tAv = tarefasDeAviso_(tabela_('Tarefas')), fichas = fichasAtos_();
   return atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 150).map(function (a) {
     var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {}, f = fichaDoAto_(fichas, a) || {};
-    var av = estadoAvisosAto_(a, tAv, fichas), feitos = { semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em };
+    var av = estadoAvisosAto_(a, tAv, fichas), feitos = { nova: !!av.nova.em, semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, novo = atoNovo_(a, fichas);
     return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
-      avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer),
+      avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
       modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
   });
+}
+
+/** 8.37.2: audiências/perícias DESIGNADAS cuja data não veio no aviso (PJe "documento sigiloso"): tarefas abertas "lançar na agenda". */
+function atosSemData_() {
+  var clis = {}, procs = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; if (p.numero) procs[p.numero] = p; });
+  // pela marca [agenda:nº:ref] da descrição (o título fica escondido no navegador para quem não é da administração)
+  return tabela_('Tarefas').linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; })
+    .map(function (t) { var p = procs[t.processo_id] || procs[t.numero] || {}, c = clis[p.cliente_id] || {};
+      return { tarefa_id: t.id, tipo: /\[atosd:pericia\]|indica per[ií]cia/i.test(t.descricao || '') ? 'pericia' : 'audiencia', numero: t.numero || p.numero || '', processo_id: p.id || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '',
+        cliente_id: c.id || '', telefone: c.telefone || '', desde: String(t.criado_em || '').slice(0, 10), responsavel: t.responsavel || '', orgao: p.orgao || '' }; })
+    .sort(function (a, b) { return a.desde < b.desde ? 1 : -1; });
 }
 
 /** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência). */
@@ -1553,7 +1575,7 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
 function atoDaTarefa_(desc) {
   var m = /\[ato:([a-z]+)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(desc || '');
   return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim(), hoje: /\[avisodia\]/.test(desc || ''),
-    quando: /\[avisodia\]/.test(desc || '') ? 'dia' : /\[avisovespera\]/.test(desc || '') ? 'vespera' : 'semana', lembrete: ((/\[lembrete:([^\]|]+)/.exec(desc || '') || [])[1]) || '' } : null;
+    quando: /\[avisodia\]/.test(desc || '') ? 'dia' : /\[avisovespera\]/.test(desc || '') ? 'vespera' : /\[avisonova\]/.test(desc || '') ? 'nova' : 'semana', lembrete: ((/\[lembrete:([^\]|]+)/.exec(desc || '') || [])[1]) || '' } : null;
 }
 
 function lerChecklist_(txt) {
@@ -1777,7 +1799,8 @@ function inicioExtras_(d, u) {
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
   // audiências e perícias de hoje e dos próximos 7 dias: os três avisos (1 semana, véspera, dia) — 8.21
-  var audiencias = audienciasLista_(7).slice(0, 40);
+  var audLonge = audienciasLista_(90), audiencias = audLonge.filter(function (a) { return a.data <= ate; }).slice(0, 40);
+  var audNovas = audLonge.filter(function (a) { return a.devido === 'nova'; }).slice(0, 30), audSemData = atosSemData_().slice(0, 30);
   // aniversariantes de hoje
   var dm = hoje.slice(5), avisos = avisosMapa_();
   var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
@@ -1800,7 +1823,7 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
@@ -2066,7 +2089,7 @@ var ROTAS_MOTOR = {
   'equipe.listar': { fn: listarEquipe_ },
   'trabalho.aguardando': { permissao: 'usuarios', fn: aguardandoOk_ },
   'inicio.acoes': { fn: inicioAcoes_ },
-  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), hoje: hojeSP_() }; } },
+  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), semData: atosSemData_(), hoje: hojeSP_() }; } },
   'eu.painel': { fn: meuPainel_ },
   'documentos.assinaturas': { fn: listarAssinaturas_ },
   'fluxos.processo': { fn: fluxoProcesso_ },
@@ -2089,7 +2112,7 @@ var ROTAS_MOTOR = {
 window.PAINEL_MOTOR = {
   versao: MOTOR_VERSAO,
   esquema: ESQUEMA,
-  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
+  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","AVISO_NOVA_DESDE","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
   tabelasDaRota: {"resumo":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Avisos","Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"],"fin.painel":["Assinaturas","Clientes","Despesas","Honorarios","Parcelas","Processos","Usuarios"],"relatorio.geral":["Assinaturas","Avisos","Clientes","Despesas","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"]},
   google: ["agenda.criar","agenda.marcarAto","banco.conferir","banco.config","calc.indices","clientes.criarPasta","clientes.documentos","clientes.portal","clientes.salvar","clientes.whatsapp","consulta.baixar","consulta.enviar","consulta.processos","crm.consulta","crm.proposta","djen.robo","documentos.gerar","ext.analisar","fin.asaas.cancelar","fin.asaas.config","fin.asaas.gerar","fin.levantamento","fin.parcela.pagar","fin.pixLer","fin.recibo.gerar","future.contrato.aditivo","future.contrato.distrato","future.contrato.gerar","future.drive","future.importar","future.importarPasta","future.pessoa.pasta","future.vistoria.enviar","ia.audioParte","ia.config","ia.organizarNota","ia.resumirPrazo","ia.resumirProcesso","ia.textoCliente","ia.transcrever","ia.transcricaoResumo","marketing.gbp","modelos.liberarEdicao","modelos.listar","padroes.guia","prazos.baixarVencidos","resumo.email.testar","robo.consertar","robo.rodar","seguranca","site.contato","whats.acao","whats.config","whats.webhook","whatsapp.entrada"],
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },

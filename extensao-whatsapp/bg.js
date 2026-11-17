@@ -14,6 +14,13 @@ async function chamar(acao, dados) {
 chrome.runtime.onMessage.addListener((msg, _de, responder) => {
   (async () => {
     if (msg.tipo === 'api') return responder(await chamar(msg.acao, msg.dados));
+    if (msg.tipo === 'abrirWhats') { // 1.2.0: abre a conversa na aba do WhatsApp Web que já está aberta (ou numa nova, se não houver)
+      const url = 'https://web.whatsapp.com/send?phone=' + msg.tel + (msg.texto ? '&text=' + encodeURIComponent(msg.texto) : '');
+      const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      if (abas.length) { await chrome.tabs.update(abas[0].id, { url, active: true }); try { await chrome.windows.update(abas[0].windowId, { focused: true }); } catch (e) { /* ok */ } }
+      else await chrome.tabs.create({ url });
+      return responder({ ok: true });
+    }
     if (msg.tipo === 'ativar') {
       const r = await chamar('ext.ativar', { codigo: msg.codigo, nome: msg.nome || 'Chrome' });
       if (r.ok) await chrome.storage.local.set({ token: r.dados.token, usuario: r.dados.usuario });

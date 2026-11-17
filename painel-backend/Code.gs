@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.37.1';
+var VERSAO = '8.37.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -76,7 +76,7 @@ var ESQUEMA = {
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
-    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por'],
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -464,7 +464,7 @@ var ROTAS = {
   'inicio.extras': { fn: inicioExtras_ },
   'inicio.acoes': { fn: inicioAcoes_ },
   'agenda.avisado': { fn: marcarAvisado_ },
-  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), hoje: hojeSP_() }; } },
+  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), semData: atosSemData_(), hoje: hojeSP_() }; } },
   'audiencias.salvar': { fn: salvarFichaAto_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
@@ -2287,7 +2287,7 @@ function memoriaPrazo_(d) {
  * motor novo (recalcula) e vencidos ainda abertos (baixa como feito, com marca — dá para reabrir).
  */
 function revisarPrazos_(d, u) {
-  var aplicar = !!d.aplicar, cats = d.categorias || ['repetidos', 'mp', 'audiencia', 'recalcular'], hoje = hojeSP_();
+  var aplicar = !!d.aplicar, cats = d.categorias || ['repetidos', 'mp', 'recalcular'], hoje = hojeSP_();
   var tab = tabela_('Prazos'), fer = mapaFeriados_(), procs = {}, eventos = {};
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
   tabela_('Eventos').linhas.forEach(function (e) { if (e.numero && e.data && !/^apagado/.test(e.evento_id || '')) (eventos[e.numero] = eventos[e.numero] || []).push(e); });
@@ -4770,6 +4770,45 @@ function tituloAto_(ctx, tipo, numero, proc) {
   return (tipo.charAt(0).toUpperCase() + tipo.slice(1)) + (cliente ? ' — ' + cliente : '') + ' — ' + numero;
 }
 
+var AGENDAS_ATO = { 'AUDIÊNCIA CONCILIAÇÃO': 1, 'AUDIÊNCIA INSTRUÇÃO': 1, 'PERÍCIAS': 1 };
+/** Evento já existente no Google Agenda (agendas de audiência/perícia) com o mesmo nº de processo no mesmo dia (e mesma hora, se houver). */
+function eventoGoogleDoAto_(numero, data, hora) {
+  if (!numero || !data) return '';
+  try {
+    var achado = '';
+    eventosDoMes_(data.slice(0, 7), true).eventos.forEach(function (ev) {
+      if (achado || !AGENDAS_ATO[ev.agenda]) return;
+      var dia = ev.dia || String(ev.inicio).slice(0, 10), h = ev.diaTodo ? '' : String(ev.inicio).slice(11, 16);
+      if (dia !== data || (hora && h && h !== hora)) return;
+      if (String(ev.titulo + ' ' + (ev.descricao || '')).indexOf(numero) >= 0) achado = String(ev.id);
+    });
+    return achado;
+  } catch (e) { if (e && e.motor) throw e; return ''; }
+}
+/** 8.37.2, UMA vez (Config FIX_ATOS_DUP_837): evento que o ROBÔ criou e que tem um gêmeo lançado à mão (mesmo processo, dia e hora, mesma
+ *  agenda) → apaga o do robô e liga a aba Eventos ao gêmeo (era o caso "Audiência de conciliação | JOÃO … | 0001180-53…" duas vezes). */
+function limparAtosDuplicados837_() {
+  if (config_('FIX_ATOS_DUP_837')) return 0;
+  var tab = tabela_('Eventos'), hoje = hojeSP_(), n = 0, meses = {};
+  tab.linhas.forEach(function (e) {
+    if (!e.evento_id || /^erro|^apagado/.test(e.evento_id) || !e.numero || (e.data || '') < hoje) return;
+    var mes = e.data.slice(0, 7), lista = meses[mes] = meses[mes] || eventosDoMes_(mes, true).eventos;
+    var meu = lista.filter(function (ev) { return String(ev.id) === String(e.evento_id); })[0];
+    if (!meu) return;
+    var gemeo = lista.filter(function (ev) { return String(ev.id) !== String(e.evento_id) && ev.agenda === meu.agenda && ev.inicio === meu.inicio &&
+      String(ev.titulo + ' ' + (ev.descricao || '')).indexOf(e.numero) >= 0; })[0];
+    if (!gemeo) return;
+    try {
+      var cal = CalendarApp.getCalendarById(agendas_()[meu.agenda]), ce = cal && cal.getEventById(String(meu.id));
+      if (ce) { mudouAgenda_(); ce.deleteEvent(); }
+      atualizarLinha_(tab, e, { evento_id: String(gemeo.id) }); n++;
+    } catch (err) { /* segue */ }
+  });
+  setConfig_('FIX_ATOS_DUP_837', new Date().toISOString() + ' · ' + n + ' evento(s) repetido(s) do robô apagado(s)', 'Audiências repetidas na agenda (8.37.2, uma vez)');
+  if (n) registrar_('robô', 'agenda', n + ' audiência(s) repetida(s) tirada(s) da agenda (ficou a lançada à mão)');
+  return n;
+}
+
 /** Já existe na agenda este ato (mesmo processo, mesma data e mesmo tipo: audiência ou perícia)? */
 function atoJaMarcado_(ctx, numero, data, ehPericia) {
   ctx.eventos = ctx.eventos || tabela_('Eventos');
@@ -4786,7 +4825,10 @@ function marcarAto_(ctx, ato, info, proc) {
   ctx.eventos = ctx.eventos || tabela_('Eventos');
   if (atoJaMarcado_(ctx, info.numero, ato.data, ato.ehPericia)) return false;
   var titulo = tituloAto_(ctx, ato.tipo, info.numero, proc);
-  var evId = criarEventoAto_(ato.agenda, titulo, ato.data, ato.hora, 'Marcado ' + (info.por ? 'por ' + info.por : 'pelo robô') + ' a partir de: ' + info.fonte + '. ' + String(info.movimento || '').slice(0, 300));
+  // 8.37.2 (pedido da usuária: "são as duas mesmas pessoas, mesmo processo"): se já há no Google Agenda um evento deste processo neste dia
+  // (lançado à mão), o robô usa ESSE evento em vez de criar outro igual
+  var evId = eventoGoogleDoAto_(info.numero, ato.data, ato.hora) ||
+    criarEventoAto_(ato.agenda, titulo, ato.data, ato.hora, 'Marcado ' + (info.por ? 'por ' + info.por : 'pelo robô') + ' a partir de: ' + info.fonte + '. ' + String(info.movimento || '').slice(0, 300));
   var agora = new Date().toISOString();
   var prazo = {
     id: novoId_('Z'), processo_id: proc.id, numero: info.numero, intimacao_id: info.intimacao_id || '',
@@ -4827,7 +4869,7 @@ function tarefaAtoSemData_(ctx, ato, info, proc, ref) {
     titulo: (ato.ehPericia ? 'Perícia' : 'Audiência') + ' designada — abrir o processo e lançar na agenda (' + info.numero + ')',
     descricao: 'O ' + (info.fonte || 'aviso') + ' indica ' + ato.tipo + ' designada, mas sem a data no texto. Abra o processo no sistema do tribunal, ' +
       'veja a data e o horário e use "Marcar na agenda" em Intimações e prazos. O prazo da intimação continua na lista.\n' +
-      'Movimento: ' + String(info.movimento || '').slice(0, 200) + '\n' + marca,
+      'Movimento: ' + String(info.movimento || '').slice(0, 200) + '\n' + marca + '\n[atosd:' + (ato.ehPericia ? 'pericia' : 'audiencia') + ']',
     responsavel: responsavelPadrao_(proc, info.numero), processo_id: proc.id, numero: info.numero, cliente_id: proc.cliente_id || '',
     vence_em: hoje, etapa: 'afazer', peso: '2', situacao: 'ativa', concluida_por: '', concluida_em: '',
     historico: Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô: ato designado sem data', criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô' });
@@ -5471,8 +5513,8 @@ function atosDaAgenda_(hoje, ate, eventos, fresco) {
  * 1 semana antes (se o dia cair em sábado, domingo ou feriado → o dia útil ANTERIOR), na véspera útil (audiência na segunda → avisa
  * na sexta) e NO DIA. Cada aviso vira tarefa da secretaria com o WhatsApp pronto; a tela Audiências (#/audiencias) mostra os três
  * checks, a ciência da equipe, se é online ou presencial e as testemunhas (nome, CPF, telefone) da instrução. */
-var AVISOS_ATO = ['semana', 'vespera', 'dia'];
-var NOME_AVISO_ATO = { semana: '1 semana antes', vespera: 'véspera', dia: 'no dia' };
+var AVISOS_ATO = ['nova', 'semana', 'vespera', 'dia'];
+var NOME_AVISO_ATO = { nova: 'audiência nova', semana: '1 semana antes', vespera: 'véspera', dia: 'no dia' };
 function utilAteh_(iso, fer) { var d = iso; for (var i = 0; i < 15 && !ehUtil_(d, 'todos', fer, true); i++) d = somarDias_(d, -1); return d; }
 function utilAntes_(iso, fer) { return utilAteh_(somarDias_(iso, -1), fer); }
 /** Dias em que cada aviso deve sair. */
@@ -5481,13 +5523,21 @@ function diasDosAvisos_(data, fer) {
   return { semana: semana < vespera ? semana : vespera, vespera: vespera, dia: data };
 }
 /** Qual aviso está na hora (o mais urgente que ainda falta). */
-function avisoDevido_(data, hoje, feitos, fer) {
+function avisoDevido_(data, hoje, feitos, fer, nova) {
   var d = diasDosAvisos_(data, fer);
   if (hoje === data) return feitos.dia ? '' : 'dia';
   if (hoje > data) return '';
   if (hoje >= d.vespera) return feitos.vespera ? '' : 'vespera';
   if (hoje >= d.semana) return feitos.semana ? '' : 'semana';
+  // 8.37.2 (pedido da usuária: "quando sair a audiência, uma semana antes, um dia antes e no dia"): o 1º aviso é assim que a audiência aparece
+  if (nova && !feitos.nova) return 'nova';
   return '';
+}
+/** O ato apareceu depois que o aviso "audiência nova" foi ligado (Config AVISO_NOVA_DESDE)? Os que já existiam não geram aviso. */
+function atoNovo_(a, fichas) {
+  var desde = config_('AVISO_NOVA_DESDE'); if (!desde) return false;
+  var visto = (a.ev && a.ev.criado_em) || (fichas.porChave[a.chave] || {}).visto_em || '';
+  return !!visto && visto >= desde;
 }
 function fichasAtos_() {
   var r = {}, tab = tabela_('Audiencias');
@@ -5504,7 +5554,8 @@ function fichaDoAto_(fichas, a) {
 /** Estado dos três avisos de um ato: Eventos (antigo) + ficha + tarefas do robô concluídas. */
 function estadoAvisosAto_(a, tarefasAviso, fichas) {
   var f = fichas.porChave[a.chave] || {}, e = a.ev || {}, r = {};
-  var tS = tarefasAviso[a.chave] || {}, tV = tarefasAviso[a.chave + '|vespera'] || {}, tD = tarefasAviso[a.chave + '|dia'] || {};
+  var tS = tarefasAviso[a.chave] || {}, tV = tarefasAviso[a.chave + '|vespera'] || {}, tD = tarefasAviso[a.chave + '|dia'] || {}, tN = tarefasAviso[a.chave + '|nova'] || {};
+  r.nova = { em: f.aviso_nova_em || (tN.feita ? tN.em : ''), por: f.aviso_nova_por || tN.por || '' };
   r.semana = { em: f.aviso_semana_em || e.avisado_em || (tS.feita ? tS.em : ''), por: f.aviso_semana_por || e.avisado_por || tS.por || '' };
   r.vespera = { em: f.aviso_vespera_em || (tV.feita ? tV.em : ''), por: f.aviso_vespera_por || tV.por || '' };
   r.dia = { em: f.aviso_dia_em || e.avisado_dia_em || (tD.feita ? tD.em : ''), por: f.aviso_dia_por || e.avisado_dia_por || tD.por || '' };
@@ -5529,14 +5580,27 @@ function audienciasLista_(dias) {
   var tAv = tarefasDeAviso_(tabela_('Tarefas')), fichas = fichasAtos_();
   return atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 150).map(function (a) {
     var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {}, f = fichaDoAto_(fichas, a) || {};
-    var av = estadoAvisosAto_(a, tAv, fichas), feitos = { semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em };
+    var av = estadoAvisosAto_(a, tAv, fichas), feitos = { nova: !!av.nova.em, semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, novo = atoNovo_(a, fichas);
     return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
-      avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer),
+      avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
       modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
   });
+}
+
+/** 8.37.2: audiências/perícias DESIGNADAS cuja data não veio no aviso (PJe "documento sigiloso"): tarefas abertas "lançar na agenda". */
+function atosSemData_() {
+  var clis = {}, procs = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; if (p.numero) procs[p.numero] = p; });
+  // pela marca [agenda:nº:ref] da descrição (o título fica escondido no navegador para quem não é da administração)
+  return tabela_('Tarefas').linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; })
+    .map(function (t) { var p = procs[t.processo_id] || procs[t.numero] || {}, c = clis[p.cliente_id] || {};
+      return { tarefa_id: t.id, tipo: /\[atosd:pericia\]|indica per[ií]cia/i.test(t.descricao || '') ? 'pericia' : 'audiencia', numero: t.numero || p.numero || '', processo_id: p.id || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '',
+        cliente_id: c.id || '', telefone: c.telefone || '', desde: String(t.criado_em || '').slice(0, 10), responsavel: t.responsavel || '', orgao: p.orgao || '' }; })
+    .sort(function (a, b) { return a.desde < b.desde ? 1 : -1; });
 }
 
 /** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência). */
@@ -5569,9 +5633,26 @@ function lembrarAudiencias_(ctx) {
   ctx.procs.linhas.forEach(function (p) { if (p.numero) porNumero[p.numero] = p; });
   var atos = atosDaAgenda_(hoje, somarDias_(hoje, 10), ctx.eventos || tabela_('Eventos'), true); // o robô lê o Google na hora
   var feitos = 0, agora = new Date().toISOString();
+  // 8.37.2: "audiência nova" — de 2 em 2 h olha até 90 dias à frente (o que a cópia da agenda tem); cada ato ganha a ficha com visto_em (quando apareceu).
+  // Na 1ª vez só anota (Config AVISO_NOVA_DESDE): os que já existiam não geram aviso de "nova".
+  var props = PropertiesService.getScriptProperties(), ultNova = +(props.getProperty('AVISO_NOVA_EM') || 0);
+  if (Date.now() - ultNova > 110 * 60000) {
+    props.setProperty('AVISO_NOVA_EM', String(Date.now()));
+    var primeira = !config_('AVISO_NOVA_DESDE');
+    var longe = atosDaAgenda_(somarDias_(hoje, 11), somarDias_(hoje, 90), ctx.eventos || tabela_('Eventos'), false);
+    atos.concat(longe).forEach(function (a) {
+      if (a.ev || fichas.porChave[a.chave]) { var f0 = fichas.porChave[a.chave]; if (f0 && !f0.visto_em) atualizarLinha_(fichas.tab, f0, { visto_em: agora }); return; }
+      var nf = { chave: a.chave, numero: a.numero || '', data: a.data, hora: a.hora || '', tipo: a.tipo, modo: '', link: '', testemunhas: '[]', obs: '', ciente_em: '', ciente_por: '',
+        aviso_semana_em: '', aviso_semana_por: '', aviso_vespera_em: '', aviso_vespera_por: '', aviso_dia_em: '', aviso_dia_por: '', criado_em: agora, atualizado_em: agora, atualizado_por: 'robô',
+        visto_em: agora, aviso_nova_em: '', aviso_nova_por: '' };
+      inserirLinha_(fichas.tab, nf); fichas.porChave[a.chave] = nf;
+    });
+    if (primeira) setConfig_('AVISO_NOVA_DESDE', new Date(Date.now() + 2000).toISOString(), 'Aviso "audiência nova" ao cliente: vale para as audiências que aparecerem a partir desta data (8.37.2)');
+    else atos = atos.concat(longe);
+  }
   atos.forEach(function (a) {
     var av = estadoAvisosAto_(a, tAv, fichas);
-    var devido = avisoDevido_(a.data, hoje, { semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, fer);
+    var devido = avisoDevido_(a.data, hoje, { nova: !!av.nova.em, semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, fer, atoNovo_(a, fichas));
     if (!devido) return;
     var chave = devido === 'semana' ? a.chave : a.chave + '|' + devido;
     if (tAv[chave]) return; // já existe a tarefa deste aviso (aberta ou feita)
@@ -5584,19 +5665,21 @@ function lembrarAudiencias_(ctx) {
     var nomeCli = cli.nome || (p.cliente_nome && p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '';
     var quando = dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '');
     var nomeAto = a.nome.charAt(0).toUpperCase() + a.nome.slice(1);
-    var titulo = { semana: 'Avisar o cliente (1 semana antes): ', vespera: '⚖ VÉSPERA — lembrar o cliente: ', dia: '⚖ HOJE — lembrar o cliente: ' }[devido];
-    var orient = { semana: 'Avise o cliente pelo botão de WhatsApp desta tarefa (a mensagem explica o que é a audiência e pergunta se será online ou presencial' + (a.tipo === 'instrucao' ? ' e pede as testemunhas: nome, CPF e telefone' : '') + ').',
+    var titulo = { nova: '📅 AUDIÊNCIA NOVA — avisar o cliente: ', semana: 'Avisar o cliente (1 semana antes): ', vespera: '⚖ VÉSPERA — lembrar o cliente: ', dia: '⚖ HOJE — lembrar o cliente: ' }[devido];
+    if (devido === 'nova' && a.tipo === 'pericia') titulo = '📅 PERÍCIA NOVA — avisar o cliente: ';
+    var orient = { nova: 'Saiu a data: avise o cliente agora pelo botão de WhatsApp desta tarefa (dia, hora, se é online/presencial' + (a.tipo === 'instrucao' ? ' e peça as testemunhas: nome, CPF e telefone' : a.tipo === 'pericia' ? ' e o que levar' : '') + '). O painel avisa de novo 1 semana antes, na véspera e no dia.',
+      semana: 'Avise o cliente pelo botão de WhatsApp desta tarefa (a mensagem explica o que é a audiência e pergunta se será online ou presencial' + (a.tipo === 'instrucao' ? ' e pede as testemunhas: nome, CPF e telefone' : '') + ').',
       vespera: 'O próximo dia útil é o da audiência: lembre o cliente agora pelo WhatsApp e confirme que ele vai.',
       dia: 'É HOJE: mande a mensagem de lembrete pelo botão de WhatsApp e confirme que o cliente vai.' }[devido];
     inserirLinha_(tabT, { id: novoId_('T'),
       titulo: titulo + a.nome + ' em ' + quando + (nomeCli ? ' — ' + nomeCli : ''),
       descricao: nomeAto + ' ' + quando + (a.local ? ' · ' + a.local : '') + (a.numero ? ' · processo ' + a.numero : '') + (a.titulo && !a.numero ? ' · ' + a.titulo : '') +
         '.\n' + orient + ' Anote testemunhas e se é online/presencial em Audiências (menu). Depois aperte "✓ Conferido".\n' +
-        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + chave + ']' + (devido === 'dia' ? '\n[avisodia]' : devido === 'vespera' ? '\n[avisovespera]' : ''),
+        '[ato:' + a.tipo + '|' + a.data + '|' + (a.hora || '') + '|' + String(a.local || '').replace(/[\]|]/g, ' ').slice(0, 80) + ']\n[lembrete:' + chave + ']' + (devido === 'dia' ? '\n[avisodia]' : devido === 'vespera' ? '\n[avisovespera]' : devido === 'nova' ? '\n[avisonova]' : ''),
       responsavel: respSecretaria_() || p.responsavel || responsavelPadrao_(p, a.numero) || '', processo_id: p.id || '', numero: a.numero || '', cliente_id: p.cliente_id || '',
       vence_em: hoje, etapa: 'afazer', peso: '1', situacao: 'ativa', concluida_por: '', concluida_em: '',
       historico: historicoMais_('', { nome: 'robô' }, 'aviso ' + NOME_AVISO_ATO[devido] + ': ' + a.nome), criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô',
-      prioridade: devido === 'semana' ? 'alta' : 'urgente', checklist: devido === 'semana' ? JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })) : '',
+      prioridade: devido === 'semana' || devido === 'nova' ? 'alta' : 'urgente', checklist: devido === 'semana' ? JSON.stringify((CHECK_ATO[a.tipo] || CHECK_ATO.conciliacao).map(function (t) { return { t: t, ok: false }; })) : '',
       repetir: '', ok_por: '', ok_em: '' });
     feitos++;
   });
@@ -5928,9 +6011,9 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'audiencia', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.audiencia.length + r.recalcular.length;
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -8546,7 +8629,7 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
 function atoDaTarefa_(desc) {
   var m = /\[ato:([a-z]+)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(desc || '');
   return m ? { tipo: m[1], data: m[2], hora: m[3], local: m[4].trim(), hoje: /\[avisodia\]/.test(desc || ''),
-    quando: /\[avisodia\]/.test(desc || '') ? 'dia' : /\[avisovespera\]/.test(desc || '') ? 'vespera' : 'semana', lembrete: ((/\[lembrete:([^\]|]+)/.exec(desc || '') || [])[1]) || '' } : null;
+    quando: /\[avisodia\]/.test(desc || '') ? 'dia' : /\[avisovespera\]/.test(desc || '') ? 'vespera' : /\[avisonova\]/.test(desc || '') ? 'nova' : 'semana', lembrete: ((/\[lembrete:([^\]|]+)/.exec(desc || '') || [])[1]) || '' } : null;
 }
 
 function lerChecklist_(txt) {
@@ -9456,7 +9539,8 @@ function inicioExtras_(d, u) {
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
   // audiências e perícias de hoje e dos próximos 7 dias: os três avisos (1 semana, véspera, dia) — 8.21
-  var audiencias = audienciasLista_(7).slice(0, 40);
+  var audLonge = audienciasLista_(90), audiencias = audLonge.filter(function (a) { return a.data <= ate; }).slice(0, 40);
+  var audNovas = audLonge.filter(function (a) { return a.devido === 'nova'; }).slice(0, 30), audSemData = atosSemData_().slice(0, 30);
   // aniversariantes de hoje
   var dm = hoje.slice(5), avisos = avisosMapa_();
   var aniversarios = Object.keys(clis).map(function (k) { return clis[k]; })
@@ -9479,15 +9563,15 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
 function marcarAvisado_(d, u) {
-  var q = d.quando === 'dia' ? 'dia' : d.quando === 'vespera' ? 'vespera' : 'semana', agora = new Date().toISOString(), quem = u.nome || u.usuario;
+  var q = d.quando === 'dia' ? 'dia' : d.quando === 'vespera' ? 'vespera' : d.quando === 'nova' ? 'nova' : 'semana', agora = new Date().toISOString(), quem = u.nome || u.usuario;
   return comTrava_(function () {
     var tab = tabela_('Eventos'), e = d.chave ? tab.linhas.filter(function (x) { return x.chave === d.chave; })[0] : null;
-    if (e && q !== 'vespera') atualizarLinha_(tab, e, q === 'dia' ? { avisado_dia_em: agora, avisado_dia_por: quem } : { avisado_em: agora, avisado_por: quem });
+    if (e && (q === 'semana' || q === 'dia')) atualizarLinha_(tab, e, q === 'dia' ? { avisado_dia_em: agora, avisado_dia_por: quem } : { avisado_em: agora, avisado_por: quem });
     if (d.lembrete) {
       var fichas = fichasAtos_(), f = fichas.porChave[d.lembrete], m = {}; m['aviso_' + q + '_em'] = agora; m['aviso_' + q + '_por'] = quem; m.atualizado_em = agora; m.atualizado_por = u.usuario;
       if (f) atualizarLinha_(fichas.tab, f, m);
@@ -14529,7 +14613,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DISTRIBUICAO', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'AVISO_NOVA_DESDE', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DISTRIBUICAO', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {

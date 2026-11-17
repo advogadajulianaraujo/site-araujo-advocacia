@@ -1445,3 +1445,25 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   mostrar as ETAPAS da cobrança, cada uma ✓ com data e quem fez (clique marca/desfaz): 1 WhatsApp (mensagem_em das parcelas), 2 Notificação e
   3 Ação ajuizada (aba Avisos, chave `acaocob:<cliente>:notificacao|ajuizada`, rota `fin.acaoCobranca.marcar` acao=notificacao|ajuizada|desfazer_*),
   + "último aviso / nunca avisado". Os cartões de sugestão continuam com a etapa sugerida.
+
+## 8.37.2 Audiências com 4 avisos, intimações mais claras, WhatsApp Web pela extensão (pedidos da usuária, 16–17/11/2026)
+
+- QUATRO avisos ao cliente por audiência/perícia: "audiência nova" (assim que aparece) + 1 semana antes + véspera + no dia (`AVISOS_ATO`).
+  `avisoDevido_(…, nova)`: o "nova" vale antes da janela da semana. Ato novo = Eventos.criado_em ou Audiencias.visto_em depois de Config
+  AVISO_NOVA_DESDE (1ª rodada só anota; os que já existiam não geram "nova"). `lembrarAudiencias_` de 2 em 2 h (Properties AVISO_NOVA_EM) olha
+  até 90 dias (= o que a cópia da agenda tem) e cria a ficha com `visto_em`; tarefa "📅 AUDIÊNCIA NOVA — avisar o cliente" (`[lembrete:chave|nova]`
+  + `[avisonova]`). Colunas novas em Audiencias: visto_em, aviso_nova_em, aviso_nova_por. `agenda.avisado` aceita quando=nova; textoAvisoAto "O juízo marcou…".
+- Designadas SEM data no aviso (PJe sigiloso): `atosSemData_` (tarefas abertas com `[agenda:`; tipo pela marca `[atosd:pericia|audiencia]` — o título
+  fica escondido no navegador para quem não é administração) → topo da tela Audiências e bloco "📅 Audiências novas — avisar o cliente" do Início
+  (`inicio.extras` devolve `audNovas` e `audSemData`) com "📅 Lançar a data" (`caixaMarcarAto`).
+- Sem audiência repetida: `marcarAto_` usa o evento que já existe no Google (mesmo nº, dia e hora: `eventoGoogleDoAto_`) em vez de criar outro;
+  `limparAtosDuplicados837_` (uma vez, Config FIX_ATOS_DUP_837) apagou os eventos do robô que tinham gêmeo lançado à mão; a Agenda mostra uma vez só
+  o mesmo processo no mesmo horário (`semRepetidosAgenda`) e não acusa conflito entre eles (`mesmoProcesso`).
+- "Intimação de audiência" NÃO é mais cancelada pelo robô (fica nos prazos para conferir); a categoria saiu do automático e da revisão marcada.
+- Intimações: célula "O que fazer" (`celulaOQueFazer`/`oQueFazer`): em cima o ATO (no provisório, o que a IA leu), etiqueta "provisório · 5 dias úteis",
+  "⚠ IA leu outro prazo", ciência e quem cuida; botões em coluna (não cortam). Tela do prazo: título = o ato + `passosPrazo` (conferir no tribunal →
+  fazer até a meta → avisar o cliente → Conferido → OK).
+- WhatsApp Web: o WhatsApp não deixa o painel reaproveitar a aba dele (cada clique abria outra aba com "Usar aqui"). Extensão 1.2.0 (`ponte.js` no
+  painel + `abrirWhats` no bg.js): o painel manda `postMessage({araujo:'whats'})` e a extensão abre a conversa NA ABA JÁ ABERTA (chrome.tabs.update),
+  com a mensagem escrita. Sem a extensão, continua o caminho antigo + uma dica. Zip refeito (painel/extensao-whatsapp.zip).
+- Ação de cobrança 8.37.1: etapas WhatsApp → notificação → ação ajuizada de volta na tabela (ver acima).

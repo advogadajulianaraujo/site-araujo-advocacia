@@ -663,11 +663,22 @@
     const enc = encodeURIComponent(texto);
     if (celular) { a.href = 'https://wa.me/' + tel + (texto ? '?text=' + enc : ''); return; }
     const modo = modoWhats();
+    // 8.37.2 (pedido da usuária: "os botões do WhatsApp Web não vão"): o WhatsApp Web não deixa outra página reaproveitar a aba dele
+    // (cada clique abria uma aba nova com "Usar aqui"). Com o Assistente do WhatsApp (extensão 1.2.0) instalado, a conversa abre NA ABA
+    // QUE JÁ ESTÁ ABERTA, com a mensagem escrita (a pessoa aperta Enviar).
+    if (modo !== 'app' && document.documentElement.dataset.araujoWhats) {
+      ev.preventDefault();
+      window.postMessage({ araujo: 'whats', tel, texto }, location.origin);
+      if (modo === 'auto') gravarLS('whats_aprendido', 'web');
+      return;
+    }
     if (modo === 'auto') { ev.preventDefault(); descobrirWhats(tel, enc); return; }
     if (modo === 'app') { a.href = urlApp(tel, enc); a.removeAttribute('target'); return; }
     a.href = urlWeb(tel, enc);
-    a.target = 'whatsapp_painel'; // aba com nome: todo clique cai na mesma aba, que continua logada
-    a.rel = ''; a.referrerPolicy = 'no-referrer'; // "noopener" impediria reaproveitar a aba
+    a.target = 'whatsapp_painel'; // tenta a mesma aba (sem a extensão o WhatsApp Web pode abrir outra e pedir "Usar aqui")
+    a.rel = ''; a.referrerPolicy = 'no-referrer';
+    if (!sessionStorage.getItem('dica_ext_whats')) { try { sessionStorage.setItem('dica_ext_whats', '1'); } catch (e) { /* ok */ }
+      setTimeout(() => avisar('Dica: com o "Assistente do WhatsApp" atualizado (Configurações › Gerenciar acessos › Assistente do WhatsApp Web) a mensagem abre sempre na aba do WhatsApp Web que já está aberta.'), 800); }
   }, true);
 
   /* Menu lateral: [id, nome, grupo, permissão, ícone (traços SVG 24×24)] */
@@ -1068,6 +1079,15 @@
     const blocoAudiencias = bloco('📅 Próximos 7 dias — avisar o cliente (1 semana, véspera e no dia)', '#/audiencias', 'audiências',
       audSemana.length ? h('ul', { class: 'ini-lista' }, audSemana.slice(0, 12).map(a => linhaAud(a, false))) : vazio('Nenhuma audiência ou perícia nos próximos 7 dias.'));
 
+    // 8.37.2: audiências NOVAS (o tribunal acabou de marcar: avisar o cliente já) e designadas sem a data no aviso
+    const audNovas = ext.audNovas || [], audSemData = ext.audSemData || [];
+    const blocoAudNovas = audNovas.length || audSemData.length ? bloco(`📅 Audiências novas — avisar o cliente (${audNovas.length + audSemData.length})`, '#/audiencias', 'abrir Audiências',
+      h('ul', { class: 'ini-lista' },
+        audNovas.slice(0, 10).map(a => linhaAud(a, false)),
+        audSemData.slice(0, 6).map(x => item(() => { location.hash = '#/audiencias'; }, selo(x.desde, ''), `${x.tipo === 'pericia' ? 'Perícia' : 'Audiência'} designada — ${x.cliente || 'cliente a identificar'}`,
+          [x.numero, 'a data não veio no aviso: abrir o processo e lançar'].filter(Boolean).join(' · '),
+          h('div', { onclick: ev => ev.stopPropagation() }, h('button', { type: 'button', class: 'btn mini', onclick: () => caixaMarcarAto({ numero: x.numero, processo_id: x.processo_id, texto: x.tipo === 'pericia' ? 'perícia' : 'audiência' }) }, '📅 Lançar a data')))))) : null;
+
     // ----- aniversariantes de hoje -----
     const parabens = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.nome).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Hoje é o seu dia e não podíamos deixar passar: feliz aniversário! Desejamos muita saúde, paz e conquistas. Conte sempre com a gente. 🎉`); };
@@ -1102,7 +1122,7 @@
         ext.cobrancas.length > 8 ? h('li', { class: 'peq ini-mais' }, `+ ${ext.cobrancas.length - 8} parcela(s) em aberto`) : null)
         : vazio('Nenhuma parcela vencendo hoje ou em atraso. 👏'));
 
-    const naoAvisadas = ext.audiencias.filter(a => a.devido).length; // 8.21: aviso na hora (semana, véspera ou dia) que ninguém mandou
+    const naoAvisadas = ext.audiencias.filter(a => a.devido).length + (ext.audNovas || []).filter(a => a.data > isoSoma(hoje, 7)).length + (ext.audSemData || []).length; // 8.21: aviso na hora (semana, véspera ou dia) que ninguém mandou
     const vencemHoje = ext.cobrancas.filter(x => x.dias === 0).length;
     const frase = secretaria
       ? [`${audHoje.length} audiência(s)/perícia(s) hoje`, `${audSemana.length} nos próximos 7 dias`, naoAvisadas ? `${naoAvisadas} para avisar` : 'todos avisados', `${ext.cobrancas.length} cobrança(s)`, ext.aniversarios.length ? `${ext.aniversarios.length} aniversariante(s) 🎂` : ''].filter(Boolean).join(' · ')
@@ -1186,6 +1206,7 @@
           atalho('#/clientes', 'Aniversários', ext.aniversarios.length, 'hoje')),
         blocoMeuDia, acoes,
         extras ? null : h('p', { class: 'nota' }, 'O Google está demorando para responder: os blocos abaixo aparecem sozinhos assim que chegarem.'),
+        blocoAudNovas,
         h('div', { class: 'ini-duas' }, blocoAudHoje, blocoAudiencias),
         h('div', { class: 'ini-duas' }, blocoCobHoje, blocoNaoPagos),
         h('div', { class: 'ini-duas' }, blocoAniversarios, agMini),
@@ -1213,6 +1234,7 @@
         atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
       blocoAguardandoOk({ inicio: true }),
       blocoMeuDia, acoes,
+      blocoAudNovas,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
       blocoEquipe,
       ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
@@ -1229,7 +1251,7 @@
     const hoje = hojeISO(), fim = isoSoma(hoje, 6), amanha = isoSoma(hoje, 1);
     api('agenda.listar', { inicio: hoje, fim }).then(dados => {
       const linhas = [];
-      for (let d = hoje; d <= fim; d = isoSoma(d, 1)) itensDoDia({ eventos: dados.eventos || [], prazos: [] }, d).forEach(it => linhas.push({ d, it }));
+      for (let d = hoje; d <= fim; d = isoSoma(d, 1)) itensDoDia({ eventos: semRepetidosAgenda(dados.eventos || []), prazos: [] }, d).forEach(it => linhas.push({ d, it }));
       const nHoje = linhas.filter(x => x.d === hoje).length, nAm = linhas.filter(x => x.d === amanha).length;
       resumo.textContent = `hoje ${nHoje} · amanhã ${nAm} · 7 dias ${linhas.length}`;
       const quando = d => d === hoje ? 'Hoje' : d === amanha ? 'Amanhã' : nomeDia(d);
@@ -3168,7 +3190,7 @@
   function etiquetaPrazo(z) {
     if (z.situacao === 'a definir') return h('span', { class: 'tag urgente' }, 'prazo a definir');
     if (z.situacao === 'conferido') return h('span', { class: 'tag ok', title: (z.conferido_em ? new Date(z.conferido_em).toLocaleString('pt-BR') : '') + (z.conferido_fonte ? ' · ' + z.conferido_fonte : '') }, '✓ confirmado' + (z.conferido_por ? ' por ' + z.conferido_por : '') + (z.conferido_fonte ? ' · ' + z.conferido_fonte.split(' — ')[0].replace(/^Conferi no sistema do tribunal.*$/, 'no tribunal').replace(/^Publicação no DJEN$/, 'DJEN') : ''));
-    if (divergente(z)) return h('span', { class: 'tag conferir', title: z.resumo_ia }, '⚠ divergência · conferir no tribunal');
+    if (divergente(z)) return h('span', { class: 'tag conferir', title: z.resumo_ia }, '⚠ conferir no tribunal');
     if (z.situacao === 'calculado') return h('span', {},
       /PROVISÓRIO/i.test(z.descricao || '') ? h('span', { class: 'tag conferir', title: 'O aviso não diz qual é o ato. O robô usou o prazo mais curto: confira no sistema do tribunal.' }, 'provisório · conferir no tribunal') : null,
       ' ', h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir'));
@@ -3507,7 +3529,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.37.1';
+  const VERSAO_PAINEL = '8.37.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3517,6 +3539,28 @@
     return d < 0 ? 'vencido' : d <= 2 ? 'urgente' : d <= 5 ? 'atencao' : 'tranquilo';
   }
 
+  /** 8.37.2 (pedido da usuária: "melhore como apresenta a intimação"): em cima, O ATO (o que a IA leu, ou a descrição);
+   *  "PROVISÓRIO 5 dias" vira uma etiqueta; embaixo, a conta (dias, ciência) e quem cuida. */
+  function oQueFazer(z) {
+    const desc = String(z.descricao || '');
+    const prov = /PROVIS[ÓO]RIO/i.test(desc);
+    const ia = String(z.resumo_ia || '').replace(/^⚠\s*ATEN[ÇC][ÃA]O:?\s*/i, '').replace(/\s+/g, ' ').trim();
+    // provisório: o ato de verdade costuma estar no resumo da IA; senão, o pedaço útil da descrição
+    const limpo = desc.replace(/^PROVIS[ÓO]RIO:?\s*\d+\s*dias[^—–-]*[—–-]\s*/i, '').replace(/^Intima[çc][ãa]o de /i, '').trim();
+    const titulo = prov && ia ? ia : (prov && /aviso não informa o ato/i.test(limpo) ? 'Ato não informado no aviso — abrir no tribunal' : limpo || desc || 'Prazo');
+    return { titulo, prov, ia: prov && ia ? '' : ia, desc };
+  }
+  function celulaOQueFazer(z) {
+    const o = oQueFazer(z), div = divergente(z);
+    return h('div', { class: 'oqf' },
+      h('div', { class: 'oqf-tit', title: o.desc + (z.resumo_ia ? '\n\nIA: ' + z.resumo_ia : '') }, o.titulo),
+      h('div', { class: 'oqf-tags' },
+        o.prov ? h('span', { class: 'tag conferir mini-tag', title: 'O tribunal não disse o ato: o robô usou o prazo mais curto. Confira no sistema.' }, 'provisório · ' + textoDias(z)) : h('span', { class: 'oqf-dias' }, textoDias(z)),
+        div ? h('span', { class: 'tag urgente mini-tag', title: z.resumo_ia }, '⚠ IA leu outro prazo') : null,
+        z.ciencia ? h('span', { class: 'oqf-meta' }, 'ciência ' + dataBR(z.ciencia).slice(0, 5)) : null,
+        z.responsavel ? h('span', { class: 'oqf-quem', title: 'Quem cuida: ' + z.responsavel }, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), primeiroNome(z.responsavel)) : h('span', { class: 'oqf-meta sem' }, 'sem responsável')),
+      o.ia ? h('div', { class: 'oqf-ia' + (/⚠/.test(z.resumo_ia || '') ? ' alerta' : ''), title: z.resumo_ia }, 'IA: ' + o.ia) : null);
+  }
   function tabelaPrazos(lista, vazio, ordem) {
     const cabFatal = ordem
       ? h('button', { type: 'button', class: 'ordenar', title: ordem.dir === 'asc' ? 'Mais urgentes primeiro. Clique para inverter.' : 'Mais distantes primeiro. Clique para inverter.', onclick: () => ordem.mudar(ordem.dir === 'asc' ? 'desc' : 'asc') },
@@ -3527,8 +3571,7 @@
         z.fatal && SITUACOES_ABERTAS.includes(z.situacao) && metaInterna(z.fatal) >= hojeISO() ? h('div', { class: 'peq meta-int', title: 'Meta do escritório: 2 dias úteis antes do fatal' }, 'fazer até ' + dataBR(metaInterna(z.fatal))) : null),
       h('td', { class: 'num', 'data-r': 'Processo' }, z.numero, h('div', {}, acessoTribunal(z.numero))),
       h('td', { 'data-r': 'Cliente' }, z.cliente || h('span', { class: 'tag atencao' }, 'a identificar')),
-      h('td', { 'data-r': 'O que fazer' }, h('div', { class: 'desc-prazo', title: z.descricao }, z.descricao), h('div', { class: 'peq' }, textoDias(z), z.ciencia ? ` · ciência ${dataBR(z.ciencia)}` : '', z.responsavel ? ` · com ${z.responsavel}` : ''),
-        z.resumo_ia ? h('div', { class: 'peq ia-txt' + (/⚠/.test(z.resumo_ia) ? ' ia-alerta' : ''), title: z.resumo_ia }, z.resumo_ia) : null),
+      h('td', { 'data-r': 'O que fazer' }, celulaOQueFazer(z)),
       h('td', { 'data-r': 'Situação' }, etiquetaPrazo(z)),
       h('td', {}, botoesPrazo(z))
     ], z => { location.hash = '#/prazo/' + z.id; }, vazio, z => filaDe(z) === 'conferir' ? 'linha-conferir' : 'linha-' + faixaPrazo(z)));
@@ -3931,6 +3974,7 @@
       h('div', { class: 'linha-info' }, h('div', {}, h('div', { class: 'peq' }, 'Data fatal'), h('strong', { class: 'grande' }, z.fatal ? dataBR(z.fatal) : '—'), ' ', etiquetaContagem(z.fatal)),
         h('div', {}, etiquetaPrazo(z)), botoesPrazo(z)),
       h('p', {}, h('span', { class: 'num' }, z.numero), ' · ', z.cliente || 'cliente a identificar', ' · ', acessoTribunal(z.numero)),
+      passosPrazo(z),
       z.ciencia_tipo ? h('p', { class: 'peq' }, 'Ciência: ' + z.ciencia_tipo) : null,
       z.responsavel ? h('p', { class: 'peq' }, 'Responsável: ' + z.responsavel + ' · ', h('a', { href: '#/tarefas?quem=todos' }, 'ver no quadro de tarefas')) : null,
       h('div', { class: 'ia-caixa' + (/⚠/.test(z.resumo_ia || '') ? ' ia-alerta' : /estimativa/.test(z.resumo_ia || '') ? ' ia-estimativa' : '') },
@@ -3944,7 +3988,22 @@
         h('span', { class: 'peq' }, ' Este prazo continua na lista.')),
       h('p', { class: 'peq' }, 'Origem: ' + z.origem + (z.observacoes ? ' · ' + z.observacoes : '')));
     const procZ = procs.find(p => p.id === z.processo_id);
-    mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : (z.descricao || 'Prazo'))), info, novo ? null : blocoMemoriaPrazo(z), novo ? null : notasDoCliente(procZ && procZ.cliente_id), form);
+    mostrar(h('div', { class: 'cab' }, h('h1', {}, novo ? 'Novo prazo' : oQueFazer(z).titulo), novo ? null : h('p', { class: 'peq' }, z.descricao)), info, novo ? null : blocoMemoriaPrazo(z), novo ? null : notasDoCliente(procZ && procZ.cliente_id), form);
+  }
+  /** 8.37.2: o caminho do prazo em passos (o que já foi feito fica ✓): conferir no tribunal → fazer até a meta → avisar o cliente → Conferido → OK. */
+  function passosPrazo(z) {
+    if (!SITUACOES_ABERTAS.includes(z.situacao) && z.situacao !== 'cumprido') return null;
+    const conferir = filaDe(z) === 'conferir', feito = z.situacao === 'cumprido', tipoAviso = z.avisar_cliente || avisoCliente(z.descricao, z.observacoes, z.resumo_ia);
+    const meta = z.fatal ? metaInterna(z.fatal) : '';
+    const passos = [
+      conferir || z.situacao === 'conferido' ? ['Conferir o ato e a data no tribunal', z.situacao === 'conferido' || feito, z.situacao === 'conferido' ? 'conferido' + (z.conferido_por ? ' por ' + z.conferido_por : '') : 'o aviso não deixa claro: abra no PJe/eproc e use "Conferi no tribunal" ou "📌 Data do PJe/eproc"'] : null,
+      ['Fazer o ato' + (meta ? ' até ' + dataBR(meta) + ' (meta)' : ''), feito, z.fatal ? 'fatal ' + dataBR(z.fatal) : 'sem data fatal'],
+      tipoAviso ? ['Avisar o cliente (' + tipoAviso + ')', false, 'botão "✨ Avisar": a IA escreve, você confere e manda'] : null,
+      ['✓ Conferido (quem fez)', feito, feito ? 'por ' + (z.cumprido_por || '—') : 'aperte quando terminar'],
+      ['OK da administração', !!z.ok_em, z.ok_em ? 'OK de ' + z.ok_por : 'depois do Conferido']].filter(Boolean);
+    const atual = passos.findIndex(p => !p[1]);
+    return h('ol', { class: 'passos-prazo' }, passos.map((p, i) => h('li', { class: p[1] ? 'ok' : i === atual ? 'agora' : '' },
+      h('b', {}, (p[1] ? '✓ ' : '') + p[0]), h('small', {}, p[2]))));
   }
   /** 8.23: a conta do prazo, passo a passo (como o PJe faz), para conferir com o sistema do tribunal. */
   function blocoMemoriaPrazo(z) {
@@ -3983,11 +4042,11 @@
     document.body.append(d); d.addEventListener('close', () => d.remove()); d.showModal();
     const desenhar = r => {
       const CATS = [['repetidos', 'Repetidos (mesmo processo, descrição e data)', 'cancelar'], ['mp', 'Vista ao Ministério Público (não é prazo do escritório)', 'cancelar'],
-        ['audiencia', 'Intimação de audiência com a audiência já na agenda (fica em Audiências, com os 3 avisos)', 'cancelar'],
+        ['audiencia', 'Intimação de audiência com a audiência já na agenda (só se quiser tirar: o robô não tira mais sozinho)', 'cancelar'],
         ['recalcular', 'Data final diferente da conta nova (ciência em fim de semana/feriado)', 'corrigir a data'], ['vencidos', 'Vencidos ainda abertos (já feitos)', 'dar baixa como feito']];
-      const marc = new Set(['repetidos', 'mp', 'audiencia', 'recalcular']);
+      const marc = new Set(['repetidos', 'mp', 'recalcular']); // 8.37.2: intimação de audiência fica nos prazos para conferir
       d.replaceChildren(h('h2', {}, '🔧 Revisão dos prazos'),
-        h('p', { class: 'peq' }, 'O robô já faz sozinho, a cada hora, as 4 primeiras. Aqui dá para ver o que ele achou e dar baixa nos vencidos que já foram feitos.'),
+        h('p', { class: 'peq' }, 'O robô já faz sozinho, a cada hora: repetidos, vista ao MP e data pela conta nova. Aqui dá para ver o que ele achou e dar baixa nos vencidos que já foram feitos.'),
         ...CATS.map(([k, rot, acao]) => h('details', { class: 'rev-cat' }, h('summary', {},
           h('label', { onclick: e => e.stopPropagation() }, h('input', { type: 'checkbox', checked: marc.has(k), disabled: !r[k].length, onchange: e => { if (e.target.checked) marc.add(k); else marc.delete(k); } }), ` ${rot}: `, h('strong', {}, String(r[k].length)), h('span', { class: 'peq' }, ' → ' + acao))),
           h('ul', { class: 'rev-lista' }, r[k].slice(0, 80).map(x => h('li', {}, h('a', { href: '#/prazo/' + x.id, onclick: () => d.close() }, `${x.numero} · ${x.descricao}`), ` · fatal ${dataBR(x.fatal)}`, x.novo ? ` → ${dataBR(x.novo)}` : ''))))),
@@ -4133,13 +4192,15 @@
 
 
   /* ===== 8.21 Audiências: os três avisos (1 semana, véspera útil, no dia), ciência, online/presencial e testemunhas ===== */
-  const ROT_AVISO = { semana: '1 semana antes', vespera: 'Véspera', dia: 'No dia' };
+  const ROT_AVISO = { nova: 'Audiência nova', semana: '1 semana antes', vespera: 'Véspera', dia: 'No dia' };
+  /** 8.37.2: o aviso "audiência nova" só existe para as audiências que apareceram depois que ele foi ligado (ou se já foi mandado). */
+  const avisosDoAto = a => (a.nova || (a.avisos && a.avisos.nova && a.avisos.nova.em) ? ['nova'] : []).concat(['semana', 'vespera', 'dia']);
   /** Três botões de aviso de uma audiência: feito (✓, clica de novo), na hora (verde) ou ainda não (cinza com a data). */
   function chipsAvisosAto(a, aoMudar) {
     const hoje = hojeISO();
-    return h('div', { class: 'aud-avisos' }, ['semana', 'vespera', 'dia'].map(q => {
+    return h('div', { class: 'aud-avisos' }, avisosDoAto(a).map(q => {
       const feito = a.avisos && a.avisos[q] && a.avisos[q].em ? a.avisos[q] : null;
-      const dia = (a.dias_aviso || {})[q] || a.data;
+      const dia = q === 'nova' ? hoje : (a.dias_aviso || {})[q] || a.data;
       const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
       const marcar = () => api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: q, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo })
         .then(() => { a.avisos[q] = { em: new Date().toISOString(), por: sessao.usuario.nome }; if (aoMudar) aoMudar(); }).catch(e => avisar(e.message, true));
@@ -4159,7 +4220,7 @@
     const filtrada = lista.filter(a => ver === 'avisar' ? !!a.devido : ver === 'instrucao' ? a.tipo === 'instrucao' : true);
     const topo = h('header', { class: 'carteira-topo' },
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Escritório'), h('h1', {}, 'Audiências e perícias'),
-        h('p', {}, 'Três avisos ao cliente: 1 semana antes, na véspera e no dia.')),
+        h('p', {}, 'Avisos ao cliente: quando a audiência sai, 1 semana antes, na véspera e no dia.')),
       h('div', { class: 'carteira-acoes' }, botao('Ver na agenda', () => { location.hash = '#/agenda?visao=semana'; }, 'sec')));
     const numeros = nAvisar || nTest ? h('p', { class: 'aud-alerta-linha' },
       nAvisar ? h('a', { href: '#/audiencias?ver=avisar' }, `📲 ${nAvisar} aviso(s) para mandar agora`) : null,
@@ -4211,7 +4272,7 @@
     };
     // 8.25 (pedido da usuária: "muita informação; só as pessoas e as datas; clicar abre para editar na mesma aba"): LISTA simples —
     // data, hora, cliente, tipo e as 3 bolinhas dos avisos; clicar abre a ficha logo abaixo da linha (uma por vez).
-    const bolinhas = a => h('span', { class: 'aud-bols', 'aria-label': 'Avisos ao cliente' }, ['semana', 'vespera', 'dia'].map(q => {
+    const bolinhas = a => h('span', { class: 'aud-bols', 'aria-label': 'Avisos ao cliente' }, avisosDoAto(a).map(q => {
       const feito = a.avisos && a.avisos[q] && a.avisos[q].em;
       const cls = feito ? 'ok' : a.devido === q ? 'devido' : '';
       return h('i', { class: 'aud-bol ' + cls, title: ROT_AVISO[q] + (feito ? ': avisado' : a.devido === q ? ': AVISAR AGORA' : ': ainda não') });
@@ -4236,10 +4297,20 @@
       li.append(btn, caixa);
       return li;
     };
-    mostrar(topo, numeros, filtros,
+    // 8.37.2 (pedido da usuária: "se a intimação fala de audiência, bote nas audiências"): designadas cuja data não veio no aviso
+    const semData = (r.semData || []).length ? h('section', { class: 'caixa aud-semdata' },
+      h('h3', {}, `⚠ ${r.semData.length} audiência(s)/perícia(s) designada(s) sem a data no aviso`),
+      h('p', { class: 'peq' }, 'O tribunal avisou que marcou, mas o texto veio sem a data (PJe "documento sigiloso"). Abra o processo no sistema, veja a data e lance aqui: entra na agenda e nos avisos ao cliente.'),
+      h('ul', { class: 'aud-sd-lista' }, r.semData.map(x => h('li', {},
+        h('span', { class: 'aud-l-tipo aud-t-' + (x.tipo === 'pericia' ? 'pericia' : 'conciliacao') }, x.tipo === 'pericia' ? 'Perícia' : 'Audiência'),
+        h('span', { class: 'aud-sd-quem' }, h('b', {}, x.cliente || 'cliente a identificar'), h('small', {}, [x.numero, x.orgao, 'aviso de ' + dataBR(x.desde)].filter(Boolean).join(' · '))),
+        h('span', { class: 'aud-sd-acoes' },
+          h('button', { type: 'button', class: 'btn mini', onclick: () => caixaMarcarAto({ numero: x.numero, processo_id: x.processo_id, texto: x.tipo === 'pericia' ? 'perícia' : 'audiência' }) }, '📅 Lançar a data'),
+          x.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + x.processo_id }, 'Processo') : null))))) : null;
+    mostrar(topo, numeros, semData, filtros,
       filtrada.length ? h('ul', { class: 'aud-lista2' }, filtrada.slice().sort((x, y) => (x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1).map(linha))
         : h('p', { class: 'vazio' }, ver === 'avisar' ? 'Nenhum aviso para mandar agora. 👏' : 'Nenhuma audiência ou perícia nos próximos 90 dias.'),
-      h('p', { class: 'peq aud-legenda' }, h('i', { class: 'aud-bol ok' }), ' avisado  ', h('i', { class: 'aud-bol devido' }), ' avisar agora  ', h('i', { class: 'aud-bol' }), ' ainda não — as três bolinhas são: 1 semana antes · véspera · no dia. Clique na linha para avisar, anotar testemunhas e o modo.'));
+      h('p', { class: 'peq aud-legenda' }, h('i', { class: 'aud-bol ok' }), ' avisado  ', h('i', { class: 'aud-bol devido' }), ' avisar agora  ', h('i', { class: 'aud-bol' }), ' ainda não — as bolinhas são: audiência nova (quando aparece) · 1 semana antes · véspera · no dia. Clique na linha para avisar, anotar testemunhas e o modo.'));
   }
 
   async function telaAgenda(params) {
@@ -4252,6 +4323,7 @@
     const [ini, fim] = periodo(visao === 'lista' ? 'semana' : visao, data);
     const ver = FILTROS_AGENDA[params.get('ver')] ? params.get('ver') : 'tudo';
     const dados = filtrarAgenda(await api('agenda.listar', params.get('atualizar') ? { inicio: ini, fim, atualizar: true } : { inicio: ini, fim }), ver);
+    dados.eventos = semRepetidosAgenda(dados.eventos || []);
     const ir = (v, d, f) => { location.hash = `#/agenda?visao=${v}&data=${d}&ver=${f || ver}`; };
     const passo = visao === 'dia' ? 1 : visao === 'semana' || visao === 'lista' ? 7 : 0;
     const mover = n => passo ? ir(visao, isoSoma(data, n * passo)) : ir(visao, isoSoma(data.slice(0, 8) + '15', n * 30).slice(0, 8) + '01');
@@ -4306,6 +4378,15 @@
       corpo);
   }
 
+  /** 8.37.2 (pedido da usuária: "são as duas mesmas pessoas, mesmo processo"): o mesmo processo no mesmo horário aparece UMA vez
+   *  (ex.: lançado à mão e pelo robô, com o nome escrito de jeito diferente). */
+  const RE_CNJ_JS = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
+  const chaveMesmoAto = e => { const n = (RE_CNJ_JS.exec((e.titulo || '') + ' ' + (e.descricao || '')) || [])[0]; return n ? n + '|' + String(e.inicio || '').slice(0, 16) : ''; };
+  const mesmoProcesso = (a, b) => { const na = (RE_CNJ_JS.exec((a.titulo || '') + ' ' + (a.descricao || '')) || [])[0], nb = (RE_CNJ_JS.exec((b.titulo || '') + ' ' + (b.descricao || '')) || [])[0]; return !!na && na === nb; };
+  function semRepetidosAgenda(eventos) {
+    const vistos = new Set();
+    return eventos.filter(e => { const k = chaveMesmoAto(e); if (!k) return true; if (vistos.has(k)) return false; vistos.add(k); return true; });
+  }
   /** 8.11.2: dois compromissos com hora ao mesmo tempo (audiência × perícia × atendimento) → aviso no topo da Agenda. */
   function conflitosAgenda(eventos) {
     const comHora = (eventos || []).filter(e => !e.diaTodo && e.inicio && e.inicio.length > 10)
@@ -4313,7 +4394,7 @@
       .sort((a, b) => a.ini < b.ini ? -1 : 1);
     const pares = [];
     for (let i = 0; i < comHora.length; i++) for (let j = i + 1; j < comHora.length && comHora[j].ini.slice(0, 10) === comHora[i].ini.slice(0, 10); j++)
-      if (comHora[j].ini < comHora[i].fim) pares.push([comHora[i].e, comHora[j].e]);
+      if (comHora[j].ini < comHora[i].fim && !mesmoProcesso(comHora[i].e, comHora[j].e)) pares.push([comHora[i].e, comHora[j].e]);
     if (!pares.length) return null;
     return h('div', { class: 'nota alerta ag-conflitos' }, h('strong', {}, `⚠ ${pares.length} conflito(s) de horário: `),
       h('ul', {}, pares.slice(0, 8).map(([a, b]) => h('li', {}, `${dataBR(a.inicio.slice(0, 10))} ${a.inicio.slice(11, 16)} — ${a.titulo} × ${b.inicio.slice(11, 16)} ${b.titulo}`))),
@@ -5342,7 +5423,8 @@
     else if (quando === 'vespera') {
       const amanha = (dt - new Date(hojeISO() + 'T12:00:00Z')) / 86400000 === 1 ? 'amanhã (' + diaSem + ', ' + dm + ')' : 'na ' + diaSem + ' (' + dm + ')';
       msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para lembrar: ${amanha}${hora} é a ${sua}${proc}.${onde}\n\n${explica}${levar}${testem}\n\nPor favor, confirme respondendo esta mensagem. No dia, mandamos outro lembrete.`;
-    } else msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para avisar com antecedência: a ${sua}${proc} está marcada para ${diaSem}, ${dm}${hora}.${onde}\n\n${explica}${levar}${perguntaModo}${testem}\n\nPor favor, confirme que recebeu respondendo esta mensagem. Vamos lembrar você de novo na véspera e no dia.`;
+    } else if (quando === 'nova') msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. O juízo marcou a ${sua}${proc} para ${diaSem}, ${dm}${hora}.${onde}\n\n${explica}${levar}${perguntaModo}${testem}\n\nPor favor, confirme que recebeu respondendo esta mensagem. Vamos lembrar você de novo 1 semana antes, na véspera e no dia.`;
+    else msg = `Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Passando para avisar com antecedência: a ${sua}${proc} está marcada para ${diaSem}, ${dm}${hora}.${onde}\n\n${explica}${levar}${perguntaModo}${testem}\n\nPor favor, confirme que recebeu respondendo esta mensagem. Vamos lembrar você de novo na véspera e no dia.`;
     return msg;
   }
   function whatsAto(x) {
