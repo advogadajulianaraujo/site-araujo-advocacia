@@ -2946,3 +2946,7 @@ body.sem-sessao .chatf{display:none}
 /* 8.39.7: "✓ Assinado" com as outras ações do cliente */
 .assin-outras{flex-basis:100%;margin-top:8px;padding:10px;border:1px dashed #cfcac0;border-radius:10px;background:#faf8f4;display:flex;flex-direction:column;gap:8px}
 .assin-outras .chips{display:flex;flex-wrap:wrap;gap:6px}
+/* 8.41: calculadora de rescisão com a conta de cada parcela */
+.calc-tab3 td.peq{color:#6b6459;font-size:12px;max-width:420px}
+.calc-tab3 tr.calc-conf th,.calc-tab3 tr.calc-conf td{color:#8a8378;font-style:italic}
+.g-chk{display:flex;align-items:center;gap:6px;font-size:13px}

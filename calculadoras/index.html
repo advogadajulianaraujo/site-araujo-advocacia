@@ -23,8 +23,9 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Início","item":"https://araujoadvocaciasc.com.br/"},{"@type":"ListItem","position":2,"name":"Trabalhista","item":"https://araujoadvocaciasc.com.br/trabalhista/"},{"@type":"ListItem","position":3,"name":"Calculadoras","item":"https://araujoadvocaciasc.com.br/calculadoras/"}]}</script>
 <script src="/assets/ads-measurement.js" defer></script>
 <script src="/assets/site.js?v=12" defer></script>
-<script src="/assets/calculadoras.js?v=8" defer></script>
-<link rel="stylesheet" href="/assets/calculadoras.css?v=3">
+<script src="/assets/rescisao-motor.js?v=1" defer></script>
+<script src="/assets/calculadoras.js?v=9" defer></script>
+<link rel="stylesheet" href="/assets/calculadoras.css?v=4">
 </head>
 <body data-area="trabalhista">
 <a class="skip" href="#principal">Pular para o conteúdo</a>
@@ -68,15 +69,22 @@
 <h2>Estimativa da rescisão</h2>
 <p>Uma conta aproximada do acerto: saldo de salário, aviso prévio, 13º, férias e multa do FGTS.</p>
 <form id="calc-rescisao" novalidate>
-<label>Último salário bruto (R$)<input name="salario" inputmode="decimal" placeholder="Ex.: 2.500,00" required></label>
+<div class="linha2"><label>Salário-base (R$)<input name="salario" inputmode="decimal" placeholder="Ex.: 2.500,00" required></label>
+<label>Médias mensais (opcional, R$)<input name="medias" inputmode="decimal" placeholder="Horas extras, comissões habituais"></label></div>
 <div class="linha2"><label>Data de admissão<input type="date" name="admissao" required></label>
-<label>Data de saída<input type="date" name="saida" required></label></div>
-<label>Como foi a saída<select name="motivo"><option value="sem_justa">Fui dispensado(a) sem justa causa</option><option value="pedido">Pedi demissão</option><option value="acordo">Acordo com a empresa (art. 484-A)</option><option value="justa">Dispensa por justa causa</option></select></label>
+<label>Data de saída (fim do contrato)<input type="date" name="saida" required></label></div>
+<label>Como foi a saída<select name="motivo"><option value="sem_justa">Fui dispensado(a) sem justa causa</option><option value="indireta">Rescisão indireta (a empresa cometeu falta grave — art. 483 da CLT)</option><option value="pedido">Pedi demissão</option><option value="acordo">Acordo com a empresa (art. 484-A)</option><option value="justa">Dispensa por justa causa</option></select></label>
 <label class="campo-aviso">Aviso prévio<select name="aviso"><option value="indenizado">Indenizado (não trabalhei)</option><option value="trabalhado">Trabalhado</option></select></label>
-<div class="linha2"><label>Férias integrais (vencidas) ainda não tiradas<select name="vencidas"><option value="0">Nenhuma</option><option value="1">1 período</option><option value="2">2 períodos</option></select></label>
-<label>Saldo do FGTS (opcional, R$)<input name="fgts" inputmode="decimal" placeholder="Veja no app FGTS"></label></div>
-<label>A empresa depositou o FGTS?<select name="fgts_dep"><option value="sim">Sim, todos os meses</option><option value="nao">Não, não depositou nenhum mês</option><option value="parte">Só em parte (alguns meses faltaram)</option><option value="naosei">Não sei</option></select></label>
+<div class="linha2"><label>Férias de anos completos que faltam tirar e receber<select name="ferias_pend"><option value="1">As do último ano completo (1 período)</option><option value="0">Nenhuma: tirei e recebi todas</option><option value="2">2 períodos</option><option value="3">3 períodos</option></select></label>
+<label>O 13º do ano passado foi pago?<select name="decimo_ant"><option value="pago">Sim</option><option value="nao_pago">Não</option></select></label></div>
+<div class="linha2"><label>Salário do último mês já pago (opcional, R$)<input name="saldo_pago" inputmode="decimal" placeholder="Só o que foi pago"></label>
+<label>13º deste ano já pago (opcional, R$)<input name="decimo_pago" inputmode="decimal" placeholder="Adiantamento"></label></div>
+<div class="linha2"><label>A empresa depositou o FGTS?<select name="fgts_dep"><option value="naosei">Não sei</option><option value="sim">Sim, todos os meses</option><option value="nao">Não, não depositou nenhum mês</option><option value="parte">Só em parte (alguns meses faltaram)</option></select></label>
+<label>FGTS depositado (extrato, opcional, R$)<input name="fgts" inputmode="decimal" placeholder="Veja no app FGTS"></label></div>
 <label class="campo-fgtsnp" hidden>Quantos meses ficaram sem depósito?<input name="meses_np" inputmode="numeric" placeholder="Veja no extrato do app FGTS"></label>
+<label class="calc-chk"><input type="checkbox" name="fgts_outro"> O FGTS já foi calculado em outro pedido (não somar de novo)</label>
+<label class="calc-chk"><input type="checkbox" name="m477"> Incluir a multa do art. 477 da CLT (acerto pago fora do prazo de 10 dias)</label>
+<label class="calc-chk"><input type="checkbox" name="m467"> Incluir a multa do art. 467 da CLT (verbas incontroversas não pagas na 1ª audiência)</label>
 <button class="btn" type="submit">Calcular a estimativa</button>
 </form>
 <div class="calc-res" id="res-rescisao" role="status" hidden></div>

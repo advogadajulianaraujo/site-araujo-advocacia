@@ -19,3 +19,6 @@
 
 .calc-chk{display:flex;gap:10px;align-items:flex-start;font-weight:500;margin:6px 0 4px}.calc-chk input{width:auto;margin-top:4px}
 .calc-alerta-txt{background:#fff6e6;border-left:4px solid #e0a21a;padding:10px 14px;font-size:14.5px}
+/* 8.41: a conta de cada parcela embaixo do nome */
+.calc-tab .calc-conta{display:block;font-weight:400;font-size:12px;color:#6b6459;margin-top:2px}
+.calc-tab tr.calc-conf th,.calc-tab tr.calc-conf td{color:#8a8378}

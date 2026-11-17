@@ -403,94 +403,69 @@
   // INSS 2026 (Portaria MPS/MF nº 13/2026): progressivo por faixa
   const INSS_FAIXAS = [[1621.00, 0.075], [2902.84, 0.09], [4354.27, 0.12], [8475.55, 0.14]];
   const inss = v => { let t = 0, ant = 0; for (const [lim, a] of INSS_FAIXAS) { if (v > ant) t += (Math.min(v, lim) - ant) * a; ant = lim; } return Math.round(t * 100) / 100; };
-  // Conta da rescisão (a mesma do site, assets/calculadoras.js)
-  function contaRescisao(base, adm, saida, motivo, aviso, venc, fgtsInf, naoDep) {
-    const indireta = motivo === 'indireta'; if (indireta) motivo = 'sem_justa';
-    const anos = anosCompletos(adm, saida);
-    let diasAv = 0;
-    if (motivo === 'sem_justa' && (aviso === 'indenizado' || indireta)) diasAv = diasAviso(anos);
-    if (motivo === 'acordo') diasAv = Math.floor(diasAviso(anos) / 2);
-    const fimProj = diasAv ? somaDias(saida, diasAv) : saida;
-    const ultimo = new Date(Date.UTC(saida.getUTCFullYear(), saida.getUTCMonth() + 1, 0)).getUTCDate();
-    const mesmoMes = adm.getUTCFullYear() === saida.getUTCFullYear() && adm.getUTCMonth() === saida.getUTCMonth();
-    let ds = saida.getUTCDate() === ultimo ? 30 : Math.min(30, saida.getUTCDate());
-    if (mesmoMes) ds = Math.min(ds, saida.getUTCDate() === ultimo && adm.getUTCDate() === 1 ? 30 : saida.getUTCDate() - adm.getUTCDate() + 1);
-    const r = { anos, diasAv, fimProj, motivo, trct: [], fgts: [] };
-    const saldoSal = base / 30 * ds, vAviso = base / 30 * diasAv;
-    r.trct.push([`Saldo de salário (${ds} dias)`, saldoSal]);
-    if (diasAv) r.trct.push([`Aviso prévio indenizado (${diasAv} dias${motivo === 'acordo' ? ', metade' : ''})`, vAviso]);
-    let v13 = 0, v13sem = 0;
-    if (motivo !== 'justa') {
-      const iniAno = new Date(Date.UTC(fimProj.getUTCFullYear(), 0, 1));
-      const m13 = mesesEntre(adm > iniAno ? adm : iniAno, fimProj);
-      v13 = base / 12 * m13;
-      r.trct.push([`13º proporcional (${m13}/12)`, v13]);
-      const iniAno2 = new Date(Date.UTC(saida.getUTCFullYear(), 0, 1));
-      v13sem = base / 12 * mesesEntre(adm > iniAno2 ? adm : iniAno2, saida);
-      let aniv = new Date(Date.UTC(fimProj.getUTCFullYear(), adm.getUTCMonth(), adm.getUTCDate())); if (aniv > fimProj) aniv = somaAnos(aniv, -1); if (aniv < adm) aniv = adm;
-      const mf = mesesEntre(aniv, fimProj);
-      r.trct.push([`Férias proporcionais + 1/3 (${mf}/12)`, base / 12 * mf * 4 / 3]);
-    }
-    if (venc) r.trct.push([`Férias integrais (vencidas, não tiradas) + 1/3 (${venc} período${venc > 1 ? 's' : ''})`, base * venc * 4 / 3]);
-    r.bruto = r.trct.reduce((t, x) => t + x[1], 0);
-    r.inssSaldo = inss(saldoSal); r.inss13 = inss(v13);
-    r.liquido = r.bruto - r.inssSaldo - r.inss13;
-    // FGTS: depositado na conta (não é pago no termo de rescisão)
-    const mesesSem = Math.max(1, Math.round((saida - adm) / (30.4375 * 86400000)));
-    // 8.35.8: FGTS não depositado = 8% do salário + 13º (1/12) + 1/3 de férias (1/36) por mês; cobrável só dos últimos 5 anos (STF, Tema 608)
-    const mesesFalta = naoDep ? Math.min(mesesSem, naoDep > 0 ? naoDep : mesesSem) : 0;
-    // 8.36.3: o mês da saída e o 13º do ano da saída já estão no "FGTS do mês da rescisão" — não contar duas vezes
-    const todos = naoDep < 0, mf = todos ? Math.max(0, mesesFalta - 1) : Math.min(mesesFalta, Math.max(0, mesesSem - 1));
-    r.mesesNP = Math.min(60, mf); r.cortou = mf > 60;
-    const noAno = todos ? Math.min(r.mesesNP, saida.getUTCMonth()) : 0;
-    r.fgtsNP = base * 0.08 * (r.mesesNP * (1 + 1 / 36) + (r.mesesNP - noAno) / 12);
-    r.saldoInf = fgtsInf > 0; r.saldoConta = fgtsInf > 0 ? fgtsInf : base * 0.08 * Math.max(0, mesesSem - mesesFalta);
-    r.fgtsMes = 0.08 * (saldoSal + v13); r.fgtsAviso = 0.08 * vAviso;
-    r.pct = motivo === 'sem_justa' ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
-    // Tema 255 do TST (OJ 42, II, SDI-1): a multa NÃO inclui o FGTS da projeção do aviso indenizado
-    r.baseMulta = r.saldoConta + r.fgtsNP + 0.08 * (saldoSal + v13sem);
-    r.multa = r.baseMulta * r.pct;
-    r.fgtsRecolher = r.fgtsNP + r.fgtsMes + r.fgtsAviso + r.multa;
-    return r;
+  // 8.41 (pedido da usuária): rescisão pelo MOTOR ÚNICO assets/rescisao-motor.js (o mesmo do site). Mostra a conta de cada parcela.
+  function tabelaRescisao(r) {
+    const { h } = K();
+    const linhas = [], txt = [];
+    const sec = t => { linhas.push(h('tr', { class: 'calc-sec' }, h('th', { colspan: 3 }, t))); txt.push('\n' + t.toUpperCase()); };
+    const lin = (x, cls) => { linhas.push(h('tr', cls ? { class: cls } : {}, h('th', { scope: 'row' }, x.rot), h('td', { class: 'peq' }, x.conta || ''), h('td', { class: 'num' }, din(x.valor))));
+      txt.push(x.rot + (x.conta ? ' (' + x.conta + ')' : '') + ': ' + din(x.valor)); };
+    const tot = (rot, v) => lin({ rot, conta: '', valor: v }, 'calc-total');
+    sec((r.indireta ? 'Verbas rescisórias — rescisão indireta (equivalente à dispensa sem justa causa)' : 'Verbas rescisórias') + ' · valores brutos');
+    r.verbas.forEach(x => lin(x)); tot('Subtotal das verbas rescisórias', r.subtotal);
+    if (r.anteriores.length) { sec('Parcelas anteriores não pagas (fora do subtotal acima)'); r.anteriores.forEach(x => lin(x)); tot('Subtotal das parcelas anteriores', r.subAnt); }
+    sec('FGTS e multa (bloco separado)');
+    r.contratual.forEach(x => lin(x, 'calc-conf'));
+    r.fgts.forEach(x => lin(Object.assign({}, x, x.fora ? { rot: x.rot + ' — já calculado em outro pedido (não soma)' } : {})));
+    tot('Subtotal do FGTS e da multa', r.subFgts);
+    sec('Multas dos arts. 467 e 477 da CLT (só entram se marcadas)');
+    r.multas.forEach(x => lin(Object.assign({}, x, { rot: x.rot + (x.incluir ? ' — INCLUÍDA' : ' — não incluída') })));
+    if (r.subMultas) tot('Subtotal das multas incluídas', r.subMultas);
+    tot('TOTAL CONSOLIDADO (verbas + anteriores + FGTS/multa + multas marcadas)', r.total);
+    return { el: h('table', { class: 'tabela calc-tab calc-tab3' }, h('tbody', {}, linhas)), texto: txt.join('\n') };
   }
   function calcRescisao(out) {
     const { h, campo } = K();
+    const chk = (nome, rot) => h('label', { class: 'g-chk largo' }, h('input', { type: 'checkbox', name: nome }), ' ', rot);
     const form = h('form', { class: 'g-form form-grade' },
-      campo('salario', 'Último salário (R$)', '', { modo: 'decimal', obrigatorio: true }),
+      campo('salario', 'Salário-base (R$)', '', { modo: 'decimal', obrigatorio: true }),
+      campo('medias', 'Médias remuneratórias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras habituais, comissões, adicionais (opcional)' }),
       campo('admissao', 'Admissão', '', { tipo: 'date', obrigatorio: true }),
-      campo('saida', 'Saída (último dia trabalhado)', '', { tipo: 'date', obrigatorio: true }),
-      campo('motivo', 'Motivo', 'sem_justa', { opcoes: [['sem_justa', 'Dispensa sem justa causa'], ['pedido', 'Pedido de demissão'], ['acordo', 'Acordo (art. 484-A)'], ['justa', 'Justa causa'], ['indireta', 'Rescisão indireta']] }),
-      campo('aviso', 'Aviso prévio', 'indenizado', { opcoes: [['indenizado', 'Indenizado'], ['trabalhado', 'Trabalhado / dispensado']] }),
-      campo('vencidas', 'Férias integrais (vencidas) ainda não tiradas', '0', { opcoes: [['0', 'Nenhuma'], ['1', '1 período'], ['2', '2 períodos']] }),
-      campo('fgts', 'Saldo do FGTS (R$)', '', { modo: 'decimal', dica: 'opcional: do extrato' }),
-      campo('medias', 'Médias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras, comissões… (opcional)' }),
-      campo('fgts_dep', 'A empresa depositou o FGTS?', 'sim', { opcoes: [['sim', 'Sim, todos os meses'], ['nao', 'Não, nenhum mês'], ['parte', 'Só em parte (faltaram meses)'], ['naosei', 'Não sei']] }),
-      campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'só se for "em parte" (veja o extrato do FGTS)' }),
+      campo('saida', 'Data da ruptura adotada no cálculo', '', { tipo: 'date', obrigatorio: true }),
+      campo('ultimo', 'Último dia de trabalho (se for outro)', '', { tipo: 'date', dica: 'só informativo; a conta usa a data da ruptura' }),
+      campo('motivo', 'Motivo', 'sem_justa', { opcoes: [['sem_justa', 'Dispensa sem justa causa'], ['indireta', 'Rescisão indireta (art. 483)'], ['pedido', 'Pedido de demissão'], ['acordo', 'Acordo (art. 484-A)'], ['justa', 'Justa causa']] }),
+      campo('aviso', 'Aviso prévio', 'indenizado', { opcoes: [['indenizado', 'Indenizado'], ['trabalhado', 'Trabalhado / dispensado']], dica: 'na rescisão indireta é sempre indenizado' }),
+      campo('dias_saldo', 'Dias de salário pendentes', '', { modo: 'numeric', dica: 'vazio = conta pelo dia da ruptura' }),
+      campo('saldo_pago', 'Salário do mês já pago (R$)', '', { modo: 'decimal', dica: 'só pagamento comprovado' }),
+      campo('ferias_gozadas', 'Períodos de férias completos já gozados e pagos', '0', { modo: 'numeric' }),
+      campo('decimo_pago', '13º do ano da ruptura já pago (R$)', '', { modo: 'decimal', dica: 'adiantamento comprovado' }),
+      campo('decimo_ant', '13º do ano anterior', 'pago', { opcoes: [['pago', 'Pago'], ['nao_pago', 'Não pago (linha própria)']] }),
+      campo('fgts_dep', 'A empresa depositou o FGTS?', 'naosei', { opcoes: [['sim', 'Sim, todos os meses'], ['nao', 'Não, nenhum mês'], ['parte', 'Só em parte'], ['naosei', 'Não sei (só conferência)']] }),
+      campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'se for "em parte" e sem o extrato' }),
+      campo('fgts', 'FGTS já depositado — comprovado no extrato (R$)', '', { modo: 'decimal' }),
+      chk('fgts_outro', 'FGTS contratual já calculado em outro pedido (mostra para conferência e não soma de novo)'),
+      chk('m477', 'Incluir a multa do art. 477 da CLT'), chk('m467', 'Incluir a multa do art. 467 da CLT'),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular')));
     form.addEventListener('submit', ev => {
       ev.preventDefault();
-      const base = num(form.salario.value) + num(form.medias.value), adm = lerData(form.admissao.value), saida = lerData(form.saida.value);
-      if (!(base > 0) || !adm || !saida || saida < adm) { out.replaceChildren(h('p', { class: 'erro' }, 'Confira o salário e as datas.')); return; }
-      const r = contaRescisao(base, adm, saida, form.motivo.value, form.aviso.value, +form.vencidas.value || 0, num(form.fgts.value), form.fgts_dep.value === 'nao' ? -1 : form.fgts_dep.value === 'parte' ? (parseInt(form.meses_np.value, 10) || -1) : 0);
-      // 8.36.3 (pedido da usuária): é CÁLCULO (valores devidos, brutos), não "o que foi pago no TRCT"; total geral no fim
-      const indireta = form.motivo.value === 'indireta';
-      const linhas = [[indireta ? 'Verbas rescisórias devidas — rescisão indireta (valores brutos)' : 'Verbas rescisórias devidas (valores brutos)'], ...r.trct,
-        ['Subtotal das verbas rescisórias', r.bruto], ['FGTS devido pela empresa']];
-      linhas.push(['FGTS do mês da rescisão (8% do saldo de salário e do 13º)', r.fgtsMes]);
-      if (r.fgtsAviso) linhas.push(['FGTS sobre o aviso prévio indenizado (8%)', r.fgtsAviso]);
-      if (r.fgtsNP) linhas.push([`FGTS não depositado (${r.mesesNP} meses: 8% dos salários, do 13º e do 1/3 de férias)`, r.fgtsNP]);
-      if (r.pct) linhas.push([`Multa de ${r.pct * 100}% do FGTS (${indireta ? 'rescisão indireta' : form.motivo.value === 'acordo' ? 'acordo' : 'dispensa sem justa causa'}; base ${din(r.baseMulta)}, sem a projeção do aviso)`, r.multa]);
-      linhas.push(['Subtotal do FGTS e da multa', r.fgtsRecolher]);
-      const totalGeral = r.bruto + r.fgtsRecolher;
-      linhas.push(['VALOR TOTAL A SER PAGO PELA EMPRESA (verbas + FGTS + multa)', totalGeral]);
-      linhas.push(['Para conferência'], [`Saldo já depositado na conta do FGTS ${r.saldoInf ? '(informado)' : '(estimado)'} — é do trabalhador, entra só na base da multa`, r.saldoConta],
-        ['Desconto de INSS do empregado (estimado: saldo de salário e 13º)', -(r.inssSaldo + r.inss13)]);
-      const alerta = indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'este é o CÁLCULO para a petição — valores devidos, brutos, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Na liquidação se descontam INSS e IR do empregado. Conferir antes de usar.') : null;
-      out.replaceChildren(alerta || '', resultado(linhas, null, [
-        `Tempo de casa: ${r.anos} ano(s) · projeção do aviso até ${dataBR(iso(r.fimProj))} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fimProj, 2)))}.`,
-        'INSS pela tabela progressiva de 2026 (Portaria MPS/MF nº 13/2026), separado no saldo de salário e no 13º; não há INSS sobre aviso indenizado nem férias indenizadas. IR não calculado. Férias vencidas fora do prazo de concessão podem ser devidas em dobro (CLT, art. 137).',
-        r.fgtsNP ? `FGTS não depositado: a empresa deve os depósitos com correção e juros (Lei 8.036/1990, arts. 15 e 22) e a multa incide também sobre eles (art. 18).${r.cortou ? ' Considerados só os últimos 60 meses (STF, Tema 608: cobra-se até 5 anos, com ação em até 2 anos do fim do contrato).' : ''}` : form.fgts_dep.value === 'naosei' ? 'FGTS: confira no extrato do app FGTS se cada mês teve o depósito de 8%; se faltar, refaça marcando "Só em parte".' : '',
-        'A multa usa a base para fins rescisórios sem o FGTS da projeção do aviso indenizado (Tema 255 do TST; OJ 42, II, da SDI-1); o FGTS sobre o aviso continua devido (Súmula 305). Médias informadas entram na base de todas as verbas. Base: CLT arts. 477, 484-A e 487; Lei 12.506/2011; Lei 8.036/1990; Súmulas 171 e 261 do TST. Conferir antes de usar.']));
+      if (!window.RESCISAO) { out.replaceChildren(h('p', { class: 'erro' }, 'A calculadora não carregou: aperte F5.')); return; }
+      let r;
+      try {
+        r = window.RESCISAO.calcular({ salario: num(form.salario.value), medias: num(form.medias.value), admissao: lerData(form.admissao.value), ruptura: lerData(form.saida.value),
+          motivo: form.motivo.value, aviso: form.aviso.value, diasSaldo: form.dias_saldo.value.trim() === '' ? null : +form.dias_saldo.value, saldoPago: num(form.saldo_pago.value),
+          feriasGozadas: +form.ferias_gozadas.value || 0, decimoAnoPago: num(form.decimo_pago.value), decimoAnterior: form.decimo_ant.value, fgtsDep: form.fgts_dep.value,
+          fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_outro.checked, multa477: form.m477.checked, multa467: form.m467.checked });
+      } catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      const t = tabelaRescisao(r);
+      const alerta = r.indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'cálculo para a petição — verbas da dispensa sem justa causa com aviso indenizado, valores BRUTOS, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Conferir antes de usar.') : null;
+      const ult = lerData(form.ultimo.value);
+      out.replaceChildren(alerta || '', h('div', { class: 'calc-res' }, t.el,
+        ...[`Tempo de casa: ${r.anos} ano(s) completo(s) · aviso de ${r.diasAv || 0} dias · término projetado: ${dataBR(iso(r.fim))}${ult ? ' · último dia de trabalho: ' + dataBR(iso(ult)) : ''} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fim, 2)))}.`,
+          ...r.notas,
+          'Comprovado × estimado: só entram como pagos os valores informados acima (comprovados). Não se presume falta de depósito do FGTS: sem "não depositou"/"em parte" ou o valor do extrato, o FGTS contratual aparece só para conferência (linha cinza). A multa de 40% incide sobre o FGTS contratual, sem o FGTS do aviso indenizado (Tema 255 do TST; Súmula 305 para o FGTS do aviso).',
+          `INSS do empregado (só conferência, saldo e 13º): ${din(r.inssConferencia)}. Não há INSS sobre aviso indenizado nem sobre férias indenizadas. IR não calculado. Cada parcela foi calculada com precisão e arredondada a 2 casas no fim.`,
+          'Base: CLT arts. 137, 146, 467, 477, 483, 484-A e 487; Lei 4.090/1962; Lei 12.506/2011; Lei 8.036/1990; OJ 82 e 83 da SDI-1; Súmulas 171, 261 e 305 do TST. Estimativa: conferir antes de usar.'].map(x => h('p', { class: 'peq' }, x)),
+        h('div', { class: 'g-acoes' }, h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(t.texto, 'Resultado copiado.') }, 'Copiar resultado'))));
     });
     return form;
   }

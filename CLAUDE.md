@@ -1586,3 +1586,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Proteção de senha vazada (HIBP) só existe no plano Pro do Supabase — o painel não usa o Supabase Auth (login próprio, 5 erros bloqueiam).
 - Índices conferidos: cada tabela tem (escritorio_id, id) + (escritorio_id, _em); tabelas pequenas (≤ 3,3 mil linhas) — nada a criar.
 - Cópia das funções/políticas/permissões de antes, para voltar: scratchpad da sessão (backup-8.40).
+- 8.41 Calculadora de rescisão (pedido da usuária, com exemplo): MOTOR ÚNICO `assets/rescisao-motor.js` (`window.RESCISAO.calcular`), usado pelo
+  site (assets/calculadoras.js) e pelo painel (gestao.js `calcRescisao`/`tabelaRescisao`; a conta antiga `contaRescisao` saiu). Rescisão indireta =
+  dispensa sem justa causa com aviso indenizado (30 + 3/ano, máx. 90) e projeção para 13º e férias; férias de CADA período completo não
+  gozado (simples ou EM DOBRO se o concessivo acabou antes da ruptura) + proporcionais; 13º do ano anterior não pago em linha própria fora do
+  subtotal; FGTS em bloco: contratual (só conferência se não informaram falta de depósito — não presume), diferença a depositar, FGTS do aviso,
+  FGTS do 13º da projeção e multa 40% SÓ sobre o contratual (Tema 255); "FGTS já calculado em outro pedido" não soma a diferença; multas 467/477
+  em campos próprios (só entram marcadas). Cada linha mostra a conta; arredonda cada parcela a 2 casas. Teste da usuária: adm 01/06/2025,
+  ruptura 27/08/2026, R$ 2.860 → 2.574,00 + 3.146,00 + 2.145,00 + 3.813,33 + 1.271,11 = 12.949,44; FGTS aviso 251,68; 13º/2025 1.668,33 (conferido).
+
