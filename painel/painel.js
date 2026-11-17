@@ -2145,7 +2145,8 @@
       h('fieldset', {}, h('legend', {}, 'Endereço e contato'),
         h('div', { class: 'campos' },
           campo('cep', 'CEP', c.cep, { modo: 'numeric', max: 9, dica: 'Preenche rua e cidade sozinho' }),
-          campo('endereco', 'Endereço (rua, número, bairro)', c.endereco, { max: 200, obrigatorio: novo }),
+          campo('endereco', novo ? 'Endereço (rua e número)' : 'Endereço (rua, número, bairro)', c.endereco, { max: 200, obrigatorio: novo }),
+          campo('bairro', 'Bairro', '', { max: 80, obrigatorio: novo, dica: novo ? 'O CEP preenche sozinho' : 'só se faltar no endereço acima' }),
           campo('cidade', 'Cidade', c.cidade, { max: 80 }),
           campo('uf', 'UF', c.uf, { max: 2 }),
           campo('telefone', 'Telefone / WhatsApp', c.telefone, { tipo: 'tel', max: 30 }),
@@ -2180,7 +2181,8 @@
         const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`).then(x => x.json());
         if (r.erro) return;
         form.cep.value = cep.slice(0, 5) + '-' + cep.slice(5);
-        if (!form.endereco.value) form.endereco.value = [r.logradouro, r.bairro].filter(Boolean).join(', ') + (r.logradouro ? ', nº ' : '');
+        if (!form.endereco.value) form.endereco.value = r.logradouro ? r.logradouro + ', nº ' : '';
+        if (form.bairro && !form.bairro.value && !(r.bairro && form.endereco.value.includes(r.bairro))) form.bairro.value = r.bairro || '';
         if (!form.cidade.value) form.cidade.value = r.localidade || '';
         if (!form.uf.value) form.uf.value = r.uf || '';
         form.endereco.focus();
@@ -2189,6 +2191,9 @@
 
     aoEnviar(form, async fd => {
       const dados = Object.fromEntries(fd.entries());
+      // 8.39.8 (pedido da usuária: "bote a opção bairro"): o bairro tem campo próprio e entra no fim do endereço ("Rua X, nº 10, Centro")
+      const bairro = String(dados.bairro || '').trim(); delete dados.bairro;
+      if (bairro && !String(dados.endereco || '').toLowerCase().includes(bairro.toLowerCase())) dados.endereco = String(dados.endereco || '').trim().replace(/[,\s]+$/, '') + ', ' + bairro;
       if (dados.tipo === 'PJ') { delete dados.rg; delete dados.nascimento; delete dados.estado_civil; delete dados.profissao; delete dados.genero; }
       if (novo) {
         const falta = [];
@@ -2196,6 +2201,7 @@
         if (!dados.cpf_cnpj.trim()) falta.push(dados.tipo === 'PJ' ? 'CNPJ' : 'CPF');
         if (dados.tipo !== 'PJ' && !dados.profissao.trim()) falta.push('profissão');
         if (!dados.endereco.trim()) falta.push('endereço');
+        if (!bairro && !/,[^,]+$/.test(dados.endereco.replace(/,\s*nº\s*[^,]*$/i, ''))) falta.push('bairro');
         if (falta.length) throw new Error('Para cadastrar, preencha: ' + falta.join(', ') + '.');
       } else dados.id = c.id;
       const res = await api('clientes.salvar', { cliente: dados });
@@ -3199,7 +3205,10 @@
 
   async function telaUsuarios() {
     carregando();
-    const [lista, seg] = await Promise.all([api('usuarios.listar'), api('seguranca').catch(() => null)]);
+    // 8.39.8 (pedido da usuária: "Configurações demorando muito"): a lista de pessoas abre sem esperar o quadro "Segurança dos dados"
+    // (ele confere o compartilhamento da planilha no Drive e o Log inteiro — lento); o quadro aparece sozinho quando chega
+    const segP = api('seguranca').catch(() => null);
+    const lista = await api('usuarios.listar');
     const form = h('form', { class: 'caixa', novalidate: true },
       h('h2', {}, 'Novo usuário'),
       h('p', { class: 'peq' }, 'Depois de 5 senhas erradas seguidas, o usuário fica bloqueado por 15 minutos.'),
@@ -3216,7 +3225,8 @@
       avisar('Usuário criado.');
       telaUsuarios();
     });
-    const caixaSeg = seg ? h('section', { class: 'caixa seguranca' }, h('h2', {}, 'Segurança dos dados'),
+    const montarSeg = seg => {
+    return seg ? h('section', { class: 'caixa seguranca' }, h('h2', {}, 'Segurança dos dados'),
       h('ul', { class: 'lista-seg' },
         h('li', { class: seg.backup && seg.backupRecente ? 'ok' : 'alerta' }, h('strong', {}, 'Cópia de segurança diária: '),
           seg.backup ? `última em ${new Date(seg.backup).toLocaleString('pt-BR')} (guarda os últimos 30 dias)` : 'ainda não foi feita',
@@ -3230,6 +3240,9 @@
         h('li', { class: 'ok' }, h('strong', {}, 'Sessões: '), 'caem após 1 hora parado no painel, 6 horas sem uso ou 12 horas no total; trocar a senha derruba as outras'),
         h('li', { class: seg.falhasRecentes ? 'alerta' : 'ok' }, h('strong', {}, 'Tentativas de entrada erradas (7 dias): '), String(seg.falhasRecentes)),
         h('li', { class: 'ok' }, h('strong', {}, 'Registro: '), 'todo login, alteração e acesso negado fica na aba Log da planilha'))) : null;
+    };
+    const caixaSeg = h('section', { class: 'caixa seguranca' }, h('h2', {}, 'Segurança dos dados'), h('p', { class: 'peq' }, 'Conferindo as cópias de segurança…'));
+    segP.then(seg => { const x = montarSeg(seg); if (x) caixaSeg.replaceWith(x); else caixaSeg.remove(); });
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Gerenciar acessos'), h('p', {}, 'Quem pode entrar no painel, o que cada perfil vê, senhas, bloqueios e a segurança dos dados.'))),
       caixaSeg,

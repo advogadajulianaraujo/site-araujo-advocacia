@@ -1552,6 +1552,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
   (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
   clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).
+- 8.39.8: "Pessoas e acessos" abre sem esperar o quadro "Segurança dos dados" (rota `seguranca` = Drive + Log inteiro, lenta; o quadro aparece
+  sozinho depois). Cadastro do cliente no painel com campo BAIRRO próprio (não é coluna: entra no fim de `endereco`, "Rua X, nº 10, Centro";
+  o CEP preenche; obrigatório no cadastro novo). O /cadastro/ do site já tinha Bairro.
 - 8.39.7 (pedido da usuária: "tem diversas pessoas que são tanto trabalhista quanto previdenciário"): "✓ Assinado" (`cartaoAssinatura`) abre
   "O cliente também vai ter outra ação?" com ＋ Trabalhista/Previdenciário/Cível/Família/Criminal; `documentos.assinatura` acao=assinado com
   `outras` → `abrirAcaoCliente_` por área (`AREAS_ACAO_`; não repete a inicial sem número da mesma área), cada uma com a tarefa da inicial do
