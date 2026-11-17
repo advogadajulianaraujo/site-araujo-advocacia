@@ -2950,3 +2950,31 @@ body.sem-sessao .chatf{display:none}
 .calc-tab3 td.peq{color:#6b6459;font-size:12px;max-width:420px}
 .calc-tab3 tr.calc-conf th,.calc-tab3 tr.calc-conf td{color:#8a8378;font-style:italic}
 .g-chk{display:flex;align-items:center;gap:6px;font-size:13px}
+/* 8.42: Início — esperando há muito tempo */
+.ini-esperando{margin:12px 0;border-left:4px solid #b4532a}
+.ini-esperando>summary{cursor:pointer;list-style:none;padding:2px 0}
+.ini-esperando h3{font-size:14px;margin:10px 0 6px}
+/* 8.42: chat sem conexão com o banco — aviso discreto no topo da janela */
+.chatf.sem-conexao .chatf-tit small::after{content:" · sem conexão: tentando de novo";color:#f0b46b}
+.chatf.sem-conexao .chatf-bolha{box-shadow:0 0 0 2px #c98a12,0 6px 20px rgba(0,0,0,.25)}
+/* 8.42 Central de Prazos e Intimações */
+.central-captura{background:#fff;border:1px solid #e3ddd2;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:13px}
+.central-filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+.central-filtros input[type=search]{min-width:240px;flex:1;max-width:380px}
+.central-filtros label{display:flex;gap:6px;align-items:center;font-size:13px}
+.central-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin:8px 0 14px}
+.central-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:#fff;border:1px solid #e3ddd2;border-left:5px solid #9aa0aa;border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit}
+.central-card b{font-size:22px;line-height:1}
+.central-card span{font-size:12.5px;color:#4a453e}
+.central-card.zero{opacity:.55}
+.central-card.ativo{outline:2px solid #171513}
+.central-card.k-vermelho{border-left-color:#b3261e}.central-card.k-vermelho:not(.zero) b{color:#b3261e}
+.central-card.k-ambar{border-left-color:#c98a12}.central-card.k-ambar:not(.zero) b{color:#9a6a0b}
+.central-card.k-azul{border-left-color:#2f6fd0}.central-card.k-verde{border-left-color:#1f8a4c}
+.central-grupo h2{font-size:15px;margin:0 0 8px}
+.central-grupo.k-vermelho{border-left:4px solid #b3261e}.central-grupo.k-ambar{border-left:4px solid #c98a12}
+.central-lista{list-style:none;margin:0;padding:0}
+.central-item{padding:8px 4px;border-bottom:1px solid #efebe4}
+.central-item a{color:inherit;text-decoration:none}.central-item a:hover strong{text-decoration:underline}
+.central-item.k-vermelho strong{color:#b3261e}.central-item.k-ambar strong{color:#8a5d06}
+.central-ia{color:#4a453e;background:#faf8f4;border-radius:6px;padding:4px 6px;margin-top:4px}

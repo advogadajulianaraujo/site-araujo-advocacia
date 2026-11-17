@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.39.7 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.42.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.39.7';
+var MOTOR_VERSAO = '8.42.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.39.7';
+var VERSAO = '8.42.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -126,7 +126,8 @@ var ESQUEMA = {
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
-    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
+    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
+    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima'], // 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
     'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte'],
@@ -1266,7 +1267,9 @@ function audienciasLista_(dias) {
   });
 }
 
-/** 8.37.2: audiências/perícias DESIGNADAS cuja data não veio no aviso (PJe "documento sigiloso"): tarefas abertas "lançar na agenda". */
+/** 8.42 (pedido da usuária: "nas anotações dos clientes, falando sobre as testemunhas"): cada audiência de INSTRUÇÃO (e a una) dos próximos
+ *  90 dias vira uma anotação na ficha do cliente com as testemunhas cadastradas na ficha da audiência — ou o aviso de que ainda faltam
+ *  (pedir nome, CPF e telefone). Mudou a lista de testemunhas → anotação nova. Nunca repete a mesma anotação. */
 function atosSemData_() {
   var clis = {}, procs = {};
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
@@ -1868,7 +1871,31 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis) };
+}
+/** 8.42 (pedido da usuária: "quem ainda não fechou e já faz tempo, ou está com a petição há muito tempo sem fazer — no Início de todos"):
+ *  (1) procuração/contrato enviados e AINDA aguardando assinatura há 7+ dias; (2) petição inicial sem número há 10+ dias (processo ativo
+ *  na etapa Petição inicial). Mais antigos primeiro. Só nomes, dias e quem cuida (nada de valores). */
+var ESPERA_ASSIN_DIAS = 7, ESPERA_INICIAL_DIAS = 10;
+function esperandoMuito_(hoje, clis) {
+  var dias = function (iso) { return iso ? diffDias_(hoje, String(iso).slice(0, 10)) : 0; }, assin = [], iniciais = [];
+  tabela_('Assinaturas').linhas.forEach(function (a) {
+    if (a.situacao !== 'aguardando' || !a.gerado_em) return;
+    var n = dias(a.gerado_em); if (n < ESPERA_ASSIN_DIAS) return;
+    var c = clis[a.cliente_id] || {};
+    assin.push({ cliente_id: a.cliente_id, cliente: c.nome || a.cliente_nome || '', telefone: c.telefone || '', dias: n, desde: String(a.gerado_em).slice(0, 10), por: a.gerado_por || '', documentos: String(a.documentos || '').slice(0, 90) });
+  });
+  var tarefasIni = {};
+  tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) tarefasIni[m[1]] = t; });
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (p.numero || p.status === 'arquivado' || p.fase !== 'contratado') return;
+    var n = dias(p.criado_em); if (n < ESPERA_INICIAL_DIAS) return;
+    var c = clis[p.cliente_id] || {}, t = tarefasIni[p.id];
+    iniciais.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: c.nome || p.cliente_nome || '', area: p.area || '', dias: n, desde: String(p.criado_em).slice(0, 10),
+      responsavel: p.responsavel || (t && t.responsavel) || '', tarefa_id: t ? t.id : '' });
+  });
+  var ord = function (a, b) { return b.dias - a.dias; };
+  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
@@ -1942,10 +1969,10 @@ var CATEGORIAS_LOG = [
 function relatorioSemana_(d) {
   var hoje = hojeSP_();
   var ref = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : hoje;
-  var mes = d.periodo === 'mes';
+  var mes = d.periodo === 'mes', diaSo = d.periodo === 'dia'; // 8.42: relatório DIÁRIO (pedido da usuária), além de semana e mês
   var dow = new Date(ref + 'T12:00:00Z').getUTCDay();
-  var ini = mes ? ref.slice(0, 8) + '01' : somarDias_(ref, -((dow + 6) % 7));
-  var fim = mes ? somarDias_(somarDias_(ini, 32).slice(0, 8) + '01', -1) : somarDias_(ini, 6);
+  var ini = diaSo ? ref : mes ? ref.slice(0, 8) + '01' : somarDias_(ref, -((dow + 6) % 7));
+  var fim = diaSo ? ref : mes ? somarDias_(somarDias_(ini, 32).slice(0, 8) + '01', -1) : somarDias_(ini, 6);
   var usuarios = {};
   usuarios_().forEach(function (x) { usuarios[x.usuario] = x; });
   var pessoas = {};
@@ -1971,10 +1998,10 @@ function relatorioSemana_(d) {
   });
   var lista = Object.keys(pessoas).map(function (k) { var x = pessoas[k]; x.itens.sort(function (a, b) { return a.quando < b.quando ? 1 : -1; }); return x; })
     .sort(function (a, b) { return b.total - a.total || (a.nome < b.nome ? -1 : 1); });
-  var ant = mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
+  var ant = diaSo ? somarDias_(ini, -1) : mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = diaSo ? somarDias_(ini, 1) : mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
   var aguardando = 0;
   try { aguardando = aguardandoOk_().length; } catch (e) { /* segue */ }
-  return { inicio: ini, fim: fim, hoje: hoje, periodo: mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
+  return { inicio: ini, fim: fim, hoje: hoje, periodo: diaSo ? 'dia' : mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
     categorias: CATEGORIAS_LOG.map(function (c) { return { id: c[0], nome: c[1] }; }), pessoas: lista };
 }
 
@@ -2163,7 +2190,7 @@ window.PAINEL_MOTOR = {
   versao: MOTOR_VERSAO,
   esquema: ESQUEMA,
   configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","AVISO_NOVA_DESDE","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
-  tabelasDaRota: {"resumo":["Clientes","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Avisos","Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"],"fin.painel":["Assinaturas","Clientes","Despesas","Honorarios","Parcelas","Processos","Usuarios"],"relatorio.geral":["Assinaturas","Avisos","Clientes","Despesas","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"]},
+  tabelasDaRota: {"resumo":["Clientes","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Avisos","Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Assinaturas","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"],"fin.painel":["Assinaturas","Clientes","Despesas","Honorarios","Parcelas","Processos","Usuarios"],"relatorio.geral":["Assinaturas","Avisos","Clientes","Despesas","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"]},
   google: ["agenda.criar","agenda.marcarAto","banco.conferir","banco.config","calc.indices","clientes.criarPasta","clientes.documentos","clientes.portal","clientes.salvar","clientes.whatsapp","consulta.baixar","consulta.enviar","consulta.processos","crm.consulta","crm.proposta","djen.robo","documentos.gerar","ext.analisar","fin.asaas.cancelar","fin.asaas.config","fin.asaas.gerar","fin.levantamento","fin.parcela.pagar","fin.pixLer","fin.recibo.gerar","future.contrato.aditivo","future.contrato.distrato","future.contrato.gerar","future.drive","future.importar","future.importarPasta","future.pessoa.pasta","future.vistoria.enviar","ia.audioParte","ia.config","ia.organizarNota","ia.resumirPrazo","ia.resumirProcesso","ia.textoCliente","ia.transcrever","ia.transcricaoResumo","marketing.gbp","modelos.liberarEdicao","modelos.listar","padroes.guia","prazos.baixarVencidos","resumo.email.testar","robo.consertar","robo.rodar","seguranca","site.contato","whats.acao","whats.config","whats.webhook","whatsapp.entrada"],
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },
   /** Roda a rota como o Apps Script faria (rotear_): permissão do perfil, a conta e os valores escondidos do RH. */

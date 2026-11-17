@@ -49,7 +49,7 @@ function criarGoogle() {
   function aba(nome) {
     const dados = [];
     const sh = {
-      _d: dados, getName: () => nome, getLastRow: () => dados.length, getMaxRows: () => Math.max(dados.length, 1000), setFrozenRows() {},
+      _d: dados, getName: () => nome, getLastRow: () => dados.length, getLastColumn: () => dados.reduce((m, r) => Math.max(m, r.length), 0), getMaxRows: () => Math.max(dados.length, 1000), setFrozenRows() {},
       appendRow(v) { dados.push(v.map(x => String(x))); },
       deleteRows(r, n) { dados.splice(r - 1, n); },
       getRange(r, c, nr, nc) {

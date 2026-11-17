@@ -1595,3 +1595,37 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   em campos próprios (só entram marcadas). Cada linha mostra a conta; arredonda cada parcela a 2 casas. Teste da usuária: adm 01/06/2025,
   ruptura 27/08/2026, R$ 2.860 → 2.574,00 + 3.146,00 + 2.145,00 + 3.813,33 + 1.271,11 = 12.949,44; FGTS aviso 251,68; 13º/2025 1.668,33 (conferido).
 
+## 8.42.0 Central de Prazos e Intimações + fila da IA + sem baixa indevida (pedidos da usuária, 17/11/2026)
+
+- CENTRAL DE PRAZOS (#/central, menu Escritório › "Central de Prazos", `telaCentral` em painel.js, classes `central-*` e cores `k-*` — NÃO usar
+  `c-*`, que é dos gráficos): cartões clicáveis (novas 48 h, aguardando leitura da IA, intimações aguardando conferência, provisórios/conferir,
+  calculados não confirmados, confirmados, vencem hoje, próximos 3 dias, vencidos SEM comprovação + baixados em lote, audiências e perícias
+  designadas, perícias aguardando designação (pela IA), sem data/horário, falhas da IA + sem texto/sigiloso, falhas de captura) + filtros
+  (cliente/nº, tribunal, responsável, ato) + `semaforoRobo` + linha "Captura" (fila e falhas da IA). Só lê (prazos.listar, intimacoes.listar,
+  audiencias.listar, resumo); nada muda sozinho.
+- FILA PERSISTENTE DA IA (`resumirIntimacoes_`): colunas novas em Intimacoes `ia_dados` (JSON estruturado), `ia_tentativas`, `ia_erro`,
+  `ia_proxima`. Falha = tentativa +1, erro guardado e espera crescente (15 min × 2^(n−1), até 12 h); 8 falhas = fica em "Falhas na leitura
+  automática" (conferir à mão) e avisa no chat. 429 → Config IA_PAUSA_ATE (+15 min) e a rodada para (não insiste). Roda no robô de 6 em 6 h E
+  no de hora em hora (só 7h–20h, 8 por vez, 25 s — tempo de robô do Google é limitado a 90 min/dia).
+- Leitura ESTRUTURADA (`pedidoGemini_`): ato, providência, existe_prazo, prazo_dias, contagem, fundamento, datas (disponibilização/publicação/
+  ciência), audiência (designada/redesignada/cancelada/designar_sem_data), perícia (designada/designar_sem_data/aguardando_designacao/
+  nomeacao_perito/quesitos/laudo_apresentado/manifestar_laudo), data/hora/local do ato, perito, TRECHO literal, confiabilidade, conferir,
+  insuficiente ("INFORMAÇÃO INSUFICIENTE — CONFERÊNCIA NO TRIBUNAL"). `IA_ULTIMO_OBJ` guarda o JSON lido. A IA continua NUNCA mudando prazo.
+- Alertas no chat da equipe (`chatRobo_`, de = 'robô', sala geral): intimação lida com audiência/perícia, prazo divergente ou informação
+  insuficiente, e falha 8×; até 10 por rodada. Mensagem do robô NÃO abre a janela do chat (só pisca).
+- SEM BAIXA EM LOTE: `revisarPrazos_` ignora a categoria 'vencidos' (só lista); vencido sem comprovação fica na Central. Os 27 baixados em lote de
+  13/11 aparecem em "Vencidos sem comprovação" com o aviso "reabra se não foi feito" (nada foi mudado neles). Conferido de PRAZO pede o
+  COMPROVANTE do protocolo (`conferirTrabalho` → `comprovante`; observacoes "comprovante: … (quem, data)" ou "sem comprovante informado").
+- Início de TODOS os perfis: "⏳ Esperando há muito tempo" (`esperandoMuito_` em inicio.extras): ainda não assinaram há 7+ dias (WhatsApp pronto)
+  e petição inicial sem número há 10+ dias (com quem está).
+- Testemunhas nas ANOTAÇÕES do cliente (`textoTestemunhas_`, `testemunhasNasNotas_` nos robôs do escritório, e na hora em `salvarFichaAto_`): cada
+  audiência de instrução/una dos próximos 90 dias vira anotação com as testemunhas (ou "nenhuma cadastrada: pedir nome, CPF e telefone").
+- Relatório DIÁRIO: Relatórios › Equipe com Dia | Semana | Mês (`relatorio.semana` periodo=dia).
+- Chat (revisão): `chatEnviar_` na trava, mesma mensagem em 2 min não grava 2 vezes, máx. 20/min por pessoa; no painel: sem envio duplo, texto
+  volta para a caixa se falhar, aviso "sem conexão" e consulta leve de 2 em 2 min quando o banco não responde.
+- Teste novo `.github/motor/teste/etapa842.js` (429 → tentativa e pausa; espera; leitura estruturada; chat do robô; sem baixa em lote;
+  comprovante; chat sem duplicar; relatório do dia; esperando; testemunhas). sim.js ganhou getLastColumn. `sbEspelhar_` escreve o cabeçalho
+  quando a aba da planilha tem menos colunas que o ESQUEMA.
+- PENDENTE de decisão da usuária: a regra antiga "nunca sem data: provisório de 5 dias" × o pedido novo "não usar 5 dias como prazo automático".
+  Mantido o provisório (sempre marcado PROVISÓRIO, nunca conta como confirmado) até ela decidir.
+

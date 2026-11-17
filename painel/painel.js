@@ -714,6 +714,7 @@
   // [rota, nome, permissão, ícone, grupo]. Relatórios, Equipe e Gerenciar acessos continuam também no menu do nome.
   const ABAS = [
     ['inicio', 'Início', null, null, 'Escritório'],
+    ['central', 'Central de Prazos', null, 'prazos', 'Escritório'],
     ['clientes', 'Clientes', null, null, 'Escritório'],
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
@@ -983,14 +984,16 @@
       const ult = (r.mensagens || []).slice(-1)[0];
       if (ult && atual.naoLidas && verConversa && !document.hidden) api('chat.lido', { sala: st.sala, em: ult.em }).catch(() => {});
     }
+    let enviando = false; // 8.42: Enter duas vezes / clique duplo não manda duas vezes
     async function enviar() {
-      const texto = ta.value.trim(); if (!texto) return;
-      enviarBt.disabled = true;
+      const texto = ta.value.trim(); if (!texto || enviando) return;
+      if (texto.length > 4000) { avisar('Mensagem grande demais (até 4.000 letras).', true); return; }
+      enviando = true; enviarBt.disabled = true;
       const prov = h('div', { class: 'chat-msg meu enviando' }, h('span', { class: 'chat-txt' }, ...comLinks(texto)), h('span', { class: 'chat-hora' }, 'enviando…'));
       msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = ''; ta.style.height = '';
       try { await api('chat.enviar', { sala: st.sala, texto }); st.desenho = ''; await carregar(); }
-      catch (e) { prov.remove(); ta.value = texto; avisar(e.message, true); }
-      finally { enviarBt.disabled = false; ta.focus(); }
+      catch (e) { prov.remove(); if (!ta.value.trim()) ta.value = texto; avisar('A mensagem NÃO foi enviada: ' + e.message + ' — o texto voltou para a caixa.', true); }
+      finally { enviando = false; enviarBt.disabled = false; ta.focus(); }
     }
     form.addEventListener('submit', ev => { ev.preventDefault(); enviar(); });
     ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } if (ev.key === 'Escape') modo('fechado'); });
@@ -1008,7 +1011,14 @@
       try { r = BANCO && BANCO.chatPing ? await BANCO.chatPing() : null; } catch (e) { r = null; }
       // 8.39.5: sem o banco NÃO pergunta mais ao Google (era um pedido por pessoa a cada minuto e sobrecarregava o servidor);
       // tenta de novo daqui a 15 s. A janela aberta carrega as mensagens quando alguém abre a conversa.
-      if (!r) return;
+      if (!r) {
+        vigiar.falhas = (vigiar.falhas || 0) + 1;
+        if (vigiar.falhas >= 3) chatF.raiz.classList.add('sem-conexao');
+        // 8.42: o banco não responde há 3 tentativas → uma consulta leve a cada 2 min (não a cada minuto, que sobrecarregava)
+        if (vigiar.falhas >= 3 && vigiar.falhas % 8 === 0 && chatF.st.modo !== 'fechado') chatF.carregar();
+        return;
+      }
+      vigiar.falhas = 0; chatF.raiz.classList.remove('sem-conexao');
       const st = chatF.st;
       if (st.modo === 'fechado') chatBadge(r.naoLidas || 0);
       const u = r.ultima; if (!u) return;
@@ -1016,6 +1026,7 @@
       if (u.em <= visto) return;
       gravarLSc(CHAT_ULT(), u.em);
       if (!visto) return; // 1ª vez neste computador: só anota
+      if (u.de === 'robô' && st.modo === 'fechado') { chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; } // 8.42: aviso do robô não abre a janela
       if (u.de !== sessao.usuario.usuario && st.modo === 'fechado') { chatF.abrir('pequeno', u.sala); chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; }
       chatF.carregar();
     };
@@ -1280,6 +1291,23 @@
           [x.numero, 'a data não veio no aviso: abrir o processo e lançar'].filter(Boolean).join(' · '),
           h('div', { onclick: ev => ev.stopPropagation() }, h('button', { type: 'button', class: 'btn mini', onclick: () => caixaMarcarAto({ numero: x.numero, processo_id: x.processo_id, texto: x.tipo === 'pericia' ? 'perícia' : 'audiência' }) }, '📅 Lançar a data')))))) : null;
 
+    // 8.42 (pedido da usuária): quem AINDA NÃO FECHOU há tempo (aguardando assinatura 7+ dias) e petição inicial PARADA (10+ dias), para todos
+    const esp = ext.esperando || { assinatura: [], iniciais: [] };
+    const zapAssin = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.cliente).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Ficou faltando a assinatura da procuração e do contrato para darmos andamento ao seu caso. Conseguiu ver? Se tiver alguma dúvida, é só nos chamar.`); };
+    const blocoEsperando = esp.assinatura.length || esp.iniciais.length ? h('details', { class: 'caixa ini-esperando', open: true },
+      h('summary', {}, h('strong', {}, `⏳ Esperando há muito tempo (${esp.assinatura.length + esp.iniciais.length})`), h('span', { class: 'peq' }, ` · não assinaram há ${esp.assinDias || 7}+ dias · petição inicial sem protocolo há ${esp.inicialDias || 10}+ dias`)),
+      h('div', { class: 'ini-duas' },
+        h('div', {}, h('h3', {}, `✍ Ainda não assinaram (${esp.assinatura.length})`),
+          esp.assinatura.length ? h('ul', { class: 'ini-lista' }, esp.assinatura.slice(0, 12).map(x => item(() => { location.hash = '#/cliente/' + x.cliente_id; },
+            h('div', { class: 'selo-data faixa-vencido' }, h('b', {}, String(x.dias)), h('span', {}, 'dias')), x.cliente || 'cliente', [x.documentos, x.por ? 'gerou: ' + x.por : ''].filter(Boolean).join(' · '),
+            zapAssin(x) ? h('a', { class: 'btn mini wa', href: zapAssin(x), target: '_blank', rel: 'noopener', onclick: ev => ev.stopPropagation() }, 'Lembrar no WhatsApp') : h('span', { class: 'peq' }, 'sem telefone'))))
+            : vazio('Ninguém esperando assinatura há tanto tempo.')),
+        h('div', {}, h('h3', {}, `📄 Petição inicial parada (${esp.iniciais.length})`),
+          esp.iniciais.length ? h('ul', { class: 'ini-lista' }, esp.iniciais.slice(0, 12).map(x => item(() => { location.hash = '#/processo/' + x.processo_id; },
+            h('div', { class: 'selo-data faixa-vencido' }, h('b', {}, String(x.dias)), h('span', {}, 'dias')), x.cliente || 'cliente', [x.area, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável'].filter(Boolean).join(' · '), null)))
+            : vazio('Nenhuma petição inicial parada.')))) : null;
+
     // ----- aniversariantes de hoje -----
     const parabens = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.nome).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Hoje é o seu dia e não podíamos deixar passar: feliz aniversário! Desejamos muita saúde, paz e conquistas. Conte sempre com a gente. 🎉`); };
@@ -1369,7 +1397,7 @@
           atalho('#/audiencias?ver=avisar', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
           atalho('#/', 'Cobranças', ext.cobrancas.length, `${vencemHoje} vencem hoje · ${naoPagos.length} em atraso`, naoPagos.length ? 'alerta' : ''),
           atalho('#/clientes', 'Aniversários', ext.aniversarios.length, 'hoje')),
-        blocoMeuDia, acoes,
+        blocoMeuDia, acoes, blocoEsperando,
         extras ? null : h('p', { class: 'nota' }, 'O Google está demorando para responder: os blocos abaixo aparecem sozinhos assim que chegarem.'),
         blocoAudNovas,
         h('div', { class: 'ini-duas' }, blocoAudHoje, blocoAudiencias),
@@ -1385,7 +1413,7 @@
           atalho('#/tarefas', 'Atrasadas', meu ? meu.atrasadas : 0, meu && meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu && meu.atrasadas ? 'alerta' : ''),
           atalho('#/prazos', 'Prazos', pz.abertos || 0, pz.vencendo ? `${pz.vencendo} vencem em 5 dias` : 'em aberto no escritório', pz.vencidos ? 'atencao' : ''),
           atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
-        blocoMeuDia, acoes,
+        blocoMeuDia, acoes, blocoEsperando,
         h('div', { class: 'ini-duas' }, blocoAgenda, blocoMinhaSemana),
         pill);
       return;
@@ -1398,7 +1426,7 @@
         atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
         atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
       blocoAguardandoOk({ inicio: true }),
-      blocoMeuDia, acoes,
+      blocoMeuDia, acoes, blocoEsperando,
       blocoAudNovas,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
       ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
@@ -3468,11 +3496,17 @@
   /** O cartão/linha clicado some na hora (o Google confirma por trás; se der erro, volta). */
   function sumirNaHora(el) { const alvo = el && el.closest('li, tr, article, .aguarda-item'); if (alvo) alvo.classList.add('saindo'); return alvo; }
   async function conferirTrabalho(tipo, id, titulo, extra, origem) {
+    // 8.42 (Central de Prazos: "o vencimento não comprova o protocolo"): no prazo, o Conferido pede o COMPROVANTE (recomendado)
+    if (!extra && tipo === 'prazo') extra = () => {
+      const inp = h('input', { type: 'text', maxlength: 200, placeholder: 'Nº do protocolo, link do PJe/eproc ou "protocolado no eproc em 17/11"' });
+      const w = h('label', { class: 'campo largo' }, h('span', {}, 'Comprovante do protocolo (recomendado)'), inp);
+      w.valor = () => inp.value.trim(); return w;
+    };
     const q = await escolherQuem(titulo, extra);
     if (!q) return false;
     const alvo = sumirNaHora(origem);
     let r;
-    try { r = await api('trabalho.conferir', { tipo, id, por: q.usuario, numero: q.extra || '' }); }
+    try { r = await api('trabalho.conferir', tipo === 'prazo' ? { tipo, id, por: q.usuario, comprovante: q.extra || '' } : { tipo, id, por: q.usuario, numero: q.extra || '' }); }
     catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; }
     avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
     // 8.11: inicial protocolada → abre o processo com a mensagem do WhatsApp pronta (com o código do Acompanhe gerado sozinho)
@@ -3760,7 +3794,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.39.7';
+  const VERSAO_PAINEL = '8.42.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3981,6 +4015,94 @@
   }
   function sistemaPreferido() { try { const v = localStorage.getItem('prazos_sistema') || 'todos'; return NOME_SIS[v] ? v : 'todos'; } catch (e) { return 'todos'; } }
 
+  /* ---------- 8.42 CENTRAL DE PRAZOS E INTIMAÇÕES (pedido da usuária: "nenhuma intimação pode passar despercebida") ----------
+     Uma tela só com o que exige providência: cartões de urgência (clicar abre a lista), filtros e a situação da captura (Gmail, DJEN, robô,
+     IA). Não muda nenhum dado sozinha: cada linha leva à tela do prazo/intimação/audiência, onde está o Conferido, o OK e o histórico. */
+  async function telaCentral(params) {
+    carregando();
+    const vazio = t => h('p', { class: 'ini-vazio' }, t);
+    const hoje = hojeISO(), em3 = isoSoma(hoje, 3), ha2 = isoSoma(hoje, -2), ha60 = isoSoma(hoje, -60);
+    const [prazos, encerr, intim, audR, resumo] = await Promise.all([api('prazos.listar', {}), api('prazos.listar', { encerrados: true }).catch(() => []),
+      api('intimacoes.listar', { limite: 300 }).catch(() => ({ lista: [] })), api('audiencias.listar', { dias: 90 }).catch(() => ({ lista: [], semData: [] })), api('resumo').catch(() => ({}))]);
+    const ints = intim.lista || [], auds = (audR && audR.lista) || [], extras = { audSemData: (audR && audR.semData) || [] };
+    const iaDe = i => { try { return i.ia_dados ? JSON.parse(i.ia_dados) : null; } catch (e) { return null; } };
+    const semTexto = i => String(i.texto || '').replace(/\s+/g, ' ').length < 120 || /^\W*(documento sigiloso|conteúdo sigiloso)/i.test(String(i.texto || ''));
+    const prov = z => /PROVISÓRIO/i.test(z.descricao || '') || z.situacao === 'a definir';
+    const abertos = prazos.filter(z => SITUACOES_ABERTAS.includes(z.situacao));
+    const lote = encerr.filter(z => z.situacao === 'cumprido' && /baixa em lote/.test(z.cumprido_por || ''));
+    const pericia = (i, tipos) => { const d = iaDe(i); return d && tipos.includes(d.pericia); };
+    const G = [
+      ['novas', '🆕 Novas intimações (48 h)', 'azul', ints.filter(i => (i.recebido_em || '').slice(0, 10) >= ha2).map(x => ({ t: 'i', x }))],
+      ['leitura', '🤖 Aguardando leitura da IA', 'azul', ints.filter(i => !i.resumo_ia && !semTexto(i) && (i.recebido_em || '') >= ha60 && !(+i.ia_tentativas >= 8)).map(x => ({ t: 'i', x }))],
+      ['conferencia', '📥 Intimações aguardando conferência', 'ambar', ints.filter(i => !i.terminada_por && !(i.prazo && ['cumprido', 'cancelado'].includes(i.prazo.situacao))).map(x => ({ t: 'i', x }))],
+      ['provisorios', '⚠ Provisórios / a conferir no tribunal', 'ambar', abertos.filter(z => filaDe(z) === 'conferir').map(x => ({ t: 'z', x }))],
+      ['calculados', '🧮 Calculados e não confirmados', 'ambar', abertos.filter(z => filaDe(z) === 'calculado').map(x => ({ t: 'z', x }))],
+      ['confirmados', '✓ Confirmados', 'verde', abertos.filter(z => filaDe(z) === 'confirmado').map(x => ({ t: 'z', x }))],
+      ['hoje', '⏰ Vencem HOJE', 'vermelho', abertos.filter(z => z.fatal === hoje).map(x => ({ t: 'z', x }))],
+      ['tres', '📆 Vencem nos próximos 3 dias', 'vermelho', abertos.filter(z => z.fatal > hoje && z.fatal <= em3).map(x => ({ t: 'z', x }))],
+      ['vencidos', '🚨 Vencidos sem comprovação', 'vermelho', abertos.filter(z => z.fatal && z.fatal < hoje).concat(lote).map(x => ({ t: 'z', x, lote: /baixa em lote/.test(x.cumprido_por || '') }))],
+      ['audiencias', '⚖ Audiências designadas (90 dias)', 'azul', auds.filter(a => a.tipo !== 'pericia' && !/per[ií]cia/i.test(a.nome || '')).map(x => ({ t: 'a', x }))],
+      ['pericias', '🩺 Perícias designadas', 'azul', auds.filter(a => a.tipo === 'pericia' || /per[ií]cia/i.test(a.nome || '')).map(x => ({ t: 'a', x }))],
+      ['pericia_aguarda', '⏳ Perícias aguardando designação', 'ambar', ints.filter(i => !i.terminada_por && pericia(i, ['aguardando_designacao', 'designar_sem_data', 'nomeacao_perito'])).map(x => ({ t: 'i', x }))],
+      ['semdata', '📅 Audiência/perícia sem data ou horário', 'ambar', (extras.audSemData || []).map(x => ({ t: 's', x })).concat(auds.filter(a => !a.hora).map(x => ({ t: 'a', x })))],
+      ['falha_ia', '❌ Falhas na leitura automática', 'vermelho', ints.filter(i => !i.resumo_ia && (+i.ia_tentativas > 0)).map(x => ({ t: 'i', x })).concat(ints.filter(i => !i.terminada_por && semTexto(i) && (i.recebido_em || '') >= ha60).map(x => ({ t: 'i', x, sigilo: true })))],
+      ['falha_sinc', '🛰 Falhas de captura e sincronização', 'vermelho', ((resumo.robo || {}).alertas || []).map(x => ({ t: 'r', x }))]
+    ];
+    // filtros
+    const f = { busca: (params.get('busca') || '').trim(), trib: params.get('trib') || '', resp: params.get('resp') || '', ato: params.get('ato') || '', ver: params.get('ver') || '' };
+    const txt = it => { const x = it.x || {}; return [x.cliente, x.numero, x.descricao, x.movimento, x.resumo_ia, x.nome, x.tipo, typeof x === 'string' ? x : ''].join(' '); };
+    const tribDe = it => (it.x && (it.x.tribunal || '')) || '';
+    const respDe = it => (it.x && (it.x.responsavel || (it.x.prazo || {}).responsavel || '')) || '';
+    const atoDe = it => { const x = it.x || {}; const d = it.t === 'i' ? iaDe(x) : null; return (d && d.ato) || (it.t === 'a' ? (/per/i.test(x.tipo + x.nome) ? 'perícia' : 'audiência') : '') || String(x.descricao || x.movimento || '').split(/[\s—-]/)[0].toLowerCase(); };
+    const passa = it => (!f.busca || bateBusca(txt(it), f.busca)) && (!f.trib || tribDe(it) === f.trib) && (!f.resp || respDe(it) === f.resp) && (!f.ato || atoDe(it).includes(f.ato));
+    const todos = G.flatMap(g => g[3]);
+    const opc = (arr, atual, rot) => h('select', { onchange: e => ir({ [rot]: e.target.value }) }, h('option', { value: '' }, 'Todos'), [...new Set(arr.filter(Boolean))].sort().map(v => h('option', { value: v, selected: v === atual }, v)));
+    const ir = mud => { const q = new URLSearchParams(Object.assign({}, f, mud)); [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); }); location.hash = '#/central' + (q.toString() ? '?' + q : ''); };
+    const filtros = h('form', { class: 'central-filtros', onsubmit: e => { e.preventDefault(); ir({ busca: e.target.busca.value.trim() }); } },
+      h('input', { name: 'busca', type: 'search', placeholder: 'Cliente ou nº do processo…', value: f.busca }),
+      h('label', {}, 'Tribunal ', opc(todos.map(tribDe), f.trib, 'trib')),
+      h('label', {}, 'Responsável ', opc(todos.map(respDe), f.resp, 'resp')),
+      h('label', {}, 'Ato ', opc(['sentença', 'acórdão', 'decisão', 'despacho', 'audiência', 'perícia', 'citação', 'intimação'], f.ato, 'ato')),
+      h('button', { type: 'submit', class: 'btn mini' }, 'Filtrar'), (f.busca || f.trib || f.resp || f.ato) ? botao('Limpar', () => ir({ busca: '', trib: '', resp: '', ato: '' }), 'mini sec') : null);
+    const cards = h('div', { class: 'central-cards' }, G.map(([k, nome, cor, lista]) => { const n = lista.filter(passa).length;
+      return h('button', { type: 'button', class: `central-card k-${cor}${f.ver === k ? ' ativo' : ''}${n ? '' : ' zero'}`, onclick: () => ir({ ver: f.ver === k ? '' : k }) }, h('b', {}, String(n)), h('span', {}, nome)); }));
+    // linhas
+    const linha = it => {
+      const x = it.x || {};
+      if (it.t === 'r') return h('li', { class: 'central-item k-vermelho' }, h('strong', {}, '⚠ ' + x), h('div', { class: 'peq' }, 'Veja a situação dos robôs abaixo.'));
+      if (it.t === 's') return h('li', { class: 'central-item' }, h('a', { href: x.processo_id ? '#/processo/' + x.processo_id : '#/audiencias' }, h('strong', {}, `${x.tipo === 'pericia' ? 'Perícia' : 'Audiência'} designada SEM data — ${x.cliente || 'cliente a identificar'}`)),
+        h('div', { class: 'peq' }, [x.numero, x.orgao, 'desde ' + dataBR(x.desde), x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', 'abrir o processo no tribunal e lançar a data'].filter(Boolean).join(' · ')));
+      if (it.t === 'a') return h('li', { class: 'central-item' }, h('a', { href: '#/audiencias' }, h('strong', {}, `${x.nome || x.tipo || 'Ato'} — ${dataBR(x.data)}${x.hora ? ' às ' + x.hora : ' · SEM HORÁRIO'}`)),
+        h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.local, x.devido ? 'aviso ao cliente devido agora' : ''].filter(Boolean).join(' · ')));
+      if (it.t === 'z') { const venc = x.fatal && x.fatal < hoje;
+        return h('li', { class: 'central-item' + (venc ? ' k-vermelho' : filaDe(x) === 'conferir' ? ' k-ambar' : '') }, h('a', { href: '#/prazo/' + x.id }, h('strong', {}, `${x.fatal ? dataBR(x.fatal) : 'SEM DATA'} — ${String(x.descricao || 'prazo').slice(0, 110)}`)),
+          h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', prov(x) ? 'PROVISÓRIO — conferir no tribunal' : filaDe(x) === 'confirmado' ? 'confirmado' : 'calculado pelo robô, não confirmado',
+            it.lote ? 'BAIXADO EM LOTE sem comprovante (13/11) — reabra se não foi feito' : '', x.conferido_fonte ? 'fonte: ' + x.conferido_fonte : ''].filter(Boolean).join(' · ')),
+          x.resumo_ia ? h('div', { class: 'peq central-ia' }, String(x.resumo_ia).slice(0, 260)) : null); }
+      const d = iaDe(x);
+      return h('li', { class: 'central-item' + (it.sigilo ? ' k-ambar' : '') }, h('a', { href: x.prazo ? '#/prazo/' + x.prazo.id : '#/prazos?ver=intimacoes&busca=' + encodeURIComponent(x.numero || '') },
+        h('strong', {}, `${dataBR((x.recebido_em || '').slice(0, 10))} — ${String(x.movimento || 'intimação').slice(0, 100)}`)),
+        h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.fonte, x.responsavel ? 'com ' + x.responsavel : '', x.prazo && x.prazo.fatal ? 'prazo ' + dataBR(x.prazo.fatal) : 'sem prazo ligado'].filter(Boolean).join(' · ')),
+        it.sigilo ? h('div', { class: 'peq central-ia' }, 'Sem texto do ato (documento sigiloso ou só o aviso): INFORMAÇÃO INSUFICIENTE — CONFERÊNCIA NO TRIBUNAL') : null,
+        x.ia_erro && !x.resumo_ia ? h('div', { class: 'peq erro' }, `IA falhou ${x.ia_tentativas || 1}× — ${String(x.ia_erro).slice(25, 200)}${+x.ia_tentativas >= 8 ? ' · conferir À MÃO' : ' · tenta de novo sozinha'}`) : null,
+        x.resumo_ia ? h('div', { class: 'peq central-ia' }, String(x.resumo_ia).slice(0, 300)) : null,
+        d && (d.audiencia || d.pericia) ? h('div', { class: 'peq' }, h('strong', {}, [d.audiencia ? 'Audiência: ' + d.audiencia.replace(/_/g, ' ') : '', d.pericia ? 'Perícia: ' + d.pericia.replace(/_/g, ' ') : '', d.data_ato ? dataBR(d.data_ato) + (d.hora_ato ? ' ' + d.hora_ato : '') : '', d.local_ato || '', d.perito ? 'perito: ' + d.perito : ''].filter(Boolean).join(' · ')), ' — pendente de confirmação') : null,
+        d && d.trecho ? h('details', {}, h('summary', { class: 'peq' }, 'trecho que a IA usou'), h('blockquote', { class: 'peq' }, d.trecho)) : null);
+    };
+    const grupoVer = G.find(g => g[0] === f.ver);
+    const listas = (grupoVer ? [grupoVer] : G.filter(g => ['vencidos', 'hoje', 'tres', 'provisorios', 'falha_ia', 'falha_sinc', 'semdata', 'pericia_aguarda'].includes(g[0]))).map(([k, nome, cor, lista]) => {
+      const l = lista.filter(passa); if (!grupoVer && !l.length) return null;
+      return h('section', { class: 'caixa central-grupo k-' + cor }, h('h2', {}, `${nome} (${l.length})`),
+        l.length ? h('ul', { class: 'central-lista' }, l.slice(0, 120).map(linha)) : vazio('Nada aqui. 👏'), l.length > 120 ? h('p', { class: 'peq' }, `Mostrando 120 de ${l.length}: use os filtros.`) : null);
+    }).filter(Boolean);
+    const filaIA = ints.filter(i => !i.resumo_ia && !semTexto(i) && (i.recebido_em || '') >= ha60).length, falhasIA = ints.filter(i => +i.ia_tentativas > 0 && !i.resumo_ia).length;
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Central de Prazos e Intimações'),
+        h('p', {}, 'O que precisa de providência, num lugar só. Nada sai daqui sozinho: só com Conferido (com o comprovante) e o OK da advogada. A IA sugere; quem confirma é a equipe.'))),
+      h('div', { class: 'central-captura' }, h('strong', {}, 'Captura: '), `IA — ${filaIA} na fila, ${falhasIA} com falha (tenta de novo sozinha, com intervalo crescente)`,
+        (resumo.robo || {}).ia && resumo.robo.ia.erro ? h('span', { class: 'erro' }, ' · último problema da IA: ' + String(resumo.robo.ia.erro).slice(0, 140)) : null),
+      resumo.robo ? semaforoRobo(resumo.robo) : null, filtros, cards, ...listas,
+      h('p', { class: 'peq' }, 'Regras: prazo PROVISÓRIO nunca aparece como confirmado; vencido sem comprovação continua aqui até alguém dar o Conferido com o comprovante ou reabrir; audiência/perícia lida pela IA fica "pendente de confirmação" até alguém lançar/conferir. Nenhuma mensagem vai ao cliente sem alguém aprovar.'));
+  }
   async function telaPrazos(params) {
     carregando();
     const encerrados = params.get('encerrados') === '1';
@@ -4276,12 +4398,12 @@
     const desenhar = r => {
       const CATS = [['repetidos', 'Repetidos (mesmo processo, descrição e data)', 'cancelar'], ['mp', 'Vista ao Ministério Público (não é prazo do escritório)', 'cancelar'],
         ['audiencia', 'Intimação de audiência com a audiência já na agenda (só se quiser tirar: o robô não tira mais sozinho)', 'cancelar'],
-        ['recalcular', 'Data final diferente da conta nova (ciência em fim de semana/feriado)', 'corrigir a data'], ['vencidos', 'Vencidos ainda abertos (já feitos)', 'dar baixa como feito']];
+        ['recalcular', 'Data final diferente da conta nova (ciência em fim de semana/feriado)', 'corrigir a data'], ['vencidos', 'Vencidos ainda abertos — conferir um a um (o vencimento NÃO comprova o protocolo; não há mais baixa em lote)', 'só listar']];
       const marc = new Set(['repetidos', 'mp', 'recalcular']); // 8.37.2: intimação de audiência fica nos prazos para conferir
       d.replaceChildren(h('h2', {}, '🔧 Revisão dos prazos'),
         h('p', { class: 'peq' }, 'O robô já faz sozinho, a cada hora: repetidos, vista ao MP e data pela conta nova. Aqui dá para ver o que ele achou e dar baixa nos vencidos que já foram feitos.'),
         ...CATS.map(([k, rot, acao]) => h('details', { class: 'rev-cat' }, h('summary', {},
-          h('label', { onclick: e => e.stopPropagation() }, h('input', { type: 'checkbox', checked: marc.has(k), disabled: !r[k].length, onchange: e => { if (e.target.checked) marc.add(k); else marc.delete(k); } }), ` ${rot}: `, h('strong', {}, String(r[k].length)), h('span', { class: 'peq' }, ' → ' + acao))),
+          h('label', { onclick: e => e.stopPropagation() }, h('input', { type: 'checkbox', checked: marc.has(k), disabled: !r[k].length || k === 'vencidos', onchange: e => { if (e.target.checked) marc.add(k); else marc.delete(k); } }), ` ${rot}: `, h('strong', {}, String(r[k].length)), h('span', { class: 'peq' }, ' → ' + acao))),
           h('ul', { class: 'rev-lista' }, r[k].slice(0, 80).map(x => h('li', {}, h('a', { href: '#/prazo/' + x.id, onclick: () => d.close() }, `${x.numero} · ${x.descricao}`), ` · fatal ${dataBR(x.fatal)}`, x.novo ? ` → ${dataBR(x.novo)}` : ''))))),
         r.baixados && r.baixados.length ? h('details', { class: 'rev-cat' }, h('summary', {}, `Baixados em lote (${r.baixados.length}) — algum NÃO foi feito? Reabra:`),
           h('ul', { class: 'rev-lista' }, r.baixados.map(x => h('li', {}, `${x.numero} · ${x.descricao} · fatal ${dataBR(x.fatal)} `, botao('Reabrir', async ev => { ev.target.disabled = true; await api('prazos.situacao', { id: x.id, situacao: 'reabrir' }); ev.target.textContent = 'reaberto ✓'; }, 'mini sec'))))) : null,
@@ -6078,8 +6200,8 @@
       catch (e) { caixa.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
       const nomeCat = Object.fromEntries(r.categorias.map(c => [c.id, c.nome]));
       const ir = mud => { const q = new URLSearchParams({ semana: sem || '', per: per || '', ...mud }); [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); }); location.hash = '#/relatorios' + (q.toString() ? '?' + q : ''); };
-      const mes = r.periodo === 'mes';
-      const titPer = mes ? new Date(r.inicio + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' }) : `${dataBR(r.inicio)} a ${dataBR(r.fim)}`;
+      const mes = r.periodo === 'mes', dia = r.periodo === 'dia';
+      const titPer = dia ? new Date(r.inicio + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : mes ? new Date(r.inicio + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' }) : `${dataBR(r.inicio)} a ${dataBR(r.fim)}`;
       const soma = id => r.pessoas.reduce((t, p) => t + (p.grupos[id] || 0), 0);
       const total = r.pessoas.reduce((t, p) => t + p.total, 0);
       const maior = Math.max(1, ...r.pessoas.map(p => p.total));
@@ -6109,10 +6231,10 @@
         h('div', { class: 'eq-topo' },
           h('div', {}, h('span', { class: 'carteira-kicker' }, 'Equipe'), h('h2', {}, 'O que cada colaborador fez'), h('p', {}, titPer + ' · tudo o que foi conferido, avisado e cadastrado no painel')),
           h('div', { class: 'eq-controles' },
-            h('div', { class: 'visoes' }, h('button', { type: 'button', class: 'visao-bt' + (!mes ? ' ativo' : ''), onclick: () => ir({ per: '', semana: '' }) }, 'Semana'),
+            h('div', { class: 'visoes' }, h('button', { type: 'button', class: 'visao-bt' + (dia ? ' ativo' : ''), onclick: () => ir({ per: 'dia', semana: '' }) }, 'Dia'), h('button', { type: 'button', class: 'visao-bt' + (!mes && !dia ? ' ativo' : ''), onclick: () => ir({ per: '', semana: '' }) }, 'Semana'),
               h('button', { type: 'button', class: 'visao-bt' + (mes ? ' ativo' : ''), onclick: () => ir({ per: 'mes', semana: '' }) }, 'Mês')),
             h('div', { class: 'barra' }, botao('◀', () => ir({ semana: r.anterior }), 'sec mini'), r.proxima ? botao('▶', () => ir({ semana: r.proxima }), 'sec mini') : null,
-              sem ? botao(mes ? 'Este mês' : 'Esta semana', () => ir({ semana: '' }), 'sec mini') : null))),
+              sem ? botao(dia ? 'Hoje' : mes ? 'Este mês' : 'Esta semana', () => ir({ semana: '' }), 'sec mini') : null))),
         h('div', { class: 'eq-kpis' },
           h('div', { class: 'eq-kpi total' }, h('b', {}, String(total)), h('span', {}, 'ações da equipe')),
           kpi('intimacoes', 'intimações conferidas'), kpi('prazos', 'prazos feitos'), kpi('iniciais', 'petições iniciais'), kpi('whatsapp', 'clientes avisados'),
@@ -6168,7 +6290,7 @@
     const mesSel = params && /^\d{4}-\d{2}$/.test(params.get('mes') || '') ? params.get('mes') : '';
     const r = await api('relatorio.geral', mesSel ? { mes: mesSel } : {});
     const sem = params && /^\d{4}-\d{2}-\d{2}$/.test(params.get('semana') || '') ? params.get('semana') : '';
-    const per = params && params.get('per') === 'mes' ? 'mes' : '';
+    const per = params && /^(mes|dia)$/.test(params.get('per') || '') ? params.get('per') : '';
     const soma = a => a.reduce((x, y) => x + y, 0);
     const pct = r.percentualNoPrazo;
     const cartaoG = (titulo, sub, corpo) => h('section', { class: 'caixa rel-cartao' }, h('h2', {}, titulo), sub ? h('p', { class: 'peq' }, sub) : null, corpo);
@@ -6665,6 +6787,7 @@ function main() {
         case 'audiencias': await telaAudiencias(params); break;
         case 'chat': await telaChat(params); break;
         case 'compromisso': await telaCompromisso(params); break;
+        case 'central': await telaCentral(params); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
         case 'financeiro': if (id === 'receber') await telaAReceber(params); else if (id === 'caixa') await telaCaixa(params); else await telaFinanceiro(params); break;

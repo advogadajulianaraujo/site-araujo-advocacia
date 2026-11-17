@@ -1,5 +1,5 @@
 {
- "versao": "8.39.7",
+ "versao": "8.42.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -394,6 +394,7 @@
   "inicio.extras": {
    "tabelas": [
     "AgendaEventos",
+    "Assinaturas",
     "Audiencias",
     "Avisos",
     "Clientes",
@@ -410,7 +411,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 49
+   "funcoes": 51
   },
   "fin.painel": {
    "tabelas": [
@@ -446,5 +447,5 @@
    "funcoes": 38
   }
  },
- "funcoes": 146
+ "funcoes": 148
 }
