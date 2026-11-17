@@ -1491,3 +1491,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   avulsa no honorário mais recente ou num "Recebimentos avulsos (PIX)", com recibo).
 - Prazo divergente: `prazoPublico_` devolve `fatal_texto`/`dias_texto` (data pela conta com os dias que a IA leu no texto) → etiqueta
   "✓ pelo texto: dd/mm" ao lado; a data do painel continua valendo (a mais curta).
+- 8.37.4: ATUALIZAÇÃO AUTOMÁTICA consertada — a conferência depois de publicar usava `ScriptApp.getService().getUrl()`, que no GATILHO devolve um
+  endereço que pede login: toda atualização automática "não respondia" e voltava (de 8.36.8 a 8.37.3 ficou na 8.36.7; só o botão "Atualizar agora"
+  instalava). Agora confere em https://script.google.com/macros/s/<implantação>/exec e espera até ~1 min (6 tentativas). A 1ª instalação desta
+  correção precisa do botão (o código antigo ainda confere do jeito errado).

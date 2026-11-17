@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.37.3 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.37.3';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.37.4 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.37.4';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.37.3';
+var VERSAO = '8.37.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -15828,10 +15828,14 @@ function autoAtualizar_(forcar) {
   }
   // 5) o painel responde com a versão nova? Senão, volta à anterior
   var ok = false;
-  for (var t = 0; t < 3 && !ok; t++) {
+  // 8.37.4: confere no ENDEREÇO DO PAINEL (/s/<implantação>/exec). Rodando pelo gatilho, ScriptApp.getService().getUrl() devolve um
+  // endereço que pede login, então a conferência sempre falhava e o robô voltava a versão (só o botão "Atualizar agora" conseguia).
+  // Espera até ~1 min: a implantação nova às vezes demora a valer.
+  var urlConf = dep ? 'https://script.google.com/macros/s/' + dep + '/exec' : ScriptApp.getService().getUrl();
+  for (var t = 0; t < 6 && !ok; t++) {
     try {
-      Utilities.sleep(t ? 5000 : 2000);
-      var url = ScriptApp.getService().getUrl();
+      Utilities.sleep([3000, 5000, 8000, 12000, 15000, 15000][t]);
+      var url = urlConf;
       var rr = UrlFetchApp.fetch(url, { method: 'post', payload: JSON.stringify({ acao: 'situacao' }), muteHttpExceptions: true, followRedirects: true });
       var jj = JSON.parse(rr.getContentText() || '{}');
       ok = !!(jj && jj.ok && jj.dados && jj.dados.versao === nova);
