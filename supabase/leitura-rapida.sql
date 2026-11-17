@@ -461,3 +461,34 @@ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- 8.38: chave da cópia dos dados guardada no computador (criptografada). O navegador guarda as tabelas que já leu (IndexedDB,
+-- AES-GCM) para a próxima entrada não baixar tudo de novo; a chave só sai daqui com uma sessão válida do banco, é uma por pessoa e
+-- muda quando muda a sessao_versao (trocar senha/perfil, desativar, "Desconectar agora") — aí a cópia antiga fica ilegível.
+create table if not exists painel_cache_chaves (
+  escritorio_id uuid not null, usuario_id text not null, versao text not null, chave text not null, nome text not null,
+  criado_em timestamptz not null default now(), primary key (escritorio_id, usuario_id, versao));
+alter table painel_cache_chaves enable row level security;
+revoke all on table painel_cache_chaves from anon, authenticated;
+create or replace function painel_cache_chave(p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; ok boolean; k painel_cache_chaves%rowtype;
+begin
+  select * into s from painel_sessoes where token_hash = encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex');
+  if not found or s.expira_em < now() or s.ultimo_uso < now() - interval '6 hours' then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  select true into ok from usuarios x
+   where x.escritorio_id = s.escritorio_id and x.id = s.usuario_id and x.ativo = 'sim' and x.perfil = s.perfil and coalesce(nullif(x.sessao_versao, ''), '0') = s.versao;
+  if ok is null then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  select * into k from painel_cache_chaves where escritorio_id = s.escritorio_id and usuario_id = s.usuario_id and versao = s.versao;
+  if not found then
+    insert into painel_cache_chaves (escritorio_id, usuario_id, versao, chave, nome)
+    values (s.escritorio_id, s.usuario_id, s.versao,
+      replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''), replace(gen_random_uuid()::text, '-', ''))
+    on conflict (escritorio_id, usuario_id, versao) do nothing;
+    select * into k from painel_cache_chaves where escritorio_id = s.escritorio_id and usuario_id = s.usuario_id and versao = s.versao;
+    delete from painel_cache_chaves where escritorio_id = s.escritorio_id and usuario_id = s.usuario_id and versao <> s.versao; -- a antiga não serve mais
+  end if;
+  return jsonb_build_object('chave', k.chave, 'nome', k.nome);
+end $$;
+revoke all on function painel_cache_chave(text) from public;
+grant execute on function painel_cache_chave(text) to anon, authenticated, service_role;

@@ -3,7 +3,8 @@
    AQUI, com as mesmas funções do Code.gs (painel/motor.js, gerado). Gravar continua sempre pelo Apps Script, que manda a mudança
    ao Supabase antes de responder.
    Segurança: o navegador só tem a chave PÚBLICA do projeto e um código de sessão do banco dado pelo Apps Script no login; quem
-   decide o que cada perfil lê é o Supabase (função painel_ler). Nada fica guardado depois de fechar o navegador.
+   decide o que cada perfil lê é o Supabase (função painel_ler). 8.38: o que já foi lido fica guardado neste computador CRIPTOGRAFADO
+   (IndexedDB, AES-GCM; a chave só vem do Supabase depois do login) — sem entrar, ninguém lê.
    Volta sozinho para a planilha (Apps Script) quando: o banco não respondeu a tempo, deu erro, alguma mudança ainda não chegou
    ("pendente"), a conta precisou de algo que só o Google tem (agenda, Gmail…), ou o motor é de outra versão. */
 (() => {
@@ -28,6 +29,7 @@
   const cache = new Map();     // tabela → { linhas: Map(chave → linha), desde, pronto, n, em }
   const emVoo = new Map();     // sincronizações em andamento (várias telas pedem a mesma tabela juntas)
   const medidas = [];          // { acao, fonte: 'banco'|'google', ms, quando, obs }
+  const FRESCO_MS = 180000;   // 8.38: até 3 min a tela abre com o que já tem e confere por trás
   const NO_LOTE_MS = 20000;    // 8.35.8: tabela lida há menos disso não é pedida de novo (antes 1,5 s: cada tela relia tudo). Gravou → envelhecer()
   const TEMPO_PRIMEIRA = 30000, TEMPO_DEPOIS = 8000; // passou disso → planilha (8.35.8: a 1ª carga real leva ~10 s; o Google leva 10–80 s)
 
@@ -78,6 +80,81 @@
   try { const v0 = localStorage.getItem(VER_SERV); if (v0 && M() && v0 !== M().versao) carregarMotor(v0); } catch (e) { /* privado */ }
   function desligarPor(min, motivo) { motivoOff = motivo; desligadoAte = Date.now() + min * 60000; return null; }
 
+  /* ---------- 8.38: cópia das tabelas guardada NESTE computador, criptografada ----------
+     Antes, cada entrada baixava de novo todas as tabelas (~7 MB: intimações, processos, clientes…) e só depois mostrava o Início
+     (7 a 11 s), e fechar o navegador jogava tudo fora. Agora o que já foi lido fica no IndexedDB criptografado (AES-GCM) com uma chave
+     que só sai do Supabase com uma sessão válida (painel_cache_chave: uma por pessoa; muda ao trocar senha/perfil, desativar ou
+     "Desconectar agora" — aí a cópia antiga fica ilegível e é apagada). Na entrada seguinte só vem o que MUDOU desde a última vez. */
+  let guardadoP = null, guardarTimer = null, chaveCache = null, copiaSuja = false;
+  const IDB_NOME = 'painel_cache';
+  function idb() {
+    return new Promise((ok, nao) => {
+      try { const r = indexedDB.open(IDB_NOME, 1); r.onupgradeneeded = () => r.result.createObjectStore('c'); r.onsuccess = () => ok(r.result); r.onerror = () => nao(r.error); }
+      catch (e) { nao(e); }
+    });
+  }
+  async function idbFazer(modo, fn) {
+    const db = await idb();
+    try { return await new Promise((ok, nao) => { const tx = db.transaction('c', modo), st = tx.objectStore('c'), r = fn(st); tx.oncomplete = () => ok(r && r.result); tx.onerror = () => nao(tx.error); tx.onabort = () => nao(tx.error); }); }
+    finally { db.close(); }
+  }
+  const hexBytes = h => Uint8Array.from(h.match(/../g).map(x => parseInt(x, 16)));
+  function assinaturaCache() { return JSON.stringify([S.versao, S.u && S.u.id, S.u && S.u.perfil, S.permissoes || {}, S.tarefasFiltradasOk || []]); }
+  async function pegarChave() {
+    const cab = { apikey: S.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
+    const r = await fetch(S.url + '/rest/v1/rpc/painel_cache_chave', { method: 'POST', headers: cab, body: JSON.stringify({ p_token: S.token }), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+    if (!r.ok) throw new Error('chave da cópia: ' + r.status);
+    const j = await r.json();
+    const k = await crypto.subtle.importKey('raw', hexBytes(j.chave), 'AES-GCM', false, ['encrypt', 'decrypt']);
+    return { k, nome: 'c_' + j.nome };
+  }
+  async function carregarGuardado() {
+    if (!window.indexedDB || !window.crypto || !crypto.subtle) return;
+    const t0 = performance.now();
+    chaveCache = await pegarChave();
+    // as cópias de outras pessoas/sessões antigas neste computador: só a desta pessoa e desta chave fica
+    const nomes = await idbFazer('readonly', st => st.getAllKeys());
+    const velhas = (nomes || []).filter(n => n !== chaveCache.nome && /^c_/.test(n));
+    const reg = await idbFazer('readonly', st => st.get(chaveCache.nome));
+    if (velhas.length) idbFazer('readwrite', st => { velhas.forEach(n => st.delete(n)); }).catch(() => {});
+    if (!reg || !reg.d) return;
+    let txt;
+    try { txt = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: reg.iv }, chaveCache.k, reg.d)); }
+    catch (e) { idbFazer('readwrite', st => st.delete(chaveCache.nome)).catch(() => {}); return; }
+    const g = JSON.parse(txt);
+    if (g.assinatura !== assinaturaCache() || Date.now() - g.em > 20 * 86400e3) return; // outra versão/permissão ou muito velha: baixa tudo de novo
+    let n = 0;
+    Object.keys(g.tabelas).forEach(t => {
+      const x = g.tabelas[t], ja = cache.get(t);
+      if (ja && ja.pronto) return;
+      const c = { linhas: new Map(), cols: new Set(x.cols), desde: x.desde, n: x.n, em: 0, pronto: true, lista: null }; // em = 0: a 1ª leitura busca o que mudou
+      x.linhas.forEach(o => c.linhas.set(chaveDaLinha(c, o), o));
+      cache.set(t, c); n++;
+    });
+    medir('copia-local', 'computador', performance.now() - t0, n + ' tabelas');
+  }
+  function aoTerSessao() {
+    if (guardadoP) return;
+    // até 4 s: se a cópia demorar (computador lento), segue baixando do banco como antes
+    guardadoP = Promise.race([carregarGuardado().catch(e => medir('copia-local', 'falhou', 0, String(e && e.message || e).slice(0, 100))),
+      new Promise(ok => setTimeout(ok, 4000))]);
+  }
+  function guardarDepois() {
+    clearTimeout(guardarTimer);
+    guardarTimer = setTimeout(() => { guardarAgora().catch(() => {}); }, 4000);
+  }
+  async function guardarAgora() {
+    if (!S || !chaveCache) return;
+    copiaSuja = false;
+    const tabelas = {};
+    cache.forEach((c, t) => { if (c && c.pronto && c.linhas) tabelas[t] = { cols: [...c.cols], desde: c.desde, n: c.n, linhas: [...c.linhas.values()] }; });
+    const iv = crypto.getRandomValues(new Uint8Array(12)), chave = chaveCache;
+    const d = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, chave.k, new TextEncoder().encode(JSON.stringify({ assinatura: assinaturaCache(), em: Date.now(), tabelas })));
+    if (chaveCache !== chave) return; // saiu ou trocou de pessoa no meio
+    await idbFazer('readwrite', st => st.put({ iv, d }, chave.nome));
+  }
+  if (window.addEventListener) window.addEventListener('pagehide', () => { if (guardarTimer) { clearTimeout(guardarTimer); guardarAgora().catch(() => {}); } });
+
   /* ---------- sessão do banco ---------- */
   async function iniciar() {
     if (pronto()) return S;
@@ -89,13 +166,13 @@
     // 8.37.5: a sessão guardada vale também quando é da versão que o Google roda (lembrada): antes, com o Google atrasado, CADA F5
     // pedia a sessão de novo ao Google (4 a 10 s com a tela parada)
     let vServ = ''; try { vServ = localStorage.getItem(VER_SERV) || ''; } catch (e) { /* privado */ }
-    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && (salvo.versao === versaoPublicada() || salvo.versao === vServ) && await carregarMotor(salvo.versao)) { S = salvo; lembrarEdge(S); return S; }
+    if (salvo && salvo.token && Date.parse(salvo.expira) > Date.now() && (salvo.versao === versaoPublicada() || salvo.versao === vServ) && await carregarMotor(salvo.versao)) { S = salvo; lembrarEdge(S); aoTerSessao(); return S; }
     pedindo = (async () => {
       try {
         const r = await chamarApps('banco.sessao', {});
         if (!r || !r.ligado) return desligarPor(10, (r && r.motivo) || 'desligado');
         if (r.versao !== M().versao && !(await carregarMotor(r.versao))) return desligarPor(10, 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes');
-        S = r; motivoOff = ''; lembrarVersao(r.versao); guardar('painel_banco', r); lembrarEdge(r); acordar(); return S;
+        S = r; motivoOff = ''; lembrarVersao(r.versao); guardar('painel_banco', r); lembrarEdge(r); acordar(); aoTerSessao(); return S;
       } catch (e) { return desligarPor(2, String(e.message || e)); } finally { pedindo = null; }
     })();
     return pedindo;
@@ -106,6 +183,7 @@
       const cab = { apikey: S.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
       try { fetch(S.edge, { method: 'POST', headers: cab, credentials: 'omit', keepalive: true, body: JSON.stringify({ acao: 'logout', sair: true, token: S.token }) }).catch(() => {}); } catch (e) { /* expira sozinha */ }
     }
+    clearTimeout(guardarTimer); guardarTimer = null; guardadoP = null; chaveCache = null;
     S = null; cache.clear(); emVoo.clear(); rotaFora.clear(); edgeFora.clear(); guardar('painel_banco', null);
   }
   /* 8.33 Etapa D: entrar no painel pelo Supabase. O endereço da função e a chave PÚBLICA (nada secreto) ficam lembrados neste
@@ -139,7 +217,7 @@
     if (!r || r.voltar) return null;
     if (!r.ok) throw new Error(r.erro || 'Não foi possível entrar.');
     const d = r.dados, b = d.banco; delete d.banco;
-    if (b && b.token && (b.versao === M().versao || await carregarMotor(b.versao))) { S = b; motivoOff = ''; desligadoAte = 0; lembrarVersao(b.versao); guardar('painel_banco', b); lembrarEdge(b); }
+    if (b && b.token && (b.versao === M().versao || await carregarMotor(b.versao))) { S = b; motivoOff = ''; desligadoAte = 0; lembrarVersao(b.versao); guardar('painel_banco', b); lembrarEdge(b); aoTerSessao(); }
     medir('login', 'supabase', performance.now() - t0);
     return d;
   }
@@ -173,6 +251,7 @@
     });
   }
   async function sincronizar(tabelas, limiteMs) {
+    if (guardadoP) await guardadoP; // 8.38: primeiro a cópia guardada no computador (aí só vem o que mudou)
     const agora = Date.now(), pedir = [], esperar = [];
     tabelas.forEach(t => {
       const c = cache.get(t);
@@ -197,9 +276,10 @@
           const x = j.tabelas[t];
           if (!x || x.negado) { cache.set(t, { negada: true, pronto: false }); return; }
           let c = cache.get(t);
-          if (!c || !c.pronto) c = { linhas: new Map(), pronto: false, cols: new Set() };
+          if (!c || !c.pronto) { c = { linhas: new Map(), pronto: false, cols: new Set() }; copiaSuja = true; }
           x.linhas.forEach(o => { Object.keys(o).forEach(k => c.cols.add(k)); });
           x.linhas.forEach(o => c.linhas.set(chaveDaLinha(c, o), o));
+          if (x.linhas.length) copiaSuja = true;
           c.desde = new Date(servidor - 120000).toISOString(); // 2 min de folga: nenhuma gravação em andamento fica para trás
           c.em = Date.now(); c.n = x.n; c.pronto = true; if (x.linhas.length || c.lista === undefined) c.lista = null; // nada novo = mantém a lista já ordenada
           cache.set(t, c);
@@ -211,13 +291,13 @@
             const c = cache.get(t), x = k.tabelas[t];
             if (!x || !x.chaves) return;
             const ok = new Set(x.chaves.map(String));
-            for (const ch of [...c.linhas.keys()]) if (!ok.has(ch)) c.linhas.delete(ch);
+            for (const ch of [...c.linhas.keys()]) if (!ok.has(ch)) { c.linhas.delete(ch); copiaSuja = true; }
             c.lista = null;
           });
         }
       };
       const ps = grupos.map(g => { const p = naFila(() => umGrupo(g, 0)); g.forEach(t => emVoo.set(t, p)); return [g, p]; });
-      try { await Promise.all(ps.map(x => x[1])); }
+      try { await Promise.all(ps.map(x => x[1])); if (copiaSuja) guardarDepois(); }
       finally { ps.forEach(([g, p]) => g.forEach(t => { if (emVoo.get(t) === p) emVoo.delete(t); })); }
     }
     if (esperar.length) await Promise.all(esperar);
@@ -281,7 +361,11 @@
     const base = (aprendidas[acao] || (M().tabelasDaRota[acao] || []).map(snake)).filter(t => perm[t]);
     let precisa = [...new Set(['config', 'usuarios'].concat(base))];
     for (let volta = 0; volta < 5; volta++) {
-      await sincronizar(precisa, 60000); // quem espera pouco é o lerOuPlanilha; a carga continua por trás e serve para a próxima tela
+      // 8.38: tudo o que a tela usa foi conferido há menos de 3 min (e ninguém gravou desde então: gravar zera o "em") → abre NA HORA
+      // e confere o que mudou por trás (a próxima tela já vem com isso). Senão espera (só o que mudou: rápido).
+      const agoraL = Date.now(), fresco = precisa.every(t => { const c = cache.get(t); return c && c.pronto && c.em > 0 && agoraL - c.em < FRESCO_MS; });
+      if (fresco) sincronizar(precisa, 60000).catch(() => {});
+      else await sincronizar(precisa, 60000); // quem espera pouco é o lerOuPlanilha; a carga continua por trás e serve para a próxima tela
       const usadas = new Set(['config']), amb = ambiente(acao, usadas);
       let res, erro = null;
       try { res = M().rodar(acao, dados, S.u, amb); } catch (e) { erro = e; }

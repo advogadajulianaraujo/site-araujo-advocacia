@@ -1509,3 +1509,19 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   tirados do git). REGRA ao publicar: se o Google ainda não está na versão nova, gere o anterior com a versão dele antes de publicar a função.
 - banco.js: a sessão guardada vale também quando é da versão do servidor lembrada (F5 não vai mais ao Google).
 - Teste: `.github/motor/teste/etapaVersoes.mjs` (telas e gravação pelos dois motores; versão desconhecida volta ao Google).
+
+## 8.38.0 Abrir e trocar de aba na hora (pedido da usuária: "demora pra entrar, pra abrir, pra trocar de aba", 17/11/2026)
+
+- Medido: Supabase (função e banco) responde em 0,1–0,3 s; a demora era o navegador baixar TODAS as tabelas (~7 MB: intimações 2,4 MB,
+  processos 2,8 MB, clientes 0,8 MB…) a cada entrada antes de mostrar o Início, e jogar tudo fora ao fechar o navegador. No banco real só
+  ~5–10% das linhas mudam por dia.
+- Cópia local criptografada (banco.js, `carregarGuardado`/`guardarAgora`): as tabelas lidas ficam no IndexedDB `painel_cache` cifradas com
+  AES-GCM; a chave vem de `painel_cache_chave(p_token)` (leitura-rapida.sql 8.38, tabela painel_cache_chaves sem acesso do anon; uma chave por
+  pessoa + sessao_versao: trocar senha/perfil, desativar ou "Desconectar agora" troca a chave e a cópia antiga é apagada). Na entrada seguinte
+  só vem o que mudou (`desde`; a conferência de chaves tira o que sumiu). Assinatura da cópia = versão do motor + pessoa + perfil + permissões
+  (mudou → baixa tudo). Guarda 4 s depois de chegar algo novo e ao fechar a aba; cópia com mais de 20 dias é ignorada. Sair limpa a memória;
+  a cópia cifrada fica (sem login não abre).
+- Trocar de aba: se tudo o que a tela usa foi conferido há menos de 3 min (`FRESCO_MS`) e ninguém gravou desde então, a tela abre na hora
+  e confere o que mudou por trás; gravar (`envelhecer`) força a conferência antes da próxima tela.
+- Teste: `.github/motor/teste/copiaLocal.js` (Chromium com perfil guardado: 2ª entrada 2 KB × 1.749 KB; o que mudou com o navegador fechado
+  aparece; senha trocada não usa a cópia). Precisa de `python3 -m http.server 8099` na pasta do site.
