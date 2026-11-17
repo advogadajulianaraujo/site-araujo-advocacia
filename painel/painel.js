@@ -1477,11 +1477,27 @@
         a.honorario ? h('div', { class: 'peq' }, '💰 ' + a.honorario + ' — entra no Financeiro ao assinar') : null,
         h('div', { class: 'peq' }, `gerado em ${quando}` + (a.dias ? ` · há ${a.dias} dia(s)` : ' · hoje') + (a.dias >= 7 ? ' · ⚠ lembrar o cliente' : ''))),
       h('div', { class: 'assin-acoes' },
-        botao('✓ Assinado', async ev => {
-          ev.target.disabled = true;
-          try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado' }); avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.` + (x.lancados ? ` ${x.lancados} honorário(s) lançado(s) no Financeiro.` : ''));
-            el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/processo/' + x.processo_id + '?avisar=1' }, 'abrir a petição inicial e avisar o cliente'))); if (depois) depois(); }
-          catch (e) { avisar(e.message, true); ev.target.disabled = false; }
+        botao('✓ Assinado', ev => {
+          // 8.39.7 (pedido da usuária): cliente que tem MAIS de uma ação (ex.: trabalhista e previdenciário) — marca as outras aqui e cada
+          // uma ganha a sua petição inicial
+          ev.stopPropagation();
+          const marcadas = new Set();
+          const chips = ['Trabalhista', 'Previdenciário', 'Cível', 'Família', 'Criminal'].map(ar => {
+            const b = h('button', { type: 'button', class: 'chip-filtro', 'aria-pressed': 'false', onclick: () => { const on = !marcadas.has(ar); on ? marcadas.add(ar) : marcadas.delete(ar); b.classList.toggle('ativo', on); b.setAttribute('aria-pressed', String(on)); } }, '＋ ' + ar);
+            return b;
+          });
+          const confirmar = botao('Confirmar: assinado', async ev2 => {
+            ev2.target.disabled = true;
+            try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado', outras: [...marcadas] });
+              const outras = (x.outras || []).filter(o => !o.ja);
+              avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.` + (outras.length ? ` Também abri: ${outras.map(o => o.area).join(', ')}.` : '') + (x.lancados ? ` ${x.lancados} honorário(s) lançado(s) no Financeiro.` : ''));
+              el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/processo/' + x.processo_id + '?avisar=1' }, 'abrir a petição inicial e avisar o cliente'),
+                ...(x.outras || []).map(o => h('span', {}, ' · ', h('a', { href: '#/processo/' + o.id }, 'inicial ' + o.area))))); if (depois) depois(); }
+            catch (e) { avisar(e.message, true); ev2.target.disabled = false; }
+          }, 'mini');
+          const caixa = h('div', { class: 'assin-outras' }, h('div', { class: 'peq' }, 'O cliente também vai ter outra ação? Marque (cada uma ganha a sua petição inicial). Se não, só confirme.'),
+            h('div', { class: 'chips' }, chips), h('div', {}, confirmar, botao('Cancelar', () => caixa.remove(), 'mini sec')));
+          el.querySelector('.assin-outras')?.remove(); el.append(caixa);
         }, 'mini'),
         botao('Não vai assinar', async ev => {
           ev.stopPropagation();
@@ -3731,7 +3747,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.39.6';
+  const VERSAO_PAINEL = '8.39.7';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.39.6';
+var VERSAO = '8.39.7';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -6479,6 +6479,7 @@ function listarAssinaturas_(d) {
       tem_honorarios: !!a.honorarios, honorarios_lancados: a.honorarios_lancados || '' }; });
 }
 /** "✓ Assinado" (abre a petição inicial), "Não vai assinar" (arquiva) ou "Voltar a aguardar". */
+var AREAS_ACAO_ = ['Trabalhista', 'Previdenciário', 'Cível', 'Família', 'Criminal', 'Consumidor'];
 function marcarAssinatura_(d, u) {
   if (d.acao === 'criar') { // marcado à mão na ficha (documentos feitos fora do painel)
     return comTrava_(function () {
@@ -6505,7 +6506,14 @@ function marcarAssinatura_(d, u) {
     }
     atualizarLinha_(tabA, a, { situacao: 'assinado', assinado_em: agora, assinado_por: u.nome || u.usuario, processo_id: proc, honorarios_lancados: a.honorarios ? agora + (lanc.length ? '|' + lanc.join(',') : '') : '' });
     registrar_(u.usuario, 'documentos assinados', a.cliente_id + ' · ' + a.documentos + (lanc.length ? ' + financeiro' : ''));
-    resLanc = { lancados: lanc.length, ja_lancados: lanc.repetidos || 0 };
+    // 8.39.7 (pedido da usuária: "tem diversas pessoas que são tanto trabalhista quanto previdenciário"): no "✓ Assinado" dá para marcar
+    // as OUTRAS ações do mesmo cliente; cada área ganha a sua petição inicial (abrirAcaoCliente_ não repete a inicial sem número da mesma área)
+    var outras = [], prP = tabela_('Processos').linhas.filter(function (p) { return p.id === proc; })[0];
+    (Array.isArray(d.outras) ? d.outras : []).forEach(function (ar) {
+      ar = String(ar || ''); if (AREAS_ACAO_.indexOf(ar) < 0 || (prP && prP.area === ar)) return;
+      var rO = abrirAcaoCliente_({ id: c.id, area: ar }, u); if (rO && rO.id) outras.push({ id: rO.id, area: ar, ja: !!rO.ja });
+    });
+    resLanc = { lancados: lanc.length, ja_lancados: lanc.repetidos || 0, outras: outras };
   } else if (d.acao === 'desistiu') {
     // 8.11: vale também para quem foi marcado "Assinado" por engano: arquiva a petição inicial sem número e tira do Financeiro o
     // honorário lançado ao assinar (parcelas ainda não pagas)

@@ -1552,6 +1552,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
   (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
   clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).
+- 8.39.7 (pedido da usuária: "tem diversas pessoas que são tanto trabalhista quanto previdenciário"): "✓ Assinado" (`cartaoAssinatura`) abre
+  "O cliente também vai ter outra ação?" com ＋ Trabalhista/Previdenciário/Cível/Família/Criminal; `documentos.assinatura` acao=assinado com
+  `outras` → `abrirAcaoCliente_` por área (`AREAS_ACAO_`; não repete a inicial sem número da mesma área), cada uma com a tarefa da inicial do
+  responsável da área. Jucemar Machado Rodrigues (17/11): ganhou a inicial TRABALHISTA (Lara) além da previdenciária (Gustavo).
 - 8.39.6 (17/11, "está travando todas as páginas"): o banco GRATUITO do Supabase ficou sem força (conta de 0,1 s levando 2–4 s). Quem mais
   pesava: o Google lendo ~50 tabelas INTEIRAS por minuto (`painel_tabela`). Agora `sbPrecarregar_` pergunta antes a assinatura da tabela
   (`painel_assinaturas`: linhas | último _em | maior _n — consulta pequena) e, se for a mesma, usa a cópia guardada no CacheService do Google
