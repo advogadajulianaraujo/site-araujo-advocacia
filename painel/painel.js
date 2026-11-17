@@ -1206,7 +1206,7 @@
     const blocoPrazos = bloco(NOME_SIS[sisIni], '#/prazos', 'ver todos',
       h('div', {},
         listaPrazos.length ? h('ul', { class: 'ini-lista' }, listaPrazos.map(z => item(() => { location.hash = '#/prazo/' + z.id; },
-          selo(z.fatal, filaDe(z) === 'conferir' ? 'faixa-conferir' : 'faixa-' + faixaPrazo(z)), filaDe(z) === 'conferir' ? '⚠ ' + String(z.descricao || '').replace(/PROVISÓRIO:?\s*/i, 'Conferir no tribunal: ') : z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
+          selo(z.fatal, filaDe(z) === 'conferir' ? 'faixa-conferir' : 'faixa-' + faixaPrazo(z)), filaDe(z) === 'conferir' ? '⚠ ' + String(z.descricao || '').replace(/^ATO NÃO IDENTIFICADO \(PROVISÓRIO\):?\s*/i, 'Ato não identificado: ').replace(/PROVISÓRIO:?\s*/i, 'Conferir no tribunal: ') : z.descricao, (z.cliente || 'cliente a identificar') + ' · ' + z.numero, etiquetaContagem(z.fatal))))
           : vazio('Nenhum prazo em aberto com data fatal.'),
         pz.aConferir ? h('a', { class: 'ini-aviso', href: '#/prazos?ver=conferir' }, `${pz.aConferir} prazo(s) calculado(s) pelo robô para conferir`) : null));
 
@@ -3451,7 +3451,7 @@
     if (z.situacao === 'conferido') return h('span', { class: 'tag ok', title: (z.conferido_em ? new Date(z.conferido_em).toLocaleString('pt-BR') : '') + (z.conferido_fonte ? ' · ' + z.conferido_fonte : '') }, '✓ confirmado' + (z.conferido_por ? ' por ' + z.conferido_por : '') + (z.conferido_fonte ? ' · ' + z.conferido_fonte.split(' — ')[0].replace(/^Conferi no sistema do tribunal.*$/, 'no tribunal').replace(/^Publicação no DJEN$/, 'DJEN') : ''));
     if (divergente(z)) return h('span', { class: 'tag conferir', title: z.resumo_ia }, '⚠ conferir no tribunal');
     if (z.situacao === 'calculado') return h('span', {},
-      /PROVISÓRIO/i.test(z.descricao || '') ? h('span', { class: 'tag conferir', title: 'O aviso não diz qual é o ato. O robô usou o prazo mais curto: confira no sistema do tribunal.' }, 'provisório · conferir no tribunal') : null,
+      /PROVISÓRIO/i.test(z.descricao || '') ? h('span', { class: 'tag conferir', title: 'O aviso do tribunal não traz o ato e o painel ainda não achou o texto (DJEN) nem a movimentação (DataJud). A data é só de segurança: abra no sistema do tribunal.' }, 'ato não identificado · abrir no tribunal') : null,
       ' ', h('span', { class: 'tag atencao' }, z.origem === 'robô' ? 'calculado pelo robô' : 'lançado · a conferir'));
     if (z.situacao === 'cumprido') return h('span', { class: 'tag cumprido' }, '✓ cumprido' + (z.cumprido_por ? ' por ' + z.cumprido_por : ''));
     return h('span', { class: 'tag' }, z.situacao);
@@ -3753,7 +3753,7 @@
     const extras = [
       aberto && z.situacao !== 'conferido' && !/^ato:/.test(z.observacoes || '') ? h('button', { type: 'button', class: 'btn mini sec', title: 'Digite a data final que aparece no PJe/eproc: o painel fica igual', onclick: parar(async () => { if (await dialogoDataSistema(z)) rota(); else throw new Error('Cancelado.'); }) }, '📌 Data do PJe/eproc') : null,
       aberto ? botoesEuFaco('prazo', z.id, z.responsavel) : null,
-      aberto && /PROVIS|Vista ao|Prazo indicado|conferir/i.test(z.descricao || '') && !/^ato:/.test(z.observacoes || '')
+      aberto && /PROVIS|Vista ao|indicado|sem prazo fixado|audiência|Perícia marcada|conferir/i.test(z.descricao || '') && !/^ato:/.test(z.observacoes || '')
         ? h('button', { type: 'button', class: 'btn mini sec', title: 'Abriu o processo e o ato não pede nada do escritório (ex.: vista ao MP, só ciência)',
             onclick: parar(async () => { if (!confirm('Confirma que este aviso NÃO tem prazo para o escritório? O prazo sai da lista (fica registrado quem conferiu).')) throw new Error('Cancelado.');
               await acaoPrazo('prazos.situacao', { id: z.id, situacao: 'semprazo' }, 'Marcado: sem prazo para o escritório.'); }) }, 'Não há prazo') : null].filter(Boolean);
@@ -3794,7 +3794,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.42.0';
+  const VERSAO_PAINEL = '8.43.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -3811,7 +3811,7 @@
     const prov = /PROVIS[ÓO]RIO/i.test(desc);
     const ia = String(z.resumo_ia || '').replace(/^⚠\s*ATEN[ÇC][ÃA]O:?\s*/i, '').replace(/\s+/g, ' ').trim();
     // provisório: o ato de verdade costuma estar no resumo da IA; senão, o pedaço útil da descrição
-    const limpo = desc.replace(/^PROVIS[ÓO]RIO:?\s*\d+\s*dias[^—–-]*[—–-]\s*/i, '').replace(/^Intima[çc][ãa]o de /i, '').trim();
+    const limpo = desc.replace(/^ATO NÃO IDENTIFICADO \(PROVIS[ÓO]RIO\):?\s*/i, '').replace(/^PROVIS[ÓO]RIO:?\s*\d+\s*dias[^—–-]*[—–-]\s*/i, '').replace(/^Intima[çc][ãa]o de /i, '').trim();
     const titulo = prov && ia ? ia : (prov && /aviso não informa o ato/i.test(limpo) ? 'Ato não informado no aviso — abrir no tribunal' : limpo || desc || 'Prazo');
     return { titulo, prov, ia: prov && ia ? '' : ia, desc };
   }
@@ -3820,7 +3820,7 @@
     return h('div', { class: 'oqf' },
       h('div', { class: 'oqf-tit', title: o.desc + (z.resumo_ia ? '\n\nIA: ' + z.resumo_ia : '') }, o.titulo),
       h('div', { class: 'oqf-tags' },
-        o.prov ? h('span', { class: 'tag conferir mini-tag', title: 'O tribunal não disse o ato: o robô usou o prazo mais curto. Confira no sistema.' }, 'provisório · ' + textoDias(z)) : h('span', { class: 'oqf-dias' }, textoDias(z)),
+        o.prov ? h('span', { class: 'tag conferir mini-tag', title: 'O aviso não traz o ato e o painel ainda não achou o texto (DJEN) nem a movimentação (DataJud). Data de segurança: abra no sistema do tribunal.' }, 'ato não identificado · ' + textoDias(z)) : h('span', { class: 'oqf-dias' }, textoDias(z)),
         div ? h('span', { class: 'tag urgente mini-tag', title: z.resumo_ia }, '⚠ IA leu outro prazo') : null,
         z.fatal_texto ? h('span', { class: 'tag mini-tag ' + (z.fatal_texto >= hojeISO() ? 'ok' : 'urgente'), title: `O texto do ato fala em ${z.dias_texto} dias: pela conta do painel com esse número, a data final seria ${dataBR(z.fatal_texto)}. Confira no tribunal; até lá vale a data mais curta.` },
           (z.fatal_texto >= hojeISO() ? '✓ pelo texto: ' : 'pelo texto: ') + dataBR(z.fatal_texto).slice(0, 5)) : null,
@@ -4035,7 +4035,7 @@
       ['novas', '🆕 Novas intimações (48 h)', 'azul', ints.filter(i => (i.recebido_em || '').slice(0, 10) >= ha2).map(x => ({ t: 'i', x }))],
       ['leitura', '🤖 Aguardando leitura da IA', 'azul', ints.filter(i => !i.resumo_ia && !semTexto(i) && (i.recebido_em || '') >= ha60 && !(+i.ia_tentativas >= 8)).map(x => ({ t: 'i', x }))],
       ['conferencia', '📥 Intimações aguardando conferência', 'ambar', ints.filter(i => !i.terminada_por && !(i.prazo && ['cumprido', 'cancelado'].includes(i.prazo.situacao))).map(x => ({ t: 'i', x }))],
-      ['provisorios', '⚠ Provisórios / a conferir no tribunal', 'ambar', abertos.filter(z => filaDe(z) === 'conferir').map(x => ({ t: 'z', x }))],
+      ['provisorios', '⚠ Ato não identificado / conferir no tribunal', 'ambar', abertos.filter(z => filaDe(z) === 'conferir').map(x => ({ t: 'z', x }))],
       ['calculados', '🧮 Calculados e não confirmados', 'ambar', abertos.filter(z => filaDe(z) === 'calculado').map(x => ({ t: 'z', x }))],
       ['confirmados', '✓ Confirmados', 'verde', abertos.filter(z => filaDe(z) === 'confirmado').map(x => ({ t: 'z', x }))],
       ['hoje', '⏰ Vencem HOJE', 'vermelho', abertos.filter(z => z.fatal === hoje).map(x => ({ t: 'z', x }))],
@@ -4076,7 +4076,7 @@
         h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.local, x.devido ? 'aviso ao cliente devido agora' : ''].filter(Boolean).join(' · ')));
       if (it.t === 'z') { const venc = x.fatal && x.fatal < hoje;
         return h('li', { class: 'central-item' + (venc ? ' k-vermelho' : filaDe(x) === 'conferir' ? ' k-ambar' : '') }, h('a', { href: '#/prazo/' + x.id }, h('strong', {}, `${x.fatal ? dataBR(x.fatal) : 'SEM DATA'} — ${String(x.descricao || 'prazo').slice(0, 110)}`)),
-          h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', prov(x) ? 'PROVISÓRIO — conferir no tribunal' : filaDe(x) === 'confirmado' ? 'confirmado' : 'calculado pelo robô, não confirmado',
+          h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', prov(x) ? 'ATO NÃO IDENTIFICADO — abrir no tribunal' : filaDe(x) === 'confirmado' ? 'confirmado' : 'calculado pelo robô, não confirmado',
             it.lote ? 'BAIXADO EM LOTE sem comprovante (13/11) — reabra se não foi feito' : '', x.conferido_fonte ? 'fonte: ' + x.conferido_fonte : ''].filter(Boolean).join(' · ')),
           x.resumo_ia ? h('div', { class: 'peq central-ia' }, String(x.resumo_ia).slice(0, 260)) : null); }
       const d = iaDe(x);
@@ -4101,7 +4101,7 @@
       h('div', { class: 'central-captura' }, h('strong', {}, 'Captura: '), `IA — ${filaIA} na fila, ${falhasIA} com falha (tenta de novo sozinha, com intervalo crescente)`,
         (resumo.robo || {}).ia && resumo.robo.ia.erro ? h('span', { class: 'erro' }, ' · último problema da IA: ' + String(resumo.robo.ia.erro).slice(0, 140)) : null),
       resumo.robo ? semaforoRobo(resumo.robo) : null, filtros, cards, ...listas,
-      h('p', { class: 'peq' }, 'Regras: prazo PROVISÓRIO nunca aparece como confirmado; vencido sem comprovação continua aqui até alguém dar o Conferido com o comprovante ou reabrir; audiência/perícia lida pela IA fica "pendente de confirmação" até alguém lançar/conferir. Nenhuma mensagem vai ao cliente sem alguém aprovar.'));
+      h('p', { class: 'peq' }, 'Regras: o painel procura sozinho o ato de cada aviso (texto do DJEN e movimentações do DataJud); o que não achou fica como ATO NÃO IDENTIFICADO, com data de segurança, e nunca aparece como confirmado; vencido sem comprovação continua aqui até alguém dar o Conferido com o comprovante ou reabrir; audiência/perícia lida pela IA fica "pendente de confirmação" até alguém lançar/conferir. Nenhuma mensagem vai ao cliente sem alguém aprovar.'));
   }
   async function telaPrazos(params) {
     carregando();
@@ -4173,8 +4173,8 @@
             avisar(`${r.baixados} prazo(s) vencido(s) baixado(s).`); rota();
           } catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Dar baixa em todos os vencidos'; }
         }, 'sec mini')) : null,
-      nProv ? h('div', { class: 'nota conferir' }, h('strong', {}, `${nProv} prazo${nProv === 1 ? '' : 's'} provisório${nProv === 1 ? '' : 's'}.`),
-        ' O aviso do tribunal não informa o ato (no PJe vem "documento sigiloso"), então o robô usou o prazo mais curto (5 dias). Abra no sistema do tribunal, confira o ato e aperte "Conferi no tribunal" (diz onde conferiu) ou corrija os dias. Eles ficam na fila âmbar "Conferir no tribunal" e, na agenda, aparecem como "⚠ CONFERIR".') : null,
+      nProv ? h('div', { class: 'nota conferir' }, h('strong', {}, `${nProv} prazo${nProv === 1 ? '' : 's'} com ato não identificado.`),
+        ' O aviso do tribunal não traz o ato (no PJe vem "documento sigiloso") e o painel ainda não achou o texto no DJEN nem a movimentação no DataJud — ele procura sozinho a cada rodada. Até lá fica uma data de segurança (5 dias). Abra no sistema do tribunal, confira o ato e aperte "Conferi no tribunal" (diz onde conferiu) ou corrija os dias. Eles ficam na fila âmbar "Conferir no tribunal" e, na agenda, aparecem como "⚠ CONFERIR".') : null,
       h('section', { class: 'bloco-prazos' }, h('h2', {}, `Prazos das intimações (${todosOrdenados.length})`),
         tabelaPrazos(todosOrdenados, ver === 'todos' ? 'Nenhum prazo em aberto.' : 'Nenhum prazo neste filtro.', ordem)),
       blocoIntimacoes(sis),
@@ -4451,7 +4451,7 @@
       .map(e => ({ tipo: 'evento', hora: e.diaTodo ? 'dia todo' : e.inicio.slice(11, 16), cls: CORES_AGENDA[e.agenda] || '', rotulo: NOME_CURTO[e.agenda] || e.agenda, titulo: e.titulo, local: e.local, desc: e.descricao }));
     const pz = dados.prazos.filter(z => z.fatal === iso)
       .map(z => filaDe(z) === 'conferir'
-        ? ({ tipo: 'prazo', marca: '⚠ ', hora: '23h59', cls: 'ag-conferir', rotulo: 'Prazo provisório · conferir no tribunal', titulo: `CONFERIR: ${String(z.descricao || '').replace(/PROVISÓRIO:?\s*/i, '')} · ${z.numero}${z.cliente ? ' · ' + z.cliente : ''}`, id: z.id })
+        ? ({ tipo: 'prazo', marca: '⚠ ', hora: '23h59', cls: 'ag-conferir', rotulo: 'Ato não identificado · conferir no tribunal', titulo: `CONFERIR: ${String(z.descricao || '').replace(/^ATO NÃO IDENTIFICADO \(PROVISÓRIO\):?\s*/i, '').replace(/PROVISÓRIO:?\s*/i, '')} · ${z.numero}${z.cliente ? ' · ' + z.cliente : ''}`, id: z.id })
         : ({ tipo: 'prazo', marca: '⚑ ', hora: '23h59', cls: 'ag-prazo', rotulo: z.situacao === 'conferido' ? 'Prazo fatal confirmado' : 'Prazo fatal', titulo: `${z.descricao} · ${z.numero}${z.cliente ? ' · ' + z.cliente : ''}`, id: z.id }));
     return pz.concat(ev);
   }

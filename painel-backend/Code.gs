@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.42.0';
+var VERSAO = '8.43.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2454,16 +2454,31 @@ function contagemPadrao_(proc) {
  * (o mínimo do art. 218, § 3º, do CPC; corridos no criminal), sempre marcado para a advogada conferir.
  * Na dúvida, o robô escolhe o prazo MAIS CURTO possível, para nunca perder prazo.
  */
-function sugerirPrazo_(texto, proc, tribunal, segundoGrauAviso) {
-  var t = normalizar_(texto || '');
+function sugerirPrazo_(texto, proc, tribunal, segundoGrauAviso, temTexto) {
+  var t = normalizar_(semEntidades_(texto || ''));
+  // 8.43 (pedido da usuária: "não deveria ter prazo provisório; veja e entenda para não falhar"): COM o texto do ato (DJEN), despacho/decisão
+  // ou intimação sem prazo escrito = prazo LEGAL de 5 dias (art. 218, § 3º, CPC) — não é provisório. Sem texto = ATO NÃO IDENTIFICADO.
+  temTexto = temTexto === undefined ? String(texto || '').replace(/\s+/g, ' ').length >= 200 && !/documento sigiloso|conte[uú]do sigiloso/i.test(texto || '') : !!temTexto;
   var criminal = proc && proc.area === 'Criminal';
   var trab = /^TRT/.test(tribunal || '');
   var contagem = contagemPadrao_(proc);
-  var m = /prazo\s+(?:comum\s+)?(?:de\s+)?(\d{1,3})\s*(?:\([^)]*\)\s*)?(dias?|horas?)(\s+(?:uteis|corridos))?/.exec(t);
-  if (m) {
-    if (/hora/.test(m[2])) return { dias: Math.max(1, Math.ceil(+m[1] / 24)), contagem: 'corridos', descricao: 'Prazo de ' + m[1] + ' horas indicado na intimação' };
-    return { dias: +m[1], contagem: /corridos/.test(m[3] || '') ? 'corridos' : contagem, descricao: 'Prazo indicado na intimação' };
+  // 8.43: com o texto, vale a frase "fica … intimado(a) PARA …" (o prazo dela é o NOSSO); prazo dado à outra parte no mesmo texto
+  // ("a ré apresente defesa no prazo de quinze dias") não conta. Número por extenso também ("prazo de dez dias"). Vários = o mais curto.
+  var frase = temTexto ? fraseIntimado_(t) : '';
+  // só aviso de distribuição (sem intimação) não abre prazo
+  if (temTexto && !frase && /(processo )?(re)?distribuido (pelo sistema|para|por sorteio|em )|lista de distribuicao/.test(t) && !/intima-se|intime-se|fica(m)? .{0,40}intimad/.test(t))
+    return { dias: 0, contagem: contagem, descricao: 'Distribuição do processo (sem prazo)', semPrazo: true };
+  var pz = prazosNoTexto_(frase || (temTexto ? '' : t), !!frase);
+  if (!pz.length && temTexto && !frase) pz = prazosNoTexto_(t);
+  if (pz.length) {
+    var mn = pz.sort(function (a, b) { return a.dias - b.dias; })[0];
+    if (mn.horas) return { dias: mn.dias, contagem: 'corridos', descricao: 'Prazo de ' + mn.horas + ' horas indicado na intimação' };
+    return { dias: mn.dias, contagem: mn.corridos ? 'corridos' : contagem, descricao: 'Prazo de ' + mn.dias + ' dias indicado na intimação' + (frase ? ': "' + frase.slice(0, 90) + '…"' : '') };
   }
+  // o tipo do ato: primeiro pela frase da intimação ("ciência da sentença"), depois pelo texto todo (sem "cumprimento de sentença", que é classe)
+  // (a frase é o que o juízo pediu AO ESCRITÓRIO: "ciência da sentença" → sentença; "ciência da petição de id…" → só ciência)
+  if (frase) t = frase.replace(/(cumprimento|execucao|liquidacao|impugnacao ao cumprimento) (provisori[oa] )?de sentenca/g, '$1');
+  else t = t.replace(/(cumprimento|execucao|liquidacao|impugnacao ao cumprimento) (provisori[oa] )?de sentenca/g, '$1');
   var segundoGrau = segundoGrauAviso || /\.0000$/.test((proc && proc.numero) || '') || /2º grau/i.test((proc && proc.orgao) || '') || /2o grau|2º grau/.test(t);
   var juizado = /juizado|jec|jef/i.test((proc && proc.orgao) || '') || /\.4\.04\.72/.test((proc && proc.numero) || '');
   if (/julgamento|sentenca|acordao/.test(t)) {
@@ -2482,12 +2497,102 @@ function sugerirPrazo_(texto, proc, tribunal, segundoGrauAviso) {
     if (juizado) return { dias: 10, contagem: 'uteis', descricao: 'Contrarrazões ao recurso inominado (10 dias)' };
     return { dias: 15, contagem: 'uteis', descricao: 'Contrarrazões (15 dias)' };
   }
-  if (/vista ao mp|ministerio publico para parecer/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Vista ao Ministério Público (em regra sem prazo para o escritório) — PROVISÓRIO: conferir', provisorio: true };
-  if (/audiencia/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Intimação de audiência — PROVISÓRIO: conferir data, testemunhas e providências', provisorio: true };
+  if (/vista ao mp|ministerio publico para parecer/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Vista ao Ministério Público (em regra sem prazo para o escritório) — conferir e, se for o caso, "Não há prazo"' };
+  if (/audiencia/.test(t) && (!frase || /audiencia/.test(frase))) return { dias: 5, contagem: contagem, descricao: 'Intimação de audiência: conferir data, testemunhas e providências (5 dias)' };
   if (/requisicao|rpv|precatorio/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Requisição de pagamento (RPV/precatório): manifestar em 5 dias — conferir' };
+  if (/quesito|assistente tecnico/.test(t) && !/laudo/.test(t)) return { dias: trab ? 5 : 15, contagem: contagem, descricao: trab ? 'Perícia: quesitos e assistente técnico (5 dias) — conferir' : 'Perícia: quesitos e assistente técnico (15 dias, art. 465, § 1º, CPC)' };
+  if (/pericia/.test(t) && !/laudo/.test(t) && /(data|local|horario|realizacao|designad|agendad|marcad)/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Perícia marcada: ciência (5 dias) — conferir a data na agenda e avisar o cliente' };
   if (/laudo|pericia/.test(t)) return { dias: trab ? 5 : 15, contagem: contagem, descricao: trab ? 'Manifestação sobre o laudo (5 dias) — conferir' : 'Manifestação sobre o laudo pericial (15 dias) — conferir' };
-  if (/despacho|decisao/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Despacho/decisão — PROVISÓRIO: 5 dias (art. 218, § 3º, CPC), conferir no sistema', provisorio: true };
-  return { dias: 5, contagem: contagem, descricao: 'PROVISÓRIO: 5 dias (prazo mínimo) — o aviso não informa o ato; abrir no sistema e conferir', provisorio: true };
+  if (temTexto) {
+    if (/despacho|decisao/.test(t)) return { dias: 5, contagem: contagem, descricao: 'Despacho/decisão sem prazo fixado no texto: 5 dias (art. 218, § 3º, CPC)' };
+    return { dias: 5, contagem: contagem, descricao: 'Intimação sem prazo fixado no texto: 5 dias (art. 218, § 3º, CPC)' };
+  }
+  if (/despacho|decisao/.test(t)) return { dias: 5, contagem: contagem, descricao: 'ATO NÃO IDENTIFICADO (PROVISÓRIO): despacho/decisão sem o texto — data de segurança de 5 dias até o painel achar o texto (DJEN/DataJud) ou alguém abrir no sistema', provisorio: true };
+  return { dias: 5, contagem: contagem, descricao: 'ATO NÃO IDENTIFICADO (PROVISÓRIO): o aviso não traz o ato — data de segurança de 5 dias até o painel achar o texto (DJEN/DataJud) ou alguém abrir no sistema', provisorio: true };
+}
+
+/** 8.43: tira &eacute; &nbsp; etc. (o texto do eproc no DJEN vem com HTML). */
+function semEntidades_(s) {
+  return String(s || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&([a-z])(acute|grave|circ|tilde|cedil|uml);/gi, '$1').replace(/&[a-z]+;/gi, ' ');
+}
+var NUM_EXTENSO_ = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13,
+  quatorze: 14, catorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20, trinta: 30, quarenta: 40, sessenta: 60, noventa: 90 };
+/** 8.43: todos os "prazo (improrrogável/comum/…) de N (por extenso) dias/horas (úteis/corridos)" do texto normalizado. */
+function prazosNoTexto_(t, naFrase) {
+  var ext = Object.keys(NUM_EXTENSO_).sort(function (a, b) { return b.length - a.length; }).join('|');
+  var num = '(\\d{1,3}|(?:(?:vinte|trinta|quarenta) e )?(?:' + ext + '))';
+  var re = new RegExp('prazo(?:\\s+(?:comum|improrrogavel|sucessivo|legal|maximo|derradeiro|ultimo|adicional|suplementar|igual|novo|peremptorio|de ate|ate))*\\s+(?:de\\s+)?' + num + '\\s*(?:\\([^)]{0,30}\\)\\s*)?(dias?|horas?)(\\s+(?:uteis|corridos))?', 'g');
+  var out = [], m;
+  while ((m = re.exec(String(t || '')))) {
+    var n = /^\d/.test(m[1]) ? +m[1] : m[1].split(' e ').reduce(function (a, w) { return a + (NUM_EXTENSO_[w] || 0); }, 0);
+    if (!n || n > 365) continue;
+    if (/hora/.test(m[2])) out.push({ dias: Math.max(1, Math.ceil(n / 24)), horas: n });
+    else out.push({ dias: n, corridos: /corridos/.test(m[3] || '') });
+  }
+  if (naFrase) { // dentro da frase da intimação vale também "para, em 15 (quinze) dias, manifestar-se" e "dentro de 5 dias"
+    var re2 = new RegExp('(?:\\bem|dentro de|ate)\\s+' + num + '\\s*(?:\\([^)]{0,30}\\)\\s*)?(dias?|horas?)(\\s+(?:uteis|corridos))?', 'g');
+    while ((m = re2.exec(String(t || '')))) {
+      var n2 = /^\d/.test(m[1]) ? +m[1] : m[1].split(' e ').reduce(function (a, w) { return a + (NUM_EXTENSO_[w] || 0); }, 0);
+      if (!n2 || n2 > 365) continue;
+      if (/hora/.test(m[2])) out.push({ dias: Math.max(1, Math.ceil(n2 / 24)), horas: n2 }); else out.push({ dias: n2, corridos: /corridos/.test(m[3] || '') });
+    }
+  }
+  return out;
+}
+/** 8.43: a frase "fica(m) … intimado(a)(s) para/a …" até o fim da frase (não corta em "art.", "id.", "v. sa.", "fls."). */
+function fraseIntimado_(t) {
+  var m = /intimad[oa]s?(?:\s*\(\s*a\s*\)\s*(?:\(\s*s\s*\))?)?(?:,[^,]{0,80},)?\s+(?:a|para|de que|acerca)\s/.exec(t);
+  if (!m) return '';
+  var ini = m.index, i = ini + m[0].length, fim = Math.min(t.length, ini + 700);
+  for (; i < fim; i++) {
+    if (t.charAt(i) !== '.' || !/\s/.test(t.charAt(i + 1) || ' ')) continue;
+    var antes = t.slice(Math.max(ini, i - 6), i).split(' ').pop();
+    if (/^(art|arts|id|v|sa|sr|sra|fls|fl|n|no|nº|inc|cpc|clt|ltda|me|s\/a|dr|dra|prov|res|ed)$/.test(antes) || /^\d+$/.test(antes)) continue;
+    fim = i; break;
+  }
+  return t.slice(ini, fim);
+}
+
+/** 8.43: robô que IDENTIFICA o ato dos prazos "ATO NÃO IDENTIFICADO" (aviso do PJe/eproc sem texto). Procura, nesta ordem: 1) publicação com
+ *  texto do MESMO processo até 5 dias da ciência (DJEN); 2) nome do ato nas movimentações do DataJud (sentença/acórdão/laudo) até 10 dias antes.
+ *  Duas leituras diferentes → fica a MAIS CURTA. Não toca em prazo conferido, de audiência/perícia ou lançado à mão. Fica tudo anotado. */
+var RE_NAO_ATO_DATAJUD = /(transit|tr[aâ]nsito|decurso|remessa|remetid|conclus|recebid|baixa|arquiv|expedi|publica|disponibiliza|certid)/i;
+var RE_ATO_DATAJUD = /(proced[eê]ncia|improced[eê]ncia|procedente|improcedente|extin[cç][aã]o do processo|julgad[oa]|senten[cç]a|ac[oó]rd[aã]o|laudo)/i;
+function identificarProvisorios_() {
+  var tabZ = tabela_('Prazos'), fer = mapaFeriados_(), procs = {}, porNum = {}, feitos = 0, agora = new Date().toISOString();
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  var diaAviso = {};
+  tabela_('Intimacoes').linhas.forEach(function (i) { diaAviso[i.id] = String(i.recebido_em || '').slice(0, 10); var tx = String(i.texto || ''); if (tx.replace(/\s+/g, ' ').length >= 200 && !/^\W*(documento sigiloso|conte[uú]do sigiloso)/i.test(tx)) (porNum[i.numero] = porNum[i.numero] || []).push(i); });
+  tabZ.linhas.forEach(function (z) {
+    if (feitos >= 40 || z.origem !== 'robô' || z.situacao === 'conferido' || SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || /^ato:/.test(z.observacoes || '') || !/PROVIS/i.test(z.descricao || '') || !z.ciencia) return;
+    var p = procs[z.processo_id] || {}, trib = p.tribunal || tribunalDoNumero_(z.numero), opcoes = [];
+    var aviso = diaAviso[z.intimacao_id] || String(z.criado_em || '').slice(0, 10) || z.ciencia;
+    (porNum[z.numero] || []).forEach(function (i) {
+      // a publicação do MESMO ato sai perto do aviso (PJe/eproc) ou da ciência (tácita do eproc = 10 dias depois)
+      var dia = String(i.recebido_em || '').slice(0, 10); if (!dia || Math.min(Math.abs(diffDias_(dia, aviso)), Math.abs(diffDias_(dia, z.ciencia))) > 4) return;
+      var sg = sugerirPrazo_([i.movimento, i.texto].join(' '), p, trib, false, true);
+      if (!sg.provisorio && sg.dias) opcoes.push({ s: sg, fonte: 'texto da publicação de ' + dataBR_(dia) + ' (' + (i.fonte || 'DJEN') + ')' });
+    });
+    if (!opcoes.length && p.andamentos && p.andamentos.charAt(0) === '[') {
+      var movs = []; try { movs = JSON.parse(p.andamentos); } catch (e) { movs = []; }
+      movs.forEach(function (mv) {
+        var dia = String(mv.d || '').slice(0, 10), nome = String(mv.n || '');
+        if (!dia || diffDias_(z.ciencia, dia) < 0 || diffDias_(z.ciencia, dia) > 10 || !RE_ATO_DATAJUD.test(nome) || RE_NAO_ATO_DATAJUD.test(nome)) return;
+        var sg = sugerirPrazo_(/ac[oó]rd[aã]o/i.test(nome) ? 'acordao ' + nome : /laudo/i.test(nome) ? 'laudo pericial' : 'sentenca ' + nome, p, trib, false, true);
+        if (!sg.provisorio && sg.dias) opcoes.push({ s: sg, fonte: 'DataJud: "' + nome.slice(0, 60) + '" em ' + dataBR_(dia) });
+      });
+    }
+    if (!opcoes.length) return;
+    opcoes.forEach(function (o) { o.fatal = calcularFatal_(z.ciencia, o.s.dias, o.s.contagem, trib, fer); });
+    opcoes.sort(function (a, b) { return (a.fatal || '9') < (b.fatal || '9') ? -1 : 1; }); // na dúvida, o mais curto
+    var o = opcoes[0]; if (!o.fatal) return;
+    atualizarLinha_(tabZ, z, { descricao: o.s.descricao + ' (identificado pelo ' + o.fonte + ')', dias: String(o.s.dias), contagem: o.s.contagem, fatal: o.fatal,
+      observacoes: ((z.observacoes || '') + ' | ato identificado pelo ' + o.fonte + (opcoes.length > 1 ? ' (havia ' + opcoes.length + ' leituras; ficou a mais curta)' : '') + '; antes: ' + String(z.descricao || '').slice(0, 40) + ', fatal ' + (z.fatal ? dataBR_(z.fatal) : '—')).replace(/^ \| /, ''),
+      atualizado_em: agora, atualizado_por: 'robô' });
+    feitos++;
+  });
+  if (feitos) registrar_('robô', 'prazos identificados', feitos + ' ato(s) identificado(s) pelo texto (DJEN) ou pelo DataJud');
+  return { feitos: feitos };
 }
 
 /** Situação de arquivo pela movimentação. */
@@ -2574,7 +2679,7 @@ function definirPendentes_(ctx) {
     var i = intims[z.intimacao_id] || {};
     var proc = procs[z.processo_id] || { numero: z.numero };
     var tribunal = proc.tribunal || tribunalDoNumero_(z.numero);
-    var sug = sugerirPrazo_([i.movimento, i.texto, z.observacoes].join(' '), proc, tribunal, /2º grau/.test(i.movimento || ''));
+    var sug = sugerirPrazo_([i.movimento, i.texto, z.observacoes].join(' '), proc, tribunal, /2º grau/.test(i.movimento || ''), String(i.texto || '').replace(/\s+/g, ' ').length >= 200 && !/documento sigiloso|conte[uú]do sigiloso/i.test(i.texto || ''));
     var fatal = calcularFatal_(z.ciencia || hojeSP_(), sug.dias, sug.contagem, tribunal, feriados);
     atualizarLinha_(tabZ, z, { dias: String(sug.dias), contagem: sug.contagem, descricao: sug.descricao, situacao: 'calculado', fatal: fatal,
       observacoes: (z.observacoes ? z.observacoes + ' | ' : '') + 'Prazo definido automaticamente em ' + dataBR_(hojeSP_()) + ' pelo tipo de ato: conferir.',
@@ -3063,6 +3168,7 @@ function registrarIntimacao_(ctx, d) {
       SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.ciencia && Math.abs(diffDias_(z.ciencia, d.ciencia)) <= 12;
   })[0];
   var sug = sugerirPrazo_([d.movimento, d.texto].join(' '), proc, proc.tribunal, d.segundoGrau);
+  if (sug.semPrazo) return { nova: true, prazo: marcado }; // 8.43: aviso de distribuição não abre prazo
   if (aberto) {
     var m = { observacoes: (aberto.observacoes ? aberto.observacoes + ' | ' : '') + d.fonte + ': ' + d.movimento };
     // 8.19 (pedido da usuária: "deixe sempre como o do PJe / igual no eproc"): cada sistema manda no próprio prazo.
@@ -3074,6 +3180,12 @@ function registrarIntimacao_(ctx, d) {
     else trocar = !/publicação no DJEN em/.test(aberto.ciencia_tipo || '') && d.ciencia < aberto.ciencia;
     if (trocar) { m.ciencia = d.ciencia; m.ciencia_tipo = d.ciencia_tipo; }
     if (!(+aberto.dias) && sug.dias) { m.dias = String(sug.dias); m.contagem = sug.contagem; m.descricao = sug.descricao; }
+    // 8.43: o aberto era ATO NÃO IDENTIFICADO e esta publicação traz o texto → vale o prazo do texto (e a data é recalculada)
+    else if (/PROVIS/i.test(aberto.descricao || '') && !sug.provisorio && sug.dias) {
+      m.dias = String(sug.dias); m.contagem = sug.contagem; m.descricao = sug.descricao + ' (identificado pelo texto da publicação — ' + d.fonte + ')';
+      m.observacoes += ' | ato identificado pelo texto (' + d.fonte + '); antes: ' + String(aberto.descricao || '').slice(0, 50) + ', fatal ' + (aberto.fatal ? dataBR_(aberto.fatal) : '—');
+    }
+    if (m.ciencia || m.dias) { var pF = proc || {}; m.fatal = calcularFatal_(m.ciencia || aberto.ciencia, m.dias || aberto.dias, m.contagem || aberto.contagem, pF.tribunal, ctx.feriados) || aberto.fatal; }
     m.atualizado_em = agora; m.atualizado_por = 'robô';
     atualizarLinha_(ctx.prazos, aberto, m);
     atualizarLinha_(ctx.intim, intim, { prazo_id: aberto.id });
@@ -6222,7 +6334,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }

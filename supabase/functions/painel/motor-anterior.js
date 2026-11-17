@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.39.7 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.39.7';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.42.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.42.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.39.7';
+var VERSAO = '8.42.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -112,7 +112,8 @@ var ESQUEMA = {
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
-    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em'],
+    'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
+    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima'], // 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
     'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte'],
@@ -2400,6 +2401,9 @@ function revisarPrazos_(d, u) {
   var tab = tabela_('Prazos'), fer = mapaFeriados_(), procs = {}, eventos = {};
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
   tabela_('Eventos').linhas.forEach(function (e) { if (e.numero && e.data && !/^apagado/.test(e.evento_id || '')) (eventos[e.numero] = eventos[e.numero] || []).push(e); });
+  // 8.42 (Central de Prazos, pedido da usuária: "o vencimento não comprova o protocolo"): NÃO existe mais baixa em lote dos vencidos.
+  // Vencido sem comprovação continua aberto, na fila de urgência; "vencidos" só LISTA (para conferir um a um).
+  cats = cats.filter(function (c) { return c !== 'vencidos'; });
   var abertos = tab.linhas.filter(function (z) { return z.id && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; });
   var r = { repetidos: [], mp: [], audiencia: [], recalcular: [], vencidos: [] }, vistos = {};
   abertos.sort(function (a, b) { return (a.criado_em || '') < (b.criado_em || '') ? -1 : 1; }).forEach(function (z) {
@@ -5819,6 +5823,25 @@ function audienciasLista_(dias) {
   });
 }
 
+/** 8.42 (pedido da usuária: "nas anotações dos clientes, falando sobre as testemunhas"): cada audiência de INSTRUÇÃO (e a una) dos próximos
+ *  90 dias vira uma anotação na ficha do cliente com as testemunhas cadastradas na ficha da audiência — ou o aviso de que ainda faltam
+ *  (pedir nome, CPF e telefone). Mudou a lista de testemunhas → anotação nova. Nunca repete a mesma anotação. */
+function textoTestemunhas_(a) {
+  var t = a.testemunhas || [], q = a.data ? dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '') : 'data a confirmar';
+  var cab = '⚖ TESTEMUNHAS — audiência de instrução de ' + q + (a.numero ? ' (processo ' + a.numero + ')' : '') + ': ';
+  if (!t.length) return cab + 'nenhuma cadastrada ainda. Pedir ao cliente o nome completo, CPF e telefone de cada testemunha (na Justiça do Trabalho, em regra até 3; no rito sumaríssimo, até 2 — conferir) e lançar na ficha da audiência.';
+  return cab + t.map(function (x) { return [x.nome || 'sem nome', x.telefone ? 'tel. ' + x.telefone : '', x.cpf ? 'CPF informado' : 'falta CPF', x.confirmou === 'sim' ? 'confirmou presença' : 'presença a confirmar'].filter(String).join(', '); }).join('; ') + '.';
+}
+function testemunhasNasNotas_() {
+  var robo = { usuario: 'robô', nome: 'robô (audiências)' }, feitas = 0;
+  audienciasLista_(90).forEach(function (a) {
+    if (!a.cliente_id || !/instru|una|unica|única/i.test(String(a.tipo || '') + ' ' + String(a.nome || ''))) return;
+    var txt = textoTestemunhas_(a), c = tabela_('Clientes').linhas.filter(function (x) { return x.id === a.cliente_id; })[0];
+    if (!c || String(c.observacoes || '').indexOf(txt) >= 0 || feitas >= 30) return;
+    try { anotarCliente_({ id: c.id, texto: txt }, robo); feitas++; } catch (e) { /* tenta na próxima */ }
+  });
+  return { feitas: feitas };
+}
 /** 8.37.2: audiências/perícias DESIGNADAS cuja data não veio no aviso (PJe "documento sigiloso"): tarefas abertas "lançar na agenda". */
 function atosSemData_() {
   var clis = {}, procs = {};
@@ -5850,6 +5873,12 @@ function salvarFichaAto_(d, u) {
     else inserirLinha_(fichas.tab, Object.assign({ chave: d.lembrete, numero: d.numero || '', data: d.data || '', hora: d.hora || '', tipo: d.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
       ciente_em: '', ciente_por: '', aviso_semana_em: '', aviso_semana_por: '', aviso_vespera_em: '', aviso_vespera_por: '', aviso_dia_em: '', aviso_dia_por: '', criado_em: agora }, m));
     registrar_(u.usuario, 'audiência: ficha', (d.numero || '') + ' ' + (d.data ? dataBR_(d.data) : '') + ' ' + Object.keys(m).filter(function (k) { return !/atualizado/.test(k); }).join(','));
+    // 8.42: testemunhas salvas → anotação na ficha do cliente (o mesmo texto não se repete)
+    if (m.testemunhas !== undefined && d.numero) {
+      var pT = tabela_('Processos').linhas.filter(function (x) { return x.numero === d.numero; })[0], cT = pT ? tabela_('Clientes').linhas.filter(function (x) { return x.id === pT.cliente_id; })[0] : null;
+      var txtT = cT ? textoTestemunhas_({ data: d.data || (f && f.data), hora: d.hora || (f && f.hora), numero: d.numero, testemunhas: JSON.parse(m.testemunhas) }) : '';
+      if (cT && String(cT.observacoes || '').indexOf(txtT) < 0) anotarCliente_({ id: cT.id, texto: txtT }, u);
+    }
     return { ok: true };
   });
 }
@@ -6240,7 +6269,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
@@ -9870,7 +9899,31 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje };
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis) };
+}
+/** 8.42 (pedido da usuária: "quem ainda não fechou e já faz tempo, ou está com a petição há muito tempo sem fazer — no Início de todos"):
+ *  (1) procuração/contrato enviados e AINDA aguardando assinatura há 7+ dias; (2) petição inicial sem número há 10+ dias (processo ativo
+ *  na etapa Petição inicial). Mais antigos primeiro. Só nomes, dias e quem cuida (nada de valores). */
+var ESPERA_ASSIN_DIAS = 7, ESPERA_INICIAL_DIAS = 10;
+function esperandoMuito_(hoje, clis) {
+  var dias = function (iso) { return iso ? diffDias_(hoje, String(iso).slice(0, 10)) : 0; }, assin = [], iniciais = [];
+  tabela_('Assinaturas').linhas.forEach(function (a) {
+    if (a.situacao !== 'aguardando' || !a.gerado_em) return;
+    var n = dias(a.gerado_em); if (n < ESPERA_ASSIN_DIAS) return;
+    var c = clis[a.cliente_id] || {};
+    assin.push({ cliente_id: a.cliente_id, cliente: c.nome || a.cliente_nome || '', telefone: c.telefone || '', dias: n, desde: String(a.gerado_em).slice(0, 10), por: a.gerado_por || '', documentos: String(a.documentos || '').slice(0, 90) });
+  });
+  var tarefasIni = {};
+  tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) tarefasIni[m[1]] = t; });
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (p.numero || p.status === 'arquivado' || p.fase !== 'contratado') return;
+    var n = dias(p.criado_em); if (n < ESPERA_INICIAL_DIAS) return;
+    var c = clis[p.cliente_id] || {}, t = tarefasIni[p.id];
+    iniciais.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: c.nome || p.cliente_nome || '', area: p.area || '', dias: n, desde: String(p.criado_em).slice(0, 10),
+      responsavel: p.responsavel || (t && t.responsavel) || '', tarefa_id: t ? t.id : '' });
+  });
+  var ord = function (a, b) { return b.dias - a.dias; };
+  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
@@ -9965,10 +10018,23 @@ function chatEnviar_(d, u) {
     var outro = sala.slice(3).split('|').filter(function (x) { return x !== u.usuario; })[0];
     if (!usuarios_().some(function (x) { return x.usuario === outro && x.ativo === 'sim'; })) throw falha_('Essa pessoa não está mais na equipe.');
   }
-  var em = new Date().toISOString(), id = 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
-  inserirLinha_(tabela_('Chat'), { id: id, sala: sala, de: u.usuario, texto: texto, em: em, apagado: '' });
-  chatMarcarLido_(sala, u, em);
-  return { ok: true, id: id, em: em };
+  // 8.42 (revisão do chat): dentro da trava; a MESMA mensagem repetida em até 2 min (clique duplo, internet que caiu e o painel mandou de
+  // novo) não é gravada duas vezes; no máximo 20 mensagens por minuto por pessoa (protege contra um laço/robô)
+  return comTrava_(function () {
+    var tab = tabela_('Chat'), agoraMs = Date.now(), minhas = tab.linhas.filter(function (x) { return x.de === u.usuario && agoraMs - Date.parse(x.em || 0) < 120000; });
+    var igual = minhas.filter(function (x) { return x.sala === sala && x.texto === texto && x.apagado !== 'sim'; })[0];
+    if (igual) return { ok: true, id: igual.id, em: igual.em, repetida: true };
+    if (minhas.filter(function (x) { return agoraMs - Date.parse(x.em || 0) < 60000; }).length >= 20) throw falha_('Muitas mensagens em pouco tempo. Espere um minuto.');
+    var em = new Date().toISOString(), id = 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    inserirLinha_(tab, { id: id, sala: sala, de: u.usuario, texto: texto, em: em, apagado: '' });
+    chatMarcarLido_(sala, u, em);
+    return { ok: true, id: id, em: em };
+  });
+}
+/** 8.42: aviso do robô na conversa "Equipe toda" do chat (Central de Prazos). Só texto, sem dados sensíveis além de cliente/processo. */
+function chatRobo_(texto) {
+  try { inserirLinha_(tabela_('Chat'), { id: 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), sala: 'geral', de: 'robô', texto: String(texto).slice(0, 1200), em: new Date().toISOString(), apagado: '' }); return true; }
+  catch (e) { return false; }
 }
 function chatApagar_(d, u) {
   var t = tabela_('Chat'), m = t.linhas.filter(function (x) { return x.id === d.id; })[0];
@@ -9994,7 +10060,10 @@ function conferirTrabalho_(d, u) {
     var tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes');
     var cumprirPrazo = function (z) {
       if (!z || SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return false;
-      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: quem.nome, cumprido_em: agora, etapa: 'protocolado', ok_por: '', ok_em: '', atualizado_em: agora, atualizado_por: u.usuario });
+      // 8.42: guarda o comprovante do protocolo (ou que não foi informado) — a administração vê no OK
+      var comp = String(d.comprovante || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+      var obsC = ((z.observacoes || '') + ' | ' + (comp ? 'comprovante: ' + comp : 'sem comprovante informado') + ' (' + quem.nome + ', ' + dataBR_(hojeSP_()) + ')').replace(/^ \| /, '');
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: quem.nome, cumprido_em: agora, etapa: 'protocolado', ok_por: '', ok_em: '', observacoes: obsC, atualizado_em: agora, atualizado_por: u.usuario });
       return true;
     };
     var terminarIntim = function (i) {
@@ -10327,10 +10396,10 @@ var CATEGORIAS_LOG = [
 function relatorioSemana_(d) {
   var hoje = hojeSP_();
   var ref = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : hoje;
-  var mes = d.periodo === 'mes';
+  var mes = d.periodo === 'mes', diaSo = d.periodo === 'dia'; // 8.42: relatório DIÁRIO (pedido da usuária), além de semana e mês
   var dow = new Date(ref + 'T12:00:00Z').getUTCDay();
-  var ini = mes ? ref.slice(0, 8) + '01' : somarDias_(ref, -((dow + 6) % 7));
-  var fim = mes ? somarDias_(somarDias_(ini, 32).slice(0, 8) + '01', -1) : somarDias_(ini, 6);
+  var ini = diaSo ? ref : mes ? ref.slice(0, 8) + '01' : somarDias_(ref, -((dow + 6) % 7));
+  var fim = diaSo ? ref : mes ? somarDias_(somarDias_(ini, 32).slice(0, 8) + '01', -1) : somarDias_(ini, 6);
   var usuarios = {};
   usuarios_().forEach(function (x) { usuarios[x.usuario] = x; });
   var pessoas = {};
@@ -10356,10 +10425,10 @@ function relatorioSemana_(d) {
   });
   var lista = Object.keys(pessoas).map(function (k) { var x = pessoas[k]; x.itens.sort(function (a, b) { return a.quando < b.quando ? 1 : -1; }); return x; })
     .sort(function (a, b) { return b.total - a.total || (a.nome < b.nome ? -1 : 1); });
-  var ant = mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
+  var ant = diaSo ? somarDias_(ini, -1) : mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = diaSo ? somarDias_(ini, 1) : mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
   var aguardando = 0;
   try { aguardando = aguardandoOk_().length; } catch (e) { /* segue */ }
-  return { inicio: ini, fim: fim, hoje: hoje, periodo: mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
+  return { inicio: ini, fim: fim, hoje: hoje, periodo: diaSo ? 'dia' : mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
     categorias: CATEGORIAS_LOG.map(function (c) { return { id: c[0], nome: c[1] }; }), pessoas: lista };
 }
 
@@ -10669,22 +10738,31 @@ function resumirProvisoriosIA_(limiteMs, max) {
 function chaveIA_() { return PropertiesService.getScriptProperties().getProperty('GEMINI_CHAVE') || ''; }
 
 function pedidoGemini_(texto, chave, modelo, contexto, livre) {
+  // 8.42 (Central de Prazos): leitura ESTRUTURADA. A IA nunca inventa: sem a informação no texto, null; sem o essencial, "insuficiente": true.
   var prompt = livre ? String(texto).slice(0, 12000) : 'Você ajuda um escritório de advocacia brasileiro a nunca perder prazo. Leia a intimação/publicação abaixo e responda SOMENTE em JSON com as chaves: ' +
     '"resumo" (até 2 frases, em português simples: o que o juiz/tribunal decidiu ou determinou), "ato" (uma palavra: sentença, acórdão, decisão, despacho, ' +
-    'audiência, perícia, citação, intimação, edital ou outro), "providencia" (a peça ou providência que o advogado provavelmente precisa fazer, curto), ' +
-    '"prazo_dias" (número de dias do prazo SE estiver escrito no texto; senão null), "fundamento" (artigo de lei do prazo, se o texto citar; senão null) e ' +
-    '"data_ato" (data de audiência/perícia no formato AAAA-MM-DD, se houver; senão null). Não invente nada que não esteja no texto.' +
+    'audiência, perícia, citação, intimação, edital ou outro), "providencia" (a peça ou providência que o advogado precisa fazer, curto), ' +
+    '"existe_prazo" ("sim", "nao" ou "incerto"), "prazo_dias" (número de dias SE estiver escrito no texto; senão null), "contagem" ("uteis", "corridos" ou null), ' +
+    '"fundamento" (artigo de lei citado no texto; senão null), "data_disponibilizacao", "data_publicacao", "data_ciencia" (AAAA-MM-DD só se estiverem no texto; senão null), ' +
+    '"audiencia" ("designada", "redesignada", "cancelada", "designar_sem_data" ou null), "pericia" ("designada", "designar_sem_data", "aguardando_designacao", ' +
+    '"nomeacao_perito", "quesitos", "laudo_apresentado", "manifestar_laudo" ou null — determinar que se agende NÃO é perícia designada), ' +
+    '"data_ato" (AAAA-MM-DD da audiência/perícia, se houver), "hora_ato" (HH:MM ou null), "local_ato" (ou null), "perito" (nome, se houver), ' +
+    '"trecho" (copie LITERALMENTE até 300 caracteres do texto que fundamenta a conclusão), "confiabilidade" ("alta", "media" ou "baixa"), ' +
+    '"conferir" (true se a advogada precisa conferir no tribunal) e "insuficiente" (true se o texto não basta para saber o ato ou o prazo). ' +
+    'Não invente datas, prazos, fundamentos nem providências que não estejam no texto.' +
     (contexto ? '\n\n' + contexto : '') + '\n\nTEXTO:\n' + texto.slice(0, 6000);
   return {
     url: 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelo) + ':generateContent',
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     headers: { 'x-goog-api-key': chave },
     payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: livre ? 900 : 400, responseMimeType: 'application/json' } })
+      generationConfig: { temperature: 0.1, maxOutputTokens: livre ? 900 : 800, responseMimeType: 'application/json' } })
   };
 }
 
+var IA_ULTIMO_OBJ = null; // 8.42: o último JSON lido (para guardar em Intimacoes.ia_dados)
 function lerRespostaGemini_(resp, z) {
+  IA_ULTIMO_OBJ = null;
   var code = resp.getResponseCode();
   var j = {};
   try { j = JSON.parse(resp.getContentText()); } catch (e) { /* resposta estranha */ }
@@ -10705,9 +10783,11 @@ function lerRespostaGemini_(resp, z) {
     return t;
   };
   o.resumo = limpa(o.resumo, corte); if (o.providencia) o.providencia = limpa(o.providencia, false);
+  IA_ULTIMO_OBJ = o;
   if (!o.resumo) throw new Error('A IA respondeu sem resumo. Tente de novo.');
   var partes = [String(o.resumo || '').trim() + (corte ? ' (resposta da IA incompleta — confira no texto do ato)' : '')];
   if (o.providencia) partes.push('Providência: ' + String(o.providencia).trim());
+  if (o.insuficiente === true) partes.push('INFORMAÇÃO INSUFICIENTE — CONFERÊNCIA NO TRIBUNAL');
   var dt = parseInt(o.prazo_dias, 10);
   if (dt) partes.push('Prazo citado no texto: ' + dt + ' dias' + (o.fundamento ? ' (' + String(o.fundamento).slice(0, 60) + ')' : ''));
   // Conferência cruzada: o texto fala em prazo diferente do calculado pelo painel? Avisa (a IA nunca muda o prazo).
@@ -10723,8 +10803,15 @@ function resumirIntimacoes_(limiteMs, max) {
   var modelo = modeloIA_(), t0 = Date.now();
   var tabI = tabela_('Intimacoes'), tabZ = tabela_('Prazos');
   var desde = new Date(Date.now() - 60 * 86400000).toISOString();
+  // 8.42 FILA PERSISTENTE: toda intimação com texto dos últimos 60 dias sem resumo fica na fila até dar certo. Cada falha soma uma tentativa,
+  // guarda o erro e só volta depois de um intervalo crescente (15 min, 30, 1 h, 2 h… até 12 h). Nada some: depois de 8 falhas ela continua
+  // em "Falhas na leitura automática" na Central de Prazos para conferir à mão. O 429 (cota do Google) PAUSA a rodada (IA_PAUSA_ATE).
+  if (Date.now() < +(config_('IA_PAUSA_ATE') || 0)) return { feitas: 0, motivo: 'cota do Google em pausa' };
+  var agoraMs = Date.now();
   var fila = tabI.linhas.filter(function (i) {
     if (i.resumo_ia || (i.recebido_em || '') < desde) return false;
+    if ((+i.ia_tentativas || 0) >= 8) return false;
+    if (i.ia_proxima && Date.parse(i.ia_proxima) > agoraMs) return false;
     var t = String(i.texto || '').replace(/\s+/g, ' ');
     return t.length >= 120 && !/^\W*(documento sigiloso|conteúdo sigiloso)/i.test(t);
   }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, max || 30);
@@ -10745,7 +10832,7 @@ function resumirIntimacoes_(limiteMs, max) {
     return String(x.partes_cliente || '').split(/;\s*/).concat([nomesCli[p.cliente_id], p.cliente_nome, p.parte_contraria]);
   };
   tabI.adiar = true; tabZ.adiar = true;
-  var feitas = 0, erro = '';
+  var feitas = 0, erro = '', alertasChat = 0;
   for (var i = 0; i < fila.length && Date.now() - t0 < (limiteMs || 60000); i += 5) {
     var lote = fila.slice(i, i + 5);
     var montar = function () { return lote.map(function (x) { return pedidoGemini_(anonimizar_([x.movimento, x.texto].join('\n'), nomesDa(x)), chave, modelo, contextoPrazoIA_(prazos[x.prazo_id])); }); };
@@ -10753,15 +10840,31 @@ function resumirIntimacoes_(limiteMs, max) {
     var trocado = modeloSugerido_(resps[0]);
     if (trocado) { modelo = trocado; resps = UrlFetchApp.fetchAll(montar()); }
     if (resps.some(function (x) { return x.getResponseCode() === 429; })) { Utilities.sleep(5000); resps = UrlFetchApp.fetchAll(montar()); }
+    var cota = false;
     for (var k = 0; k < lote.length; k++) {
       try {
         var res = lerRespostaGemini_(resps[k], prazos[lote[k].prazo_id]);
-        atualizarLinha_(tabI, lote[k], { resumo_ia: res });
+        var dados = IA_ULTIMO_OBJ ? JSON.stringify(IA_ULTIMO_OBJ).slice(0, 4000) : '';
+        atualizarLinha_(tabI, lote[k], { resumo_ia: res, ia_dados: dados, ia_erro: '', ia_proxima: '' });
+        // 8.42: alerta no chat da equipe quando a leitura achou algo que exige providência (o alerta da Central continua até tratar)
+        var o42 = IA_ULTIMO_OBJ || {}, pq = procs[lote[k].processo_id] || {}, quem42 = nomesCli[pq.cliente_id] || pq.cliente_nome || 'cliente a identificar', mot = [];
+        if (/designada|redesignada|cancelada|designar_sem_data/.test(o42.audiencia || '')) mot.push('audiência ' + String(o42.audiencia).replace(/_/g, ' ') + (o42.data_ato ? ' ' + dataBR_(o42.data_ato) + (o42.hora_ato ? ' ' + o42.hora_ato : '') : ''));
+        if (o42.pericia) mot.push('perícia: ' + String(o42.pericia).replace(/_/g, ' ') + (o42.data_ato ? ' ' + dataBR_(o42.data_ato) : ''));
+        if (/⚠ ATENÇÃO/.test(res)) mot.push('a IA leu prazo/data DIFERENTE do painel');
+        if (o42.insuficiente === true) mot.push('informação insuficiente — conferir no tribunal');
+        if (mot.length && alertasChat < 10) { alertasChat++; chatRobo_('🤖 Intimação nova — ' + quem42 + ' · ' + (lote[k].numero || '') + ' (' + (lote[k].tribunal || '') + '): ' + mot.join('; ') + '. Pendente de confirmação: veja na Central de Prazos.'); }
         var z = prazos[lote[k].prazo_id];
         if (z && !z.resumo_ia) atualizarLinha_(tabZ, z, { resumo_ia: res });
         feitas++;
-      } catch (e) { erro = String(e.message || e); }
+      } catch (e) {
+        erro = String(e.message || e);
+        if (resps[k].getResponseCode() === 429) cota = true;
+        var tent = (+lote[k].ia_tentativas || 0) + 1, espera = Math.min(12 * 3600000, 15 * 60000 * Math.pow(2, tent - 1));
+        atualizarLinha_(tabI, lote[k], { ia_tentativas: String(tent), ia_erro: (new Date().toISOString() + ' · ' + erro).slice(0, 300), ia_proxima: new Date(Date.now() + espera).toISOString() });
+        if (tent === 8) chatRobo_('🤖 A IA não conseguiu ler a intimação ' + (lote[k].numero || '') + ' depois de 8 tentativas: conferir À MÃO (Central de Prazos › Falhas na leitura automática).');
+      }
     }
+    if (cota) { setConfig_('IA_PAUSA_ATE', String(Date.now() + 15 * 60000), 'IA: Google pediu pausa (429) até'); erro = 'Google pediu uma pausa (cota, 429): a fila continua na próxima rodada. ' + erro; break; }
     if (erro && !feitas) break; // chave errada ou sem saldo: não insiste
   }
   regravarMudadas_(tabI); regravarMudadas_(tabZ);
@@ -11179,6 +11282,7 @@ function roboRapidoGatilho() {
   if (!sbEdge_()) { try { aquecerMemoria_(); } catch (eQ) { /* segue */ } } // 8.36.3: com o motor do Supabase não serve para nada
   try { aquecerAgenda_(); } catch (eA) { /* segue */ }
   try { copiarSeHora_(); } catch (eS) { /* segue */ }
+  try { var hIA = +Utilities.formatDate(new Date(), TZ, 'H'); if (hIA >= 7 && hIA <= 20) resumirIntimacoes_(25000, 8); } catch (eI) { setConfig_('IA_ERRO', String(eI.message || eI), 'Último problema do resumo por IA'); } // 8.42: a fila anda de hora em hora
   try { vigiaRobo_(true); } catch (e2) { /* segue */ }
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
@@ -15762,6 +15866,7 @@ function sbEspelhar_(limiteMs, tudo, so) {
       for (var n = 2; n <= maxN; n++) linhas.push(cab.map(function () { return ''; }));
       x.linhas.forEach(function (r) { var n = +r[idx._n]; if (n >= 2) linhas[n - 2] = cab.map(function (k) { return idx[k] === undefined ? '' : seguro_(r[idx[k]]); }); });
       var sh = aba_(aba), ult = sh.getLastRow();
+      if (sh.getLastColumn && sh.getLastColumn() < cab.length) sh.getRange(1, 1, 1, cab.length).setValues([cab]); // 8.42: coluna nova de uma versão nova (ex.: ia_* em Intimacoes)
       if (linhas.length) sh.getRange(2, 1, linhas.length, cab.length).setNumberFormat('@').setValues(linhas);
       if (ult > maxN) sh.getRange(maxN + 1, 1, ult - maxN, cab.length).clearContent();
       delete suj[aba]; feitas.push(aba);

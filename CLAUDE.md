@@ -4,8 +4,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Prazos: nunca sem data (regra do escritório)
 
-- Nenhum prazo pode ficar sem data fatal. Se o aviso do tribunal não disser o ato (no PJe vem "documento sigiloso"),
-  o robô usa o prazo provisório MAIS CURTO (5 dias úteis; 5 corridos no criminal), marcado "PROVISÓRIO — conferir".
+- Nenhum prazo pode ficar sem data fatal. 8.43 (decisão da usuária, 17/11/2026: "não deveria ter prazo provisório; veja e entenda
+  para não falhar"): o painel DESCOBRE o ato — texto da publicação no DJEN (frase "fica … intimado PARA …", prazo por extenso) e
+  movimentações do DataJud (`identificarProvisorios_` em toda rodada). Só quando nada disso existe ainda o prazo fica "ATO NÃO
+  IDENTIFICADO (PROVISÓRIO)" com a data de segurança MAIS CURTA (5 dias úteis; 5 corridos no criminal) — some sozinho quando o texto chega.
 - Na dúvida entre dois prazos, sempre o mais curto. Exemplos já no código (`sugerirPrazo_` em painel-backend/Code.gs):
   sentença TJSC 15 úteis, JEC/JEF 10, TRT 8, criminal 5 corridos; acórdão: embargos de declaração 5 (criminal 2 corridos);
   contrarrazões 15/10/8; laudo 15 (TRT 5); despacho/decisão 5 (art. 218, § 3º, CPC).
@@ -1626,6 +1628,23 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Teste novo `.github/motor/teste/etapa842.js` (429 → tentativa e pausa; espera; leitura estruturada; chat do robô; sem baixa em lote;
   comprovante; chat sem duplicar; relatório do dia; esperando; testemunhas). sim.js ganhou getLastColumn. `sbEspelhar_` escreve o cabeçalho
   quando a aba da planilha tem menos colunas que o ESQUEMA.
-- PENDENTE de decisão da usuária: a regra antiga "nunca sem data: provisório de 5 dias" × o pedido novo "não usar 5 dias como prazo automático".
-  Mantido o provisório (sempre marcado PROVISÓRIO, nunca conta como confirmado) até ela decidir.
+- DECIDIDO (8.43): sem provisório — o painel identifica o ato pelo DJEN/DataJud; só sem nenhum texto fica "ATO NÃO IDENTIFICADO".
+
+## 8.43.0 Prazos sem "provisório": o painel descobre o ato (decisão da usuária, 17/11/2026)
+
+- `sugerirPrazo_(texto, proc, tribunal, segundoGrau, temTexto)`: com o TEXTO do ato (≥ 200 letras, não sigiloso) vale a frase da intimação
+  (`fraseIntimado_`: "fica … intimado(a) para/a/de que …" até o fim da frase); prazo dado à OUTRA parte no mesmo texto não conta. `prazosNoTexto_`
+  lê "prazo (improrrogável/comum…) de 15 (quinze)/quinze/dez dias (úteis/corridos)" e, dentro da frase, "em 15 dias"; vários = o mais curto.
+  Tipo do ato pela frase ("ciência da sentença" → sentença); "cumprimento de sentença" (classe) não é sentença. Sem prazo no texto =
+  5 dias LEGAIS (art. 218, § 3º, CPC), não provisório. Distribuição do processo = `semPrazo` (não abre prazo). Perícia marcada / quesitos /
+  intimação de audiência / vista ao MP saíram do "PROVISÓRIO" (o ato é conhecido). `semEntidades_` tira &eacute; etc. do eproc.
+- Sem texto (aviso do PJe/eproc) → "ATO NÃO IDENTIFICADO (PROVISÓRIO): …" (o /PROVIS/ continua marcando a fila "conferir").
+- `registrarIntimacao_`: publicação com texto que chega para um prazo ATO NÃO IDENTIFICADO troca dias/descrição pelo do texto, recalcula a data
+  e anota; qualquer troca de ciência recalcula a data na hora.
+- `identificarProvisorios_` (robôs do escritório, 40 por rodada): para cada aberto do robô com /PROVIS/, procura publicação com texto do mesmo
+  número até 4 dias do aviso ou da ciência; senão sentença/acórdão/laudo no DataJud até 10 dias antes (fora trânsito, decurso, remessa,
+  conclusão…). Várias leituras → a de data MAIS CURTA. Nunca mexe em conferido, de audiência/perícia ("ato:") ou lançado à mão.
+- Nos dados de 17/11: 86 abertos provisórios → 52 identificados pelo texto do DJEN (simulação); 34 sem nenhum texto ainda (eproc sem nome do
+  ato no e-mail, segredo de justiça, notificação do PJe com PDF) ficam "ATO NÃO IDENTIFICADO" na Central até chegar o texto ou alguém abrir.
+- Teste: `.github/motor/teste/etapa843.js`.
 
