@@ -1552,3 +1552,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
   (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
   clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).
+- 8.39.1 (pedido da usuária, com print: "chat pequeno no canto direito de baixo, que dê para aumentar e diminuir, e quando alguém mandar
+  mensagem aparecer"): o chat virou JANELA FLUTUANTE (`montarChatFlutuante` em painel.js, classes `chatf-*`): bolinha "💬 Chat" no canto
+  direito de baixo com o número de não lidas → janela PEQUENA (360 px: lista OU conversa, "‹" volta) → GRANDE (⤢: lista e conversa lado a lado;
+  ⤡ diminui) → "—" minimiza. Estado em localStorage `chat_modo`/`chat_sala`/`chat_vista`. Mensagem nova de outra pessoa com a janela
+  minimizada → abre sozinha, pequena, na conversa dela (sem roubar o cursor; a bolinha pisca). Menu "Chat da equipe" e #/chat abrem a janela
+  (a tela inteira saiu). Avisos do canto (`.notifs`) subiram para não ficar em cima da bolinha. Celular: a janela ocupa a tela.

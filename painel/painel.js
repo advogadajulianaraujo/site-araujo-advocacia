@@ -557,6 +557,7 @@
     const token = sessao && sessao.token;
     sessao = null;
     if (BANCO) BANCO.sair(!expirou);
+    clearInterval(chatTimer); if (chatF) { chatF.raiz.remove(); chatF = null; }
     esquecerTudo();
     try { sessionStorage.removeItem('painel_memoria'); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
@@ -769,6 +770,7 @@
     });
     else ABAS.filter(a => !a[2] || pode[a[2]]).forEach(([id, nome, , ic, g]) => {
       if (g && g !== grupo) { grupo = g; itens.push(h('span', { class: 'abas-grupo' }, g)); }
+      if (id === 'chat') { itens.push(h('a', { href: '#/chat', 'data-aba': id, onclick: ev => { ev.preventDefault(); abrirLateral(false); if (chatF) chatF.abrir(chatF.st.modo === 'fechado' ? 'pequeno' : chatF.st.modo); } }, icone(ic || id), h('span', {}, nome))); return; }
       itens.push(h('a', { href: '#/' + id, 'data-aba': id, onpointerenter: () => preBuscar(id), onfocus: () => preBuscar(id), onclick: () => abrirLateral(false) }, icone(ic || id), h('span', {}, nome)));
     });
     // botão de trocar de painel (só para quem tem acesso ao Edifício Future)
@@ -838,81 +840,85 @@
     setTimeout(fechar, 12000);
   }
 
-  /* ---------- 8.39 Chat da equipe (pedido da usuária: "tipo um WhatsApp, só que mais fácil") ----------
-     Sala "Equipe toda" + conversa a dois com cada colega. De 15 em 15 s (aba visível) pergunta ao banco se há mensagem nova
-     (painel_chat_ping, consulta pequena): conta as não lidas no menu e mostra o aviso no canto; na tela do chat, redesenha. */
-  let chatTimer = null, chatNaTela = null, chatEquipe = null;
+  /* ---------- 8.39.1 Chat da equipe FLUTUANTE (pedido da usuária: "um chat pequeno no canto direito de baixo, que dê para
+     aumentar e diminuir, e quando alguém mandar mensagem aparecer") ----------
+     Bolinha no canto (com o número de não lidas) → janela pequena (lista OU conversa) → grande (lista E conversa lado a lado).
+     Chegou mensagem de outra pessoa: a janela abre sozinha, pequena, na conversa dela (sem tirar o cursor de onde a pessoa está).
+     De 15 em 15 s pergunta ao banco se há novidade (painel_chat_ping, consulta pequena); só busca as mensagens quando há. */
+  let chatTimer = null, chatF = null;
   const CHAT_ULT = () => 'chat_ult_' + ((sessao && sessao.usuario.usuario) || '');
+  const lerLSc = (k, p) => { try { const v = localStorage.getItem(k); return v === null ? p : v; } catch (e) { return p; } };
+  const gravarLSc = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ok */ } };
   function chatBadge(n) {
-    const a = abasEl && abasEl.querySelector('a[data-aba="chat"]'); if (!a) return;
-    let b = a.querySelector('.chat-badge');
-    if (!n) { if (b) b.remove(); return; }
-    if (!b) { b = h('span', { class: 'chat-badge' }); a.append(b); }
-    b.textContent = n > 99 ? '99+' : String(n);
+    [abasEl && abasEl.querySelector('a[data-aba="chat"]'), chatF && chatF.bolha].forEach(el => {
+      if (!el) return;
+      let b = el.querySelector('.chat-badge');
+      if (!n) { if (b) b.remove(); return; }
+      if (!b) { b = h('span', { class: 'chat-badge' }); el.append(b); }
+      b.textContent = n > 99 ? '99+' : String(n);
+    });
   }
-  async function nomesEquipe() {
-    if (!chatEquipe) { try { const l = await api('equipe.listar', {}); chatEquipe = {}; (l || []).forEach(p => { chatEquipe[p.usuario] = p.nome; }); } catch (e) { return {}; } }
-    return chatEquipe;
-  }
-  function iniciarChat() {
-    clearInterval(chatTimer);
+  function montarChatFlutuante() {
+    if (chatF) { chatF.raiz.remove(); chatF = null; }
     if (!sessao) return;
-    const vigiar = async () => {
-      if (document.hidden || !sessao) return;
-      let r = null;
-      try { r = BANCO && BANCO.chatPing ? await BANCO.chatPing() : null; } catch (e) { r = null; }
-      if (!r) { // sem o banco: pergunta ao servidor, mas bem menos vezes
-        vigiar.n = (vigiar.n || 0) + 1; if (vigiar.n % 4) return;
-        try { const l = await apiFresco('chat.listar', {}); const nl = (l.salas || []).reduce((a, x) => a + (x.naoLidas || 0), 0);
-          const u = (l.salas || []).map(x => x.ultima && Object.assign({ sala: x.sala }, x.ultima)).filter(Boolean).sort((a, b) => a.em < b.em ? 1 : -1)[0];
-          r = { naoLidas: nl, ultima: u && { sala: u.sala, de: u.de, texto: u.texto, em: u.em } }; } catch (e) { return; }
-      }
-      chatBadge(r.naoLidas || 0);
-      const u = r.ultima; if (!u) return;
-      let visto = ''; try { visto = localStorage.getItem(CHAT_ULT()) || ''; } catch (e) { /* ok */ }
-      if (u.em <= visto) return;
-      try { localStorage.setItem(CHAT_ULT(), u.em); } catch (e) { /* ok */ }
-      if (chatNaTela && /^#\/chat(\?|$)/.test(location.hash)) { chatNaTela(); return; }
-      chatNaTela = null;
-      if (!visto || u.de === sessao.usuario.usuario || !r.naoLidas) return; // 1ª vez neste computador: só anota
-      const nomes = await nomesEquipe();
-      mostrarNotif({ ico: '💬', tit: (u.sala === 'geral' ? 'Equipe · ' : '') + (nomes[u.de] || u.de), sub: u.texto, ir: '#/chat?sala=' + encodeURIComponent(u.sala) });
-    };
-    setTimeout(vigiar, 2500); chatTimer = setInterval(vigiar, 15000);
-  }
-  async function telaChat(params) {
     const eu = sessao.usuario.usuario;
-    let sala = params.get('sala') || (() => { try { return localStorage.getItem('chat_sala') || 'geral'; } catch (e) { return 'geral'; } })();
+    const st = { modo: lerLSc('chat_modo', 'fechado'), sala: lerLSc('chat_sala', 'geral'), vista: lerLSc('chat_vista', 'lista'), dados: null, desenho: '' };
+    if (!['fechado', 'pequeno', 'grande'].includes(st.modo)) st.modo = 'fechado';
+    const bolha = h('button', { type: 'button', class: 'chatf-bolha', title: 'Chat da equipe', 'aria-label': 'Abrir o chat da equipe', onclick: () => modo('pequeno') },
+      h('span', { 'aria-hidden': 'true' }, '💬'), h('span', { class: 'chatf-bolha-txt' }, 'Chat'));
+    const voltar = h('button', { type: 'button', class: 'chatf-bt', title: 'Ver as conversas', 'aria-label': 'Voltar para as conversas', onclick: () => vista('lista') }, '‹');
+    const tit = h('div', { class: 'chatf-tit' });
+    const btTam = h('button', { type: 'button', class: 'chatf-bt', onclick: () => modo(st.modo === 'grande' ? 'pequeno' : 'grande') });
+    const btMin = h('button', { type: 'button', class: 'chatf-bt', title: 'Minimizar', 'aria-label': 'Minimizar o chat', onclick: () => modo('fechado') }, '—');
     const listaEl = h('nav', { class: 'chat-salas', 'aria-label': 'Conversas' });
     const msgsEl = h('div', { class: 'chat-msgs', 'aria-live': 'polite' });
-    const titEl = h('div', { class: 'chat-tit' });
-    const ta = h('textarea', { rows: 2, placeholder: 'Escreva uma mensagem… (Enter envia, Shift+Enter pula linha)', 'aria-label': 'Mensagem', maxlength: 4000 });
-    const enviarBt = h('button', { type: 'submit', class: 'btn' }, 'Enviar');
+    const ta = h('textarea', { rows: 1, placeholder: 'Escreva… (Enter envia)', 'aria-label': 'Mensagem', maxlength: 4000 });
+    const enviarBt = h('button', { type: 'submit', class: 'chatf-enviar', 'aria-label': 'Enviar' }, '➤');
     const form = h('form', { class: 'chat-form' }, ta, enviarBt);
-    mostrar(h('div', { class: 'chat' }, listaEl, h('section', { class: 'chat-conversa' }, titEl, msgsEl, form)));
-    const dia = iso => { const d = new Date(iso), hj = new Date(); const ont = new Date(); ont.setDate(hj.getDate() - 1);
-      return d.toDateString() === hj.toDateString() ? 'Hoje' : d.toDateString() === ont.toDateString() ? 'Ontem' : d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }); };
+    const conversa = h('div', { class: 'chatf-conversa' }, msgsEl, form);
+    const janela = h('section', { class: 'chatf-janela', role: 'dialog', 'aria-label': 'Chat da equipe' },
+      h('header', { class: 'chatf-topo' }, voltar, tit, btTam, btMin), h('div', { class: 'chatf-corpo' }, listaEl, conversa));
+    const raiz = h('div', { class: 'chatf', id: 'chatf' }, janela, bolha);
+    document.body.append(raiz);
+    chatF = { raiz, bolha, st, carregar: () => carregar(), abrir: (m, sala) => { if (sala) { st.sala = sala; st.vista = 'conversa'; st.desenho = ''; } modo(m || 'pequeno'); } };
+
+    function aplicar() {
+      raiz.dataset.modo = st.modo; raiz.dataset.vista = st.modo === 'grande' && window.innerWidth > 760 ? 'ambas' : st.vista;
+      btTam.textContent = st.modo === 'grande' ? '⤡' : '⤢';
+      btTam.title = st.modo === 'grande' ? 'Diminuir' : 'Aumentar'; btTam.setAttribute('aria-label', btTam.title + ' o chat');
+      gravarLSc('chat_modo', st.modo); gravarLSc('chat_sala', st.sala); gravarLSc('chat_vista', st.vista);
+      desenharTitulo();
+    }
+    function modo(m) { st.modo = m; aplicar(); if (m !== 'fechado') carregar(); }
+    function vista(v) { st.vista = v; aplicar(); if (v === 'conversa') carregar(); }
+    function desenharTitulo() {
+      const atual = st.dados && (st.dados.salas || []).find(x => x.sala === st.sala);
+      const naConversa = raiz.dataset.vista !== 'lista';
+      tit.replaceChildren(h('b', {}, naConversa ? (atual ? atual.nome : 'Equipe toda') : 'Chat da equipe'),
+        h('small', {}, naConversa ? (atual && atual.tipo === 'dm' ? 'só vocês dois veem' : 'todo mundo vê') : 'escolha uma conversa'));
+    }
+    const dia = iso => { const d = new Date(iso), hj = new Date(), ont = new Date(); ont.setDate(hj.getDate() - 1);
+      return d.toDateString() === hj.toDateString() ? 'Hoje' : d.toDateString() === ont.toDateString() ? 'Ontem' : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
     const hora = iso => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const comLinks = t => { const out = []; String(t).split(/(https?:\/\/[^\s]+)/g).forEach((p, i) => out.push(i % 2 ? h('a', { href: p, target: '_blank', rel: 'noopener' }, p) : p)); return out; };
-    let ultimoDesenho = '';
-    const carregar = async () => {
-      if (!document.body.contains(msgsEl)) { chatNaTela = null; return; }
+    async function carregar() {
+      if (!sessao || st.modo === 'fechado') return;
       let r;
-      try { r = await apiFresco('chat.listar', { sala }); } catch (e) { msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
-      if (!document.body.contains(msgsEl)) return;
-      sala = r.sala || 'geral';
-      try { localStorage.setItem('chat_sala', sala); } catch (e) { /* ok */ }
-      chatBadge((r.salas || []).reduce((a, x) => a + (x.sala === sala ? 0 : x.naoLidas || 0), 0));
-      listaEl.replaceChildren(...(r.salas || []).map(x => h('button', { type: 'button', class: 'chat-sala' + (x.sala === sala ? ' atual' : '') + (x.naoLidas && x.sala !== sala ? ' nova' : ''),
-        onclick: () => { sala = x.sala; ultimoDesenho = ''; history.replaceState(null, '', '#/chat?sala=' + encodeURIComponent(sala)); carregar(); ta.focus(); } },
+      try { r = await apiFresco('chat.listar', { sala: st.sala }); } catch (e) { msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      st.dados = r; st.sala = r.sala || 'geral';
+      const verConversa = raiz.dataset.vista !== 'lista';
+      chatBadge((r.salas || []).reduce((a, x) => a + (verConversa && x.sala === st.sala ? 0 : x.naoLidas || 0), 0));
+      listaEl.replaceChildren(...(r.salas || []).map(x => h('button', { type: 'button', class: 'chat-sala' + (x.sala === st.sala && st.modo === 'grande' ? ' atual' : '') + (x.naoLidas && !(verConversa && x.sala === st.sala) ? ' nova' : ''),
+        onclick: () => { st.sala = x.sala; st.desenho = ''; vista('conversa'); setTimeout(() => ta.focus(), 30); } },
         h('span', { class: 'chat-av' + (x.tipo === 'geral' ? ' geral' : '') }, x.tipo === 'geral' ? '👥' : String(x.nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase()),
         h('span', { class: 'chat-sala-txt' }, h('b', {}, x.nome), h('small', {}, x.ultima ? (x.ultima.de === eu ? 'Você: ' : x.tipo === 'geral' ? primeiroNome(x.ultima.nome) + ': ' : '') + x.ultima.texto : x.tipo === 'geral' ? 'recados para todos' : 'sem mensagens')),
-        x.naoLidas && x.sala !== sala ? h('span', { class: 'chat-n' }, String(x.naoLidas)) : null)));
-      const atual = (r.salas || []).find(x => x.sala === sala) || {};
-      titEl.replaceChildren(h('b', {}, atual.nome || 'Equipe toda'), h('small', {}, atual.tipo === 'geral' ? 'Todo mundo do escritório vê' : 'Só vocês dois veem'));
-      const assinatura = JSON.stringify((r.mensagens || []).map(m => m.id + m.texto.length));
-      if (assinatura !== ultimoDesenho) {
-        ultimoDesenho = assinatura;
+        x.naoLidas && !(verConversa && x.sala === st.sala) ? h('span', { class: 'chat-n' }, String(x.naoLidas)) : null)));
+      desenharTitulo();
+      const atual = (r.salas || []).find(x => x.sala === st.sala) || {};
+      const assinatura = st.sala + JSON.stringify((r.mensagens || []).map(m => m.id + m.texto.length));
+      if (assinatura !== st.desenho) {
+        const novaSala = !st.desenho.startsWith(st.sala);
+        st.desenho = assinatura;
         const perto = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
         const itens = []; let ultDia = '', ultDe = '';
         (r.mensagens || []).forEach(m => {
@@ -921,32 +927,61 @@
             !m.meu && atual.tipo === 'geral' && m.de !== ultDe ? h('b', { class: 'chat-de' }, primeiroNome(m.nome)) : null,
             h('span', { class: 'chat-txt' }, ...comLinks(m.texto)),
             h('span', { class: 'chat-hora' }, hora(m.em),
-              m.meu ? h('button', { type: 'button', class: 'chat-apagar', title: 'Apagar esta mensagem', onclick: async () => { if (!confirm('Apagar esta mensagem para todos?')) return; try { await api('chat.apagar', { id: m.id }); carregar(); } catch (e) { avisar(e.message, true); } } }, 'apagar') : null)));
+              m.meu ? h('button', { type: 'button', class: 'chat-apagar', title: 'Apagar esta mensagem', onclick: async () => { if (!confirm('Apagar esta mensagem para todos?')) return; try { await api('chat.apagar', { id: m.id }); st.desenho = ''; carregar(); } catch (e) { avisar(e.message, true); } } }, 'apagar') : null)));
           ultDe = m.de;
         });
         if (!itens.length) itens.push(h('p', { class: 'chat-vazio' }, atual.tipo === 'geral' ? 'Nenhuma mensagem ainda. Escreva um recado para a equipe toda.' : 'Nenhuma mensagem ainda com ' + (atual.nome || 'esta pessoa') + '.'));
         msgsEl.replaceChildren(...itens);
-        if (perto || !carregar.feito) msgsEl.scrollTop = msgsEl.scrollHeight;
-        carregar.feito = true;
+        if (perto || novaSala) msgsEl.scrollTop = msgsEl.scrollHeight;
       }
       const ult = (r.mensagens || []).slice(-1)[0];
-      if (ult && atual.naoLidas) api('chat.lido', { sala, em: ult.em }).catch(() => {});
-    };
-    chatNaTela = carregar;
-    const enviar = async () => {
+      if (ult && atual.naoLidas && verConversa && !document.hidden) api('chat.lido', { sala: st.sala, em: ult.em }).catch(() => {});
+    }
+    async function enviar() {
       const texto = ta.value.trim(); if (!texto) return;
       enviarBt.disabled = true;
-      // aparece na hora; o servidor confirma por trás
       const prov = h('div', { class: 'chat-msg meu enviando' }, h('span', { class: 'chat-txt' }, ...comLinks(texto)), h('span', { class: 'chat-hora' }, 'enviando…'));
-      msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = '';
-      try { await api('chat.enviar', { sala, texto }); ultimoDesenho = ''; await carregar(); }
+      msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = ''; ta.style.height = '';
+      try { await api('chat.enviar', { sala: st.sala, texto }); st.desenho = ''; await carregar(); }
       catch (e) { prov.remove(); ta.value = texto; avisar(e.message, true); }
       finally { enviarBt.disabled = false; ta.focus(); }
-    };
+    }
     form.addEventListener('submit', ev => { ev.preventDefault(); enviar(); });
-    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } });
-    await carregar();
-    ta.focus();
+    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } if (ev.key === 'Escape') modo('fechado'); });
+    ta.addEventListener('input', () => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 110) + 'px'; });
+    aplicar();
+    if (st.modo !== 'fechado') carregar();
+  }
+  function iniciarChat() {
+    clearInterval(chatTimer);
+    montarChatFlutuante();
+    if (!sessao) return;
+    const vigiar = async () => {
+      if (document.hidden || !sessao || !chatF) return;
+      let r = null;
+      try { r = BANCO && BANCO.chatPing ? await BANCO.chatPing() : null; } catch (e) { r = null; }
+      if (!r) { // sem o banco: pergunta ao servidor, mas bem menos vezes
+        vigiar.n = (vigiar.n || 0) + 1; if (vigiar.n % 4) return;
+        try { const l = await apiFresco('chat.listar', {}); const nl = (l.salas || []).reduce((a, x) => a + (x.naoLidas || 0), 0);
+          const u = (l.salas || []).map(x => x.ultima && Object.assign({ sala: x.sala }, x.ultima)).filter(Boolean).sort((a, b) => a.em < b.em ? 1 : -1)[0];
+          r = { naoLidas: nl, ultima: u && { sala: u.sala, de: u.de, texto: u.texto, em: u.em } }; } catch (e) { return; }
+      }
+      const st = chatF.st;
+      if (st.modo === 'fechado') chatBadge(r.naoLidas || 0);
+      const u = r.ultima; if (!u) return;
+      const visto = lerLSc(CHAT_ULT(), '');
+      if (u.em <= visto) return;
+      gravarLSc(CHAT_ULT(), u.em);
+      if (!visto) return; // 1ª vez neste computador: só anota
+      if (u.de !== sessao.usuario.usuario && st.modo === 'fechado') { chatF.abrir('pequeno', u.sala); chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; }
+      chatF.carregar();
+    };
+    setTimeout(vigiar, 2500); chatTimer = setInterval(vigiar, 15000);
+  }
+  async function telaChat(params) { // #/chat (menu e links antigos): abre a janela grande e volta para a tela de antes
+    if (chatF) chatF.abrir('grande', params.get('sala') || '');
+    const antes = rota.anterior && !/^#\/chat/.test(rota.anterior) ? rota.anterior : '#/inicio';
+    location.replace(antes);
   }
 
   // 8.36.1: atalhos de teclado (g/n/?) retirados a pedido da usuária; fica só o Ctrl+K da busca
@@ -3681,7 +3716,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.39.0';
+  const VERSAO_PAINEL = '8.39.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6560,6 +6595,7 @@ function main() {
       return;
     }
     if (!!montarTopo.modo !== (!!sessao.usuario.pode.future && modoFuture())) montarTopo();
+    if (tela !== 'chat') rota.anterior = location.hash;
     const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
     if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['inicio', 'clientes', 'prazos', 'tarefas'].forEach(preBuscar), 1200); }
