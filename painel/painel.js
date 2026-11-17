@@ -1292,7 +1292,8 @@
     const pill = h('p', { class: 'ini-robo ' + (robo.atrasado ? 'parado' : 'ligado') }, h('span', { class: 'ponto' }), linhaRobo(r.robo));
 
     // 8.36 (pedido da usuária: "no Início, cada pessoa com o que vai fazer no dia, mais bonito e com gráficos"):
-    // SEU DIA — para fazer hoje · compromissos de hoje · a sua semana em gráfico. Aparece para todos os perfis.
+    // SEU DIA — para fazer hoje · compromissos de hoje. Aparece para todos os perfis.
+    // 8.39.3 (pedido da usuária: "o relatório não precisa ficar na tela inicial"): saíram "A sua semana" e "Equipe nesta semana" (estão em Relatórios).
     const blocoMeuDia = (() => {
       const minhas = meu ? meu.minhas.slice().sort((a, b) => (a.vence_em || '9') < (b.vence_em || '9') ? -1 : 1) : [];
       const paraHoje = minhas.filter(x => x.atrasada || (x.vence_em && x.vence_em <= hoje));
@@ -1312,38 +1313,10 @@
         compromissos.length ? h('ul', { class: 'md-agenda' }, compromissos.slice(0, 6).map(c => h('li', { onclick: c.ir }, h('b', {}, c.hora || '—'), h('span', {}, c.tit, c.sub ? h('small', {}, c.sub) : null))))
           : vazio(ag || !tardes.length ? 'Agenda livre hoje.' : 'Carregando a agenda…'),
         h('a', { class: 'md-mais', href: '#/agenda' }, 'abrir a agenda →'));
-      const cats = meu ? meu.categorias.filter(c => meu.semana.grupos[c.id]) : [];
-      const colSemana = h('div', { class: 'md-col' }, h('h3', {}, 'A sua semana'),
-        meu ? h('div', { class: 'md-semana' },
-          h('div', { class: 'md-total' }, h('b', {}, String(meu.semana.total)), h('span', {}, meu.semana.total === 1 ? 'coisa feita' : 'coisas feitas'),
-            meu.semana.posicao ? h('span', { class: 'tag mini-tag ok' }, `${meu.semana.posicao}º da equipe`) : null),
-          cats.length ? grafCols(cats.map(c => ({ nome: c.nome, valor: meu.semana.grupos[c.id] })), { alto: 130 })
-            : vazio('Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.')) : vazio(tardes.length ? 'Carregando…' : 'Não carregou agora: aperte F5.'));
       return h('section', { class: 'meu-dia' },
         h('header', {}, h('h2', {}, 'Seu dia'), h('span', { class: 'peq' }, [meu ? `${meu.abertas} com você` : '', meu && meu.atrasadas ? `${meu.atrasadas} atrasada(s)` : '', `${compromissos.length} compromisso(s) hoje`].filter(Boolean).join(' · '))),
-        h('div', { class: 'md-cols' }, colFazer, colHoje, colSemana));
+        h('div', { class: 'md-cols' }, colFazer, colHoje));
     })();
-    // 8.36: administração — a equipe nesta semana em gráfico (quem fez o quê) e os prazos em aberto
-    const blocoEquipe = (() => {
-      if (!pode.usuarios) return null;
-      const el = h('section', { class: 'ini-graficos' });
-      const roscaPrazos = h('div', { class: 'ig-card' }, h('h3', {}, 'Prazos em aberto'), grafRosca([
-        { nome: 'Vencidos', valor: pz.vencidos || 0, cor: '#8f1d14', ir: () => { location.hash = '#/prazos?ver=vencido'; } },
-        { nome: 'Até 5 dias', valor: pz.vencendo || 0, cor: '#C9A46A', ir: () => { location.hash = '#/prazos?ver=urgente'; } },
-        { nome: 'Mais de 5 dias', valor: maisDe5, cor: '#3D6B4F', ir: () => { location.hash = '#/prazos'; } },
-        { nome: 'A definir', valor: pz.aDefinir || 0, cor: '#7a4fc0', ir: () => { location.hash = '#/prazos?fila=conferir'; } }], { rotulo: 'prazos', titulo: 'Prazos em aberto', vazio: 'Nenhum prazo em aberto.' }));
-      const eqCard = h('div', { class: 'ig-card ig-largo' }, h('h3', {}, 'Equipe nesta semana'), h('p', { class: 'peq' }, 'Carregando…'));
-      el.append(eqCard, roscaPrazos);
-      api('relatorio.semana', {}).then(rs => {
-        const ps = (rs.pessoas || []).filter(x => x.total || x.perfil !== 'administrador').slice(0, 8);
-        eqCard.replaceChildren(h('h3', {}, 'Equipe nesta semana'),
-          ps.length ? grafCols(ps.map(x => ({ nome: primeiroNome(x.nome), valor: x.total, extra: Object.keys(x.grupos).length ? Object.entries(x.grupos).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${((rs.categorias || []).find(c => c.id === k) || {}).nome || k}`.toLowerCase()).join(' · ') : '' })))
-            : vazio('Ninguém registrou trabalho nesta semana ainda.'),
-          h('a', { class: 'md-mais', href: '#/relatorios?ver=equipe' }, 'ver o relatório da equipe →'));
-      }).catch(() => eqCard.remove());
-      return el;
-    })();
-
     const acoes = blocoAcoesAgora(admin, secretaria);
     const agMini = blocoAgendaMini();
     if (secretaria) {
@@ -1385,7 +1358,6 @@
       blocoMeuDia, acoes,
       blocoAudNovas,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
-      blocoEquipe,
       ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
       agMini, pill);
   }
