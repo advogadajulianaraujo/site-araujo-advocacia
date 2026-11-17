@@ -23,7 +23,7 @@ alter table config add column if not exists "valor" text;
 alter table config add column if not exists "descricao" text;
 alter table config enable row level security;
 drop policy if exists "config: só o próprio escritório" on config;
-create policy "config: só o próprio escritório" on config for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "config: só o próprio escritório" on config for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists usuarios (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -57,7 +57,7 @@ alter table usuarios add column if not exists "email" text;
 alter table usuarios add column if not exists "resumo_email" text;
 alter table usuarios enable row level security;
 drop policy if exists "usuarios: só o próprio escritório" on usuarios;
-create policy "usuarios: só o próprio escritório" on usuarios for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "usuarios: só o próprio escritório" on usuarios for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists obs_arquivo (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -75,7 +75,7 @@ alter table obs_arquivo add column if not exists "texto" text;
 alter table obs_arquivo add column if not exists "arquivado_em" text;
 alter table obs_arquivo enable row level security;
 drop policy if exists "obs_arquivo: só o próprio escritório" on obs_arquivo;
-create policy "obs_arquivo: só o próprio escritório" on obs_arquivo for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "obs_arquivo: só o próprio escritório" on obs_arquivo for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists clientes (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -149,7 +149,7 @@ alter table clientes add column if not exists "como_conheceu" text;
 alter table clientes add column if not exists "asaas_id" text;
 alter table clientes enable row level security;
 drop policy if exists "clientes: só o próprio escritório" on clientes;
-create policy "clientes: só o próprio escritório" on clientes for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "clientes: só o próprio escritório" on clientes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists processos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -215,7 +215,7 @@ alter table processos add column if not exists "avisado_mov_em" text;
 alter table processos add column if not exists "fluxo_fase" text;
 alter table processos enable row level security;
 drop policy if exists "processos: só o próprio escritório" on processos;
-create policy "processos: só o próprio escritório" on processos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "processos: só o próprio escritório" on processos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists intimacoes (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -261,7 +261,7 @@ alter table intimacoes add column if not exists "ok_por" text;
 alter table intimacoes add column if not exists "ok_em" text;
 alter table intimacoes enable row level security;
 drop policy if exists "intimacoes: só o próprio escritório" on intimacoes;
-create policy "intimacoes: só o próprio escritório" on intimacoes for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "intimacoes: só o próprio escritório" on intimacoes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists prazos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -327,7 +327,7 @@ alter table prazos add column if not exists "agenda_data" text;
 alter table prazos add column if not exists "conferido_fonte" text;
 alter table prazos enable row level security;
 drop policy if exists "prazos: só o próprio escritório" on prazos;
-create policy "prazos: só o próprio escritório" on prazos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "prazos: só o próprio escritório" on prazos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists honorarios (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -369,7 +369,7 @@ alter table honorarios add column if not exists "atualizado_em" text;
 alter table honorarios add column if not exists "atualizado_por" text;
 alter table honorarios enable row level security;
 drop policy if exists "honorarios: só o próprio escritório" on honorarios;
-create policy "honorarios: só o próprio escritório" on honorarios for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "honorarios: só o próprio escritório" on honorarios for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists parcelas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -419,7 +419,7 @@ alter table parcelas add column if not exists "asaas_link" text;
 alter table parcelas add column if not exists "asaas_status" text;
 alter table parcelas enable row level security;
 drop policy if exists "parcelas: só o próprio escritório" on parcelas;
-create policy "parcelas: só o próprio escritório" on parcelas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "parcelas: só o próprio escritório" on parcelas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists recebimentos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -453,7 +453,7 @@ alter table recebimentos add column if not exists "criado_em" text;
 alter table recebimentos add column if not exists "criado_por" text;
 alter table recebimentos enable row level security;
 drop policy if exists "recebimentos: só o próprio escritório" on recebimentos;
-create policy "recebimentos: só o próprio escritório" on recebimentos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "recebimentos: só o próprio escritório" on recebimentos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists audiencias (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -509,7 +509,7 @@ alter table audiencias add column if not exists "aviso_nova_em" text;
 alter table audiencias add column if not exists "aviso_nova_por" text;
 alter table audiencias enable row level security;
 drop policy if exists "audiencias: só o próprio escritório" on audiencias;
-create policy "audiencias: só o próprio escritório" on audiencias for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "audiencias: só o próprio escritório" on audiencias for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists eventos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -545,7 +545,7 @@ alter table eventos add column if not exists "avisado_dia_em" text;
 alter table eventos add column if not exists "avisado_dia_por" text;
 alter table eventos enable row level security;
 drop policy if exists "eventos: só o próprio escritório" on eventos;
-create policy "eventos: só o próprio escritório" on eventos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "eventos: só o próprio escritório" on eventos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists feriados (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -561,7 +561,7 @@ alter table feriados add column if not exists "descricao" text;
 alter table feriados add column if not exists "abrangencia" text;
 alter table feriados enable row level security;
 drop policy if exists "feriados: só o próprio escritório" on feriados;
-create policy "feriados: só o próprio escritório" on feriados for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "feriados: só o próprio escritório" on feriados for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists log (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -579,7 +579,7 @@ alter table log add column if not exists "acao" text;
 alter table log add column if not exists "detalhe" text;
 alter table log enable row level security;
 drop policy if exists "log: só o próprio escritório" on log;
-create policy "log: só o próprio escritório" on log for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "log: só o próprio escritório" on log for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists log_arquivo (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -597,7 +597,7 @@ alter table log_arquivo add column if not exists "acao" text;
 alter table log_arquivo add column if not exists "detalhe" text;
 alter table log_arquivo enable row level security;
 drop policy if exists "log_arquivo: só o próprio escritório" on log_arquivo;
-create policy "log_arquivo: só o próprio escritório" on log_arquivo for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "log_arquivo: só o próprio escritório" on log_arquivo for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists leads (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -669,7 +669,7 @@ alter table leads add column if not exists "cadastro_ate" text;
 alter table leads add column if not exists "cadastro_em" text;
 alter table leads enable row level security;
 drop policy if exists "leads: só o próprio escritório" on leads;
-create policy "leads: só o próprio escritório" on leads for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "leads: só o próprio escritório" on leads for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists transcricoes (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -709,7 +709,7 @@ alter table transcricoes add column if not exists "publicado" text;
 alter table transcricoes add column if not exists "publicado_em" text;
 alter table transcricoes enable row level security;
 drop policy if exists "transcricoes: só o próprio escritório" on transcricoes;
-create policy "transcricoes: só o próprio escritório" on transcricoes for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "transcricoes: só o próprio escritório" on transcricoes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists padroes (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -733,7 +733,7 @@ alter table padroes add column if not exists "atualizado_em" text;
 alter table padroes add column if not exists "atualizado_por" text;
 alter table padroes enable row level security;
 drop policy if exists "padroes: só o próprio escritório" on padroes;
-create policy "padroes: só o próprio escritório" on padroes for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "padroes: só o próprio escritório" on padroes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists conversas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -773,7 +773,7 @@ alter table conversas add column if not exists "dados" text;
 alter table conversas add column if not exists "ultima_cliente_em" text;
 alter table conversas enable row level security;
 drop policy if exists "conversas: só o próprio escritório" on conversas;
-create policy "conversas: só o próprio escritório" on conversas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "conversas: só o próprio escritório" on conversas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists avisos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -793,7 +793,7 @@ alter table avisos add column if not exists "em" text;
 alter table avisos add column if not exists "por" text;
 alter table avisos enable row level security;
 drop policy if exists "avisos: só o próprio escritório" on avisos;
-create policy "avisos: só o próprio escritório" on avisos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "avisos: só o próprio escritório" on avisos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists mensagens (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -819,7 +819,7 @@ alter table mensagens add column if not exists "wa_id" text;
 alter table mensagens add column if not exists "autor" text;
 alter table mensagens enable row level security;
 drop policy if exists "mensagens: só o próprio escritório" on mensagens;
-create policy "mensagens: só o próprio escritório" on mensagens for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "mensagens: só o próprio escritório" on mensagens for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists assinaturas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -863,7 +863,7 @@ alter table assinaturas add column if not exists "honorarios" text;
 alter table assinaturas add column if not exists "honorarios_lancados" text;
 alter table assinaturas enable row level security;
 drop policy if exists "assinaturas: só o próprio escritório" on assinaturas;
-create policy "assinaturas: só o próprio escritório" on assinaturas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "assinaturas: só o próprio escritório" on assinaturas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists pastas_conferir (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -881,7 +881,7 @@ alter table pastas_conferir add column if not exists "motivo" text;
 alter table pastas_conferir add column if not exists "clientes_possiveis" text;
 alter table pastas_conferir enable row level security;
 drop policy if exists "pastas_conferir: só o próprio escritório" on pastas_conferir;
-create policy "pastas_conferir: só o próprio escritório" on pastas_conferir for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "pastas_conferir: só o próprio escritório" on pastas_conferir for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists advogados (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -911,7 +911,7 @@ alter table advogados add column if not exists "padrao" text;
 alter table advogados add column if not exists "criado_em" text;
 alter table advogados enable row level security;
 drop policy if exists "advogados: só o próprio escritório" on advogados;
-create policy "advogados: só o próprio escritório" on advogados for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "advogados: só o próprio escritório" on advogados for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists tarefas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -967,7 +967,7 @@ alter table tarefas add column if not exists "ok_por" text;
 alter table tarefas add column if not exists "ok_em" text;
 alter table tarefas enable row level security;
 drop policy if exists "tarefas: só o próprio escritório" on tarefas;
-create policy "tarefas: só o próprio escritório" on tarefas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "tarefas: só o próprio escritório" on tarefas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists contatos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1001,7 +1001,7 @@ alter table contatos add column if not exists "origem" text;
 alter table contatos add column if not exists "campanha" text;
 alter table contatos enable row level security;
 drop policy if exists "contatos: só o próprio escritório" on contatos;
-create policy "contatos: só o próprio escritório" on contatos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "contatos: só o próprio escritório" on contatos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists marketing (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1035,7 +1035,7 @@ alter table marketing add column if not exists "criado_em" text;
 alter table marketing add column if not exists "criado_por" text;
 alter table marketing enable row level security;
 drop policy if exists "marketing: só o próprio escritório" on marketing;
-create policy "marketing: só o próprio escritório" on marketing for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "marketing: só o próprio escritório" on marketing for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists site_cliques (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1057,7 +1057,7 @@ alter table site_cliques add column if not exists "campanha" text;
 alter table site_cliques add column if not exists "canal" text;
 alter table site_cliques enable row level security;
 drop policy if exists "site_cliques: só o próprio escritório" on site_cliques;
-create policy "site_cliques: só o próprio escritório" on site_cliques for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "site_cliques: só o próprio escritório" on site_cliques for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists mkt_funil (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1079,7 +1079,7 @@ alter table mkt_funil add column if not exists "atualizado_em" text;
 alter table mkt_funil add column if not exists "atualizado_por" text;
 alter table mkt_funil enable row level security;
 drop policy if exists "mkt_funil: só o próprio escritório" on mkt_funil;
-create policy "mkt_funil: só o próprio escritório" on mkt_funil for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "mkt_funil: só o próprio escritório" on mkt_funil for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists pix (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1117,7 +1117,7 @@ alter table pix add column if not exists "sugestao" text;
 alter table pix add column if not exists "categoria" text;
 alter table pix enable row level security;
 drop policy if exists "pix: só o próprio escritório" on pix;
-create policy "pix: só o próprio escritório" on pix for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "pix: só o próprio escritório" on pix for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_unidades (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1181,7 +1181,7 @@ alter table fut_unidades add column if not exists "modalidade" text;
 alter table fut_unidades add column if not exists "conta_receb" text;
 alter table fut_unidades enable row level security;
 drop policy if exists "fut_unidades: só o próprio escritório" on fut_unidades;
-create policy "fut_unidades: só o próprio escritório" on fut_unidades for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_unidades: só o próprio escritório" on fut_unidades for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_pessoas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1233,7 +1233,7 @@ alter table fut_pessoas add column if not exists "laudo_url" text;
 alter table fut_pessoas add column if not exists "email" text;
 alter table fut_pessoas enable row level security;
 drop policy if exists "fut_pessoas: só o próprio escritório" on fut_pessoas;
-create policy "fut_pessoas: só o próprio escritório" on fut_pessoas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_pessoas: só o próprio escritório" on fut_pessoas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_lanc (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1273,7 +1273,7 @@ alter table fut_lanc add column if not exists "criado_em" text;
 alter table fut_lanc add column if not exists "criado_por" text;
 alter table fut_lanc enable row level security;
 drop policy if exists "fut_lanc: só o próprio escritório" on fut_lanc;
-create policy "fut_lanc: só o próprio escritório" on fut_lanc for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_lanc: só o próprio escritório" on fut_lanc for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_cobrancas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1335,7 +1335,7 @@ alter table fut_cobrancas add column if not exists "lembrete5_em" text;
 alter table fut_cobrancas add column if not exists "lembrete10_em" text;
 alter table fut_cobrancas enable row level security;
 drop policy if exists "fut_cobrancas: só o próprio escritório" on fut_cobrancas;
-create policy "fut_cobrancas: só o próprio escritório" on fut_cobrancas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_cobrancas: só o próprio escritório" on fut_cobrancas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_contratos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1399,7 +1399,7 @@ alter table fut_contratos add column if not exists "enviado_em" text;
 alter table fut_contratos add column if not exists "enviado_por" text;
 alter table fut_contratos enable row level security;
 drop policy if exists "fut_contratos: só o próprio escritório" on fut_contratos;
-create policy "fut_contratos: só o próprio escritório" on fut_contratos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_contratos: só o próprio escritório" on fut_contratos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_energia (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1423,7 +1423,7 @@ alter table fut_energia add column if not exists "origem" text;
 alter table fut_energia add column if not exists "criado_em" text;
 alter table fut_energia enable row level security;
 drop policy if exists "fut_energia: só o próprio escritório" on fut_energia;
-create policy "fut_energia: só o próprio escritório" on fut_energia for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_energia: só o próprio escritório" on fut_energia for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists fut_lavagens (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1459,7 +1459,7 @@ alter table fut_lavagens add column if not exists "tipo" text;
 alter table fut_lavagens add column if not exists "chave" text;
 alter table fut_lavagens enable row level security;
 drop policy if exists "fut_lavagens: só o próprio escritório" on fut_lavagens;
-create policy "fut_lavagens: só o próprio escritório" on fut_lavagens for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "fut_lavagens: só o próprio escritório" on fut_lavagens for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists despesas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1507,7 +1507,7 @@ alter table despesas add column if not exists "atualizado_em" text;
 alter table despesas add column if not exists "atualizado_por" text;
 alter table despesas enable row level security;
 drop policy if exists "despesas: só o próprio escritório" on despesas;
-create policy "despesas: só o próprio escritório" on despesas for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "despesas: só o próprio escritório" on despesas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 -- 8.35: cópia do Google Agenda (um evento por linha; o Apps Script atualiza de 10 em 10 min)
 create table if not exists agenda_eventos (
@@ -1540,7 +1540,7 @@ alter table agenda_eventos add column if not exists "fim" text;
 alter table agenda_eventos add column if not exists "dia" text;
 alter table agenda_eventos enable row level security;
 drop policy if exists "agenda_eventos: só o próprio escritório" on agenda_eventos;
-create policy "agenda_eventos: só o próprio escritório" on agenda_eventos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "agenda_eventos: só o próprio escritório" on agenda_eventos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 -- 8.39: chat da equipe
 create table if not exists chat (
@@ -1563,7 +1563,7 @@ alter table chat add column if not exists "em" text;
 alter table chat add column if not exists "apagado" text;
 alter table chat enable row level security;
 drop policy if exists "chat: só o próprio escritório" on chat;
-create policy "chat: só o próprio escritório" on chat for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "chat: só o próprio escritório" on chat for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists chat_lidos (
   escritorio_id uuid not null references escritorios(id) on delete cascade,
@@ -1581,4 +1581,4 @@ alter table chat_lidos add column if not exists "sala" text;
 alter table chat_lidos add column if not exists "em" text;
 alter table chat_lidos enable row level security;
 drop policy if exists "chat_lidos: só o próprio escritório" on chat_lidos;
-create policy "chat_lidos: só o próprio escritório" on chat_lidos for select using (escritorio_id = nullif(auth.jwt() ->> 'escritorio_id', '')::uuid);
+create policy "chat_lidos: só o próprio escritório" on chat_lidos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);

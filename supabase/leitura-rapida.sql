@@ -43,6 +43,15 @@ create table if not exists painel_sessoes (
 );
 alter table painel_sessoes add column if not exists versao text not null default '0';
 alter table painel_sessoes add column if not exists sessao text;
+-- 8.40 (auditoria 17/11: travas concorrentes em painel_sessoes): marcar "último uso" NÃO pode deixar as outras abas da mesma pessoa
+-- esperando. Antes o painel_ler/painel_quem faziam UPDATE na linha da sessão e seguravam a trava até o fim da leitura (segundos);
+-- agora quem pega a linha marca e quem chega junto pula (SKIP LOCKED) — a sessão continua valendo (6 h parado / 12 h no total).
+create or replace function painel_tocar_sessao_(p_hash text) returns void
+language sql security definer set search_path = public as $$
+  update painel_sessoes set ultimo_uso = now()
+   where token_hash = (select x.token_hash from painel_sessoes x where x.token_hash = p_hash and x.ultimo_uso < now() - interval '1 minute' for update skip locked);
+$$;
+revoke all on function painel_tocar_sessao_(text) from public, anon, authenticated;
 create index if not exists painel_sessoes_usuario_idx on painel_sessoes (escritorio_id, usuario_id);
 alter table painel_sessoes enable row level security; -- sem política: ninguém de fora lê
 
@@ -83,7 +92,7 @@ begin
     delete from painel_sessoes where token_hash = s.token_hash;
     raise exception 'sessão do banco expirada' using errcode = '28000';
   end if;
-  if s.ultimo_uso < now() - interval '1 minute' then update painel_sessoes set ultimo_uso = now() where token_hash = s.token_hash; end if;
+  if s.ultimo_uso < now() - interval '1 minute' then perform painel_tocar_sessao_(s.token_hash); end if; -- 8.40: sem fila entre abas
 
   for ped in select * from jsonb_array_elements(coalesce(p_pedidos, '[]'::jsonb)) loop
     t := ped ->> 't';
@@ -294,7 +303,7 @@ begin
   select to_jsonb(x) - 'hash' - 'salt' - 'escritorio_id' - '_sinc' - '_em' into us from usuarios x
    where x.escritorio_id = s.escritorio_id and x.id = s.usuario_id and x.ativo = 'sim' and x.perfil = s.perfil and coalesce(nullif(x.sessao_versao, ''), '0') = s.versao;
   if us is null then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
-  if s.ultimo_uso < now() - interval '1 minute' then update painel_sessoes set ultimo_uso = now() where token_hash = s.token_hash; end if;
+  if s.ultimo_uso < now() - interval '1 minute' then perform painel_tocar_sessao_(s.token_hash); end if; -- 8.40: sem fila entre abas
   select coalesce(jsonb_object_agg(e.chave, e.valor), '{}'::jsonb) into est from painel_estado e where e.escritorio_id = s.escritorio_id and e.chave in ('pendente', 'asaas', 'edge');
   return jsonb_build_object('escritorio_id', s.escritorio_id, 'usuario', us, 'estado', est);
 end $$;
@@ -368,7 +377,7 @@ begin
 end $$;
 
 -- contador geral de senhas erradas (15 min), como o "login_falhas" do Apps Script
-create or replace function painel_login_falhas_(p_valor text) returns integer language sql immutable as $$
+create or replace function painel_login_falhas_(p_valor text) returns integer language sql immutable set search_path = public as $$
   select case when nullif(split_part(coalesce(p_valor, ''), '|', 2), '') is null
                or split_part(p_valor, '|', 2)::timestamptz < now() - interval '15 minutes' then 0
               else coalesce(nullif(split_part(p_valor, '|', 1), '')::integer, 0) end
@@ -448,7 +457,7 @@ grant execute on function painel_assinaturas(uuid, text[]) to service_role;
 
 -- 8.33: qualquer mudança numa linha (venha de onde vier) marca _em = agora. O navegador e a função "painel" usam _em para saber o que
 -- mudou; sem esta regra, uma mudança feita direto no banco ficaria invisível para eles.
-create or replace function painel_marcar_em_() returns trigger language plpgsql as $$
+create or replace function painel_marcar_em_() returns trigger language plpgsql set search_path = public as $$
 begin new._em := now(); return new; end $$;
 do $$
 declare t text;
@@ -554,3 +563,23 @@ begin
 end $$;
 revoke all on function painel_chat_ping(text) from public;
 grant execute on function painel_chat_ping(text) to anon, authenticated, service_role;
+
+-- 8.40 (auditoria 17/11, alertas do Supabase):
+-- * painel_ler / painel_chat_ping / painel_cache_chave ficam abertas ao papel anon DE PROPÓSITO: o navegador usa a chave pública e cada uma
+--   confere o código da sessão (hash em painel_sessoes, prazo, pessoa ativa, perfil, sessao_versao) antes de devolver qualquer coisa.
+--   O papel "authenticated" (login do Supabase Auth) não é usado pelo painel: sai.
+revoke execute on function painel_ler(text, jsonb) from authenticated;
+revoke execute on function painel_chat_ping(text) from authenticated;
+revoke execute on function painel_cache_chave(text) from authenticated;
+-- * políticas "só o próprio escritório": auth.jwt() calculado UMA vez por consulta (select …), não linha a linha (auth_rls_initplan).
+--   Mesma regra, só mais leve. Tabelas com RLS e sem política (painel_sessoes, painel_estado, painel_pedidos, painel_cache_chaves, escritorios)
+--   continuam fechadas de propósito: só as funções do painel e a chave secreta chegam nelas.
+do $$
+declare p record; q text;
+begin
+  for p in select schemaname, tablename, policyname, qual from pg_policies
+            where schemaname = 'public' and qual like '%auth.jwt()%' and qual not ilike '%select auth.jwt()%' loop
+    q := replace(p.qual, 'auth.jwt()', '(select auth.jwt())');
+    if q <> p.qual then execute format('alter policy %I on %I.%I using (%s)', p.policyname, p.schemaname, p.tablename, q); end if;
+  end loop;
+end $$;

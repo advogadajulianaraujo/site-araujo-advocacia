@@ -1574,3 +1574,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ⤡ diminui) → "—" minimiza. Estado em localStorage `chat_modo`/`chat_sala`/`chat_vista`. Mensagem nova de outra pessoa com a janela
   minimizada → abre sozinha, pequena, na conversa dela (sem roubar o cursor; a bolinha pisca). Menu "Chat da equipe" e #/chat abrem a janela
   (a tela inteira saiu). Avisos do canto (`.notifs`) subiram para não ficar em cima da bolinha. Celular: a janela ocupa a tela.
+
+## 8.40 Auditoria de estabilidade (17/11/2026, pedido da usuária: "auditoria geral")
+
+- Sessão sem fila: `painel_tocar_sessao_` (UPDATE … FOR UPDATE SKIP LOCKED, no máx. 1×/min) no painel_ler e no painel_quem. Antes a 1ª
+  leitura do minuto segurava a linha de painel_sessoes até o fim da leitura e as outras abas da mesma pessoa esperavam (teste: 3,3 s → 24 ms).
+- Supabase advisors: painel_ler/painel_chat_ping/painel_cache_chave ficam abertas ao `anon` DE PROPÓSITO (o navegador usa a chave pública; cada
+  uma confere o hash da sessão, prazo, pessoa ativa, perfil e sessao_versao) e saíram do `authenticated` (não usado); search_path fixo em
+  painel_marcar_em_ e painel_login_falhas_; as 43 políticas com `(select auth.jwt())` (DO no fim do leitura-rapida.sql + esquema.sql).
+  Tabelas com RLS e sem política (painel_sessoes, painel_estado, painel_pedidos, painel_cache_chaves, escritorios) = fechadas de propósito.
+  Proteção de senha vazada (HIBP) só existe no plano Pro do Supabase — o painel não usa o Supabase Auth (login próprio, 5 erros bloqueiam).
+- Índices conferidos: cada tabela tem (escritorio_id, id) + (escritorio_id, _em); tabelas pequenas (≤ 3,3 mil linhas) — nada a criar.
+- Cópia das funções/políticas/permissões de antes, para voltar: scratchpad da sessão (backup-8.40).
