@@ -1006,12 +1006,9 @@
       if (document.hidden || !sessao || !chatF) return;
       let r = null;
       try { r = BANCO && BANCO.chatPing ? await BANCO.chatPing() : null; } catch (e) { r = null; }
-      if (!r) { // sem o banco: pergunta ao servidor, mas bem menos vezes
-        vigiar.n = (vigiar.n || 0) + 1; if (vigiar.n % 4) return;
-        try { const l = await apiFresco('chat.listar', {}); const nl = (l.salas || []).reduce((a, x) => a + (x.naoLidas || 0), 0);
-          const u = (l.salas || []).map(x => x.ultima && Object.assign({ sala: x.sala }, x.ultima)).filter(Boolean).sort((a, b) => a.em < b.em ? 1 : -1)[0];
-          r = { naoLidas: nl, ultima: u && { sala: u.sala, de: u.de, texto: u.texto, em: u.em } }; } catch (e) { return; }
-      }
+      // 8.39.5: sem o banco NÃO pergunta mais ao Google (era um pedido por pessoa a cada minuto e sobrecarregava o servidor);
+      // tenta de novo daqui a 15 s. A janela aberta carrega as mensagens quando alguém abre a conversa.
+      if (!r) return;
       const st = chatF.st;
       if (st.modo === 'fechado') chatBadge(r.naoLidas || 0);
       const u = r.ultima; if (!u) return;
