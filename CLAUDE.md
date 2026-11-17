@@ -1552,6 +1552,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   pública + sessão do banco; não lidas + última mensagem; sem a função do Supabase) → número vermelho no menu (`chatBadge`) e aviso no canto
   (💬); sem o banco, pergunta ao servidor a cada 60 s. Mensagem aparece na hora ("enviando…"); Enter envia, Shift+Enter pula linha; links
   clicáveis. Teste: `.github/motor/teste/etapaChat.mjs` (Apps Script e Supabase iguais; privacidade das conversas a dois; ping; apagar).
+- 8.39.6 (17/11, "está travando todas as páginas"): o banco GRATUITO do Supabase ficou sem força (conta de 0,1 s levando 2–4 s). Quem mais
+  pesava: o Google lendo ~50 tabelas INTEIRAS por minuto (`painel_tabela`). Agora `sbPrecarregar_` pergunta antes a assinatura da tabela
+  (`painel_assinaturas`: linhas | último _em | maior _n — consulta pequena) e, se for a mesma, usa a cópia guardada no CacheService do Google
+  (`sbtDoCache_`/`sbtGuardar_`, pedaços de 30 mil letras, 2 min; Usuarios nunca é guardada). E o chat não pergunta mais ao Google quando o
+  banco não responde (era 1 pedido por pessoa por minuto). Plano pago do Supabase (Pro + Small) recomendado à usuária.
 - 8.39.4 (pedido da usuária): "Chat da equipe" SAIU do menu da esquerda (só a bolinha de baixo; #/chat continua abrindo). A bolinha e o topo da
   janela se ARRASTAM para qualquer lugar (pointer events; localStorage `chat_pos` = {r, b} distância da direita/de baixo; `posicionar` nunca
   deixa a janela sair da tela); duplo clique na bolinha volta ao canto.

@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.39.1';
+var VERSAO = '8.39.6';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -15339,12 +15339,61 @@ function sbTabelasOk_() {
 function sbPodeLer_(nome) { return !!ESQUEMA[nome] && !sbSoPlanilha_(nome) && !SB_ESCRITAS[nome] && !!sbTabelasOk_()[nome]; }
 function sbNotaLeitura_(nome, de) { SB_LEITURAS[nome] = de; }
 function sbChaveCol_(cab) { return cab.indexOf('id') >= 0 ? 'id' : cab[0]; }
-/** Busca no banco (uma ida para várias abas juntas: UrlFetchApp.fetchAll) e guarda nesta execução. */
+/** Busca no banco (uma ida para várias abas juntas: UrlFetchApp.fetchAll) e guarda nesta execução.
+ *  8.39.5 (painel travando em 17/11: o Google lia ~50 tabelas INTEIRAS por minuto e o banco gratuito do Supabase ficou sem força):
+ *  a tabela lida fica guardada no CacheService do Google (em pedaços, até 2 min) com a "assinatura" dela no banco (quantas linhas | quando
+ *  mudou por último | maior linha — painel_assinaturas, consulta pequena). No pedido seguinte, se a assinatura é a mesma, usa a guardada e
+ *  não pede a tabela inteira de novo. Mudou qualquer coisa → busca de novo. Usuarios (senhas) nunca fica guardada. */
+var SBT_TTL = 120, SBT_PEDACO = 30000;
+function sbtGuardavel_(n) { return n !== 'Usuarios'; }
+function sbtAssinaturas_(c, cab, esc, nomes) {
+  try {
+    var r = UrlFetchApp.fetch(c.url + '/rest/v1/rpc/painel_assinaturas', { method: 'post', contentType: 'application/json', headers: cab, muteHttpExceptions: true,
+      payload: JSON.stringify({ p_escritorio: esc, p_tabelas: nomes.map(sbTabela_) }) });
+    return r.getResponseCode() < 300 ? JSON.parse(r.getContentText()) : null;
+  } catch (e) { return null; }
+}
+function sbtDoCache_(nomes, sig) {
+  var achou = {};
+  try {
+    var cache = CacheService.getScriptCache(), metas = cache.getAll(nomes.map(function (n) { return 'sbt_m_' + sbTabela_(n); })), pedir = [], uso = {};
+    nomes.forEach(function (n) {
+      var t = sbTabela_(n), m = metas['sbt_m_' + t]; if (!m || !sig[t]) return;
+      try { m = JSON.parse(m); } catch (e) { return; }
+      if (m.sig !== sig[t] || !(m.partes > 0)) return;
+      uso[n] = []; for (var i = 0; i < m.partes; i++) { var k = 'sbt_' + t + '_' + m.sig.replace(/[^0-9a-z]/gi, '').slice(-24) + '_' + i; uso[n].push(k); pedir.push(k); }
+    });
+    if (!pedir.length) return achou;
+    var v = cache.getAll(pedir);
+    Object.keys(uso).forEach(function (n) {
+      var txt = '', ok = uso[n].every(function (k) { if (v[k] === undefined || v[k] === null) return false; txt += v[k]; return true; });
+      if (ok) { try { achou[n] = JSON.parse(txt); } catch (e) { /* busca no banco */ } }
+    });
+  } catch (e) { /* busca no banco */ }
+  return achou;
+}
+function sbtGuardar_(n, sigT, txt) {
+  if (!sigT || txt.length > 4000000) return;
+  try {
+    var t = sbTabela_(n), base = 'sbt_' + t + '_' + sigT.replace(/[^0-9a-z]/gi, '').slice(-24) + '_', obj = {}, i = 0;
+    for (var p = 0; p < txt.length; p += SBT_PEDACO) obj[base + (i++)] = txt.slice(p, p + SBT_PEDACO);
+    var cache = CacheService.getScriptCache();
+    cache.putAll(obj, SBT_TTL);
+    cache.put('sbt_m_' + t, JSON.stringify({ sig: sigT, partes: i }), SBT_TTL);
+  } catch (e) { /* sem guardar: na próxima vez busca de novo */ }
+}
 function sbPrecarregar_(nomes, forcar) {
   var faltam = (nomes || []).filter(function (n) { return !SB_EXEC[n] && (forcar || sbpAba_(n) || sbPodeLer_(n)); });
   if (!faltam.length) return;
   var c = sbConf_(), esc = sbEscritorio_();
   var cab = /^sb_/.test(c.chave) ? { apikey: c.chave } : { apikey: c.chave, Authorization: 'Bearer ' + c.chave };
+  var guardaveis = faltam.filter(sbtGuardavel_), sig = guardaveis.length ? sbtAssinaturas_(c, cab, esc, guardaveis) : null;
+  if (sig) {
+    var achou = sbtDoCache_(guardaveis, sig);
+    Object.keys(achou).forEach(function (n) { SB_EXEC[n] = achou[n]; });
+    faltam = faltam.filter(function (n) { return !SB_EXEC[n]; });
+    if (!faltam.length) return;
+  }
   var pedidos = faltam.map(function (n) { return { url: c.url + '/rest/v1/rpc/painel_tabela', method: 'post', contentType: 'application/json', headers: cab, muteHttpExceptions: true, payload: JSON.stringify({ p_tabela: sbTabela_(n), p_escritorio: esc }) }; });
   var resp;
   try { resp = UrlFetchApp.fetchAll(pedidos); } catch (eF) { faltam.forEach(function (n) { sbNotaLeitura_(n, 'planilha (banco sem resposta)'); }); return; } // 8.30: sem internet/banco fora
@@ -15352,7 +15401,9 @@ function sbPrecarregar_(nomes, forcar) {
     var cod = r.getResponseCode();
     if (cod === 404) { PropertiesService.getScriptProperties().setProperty('SUPABASE_TABELA_RPC', 'nao|' + Date.now()); return; }
     if (cod >= 300) { sbNotaLeitura_(faltam[i], 'planilha (banco respondeu ' + cod + ')'); return; }
-    try { SB_EXEC[faltam[i]] = JSON.parse(r.getContentText()); } catch (e) { sbNotaLeitura_(faltam[i], 'planilha (resposta do banco ilegível)'); }
+    var txt = r.getContentText();
+    try { SB_EXEC[faltam[i]] = JSON.parse(txt); } catch (e) { sbNotaLeitura_(faltam[i], 'planilha (resposta do banco ilegível)'); return; }
+    if (sig && sbtGuardavel_(faltam[i])) sbtGuardar_(faltam[i], sig[sbTabela_(faltam[i])], txt);
   });
 }
 /** A aba lida do banco, no mesmo formato da leitura da planilha ({aba, cab, linhas, nome}); null = ler da planilha. */
