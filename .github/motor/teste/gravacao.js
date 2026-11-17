@@ -2,7 +2,8 @@ module.exports = async T => {
   const { S, C, G, assert, rodarServidor, logar } = T;
   console.log('\n===== gravações =====');
   const adm = T.nav_U1, est = T.nav_U2;
-  const lerNav = (nav, a, d) => nav.B.PAINEL_BANCO.ler(a, d || {});
+  // 8.35.8: o navegador reaproveita por 20 s o que leu (no painel, cada gravação chama envelhecer()); aqui a gravação vem do servidor direto
+  const lerNav = (nav, a, d) => { if (nav.B.PAINEL_BANCO.envelhecer) nav.B.PAINEL_BANCO.envelhecer(); return nav.B.PAINEL_BANCO.ler(a, d || {}); };
   const espera = ms => new Promise(r => setTimeout(r, ms));
   await lerNav(adm, 'clientes.listar'); await espera(1600);
   // 1) editar cliente pelo painel → aparece na hora no banco
@@ -60,6 +61,7 @@ module.exports = async T => {
   // 7) lerOuPlanilha: banco com erro → resposta veio da planilha
   const B = adm.B.PAINEL_BANCO; const tok0 = (await B.iniciar()).token;
   S.sql(`update painel_sessoes set expira_em = now() - interval '1 minute'`);
+  if (B.envelhecer) B.envelhecer(); // 8.35.8: o navegador reaproveita por 20 s o que acabou de ler; o teste quer a próxima ida ao banco
   const via = await B.lerOuPlanilha('processos.listar', {}, async () => 'PLANILHA');
   assert(via === 'PLANILHA', 'sessão do banco vencida → a tela vem da planilha');
   S.sql(`delete from painel_sessoes`);
@@ -68,7 +70,7 @@ module.exports = async T => {
   B2.configurar(async (a, d) => { const x = rodarServidor(a, tokM, d); if (!x.ok) throw new Error(x.erro); return x.dados; });
   await B2.iniciar(); await B2.ler('processos.listar', {});
   const tabU = C.tabela_('Usuarios'); C.atualizarLinha_(tabU, tabU.linhas.find(x => x.id === 'U2'), { sessao_versao: '5' }); C.sbEnviarSujas_();
-  let caiu = null; try { await espera(1600); await B2.ler('processos.listar', {}); } catch (e) { caiu = e; }
+  let caiu = null; try { await espera(1600); if (B2.envelhecer) B2.envelhecer(); await B2.ler('processos.listar', {}); } catch (e) { caiu = e; }
   assert(caiu && /sessão|desligado/.test(caiu.message), 'trocar senha/perfil derruba a leitura pelo banco (' + (caiu && caiu.message) + ')');
   // 9) sair apaga a sessão do banco
   const tokA = logar('U1', '0'); rodarServidor('banco.sessao', tokA, {});

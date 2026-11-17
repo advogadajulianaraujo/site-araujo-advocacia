@@ -72,6 +72,7 @@ S.foraDoAr(false); P.setProperty('SB_FALHOU_EM', '0');
   await B.iniciar(); await B.ler('tarefas.listar', {});
   rodarServidor('tarefas.salvar', tok, { tarefa: { titulo: 'Vista na hora pelo navegador', responsavel: 'admin' } });
   await new Promise(x => setTimeout(x, 1600));
+  if (B.envelhecer) B.envelhecer(); // 8.35.8: no painel, gravar chama envelhecer(); aqui a gravação veio do servidor direto
   const l = await B.ler('tarefas.listar', {});
   assert(l.itens.some(x => x.titulo === 'Vista na hora pelo navegador'), 'o navegador vê na hora a tarefa gravada só no banco');
   // robô (lote) no modo grava primeiro

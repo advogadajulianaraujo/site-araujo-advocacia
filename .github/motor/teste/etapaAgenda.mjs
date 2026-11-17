@@ -56,7 +56,7 @@ const tokA = logar('U1', '0'), B = S.criarNavegador();
 B.PAINEL_BANCO.configurar(async (a, d) => { const r = rodarServidor(a, tokA, d); if (!r.ok) throw new Error(r.erro); return r.dados; });
 await B.PAINEL_BANCO.iniciar();
 const espera = () => new Promise(ok => setTimeout(ok, 1700)); // o navegador reconfere uma tabela lida há mais de 1,5 s
-const lerN = async (a, d) => { await espera(); try { return await B.PAINEL_BANCO.ler(a, d); } catch (e) { return { voltou: e.message }; } };
+const lerN = async (a, d) => { await espera(); try { if (B.PAINEL_BANCO.envelhecer) B.PAINEL_BANCO.envelhecer(); return await B.PAINEL_BANCO.ler(a, d); } catch (e) { return { voltou: e.message }; } };
 let r = await lerN('agenda.listar', { inicio: T.dia(0), fim: T.dia(10) });
 assert(r.eventos && r.eventos.some(e => e.id === 'e3' && e.diaTodo && e.dia === T.dia(5)), 'perícia de dia inteiro aparece no dia certo');
 r = await lerN('audiencias.listar', { dias: 90 });
