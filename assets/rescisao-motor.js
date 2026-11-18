@@ -65,7 +65,10 @@
     const periodos = anosCompletos(adm, fim);
     const pend = e.feriasPendentes === undefined || e.feriasPendentes === null || e.feriasPendentes === '' ? null : Math.max(0, Math.min(periodos, parseInt(e.feriasPendentes, 10) || 0));
     const gozadas = pend !== null ? periodos - pend : Math.max(0, Math.min(periodos, parseInt(e.feriasGozadas, 10) || 0));
-    for (let k = gozadas; k < periodos; k++) {
+    // 8.49 (pedido da usuária: "foi paga a 1ª férias? a 2ª?"): feriasPagas = [true|false por período completo, na ordem]; sem a lista, vale o número
+    const pagas = Array.isArray(e.feriasPagas) ? e.feriasPagas : null;
+    for (let k = pagas ? 0 : gozadas; k < periodos; k++) {
+      if (pagas && pagas[k]) continue;
       const ini = somaAnos(adm, k), fimP = somaDias(somaAnos(adm, k + 1), -1), fimConc = somaDias(somaAnos(adm, k + 2), -1);
       const dobro = fimConc < rup;
       item(L, `Férias integrais ${dobro ? 'EM DOBRO' : 'simples'} + 1/3 — período ${br(ini)} a ${br(fimP)}`, `${reais(rem)} × 4/3${dobro ? ' × 2 (prazo de concessão acabou em ' + br(fimConc) + ')' : ''}`, rem * 4 / 3 * (dobro ? 2 : 1));
@@ -145,5 +148,17 @@
     return { indireta, motivo, anos, diasAv, fim, rem, verbas: L, subtotal, anteriores: X, subAnt, contratual: C, fgts: F, subFgts, multas: M, subMultas, total,
       fgtsContratual, notas, inssConferencia: r2(inss(vSaldo) + inss(v13)), saldo: vSaldo };
   }
-  raiz.RESCISAO = { calcular, avos, diasAviso, anosCompletos, r2 };
+  /** 8.49: períodos aquisitivos COMPLETOS (com a projeção do aviso, igual ao calcular) — para a tela perguntar "foi paga?" de cada um. */
+  function periodosFerias(e) {
+    const adm = e.admissao, rup = e.ruptura, motivo = e.motivo;
+    if (!adm || !rup || rup < adm) return [];
+    const anos = anosCompletos(adm, rup);
+    let diasAv = 0;
+    if (motivo === 'indireta' || (motivo === 'sem_justa' && e.aviso !== 'trabalhado')) diasAv = diasAviso(anos);
+    if (motivo === 'acordo') diasAv = Math.floor(diasAviso(anos) / 2);
+    const fim = diasAv ? somaDias(rup, diasAv) : rup, n = anosCompletos(adm, fim), out = [];
+    for (let k = 0; k < n; k++) out.push({ ini: br(somaAnos(adm, k)), fim: br(somaDias(somaAnos(adm, k + 1), -1)) });
+    return out;
+  }
+  raiz.RESCISAO = { calcular, periodosFerias, avos, diasAviso, anosCompletos, r2 };
 })(typeof window !== 'undefined' ? window : globalThis);

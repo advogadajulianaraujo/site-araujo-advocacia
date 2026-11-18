@@ -3152,3 +3152,13 @@ body.sem-sessao .chatf{display:none}
 .gm-aberto { background: #e8f3ec; color: #2d6a45; }
 .gm-apagado { background: #f1ece4; color: #6b5a3c; }
 .gm-nao { background: #fdf0e0; color: #9a5a12; }
+
+/* 8.49 — calculadora em botões */
+.seg-campo { display: flex; flex-direction: column; gap: 4px; }
+.seg-campo > span { font-size: 12.5px; color: var(--cinza, #555); }
+.seg-grupo { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg-bt { border: 1px solid #cfc8bc; background: #fff; color: #333; border-radius: 16px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+.seg-bt:hover { border-color: #b58d52; }
+.seg-bt.ativo { background: #171513; color: #fff; border-color: #171513; }
+.ferias-periodos { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px dashed #d8d1c4; border-radius: 10px; }
+.ferias-periodos .seg-tit { font-weight: 600; font-size: 13px; }

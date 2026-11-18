@@ -426,31 +426,59 @@
     tot('TOTAL DAS PARCELAS INCLUÍDAS', r.total);
     return { el: h('table', { class: 'tabela calc-tab calc-tab3' }, h('tbody', {}, linhas)), texto: txt.join('\n') };
   }
+  /** 8.49: pergunta em BOTÕES (pedido da usuária: "na calculadora seria melhor que aparecesse só em botões"). Guarda o valor num campo
+   *  escondido com o mesmo nome (form.x.value continua funcionando) e avisa o formulário da mudança. */
+  function seg(nome, rot, opcoes, valor, extra) {
+    const { h } = K();
+    const inp = h('input', { type: 'hidden', name: nome, value: valor });
+    const bts = opcoes.map(([v, t]) => h('button', { type: 'button', class: 'seg-bt' + (v === valor ? ' ativo' : ''), 'aria-pressed': String(v === valor), onclick: ev => {
+      inp.value = v; bts.forEach(b => { const on = b === ev.currentTarget; b.classList.toggle('ativo', on); b.setAttribute('aria-pressed', String(on)); });
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+    } }, t));
+    return h('div', { class: 'campo seg-campo' + (extra && extra.largo ? ' largo' : '') }, h('span', {}, rot), h('div', { class: 'seg-grupo', role: 'group', 'aria-label': rot }, bts), inp);
+  }
   function calcRescisao(out) {
     const { h, campo } = K();
     const chk = (nome, rot) => h('label', { class: 'g-chk largo' }, h('input', { type: 'checkbox', name: nome }), ' ', rot);
+    const feriasBox = h('div', { class: 'largo ferias-periodos' });
     const form = h('form', { class: 'g-form form-grade' },
       campo('salario', 'Salário-base (R$)', '', { modo: 'decimal', obrigatorio: true }),
       campo('medias', 'Médias remuneratórias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras habituais, comissões, adicionais (opcional)' }),
       campo('admissao', 'Admissão', '', { tipo: 'date', obrigatorio: true }),
-      campo('saida', 'Data da ruptura adotada no cálculo', '', { tipo: 'date', obrigatorio: true }),
-      campo('ultimo', 'Último dia de trabalho (se for outro)', '', { tipo: 'date', dica: 'só informativo; a conta usa a data da ruptura' }),
+      campo('saida', 'Demissão / último dia trabalhado', '', { tipo: 'date', obrigatorio: true }),
       campo('motivo', 'Motivo', 'sem_justa', { opcoes: [['sem_justa', 'Dispensa sem justa causa'], ['indireta', 'Rescisão indireta (art. 483)'], ['pedido', 'Pedido de demissão'], ['acordo', 'Acordo (art. 484-A)'], ['justa', 'Justa causa']] }),
       campo('aviso', 'Aviso prévio', 'indenizado', { opcoes: [['indenizado', 'Indenizado'], ['trabalhado', 'Trabalhado / dispensado']], dica: 'na rescisão indireta é sempre indenizado' }),
-      campo('dias_saldo', 'Dias de salário pendentes', '', { modo: 'numeric', dica: 'vazio = conta pelo dia da ruptura' }),
+      campo('dias_saldo', 'Dias de salário pendentes', '', { modo: 'numeric', dica: 'vazio = conta pelo dia da saída' }),
       campo('saldo_pago', 'Salário do mês já pago (R$)', '', { modo: 'decimal', dica: 'só pagamento comprovado' }),
-      campo('ferias_gozadas', 'Períodos de férias completos já gozados e pagos', '0', { modo: 'numeric' }),
-      campo('decimo_pago', '13º do ano da ruptura já pago (R$)', '', { modo: 'decimal', dica: 'adiantamento comprovado' }),
-      campo('decimo_ant', '13º do ano anterior', 'pago', { opcoes: [['pago', 'Pago'], ['nao_pago', 'Não pago (linha própria)']] }),
-      campo('fgts_dep', 'A empresa depositou o FGTS?', 'naosei', { opcoes: [['sim', 'Sim, todos os meses'], ['nao', 'Não, nenhum mês'], ['parte', 'Só em parte'], ['naosei', 'Não sei (só conferência)']] }),
+      feriasBox,
+      seg('decimo_ant', '13º do ano passado foi pago?', [['pago', 'Sim, foi pago'], ['nao_pago', 'Não foi pago']], 'pago'),
+      campo('decimo_pago', '13º deste ano: adiantamento já pago (R$)', '', { modo: 'decimal', dica: 'só se pagaram parte (comprovado)' }),
+      seg('fgts_dep', 'O FGTS foi pago (depositado)?', [['sim', 'Sim, todos os meses'], ['nao', 'Não foi pago'], ['parte', 'Só em parte'], ['outro', 'Já está em outro pedido da inicial'], ['naosei', 'Não sei']], 'naosei', { largo: true }),
       campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'se for "em parte" e sem o extrato' }),
       campo('fgts', 'FGTS já depositado — comprovado no extrato (R$)', '', { modo: 'decimal' }),
-      chk('fgts_outro', 'FGTS mensal não recolhido já calculado em outro pedido (mostra para conferência e não soma de novo)'),
       chk('mfgts', 'Incluir a multa do FGTS (40% na dispensa sem justa causa/rescisão indireta; 20% no acordo)'),
       chk('m477', 'Incluir a multa do art. 477 da CLT'), chk('m467', 'Incluir a multa do art. 467 da CLT'),
       campo('base_m467', 'Base das verbas rescisórias incontroversas — art. 467 (R$)', '', { modo: 'decimal', dica: 'Informe somente a base que pretende incluir. Não usamos automaticamente todas as verbas.' }),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular')));
     const base467 = form.querySelector('[name="base_m467"]');
+    // férias: uma pergunta por período completo ("1ª férias foi paga?"), refeita quando mudam as datas, o motivo ou o aviso
+    let feriasPagas = [];
+    const desenharFerias = () => {
+      const ps = window.RESCISAO && window.RESCISAO.periodosFerias ? window.RESCISAO.periodosFerias({ admissao: lerData(form.admissao.value), ruptura: lerData(form.saida.value), motivo: form.motivo.value, aviso: form.aviso.value }) : [];
+      feriasPagas = ps.map((_, k) => !!feriasPagas[k]);
+      if (!ps.length) { feriasBox.replaceChildren(h('p', { class: 'peq' }, lerData(form.admissao.value) && lerData(form.saida.value) ? 'Férias: menos de 1 ano completo — entram só as proporcionais.' : 'Férias: informe a admissão e a saída para perguntar cada período.')); return; }
+      feriasBox.replaceChildren(h('span', { class: 'seg-tit' }, 'Férias de cada ano completo'), ...ps.map((p, k) => {
+        const bts = [[true, 'Sim, foi paga'], [false, 'Não foi paga']].map(([v, t]) => h('button', { type: 'button', class: 'seg-bt' + (feriasPagas[k] === v ? ' ativo' : ''), 'aria-pressed': String(feriasPagas[k] === v), onclick: ev => {
+          feriasPagas[k] = v; ev.currentTarget.parentElement.querySelectorAll('.seg-bt').forEach(b => { const on = b === ev.currentTarget; b.classList.toggle('ativo', on); b.setAttribute('aria-pressed', String(on)); });
+          form.dispatchEvent(new Event('change'));
+        } }, t));
+        return h('div', { class: 'seg-campo' }, h('span', {}, `${k + 1}ª férias foi paga? `, h('small', {}, `(${p.ini} a ${p.fim})`)), h('div', { class: 'seg-grupo', role: 'group' }, bts));
+      }));
+    };
+    ['admissao', 'saida', 'motivo', 'aviso'].forEach(n => form[n].addEventListener('change', desenharFerias));
+    desenharFerias();
+    const mostraNP = () => { const v = form.fgts_dep.value; form.meses_np.parentElement.hidden = v !== 'parte'; form.fgts.parentElement.hidden = v === 'naosei' || v === 'outro'; };
+    form.fgts_dep.addEventListener('change', mostraNP); mostraNP();
     const atualizarMultas = () => {
       base467.parentElement.hidden = !form.m467.checked;
       base467.disabled = !form.m467.checked;
@@ -473,13 +501,13 @@
       try {
         r = window.RESCISAO.calcular({ salario: num(form.salario.value), medias: num(form.medias.value), admissao: lerData(form.admissao.value), ruptura: lerData(form.saida.value),
           motivo: form.motivo.value, aviso: form.aviso.value, diasSaldo: form.dias_saldo.value.trim() === '' ? null : +form.dias_saldo.value, saldoPago: num(form.saldo_pago.value),
-          feriasGozadas: +form.ferias_gozadas.value || 0, decimoAnoPago: num(form.decimo_pago.value), decimoAnterior: form.decimo_ant.value, fgtsDep: form.fgts_dep.value,
-          fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_outro.checked, multaFgts: form.mfgts.checked,
+          feriasPagas: feriasPagas.slice(), decimoAnoPago: num(form.decimo_pago.value), decimoAnterior: form.decimo_ant.value, fgtsDep: form.fgts_dep.value === 'outro' ? 'nao' : form.fgts_dep.value,
+          fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_dep.value === 'outro', multaFgts: form.mfgts.checked,
           multa477: form.m477.checked, multa467: form.m467.checked, baseMulta467: num(form.base_m467.value) });
       } catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
       const t = tabelaRescisao(r);
       const alerta = r.indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'cálculo para a petição — verbas da dispensa sem justa causa com aviso indenizado, valores BRUTOS, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Conferir antes de usar.') : null;
-      const ult = lerData(form.ultimo.value);
+      const ult = null;
       out.replaceChildren(alerta || '', h('div', { class: 'calc-res' }, t.el,
         ...[`Tempo de casa: ${r.anos} ano(s) completo(s) · aviso de ${r.diasAv || 0} dias · término projetado: ${dataBR(iso(r.fim))}${ult ? ' · último dia de trabalho: ' + dataBR(iso(ult)) : ''} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fim, 2)))}.`,
           ...r.notas,

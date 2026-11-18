@@ -1790,3 +1790,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   gmail_lido_em, gmail_apagado_em. `gmailSituacao_` (robô de hora em hora; 2 buscas: in:trash e is:read, 60 dias, `getMessagesForThreads`)
   marca o que foi aberto/apagado; os antigos sem id pelo nº do processo no assunto + dia. Selo "✉ aberto / apagado / não aberto no Gmail"
   (`seloGmail`) na intimação e no prazo (`gmail` em prazos.listar). Só INFORMA: apagar o e-mail nunca dá baixa no prazo.
+
+## 8.48.1 Vencidos só saem depois de 10 dias úteis + calculadora em botões (18/11/2026)
+
+- Achado no print do PJe (Expedientes) da usuária: o painel conta pela regra MAIS CURTA (5 dias) e o "Prazo final" do PJe às vezes é maior
+  (19/11 × 17/11 no painel); `baixarVencidos844_` tirava no dia seguinte prazos que ainda corriam no tribunal (0000909, 0000486, 0000908,
+  0001026, 0000005). Agora "só ciência" e "sem comprovação" só saem sozinhos depois de 10 dias úteis da data do painel (`alemDaMargem_`; antes
+  se a data foi conferida/vinculada ao PJe). Petição juntada, acordo/extinção e ato que já aconteceu continuam na hora; acordo/suspensão
+  REVOGADA depois (`RE_RETOMOU_`) não encerra. `reabrirVencidosCedo848_` (uma vez, Config FIX_REABRIR_848) reabriu os retirados cedo demais
+  (inclusive a baixa em lote de 13/11), menos os com petição juntada depois do aviso; a marca impede que saiam sozinhos de novo.
+- Por que o painel mostra mais que o PJe: o PJe › Expedientes lista só as intimações pendentes daquele sistema; o painel junta também as
+  audiências/perícias futuras (até 2027), os prazos do eproc/TJSC/TRF4 e as publicações do DJEN.
+- Calculadora de rescisão (painel): perguntas em BOTÕES (`seg`): "1ª/2ª/3ª férias foi paga?" uma por período completo (`RESCISAO.periodosFerias`,
+  com a projeção do aviso; motor aceita `feriasPagas` = [true/false por período]), "13º do ano passado foi pago?", "O FGTS foi pago?" (Sim /
+  Não / Só em parte / Já está em outro pedido da inicial / Não sei). "Data da ruptura" saiu: só Admissão e "Demissão / último dia trabalhado";
+  "Dias de salário pendentes" continua.

@@ -28,7 +28,7 @@ const r = C.identificarProvisorios_();
 const z2 = C.tabela_('Prazos').linhas.find(x => x.id === 'Z843');
 assert(r.feitos >= 1 && z2.dias === '10' && !/PROVIS/.test(z2.descricao) && z2.fatal > hoje && /identificado pelo texto/.test(z2.observacoes), 'robô identificou o ato pelo DJEN: 10 dias, data nova e anotado (' + z2.descricao.slice(0, 60) + ')');
 // 8.44: vencido com petição juntada depois do aviso → cumprido; só ciência → sem prazo; nada → sem comprovação (com marca para reabrir)
-const ont = C.somarDias_(C.hojeSP_(), -3), ant = C.somarDias_(C.hojeSP_(), -9);
+const ont = C.somarDias_(C.hojeSP_(), -25), ant = C.somarDias_(C.hojeSP_(), -31);
 const tz2 = C.tabela_('Prazos'), ti2 = C.tabela_('Intimacoes');
 const nums = tz2.linhas.slice(10, 13).map(z => z.numero);
 [['I844a', 'Z844a', nums[0], 'Juntada a petição de Manifestação'], ['I844b', 'Z844b', nums[1], 'Expedido(a) intimação'], ['I844c', 'Z844c', nums[2], 'Expedido(a) intimação']].forEach(([iid, zid, num, mov], k) => {
@@ -105,3 +105,17 @@ console.log("fim 848");
   assert(n === 3 && g('IGM1').gmail_lido_em && !g('IGM1').gmail_apagado_em && g('IGM2').gmail_apagado_em && g('IGM3').gmail_lido_em, 'Gmail: aberto, apagado e o antigo (sem id) achado pelo nº do processo no assunto');
 }
 console.log("fim gmail");
+// 8.48: vencido há poucos dias (o PJe pode ter dado mais prazo) NÃO sai sozinho; com petição juntada sai
+{
+  const tz = C.tabela_('Prazos'), num = C.tabela_('Prazos').linhas[20].numero, ont3 = C.somarDias_(C.hojeSP_(), -3);
+  C.inserirLinha_(tz, { id: 'Z848r', processo_id: '', numero: num, intimacao_id: '', descricao: 'Prazo de 5 dias indicado na intimação', dias: '5', contagem: 'uteis', ciencia: C.somarDias_(ont3, -7), fatal: ont3, situacao: 'calculado', origem: 'robô', observacoes: 'PJe: aviso', criado_em: new Date().toISOString() });
+  C.baixarVencidos844_(); C.vencidosRapido_();
+  assert(C.tabela_('Prazos').linhas.find(x => x.id === 'Z848r').situacao === 'calculado', 'vencido há 3 dias sem comprovação continua na lista (o tribunal pode ter dado mais prazo)');
+  // reaberto: retirado "sem comprovação" ontem → volta uma vez
+  C.inserirLinha_(tz, { id: 'Z848s', processo_id: '', numero: '0009999-99.2026.5.12.0041', intimacao_id: '', descricao: 'x', dias: '5', contagem: 'uteis', ciencia: C.somarDias_(ont3, -7), fatal: ont3, situacao: 'cumprido', cumprido_por: 'robô (vencido sem comprovação)', origem: 'robô', observacoes: 'PJe: aviso | vencido sem comprovação: saiu da lista em ontem; se NÃO foi feito, reabra', criado_em: new Date().toISOString() });
+  const nr = C.reabrirVencidosCedo848_(); const zs = C.tabela_('Prazos').linhas.find(x => x.id === 'Z848s');
+  assert(nr >= 1 && zs.situacao === 'calculado' && /reaberto/.test(zs.observacoes), 'prazo tirado cedo demais é reaberto (uma vez)');
+  C.baixarVencidos844_();
+  assert(C.tabela_('Prazos').linhas.find(x => x.id === 'Z848s').situacao === 'calculado', 'o reaberto não sai sozinho de novo');
+}
+console.log("fim 848b");
