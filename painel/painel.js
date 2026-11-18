@@ -58,7 +58,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -344,7 +344,7 @@
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
-  const EM_LOTE = new Set(['audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+  const EM_LOTE = new Set(['audiencias.cliente', 'audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
@@ -1409,8 +1409,15 @@
     })();
     const acoes = blocoAcoesAgora(admin, secretaria);
     const agMini = blocoAgendaMini();
+    // 8.49 (pedido da usuária): botões para ir direto às páginas mais usadas, no Início de TODOS (administração também)
+    const pd = sessao.usuario.pode || {};
+    const rapidos = h('nav', { class: 'ini-rapidos', 'aria-label': 'Ir direto para' }, [
+      ['#/prazos', '⚖', 'Intimações'], ['#/audiencias', '🗓', 'Audiências'], ['#/calculadoras', '🧮', 'Calculadoras'], ['#/modelos?passo=gerar', '📄', 'Documentos'],
+      ['#/clientes', '👥', 'Clientes'], ['#/processos', '📁', 'Processos'], ['#/tarefas', '✓', 'Tarefas'], ['#/agenda', '📅', 'Agenda'],
+      pd.financeiro ? ['#/financeiro', '💰', 'Cobranças'] : null, pd.usuarios ? ['#/crm', '📈', 'CRM'] : null
+    ].filter(Boolean).map(([href, ico, nome]) => h('a', { class: 'ini-rap', href }, h('span', { class: 'ini-rap-ico', 'aria-hidden': 'true' }, ico), h('span', {}, nome))));
     if (secretaria) {
-      mostrar(hero,
+      mostrar(hero, rapidos,
         h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
           atalho('#/audiencias', 'Audiências hoje', audHoje.length, audHoje.length ? 'lembrar o cliente hoje' : 'nenhuma hoje', audHoje.some(a => a.devido === 'dia') ? 'alerta' : ''),
           atalho('#/audiencias?ver=avisar', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
@@ -1426,7 +1433,7 @@
       return;
     }
     if (!admin) {
-      mostrar(hero,
+      mostrar(hero, rapidos,
         h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Meu resumo' },
           atalho('#/tarefas', 'Minhas tarefas', meu ? meu.abertas : 0, meu && meu.hoje ? `${meu.hoje} para hoje` : 'tarefas e prazos'),
           atalho('#/tarefas', 'Atrasadas', meu ? meu.atrasadas : 0, meu && meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu && meu.atrasadas ? 'alerta' : ''),
@@ -1438,7 +1445,7 @@
       return;
     }
     // administração: o essencial
-    mostrar(hero,
+    mostrar(hero, rapidos,
       h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
         atalho('#/prazos', 'Prazos', pz.vencidos || pz.vencendo, pz.vencidos ? 'vencido(s) sem baixa' : 'vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
         atalho('#/prazos', 'Seu OK', aguarda ? aguarda.length : 0, 'esperando aprovação', aguarda && aguarda.length ? 'atencao' : ''),
@@ -2613,6 +2620,10 @@
         ['processos', `Processos (${r.processos.length})`, procs],
         sessao.usuario.pode.financeiro ? ['cobrancas', 'Cobranças', hons] : null,
         ['anotacoes', 'Anotações', notas],
+        ['audiencias', 'Audiências', () => { // 8.49: todas as audiências do cliente (próximas + histórico), como na tela Audiências
+          const box = h('div', { class: 'caixa' }, h('p', { class: 'peq' }, 'Carregando as audiências…'));
+          telaAudiencias(new URLSearchParams(), c.id).then(el => box.replaceChildren(el)).catch(e => box.replaceChildren(h('p', { class: 'erro' }, e.message)));
+          return box; }],
         ['documentos', 'Documentos e portal', () => h('div', {}, secao('Pasta do cliente', pasta, true), secao('Portal do cliente (documentos no site)', portal, false), secao('Acesso do cliente ao site (acompanhar processo)', () => caixaAcesso(c), false))],
         ['cadastro', 'Cadastro', () => h('div', { class: 'caixa editar-cad' }, formCliente(c, false))]
       ], incompleto ? 'cadastro' : ''));
@@ -3841,7 +3852,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.48.1';
+  const VERSAO_PAINEL = '8.49.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4792,16 +4803,17 @@
     document.body.append(caixa); caixa.showModal();
   }
 
-  async function telaAudiencias(params) {
-    carregando();
-    const ver = ['conciliacao', 'instrucao', 'pericia', 'avisar'].includes(params.get('ver')) ? params.get('ver') : 'conciliacao';
-    const r = await api('audiencias.listar', { dias: 85, passados: true }); // até 85 dias: a cópia da agenda no banco vai do mês passado a +3 meses (mais que isso iria ao Google, lento)
+  async function telaAudiencias(params, dentroCliente) {
+    // 8.49: dentroCliente = id do cliente → a mesma lista dentro da ficha do cliente, com TODAS as audiências dele (próximas + histórico)
+    if (!dentroCliente) carregando();
+    const ver = dentroCliente ? 'todas' : ['conciliacao', 'instrucao', 'pericia', 'avisar'].includes(params.get('ver')) ? params.get('ver') : 'conciliacao';
+    const r = dentroCliente ? await api('audiencias.cliente', { cliente_id: dentroCliente }) : await api('audiencias.listar', { dias: 85, passados: true }); // até 85 dias: a cópia da agenda no banco vai do mês passado a +3 meses (mais que isso iria ao Google, lento)
     const lista = (r.lista || []).map(a => Object.assign(a, { acordo: a.acordo || {}, preparo: a.preparo || {}, testemunhas: a.testemunhas || [] }));
     const hoje = hojeISO();
     const pendenteRes = a => a.data <= hoje && !resultadoDe(a);
     const conc = lista.filter(ehConc), inst = lista.filter(a => a.tipo === 'instrucao'), peri = lista.filter(a => a.tipo === 'pericia' && a.data >= hoje);
     const nAvisar = lista.filter(a => a.devido && a.data >= hoje).length;
-    const filtrada = ver === 'instrucao' ? inst : ver === 'pericia' ? peri : ver === 'avisar' ? lista.filter(a => a.devido && a.data >= hoje) : conc;
+    const filtrada = ver === 'todas' ? lista : ver === 'instrucao' ? inst : ver === 'pericia' ? peri : ver === 'avisar' ? lista.filter(a => a.devido && a.data >= hoje) : conc;
     const nPend = l => l.filter(a => pendenteRes(a) || (a.data >= hoje && (ehConc(a) ? !(a.acordo.pedir && a.acordo.autorizou) : a.tipo === 'instrucao' && resumoTestemunhas(a)[0] === 'falta'))).length;
     const topo = h('header', { class: 'carteira-topo' },
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Escritório'), h('h1', {}, 'Audiências'),
@@ -4899,13 +4911,13 @@
         if (vai && !caixa.firstChild) caixa.append(detalhes(a, desenharMeio));
         caixa.hidden = !vai; li.classList.toggle('aberta', vai); aberta = vai ? li : null;
       };
-      const acao = pendenteRes(a) ? h('button', { type: 'button', class: 'aud-oqa', onclick: () => dialogoResultadoAto(a) }, 'O que aconteceu?')
+      const acao = a.tipo === 'pericia' && a.data < hoje ? h('span', {}) : pendenteRes(a) ? h('button', { type: 'button', class: 'aud-oqa', onclick: () => dialogoResultadoAto(a) }, 'O que aconteceu?')
         : resultadoDe(a) ? h('button', { type: 'button', class: 'link-btn peq', onclick: () => dialogoResultadoAto(a), title: 'Corrigir o resultado' }, 'mudar') : h('span', {});
       li.append(h('div', { class: 'aud-r-linha' },
         h('span', { class: 'aud-l-data' }, h('b', {}, dataBR(a.data).slice(0, 5)), h('small', {}, a.data === hoje ? 'hoje' : nomeDia(a.data))),
         h('span', { class: 'aud-l-hora num' }, a.hora || '—'),
         h('button', { type: 'button', class: 'aud-nome', 'aria-expanded': 'false', onclick: abrir, title: 'Ver detalhes, anotações e avisos' },
-          h('b', {}, a.cliente || a.titulo || 'cliente a identificar'), h('small', {}, [ehConc(a) && a.tipo !== 'conciliacao' ? (NOME_ATO[a.tipo] || a.nome) : '', a.numero, a.modo === 'online' ? 'online' : a.modo === 'presencial' ? 'presencial' : ''].filter(Boolean).join(' · '))),
+          h('b', {}, dentroCliente ? (NOME_ATO[a.tipo] || 'Audiência') : (a.cliente || a.titulo || 'cliente a identificar')), h('small', {}, [!dentroCliente && ehConc(a) && a.tipo !== 'conciliacao' ? (NOME_ATO[a.tipo] || a.nome) : '', dentroCliente && a.data < hoje ? dataBR(a.data) : '', a.numero, a.modo === 'online' ? 'online' : a.modo === 'presencial' ? 'presencial' : ''].filter(Boolean).join(' · '))),
         meio, bolinhas(a), acao), caixa);
       return li;
     };
@@ -4918,6 +4930,14 @@
         h('span', { class: 'aud-sd-acoes' },
           h('button', { type: 'button', class: 'btn mini', onclick: () => caixaMarcarAto({ numero: x.numero, processo_id: x.processo_id, texto: x.tipo === 'pericia' ? 'perícia' : 'audiência' }) }, '📅 Lançar a data'),
           x.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + x.processo_id }, 'Processo') : null))))) : null;
+    if (dentroCliente) { // 8.49: ficha do cliente — próximas primeiro, depois o histórico (mais recente primeiro); nada some
+      const prox = filtrada.filter(a => a.data >= hoje).sort((x, y) => (x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1);
+      const hist = filtrada.filter(a => a.data < hoje).sort((x, y) => (x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? 1 : -1);
+      return h('div', { class: 'aud-no-cliente' },
+        prox.length ? h('section', {}, h('h3', { class: 'aud-gt' }, `Próximas (${prox.length})`), h('ul', { class: 'aud-lista2' }, prox.map(linha))) : h('p', { class: 'peq' }, 'Nenhuma audiência ou perícia marcada.'),
+        hist.length ? h('section', {}, h('h3', { class: 'aud-gt' }, `Histórico de audiências (${hist.length})`), h('ul', { class: 'aud-lista2' }, hist.map(linha))) : null,
+        h('p', { class: 'peq aud-legenda' }, 'Clique no nome para ver os avisos, o valor combinado, as testemunhas e as anotações. Tudo fica guardado aqui.'));
+    }
     const ordem = filtrada.slice().sort((x, y) => (pendenteRes(y) - pendenteRes(x)) || ((x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1));
     const passadas = ordem.filter(pendenteRes), proximas = ordem.filter(a => !pendenteRes(a));
     const VAZIO = { conciliacao: 'Nenhuma audiência de conciliação marcada nos próximos meses.', instrucao: 'Nenhuma audiência de instrução marcada.', pericia: 'Nenhuma perícia marcada.', avisar: 'Nenhum aviso para mandar agora. 👏' };

@@ -20,7 +20,7 @@ const texto = d => linhas.slice(d.ini, d.fim + 1).join('\n');
 
 // 2) rotas de leitura que o navegador pode fazer (as outras sempre vão ao Apps Script)
 const ROTAS_MOTOR = ['resumo', 'clientes.listar', 'clientes.obter', 'processos.listar', 'prazos.listar', 'intimacoes.listar', 'tarefas.listar',
-  'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'eu.painel', 'documentos.assinaturas',
+  'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'audiencias.cliente', 'eu.painel', 'documentos.assinaturas',
   'fluxos.processo', 'prazos.memoria', 'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'fin.pix', 'fin.acaoCobranca',
   'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras',
   'fin.painel', 'relatorio.geral']; // 8.36.3: Cobranças e Relatórios sem esperar o Google

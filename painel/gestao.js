@@ -206,6 +206,28 @@
       h('select', { name: 'canal', 'aria-label': 'Canal', onchange: ev => ir({ canal: ev.target.value }) }, h('option', { value: '' }, 'Todos os canais'), r.canais.map(c => h('option', { value: c, selected: c === canal }, c))),
       h('select', { name: 'resp', 'aria-label': 'Responsável', onchange: ev => ir({ resp: ev.target.value }) }, h('option', { value: '' }, 'Toda a equipe'), equipe.map(p => h('option', { value: p.usuario, selected: p.usuario === resp }, p.nome))));
     fBusca.addEventListener('submit', ev => { ev.preventDefault(); ir({ q: fBusca.q.value.trim() }); });
+    // 8.49 (pedido da usuária: "o CRM está total; quero semanal, o dia, para acompanhar o desempenho"): números do período escolhido
+    const per = ['dia', 'semana', 'mes'].includes(params.get('per')) ? params.get('per') : (() => { try { return localStorage.getItem('crm_per') || 'semana'; } catch (e) { return 'semana'; } })();
+    try { localStorage.setItem('crm_per', per); } catch (e) { /* ok */ }
+    const hojeD = new Date(Date.now() - 3 * 3600000), isoD = d => d.toISOString().slice(0, 10);
+    const segunda = d => { const x = new Date(d); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); return x; };
+    const iniPer = per === 'dia' ? isoD(hojeD) : per === 'mes' ? isoD(hojeD).slice(0, 8) + '01' : isoD(segunda(hojeD));
+    const noPer = iso => !!iso && String(iso).slice(0, 10) >= iniPer;
+    const nPer = { novos: r.leads.filter(l => noPer(l.criado_em)).length, resp: r.leads.filter(l => noPer(l.primeiro_contato_em)).length,
+      consultas: r.leads.filter(l => noPer(l.consulta_em)).length, ganhos: r.leads.filter(l => l.etapa === 'ganho' && noPer(l.ganho_em)).length,
+      perdidos: r.leads.filter(l => l.etapa === 'perdido' && noPer(l.perdido_em)).length };
+    const nomePer = { dia: 'Hoje', semana: 'Nesta semana', mes: 'Neste mês' }[per];
+    const semanas = [];
+    for (let k = 7; k >= 0; k--) { const ini = segunda(new Date(hojeD.getTime() - k * 7 * 86400000)), fim = new Date(ini.getTime() + 7 * 86400000), i0 = isoD(ini), i1 = isoD(fim);
+      const dentro = iso => iso && String(iso).slice(0, 10) >= i0 && String(iso).slice(0, 10) < i1;
+      semanas.push({ nome: i0.slice(8, 10) + '/' + i0.slice(5, 7), novos: r.leads.filter(l => dentro(l.criado_em)).length, ganhos: r.leads.filter(l => l.etapa === 'ganho' && dentro(l.ganho_em)).length }); }
+    const blocoPeriodo = h('section', { class: 'pc-card crm-periodo' },
+      h('header', { class: 'crm-per-cab' }, h('h3', {}, nomePer),
+        h('div', { class: 'segmentado', role: 'group', 'aria-label': 'Período' }, [['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']].map(([v, t]) => h('button', { type: 'button', class: v === per ? 'ativo' : '', onclick: () => ir({ per: v }) }, t)))),
+      h('div', { class: 'crm-per-nums' }, [['Novos contatos', nPer.novos], ['Respondidos', nPer.resp], ['Consultas marcadas', nPer.consultas], ['Fecharam', nPer.ganhos], ['Não fecharam', nPer.perdidos],
+        ['Taxa de fechamento', nPer.ganhos + nPer.perdidos ? Math.round(nPer.ganhos / (nPer.ganhos + nPer.perdidos) * 100) + '%' : '—']].map(([t, v]) => h('div', { class: 'crm-per-n' }, h('b', {}, String(v)), h('small', {}, t)))),
+      K().grafCols ? h('div', {}, h('p', { class: 'peq' }, 'Últimas 8 semanas — novos contatos por semana (✓ = contratos fechados)'),
+        K().grafCols(semanas.map(x => ({ nome: x.nome + (x.ganhos ? ' · ' + x.ganhos + '✓' : ''), valor: x.novos, extra: x.ganhos + ' fechado(s)', cor: '#C9A46A' })), { alto: 110 })) : null);
     const sinal = m.atrasados ? h('div', { class: 'nota alerta crm-alerta' }, `⚠ ${m.atrasados} contato(s) com a próxima ação atrasada`, m.parados ? ` e ${m.parados} parado(s) há 7 dias ou mais` : '', '. Quem responde primeiro fecha mais: comece por eles.') : null;
     mostrar(
       topo('Relacionamento', 'CRM', 'Do primeiro contato ao contrato assinado.',
@@ -213,8 +235,8 @@
         botao('Proposta de honorários', () => dialogoProposta(null, recarregar), 'sec')),
       h('section', { class: 'fin-nums crm-nums' },
         numero('azul', String(m.abertos), 'Em aberto', rh ? 'no funil' : (m.valorAberto ? din(m.valorAberto) + ' em propostas/estimativas' : 'no funil')),
-        numero('dourado', String(m.novosMes), 'Novos no mês', 'contatos que chegaram'),
-        numero('verde', String(m.ganhosMes), 'Fechados no mês', 'contratos assinados'),
+        numero('dourado', String(nPer.novos), 'Novos — ' + nomePer.toLowerCase(), 'contatos que chegaram'),
+        numero('verde', String(nPer.ganhos), 'Fechados — ' + nomePer.toLowerCase(), 'contratos assinados'),
         numero(m.conversao !== null && m.conversao < 30 ? 'vermelho' : 'verde', m.conversao === null ? '—' : m.conversao + '%', 'Taxa de fechamento', 'últimos 180 dias'),
         numero(m.respostaHoras !== null && m.respostaHoras > 2 ? 'vermelho' : 'azul', m.respostaHoras === null ? '—' : (m.respostaHoras < 1 ? Math.round(m.respostaHoras * 60) + ' min' : m.respostaHoras + ' h'), 'Tempo de resposta', 'mediana até o 1º contato')),
       // 8.37 (pedido da usuária: "gráfico em barra no CRM, como no processo e nos clientes"): onde estão os contatos, por etapa
@@ -222,6 +244,7 @@
         const G = K().grafCols; if (!G) return null;
         return h('section', { class: 'pc-card pc-escuro crm-grafico' }, h('header', {}, h('h3', {}, 'Contatos por etapa')),
           G((r.etapas || []).map(([id, nome]) => ({ nome, valor: conta[id] || 0, cor: id === 'ganho' ? '#5FA37A' : id === 'perdido' ? '#8C8274' : (COR_ETAPA[id] || '#C9A46A') })), { alto: 140 })); })(),
+      blocoPeriodo,
       sinal,
       h('section', { class: 'caixa crm-corpo' },
         h('div', { class: 'crm-barra' }, h('div', { class: 'visoes', role: 'tablist' }, aba('funil', 'Funil'), aba('lista', 'Lista'), aba('metricas', 'Números e motivos')), visao !== 'metricas' ? fBusca : null),

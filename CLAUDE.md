@@ -1805,3 +1805,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   com a projeção do aviso; motor aceita `feriasPagas` = [true/false por período]), "13º do ano passado foi pago?", "O FGTS foi pago?" (Sim /
   Não / Só em parte / Já está em outro pedido da inicial / Não sei). "Data da ruptura" saiu: só Admissão e "Demissão / último dia trabalhado";
   "Dias de salário pendentes" continua.
+
+## 8.49.0 Ficha do cliente com Audiências, Início com atalhos, CRM por dia/semana/mês (pedidos da usuária, 18/11/2026)
+
+- Ficha do cliente › aba "Audiências": a MESMA lista da tela Audiências (`telaAudiencias(params, clienteId)` devolve o elemento), com TODAS as
+  audiências/perícias do cliente — Próximas (avisos, valor combinado, testemunhas) e "Histórico de audiências" (rota `audiencias.cliente`,
+  `audienciasDoCliente_`: janela atual + fichas da aba Audiencias + atos da aba Eventos; nada some). Clicar no nome abre os detalhes.
+- Início de TODOS os perfis: botões rápidos (`ini-rapidos`): Intimações, Audiências, Calculadoras, Documentos, Clientes, Processos, Tarefas,
+  Agenda, Cobranças (financeiro) e CRM (administração).
+- CRM: bloco do período (`crm-periodo`, Dia | Semana | Mês, localStorage `crm_per`, padrão Semana): novos contatos, respondidos, consultas
+  marcadas, fecharam, não fecharam, taxa; colunas das últimas 8 semanas. "Novos/Fechados" do topo seguem o período.
+- CRM integrado: `crmSincronizar_` também põe no funil o cliente ANTIGO (importado) que gerou procuração/contrato depois de CRM_CLIENTES_DESDE
+  (em 18/11: 3 clientes tinham assinado sem cartão). Conferido: todo cliente cadastrado pelo painel desde 08/09 já tem cartão.

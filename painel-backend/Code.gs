@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.48.1';
+var VERSAO = '8.49.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -473,6 +473,7 @@ var ROTAS = {
   'inicio.extras': { fn: inicioExtras_ },
   'inicio.acoes': { fn: inicioAcoes_ },
   'agenda.avisado': { fn: marcarAvisado_ },
+  'audiencias.cliente': { fn: function (d, u) { return { lista: audienciasDoCliente_(d.cliente_id, !!(u && (PERFIS[u.perfil] || {}).financeiro)), semData: [], hoje: hojeSP_() }; } },
   'audiencias.listar': { fn: function (d, u) { return { lista: audienciasLista_(d.dias || 60, d.passados ? 30 : 0, !!(u && (PERFIS[u.perfil] || {}).financeiro)), semData: atosSemData_(), hoje: hojeSP_() }; } },
   'audiencias.resultado': { fn: audienciaResultado_ },
   'audiencias.salvar': { fn: salvarFichaAto_ },
@@ -594,7 +595,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'audiencias.cliente': 1, 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -6265,6 +6266,31 @@ function audienciasLista_(dias, passados, comFin) {
   });
 }
 
+/** 8.49 (pedido da usuária: "em cada cliente, uma aba de audiência: o valor, a instrução, as testemunhas — deixe sempre os registros"):
+ *  TODAS as audiências e perícias dos processos do cliente — as próximas (com os avisos, igual à tela Audiências) e o HISTÓRICO inteiro
+ *  (fichas da aba Audiencias + atos da aba Eventos), com valor combinado, resultado e testemunhas. Nada é apagado. */
+function audienciasDoCliente_(clienteId, comFin) {
+  if (!clienteId) return [];
+  var nums = {}; tabela_('Processos').linhas.forEach(function (p) { if (p.cliente_id === clienteId && p.numero) nums[p.numero] = p; });
+  if (!Object.keys(nums).length) return [];
+  var atual = [];
+  try { atual = audienciasLista_(85, 30, comFin).filter(function (a) { return nums[a.numero]; }); } catch (e) { atual = []; }
+  var vistos = {}; atual.forEach(function (a) { vistos[a.numero + '|' + a.data + '|' + (a.tipo === 'pericia' ? 'p' : 'a')] = 1; });
+  var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === clienteId; })[0] || {}, hoje = hojeSP_(), hist = [];
+  var tipoN = function (t) { t = normalizar_(t || ''); return /pericia/.test(t) ? 'pericia' : /instru|\buna\b|unica/.test(t) ? 'instrucao' : 'conciliacao'; };
+  var add = function (o) {
+    var k = o.numero + '|' + o.data + '|' + (o.tipo === 'pericia' ? 'p' : 'a');
+    if (!o.data || vistos[k]) return; vistos[k] = 1;
+    var p = nums[o.numero] || {}, f = o.f || {};
+    hist.push({ chave: o.chave, lembrete: o.chave, tipo: o.tipo, nome: o.nome || '', data: o.data, hora: o.hora || '', numero: o.numero, local: p.orgao || '', titulo: '',
+      cliente: c.nome || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '', avisos: {}, dias_aviso: {}, devido: '', nova: false,
+      modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo), passou: o.data < hoje, historico: true, pct_exito: '', obs_cliente: '' });
+  };
+  tabela_('Audiencias').linhas.forEach(function (f) { if (nums[f.numero]) add({ chave: f.chave, tipo: tipoN(f.tipo), data: f.data, hora: f.hora, numero: f.numero, f: f }); });
+  tabela_('Eventos').linhas.forEach(function (e) { if (nums[e.numero]) add({ chave: 'E:' + e.numero + ':' + e.data + ':' + tipoAtoDe_(e.tipo), tipo: tipoN(e.tipo), nome: e.tipo, data: e.data, hora: e.hora, numero: e.numero }); });
+  return atual.concat(hist).sort(function (a, b) { return (b.data + (b.hora || '')) < (a.data + (a.hora || '')) ? -1 : 1; });
+}
 /** 8.42 (pedido da usuária: "nas anotações dos clientes, falando sobre as testemunhas"): cada audiência de INSTRUÇÃO (e a una) dos próximos
  *  90 dias vira uma anotação na ficha do cliente com as testemunhas cadastradas na ficha da audiência — ou o aviso de que ainda faltam
  *  (pedir nome, CPF e telefone). Mudou a lista de testemunhas → anotação nova. Nunca repete a mesma anotação. */
@@ -13724,7 +13750,10 @@ function crmSincronizar_() {
   if (!desdeCli) { desdeCli = new Date(Date.now() - 60 * 86400000).toISOString(); setConfig_('CRM_CLIENTES_DESDE', desdeCli, 'Clientes cadastrados pelo painel a partir desta data entram sozinhos no CRM / Funil'); }
   var importado = /hist|GEA|carga|levantamento|planilha|importa|processo|revis|organizar|rob[oô]|funil|djen|gmail/i;
   var clientesNovos = tabela_('Clientes').linhas.filter(function (c) {
-    return c.nome && c.criado_em >= desdeCli && !porCli[c.id] && !importado.test(c.origem || '') && !/importa/i.test(c.atualizado_por || '') && c.situacao !== 'importado — conferir';
+    if (!c.nome || porCli[c.id]) return false;
+    // 8.49 (pedido da usuária: "fechou, vai para o CRM também"): cliente ANTIGO (importado) que gerou procuração/contrato agora também entra
+    var a = assin[c.id]; if (a && String(a.gerado_em || a.assinado_em || '') >= desdeCli) return true;
+    return c.criado_em >= desdeCli && !importado.test(c.origem || '') && !/importa/i.test(c.atualizado_por || '') && c.situacao !== 'importado — conferir';
   });
   if (!novos.length && !fechar.length && !clientesNovos.length) return 0;
   comTrava_(function () {

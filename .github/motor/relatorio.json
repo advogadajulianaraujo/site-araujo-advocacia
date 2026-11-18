@@ -1,5 +1,5 @@
 {
- "versao": "8.48.1",
+ "versao": "8.49.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -182,6 +182,25 @@
    "funcoes": 56
   },
   "audiencias.listar": {
+   "tabelas": [
+    "AgendaEventos",
+    "Audiencias",
+    "Clientes",
+    "Eventos",
+    "Feriados",
+    "Honorarios",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "CacheService",
+    "CalendarApp",
+    "Utilities"
+   ],
+   "funcoes": 46
+  },
+  "audiencias.cliente": {
    "tabelas": [
     "AgendaEventos",
     "Audiencias",
@@ -449,5 +468,5 @@
    "funcoes": 38
   }
  },
- "funcoes": 150
+ "funcoes": 151
 }
