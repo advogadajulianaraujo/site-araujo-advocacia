@@ -3018,3 +3018,22 @@ body.sem-sessao .chatf{display:none}
 .ix-sis{color:#8a6a35;text-decoration:underline}.ix-alerta .btn{white-space:nowrap;flex:none}
 .ix-filtros input{min-width:180px}
 @media (max-width:700px){.ix-filtros{flex-wrap:wrap}.ix-filtros input{min-width:0;flex:1 1 160px}.ix-filtros select{flex:1 1 140px}}
+/* 8.44.1: folhinha de calendário, faixa dos próximos dias e linha "de onde veio" */
+.ix-quando{display:flex;gap:10px;align-items:center}
+.ix-folha{width:46px;flex:none;border-radius:8px;background:#fff;border:1px solid #e4dfd6;border-top:5px solid #6b645a;text-align:center;line-height:1.1;padding:3px 0 4px;box-shadow:0 1px 2px rgba(23,21,19,.06)}
+.ix-folha b{display:block;font-size:19px;font-variant-numeric:tabular-nums;color:#1e1b17}
+.ix-fs,.ix-fm{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b645a}
+.ix-folha.k-vermelho{border-top-color:#a3261b}.ix-folha.k-ambar{border-top-color:#c98a12}.ix-folha.k-verde{border-top-color:#2e6b3f}.ix-folha.k-azul{border-top-color:#24527a}
+.ix-item.ix-vencido .ix-folha{border-top-color:#a3261b;background:#fbe6e3}
+.ix-qtxt{min-width:0}
+.ix-item{grid-template-columns:170px minmax(0,1fr) 150px minmax(170px,auto)}
+.ix-auto{font-size:11.5px;color:#8c8476;margin-top:2px}.ix-auto-ico{color:#c9a46a;font-weight:700}
+.ix-faixa{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:12px 0 4px}
+.ix-dia{background:#fff;border:1px solid #e4dfd6;border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;font:inherit;color:inherit;display:flex;flex-direction:column;gap:1px}
+.ix-dia:hover{border-color:#c9a46a}.ix-dia b{font-size:20px;font-variant-numeric:tabular-nums;line-height:1.2}
+.ix-dia-rot{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}.ix-dia-sub{font-size:11px;color:#8c8476}.ix-dia-det{font-size:11px;color:#6b645a}
+.ix-dia.d-hoje{background:#171513;color:#fff;border-color:#171513}.ix-dia.d-hoje .ix-dia-sub,.ix-dia.d-hoje .ix-dia-det{color:#cfc7ba}.ix-dia.d-hoje b{color:#c9a46a}
+.ix-dia.d-venc{border-color:#a3261b;background:#fbe6e3}.ix-dia.d-venc b{color:#a3261b}
+.ix-dia.vazio b{color:#c4bdb1}
+@media (max-width:1100px){.ix-item{grid-template-columns:160px minmax(0,1fr) 140px}}
+@media (max-width:700px){.ix-item{grid-template-columns:1fr}.ix-faixa{grid-template-columns:repeat(4,minmax(0,1fr))}}

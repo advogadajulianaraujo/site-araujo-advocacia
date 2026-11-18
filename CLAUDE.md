@@ -1663,3 +1663,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "Prazo confirmado", "Divergência", "Compromisso"), cliente + ato, processo/ciência/dias, "Falta: …" (`pendenciasDoPrazo`), estado
   (`estadoDoPrazo`), responsável e os botões de sempre (`botoesPrazo`). `docPendente` = /PROVIS/ ou "a definir", nunca conferido. CSS `.ix-*`.
 - Prévia aprovada antes: https://claude.ai/artifact/6HrChawH3HgUP7aXZMMCj6 (dados fictícios).
+- 8.44.1 (pedido da usuária: "mais fácil, automatizado por dentro, prazos claros e bonito"): cada linha tem a FOLHINHA de calendário
+  (`folhinha`: dia da semana, dia, mês; borda na cor do tipo da data) e a linha "⟳ via DJEN/eproc/PJe · ciência · dias · ato lido no texto /
+  no DataJud" (de onde o painel tirou o prazo). Em "Hoje e próximos dias", faixa dos próximos dias (`faixaDias`: vencidos + 7 dias úteis com
+  prazos e atos de cada dia; clicar rola até o grupo).
+

@@ -4046,34 +4046,57 @@
   function linhaPrazoIx(z) {
     const d = dataDoPrazo(z), e = estadoDoPrazo(z), o = oQueFazer(z), pend = pendenciasDoPrazo(z);
     const venc = z.fatal && z.fatal < hojeISO() && SITUACOES_ABERTAS.includes(z.situacao);
+    const fonte = (String(z.observacoes || '').match(/^(DJEN|eproc [A-Z]+|PJe [A-Z0-9]+|[A-Za-z ]{2,14}?):/) || [])[1] || (z.origem === 'robô' ? 'robô' : 'lançado à mão');
+    const ident = /identificado pelo (texto|DataJud)/i.test(z.descricao || '') ? (/DataJud/.test(z.descricao) ? 'ato lido no DataJud' : 'ato lido no texto da publicação') : '';
     return h('div', { class: 'ix-item' + (venc ? ' ix-vencido' : ''), tabindex: '0', role: 'link', onclick: () => { location.hash = '#/prazo/' + z.id; },
       onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/prazo/' + z.id; } },
-      h('div', { class: 'ix-quando' }, h('div', { class: 'ix-rot ' + d.cls }, d.rot), h('div', { class: 'ix-data' }, z.fatal ? dataBR(z.fatal).slice(0, 5) : '—'),
-        z.fatal ? h('div', { class: 'ix-rel' }, etiquetaContagem(z.fatal)) : null),
+      h('div', { class: 'ix-quando' }, folhinha(z.fatal, d.cls), h('div', { class: 'ix-qtxt' }, h('div', { class: 'ix-rot ' + d.cls }, d.rot), z.fatal ? h('div', { class: 'ix-rel' }, etiquetaContagem(z.fatal)) : null)),
       h('div', { class: 'ix-oque' },
-        h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo)),
-        h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : '', z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias ? ' · ' + textoDias(z) : ''),
-        d.interna ? h('div', { class: 'ix-nota' }, 'Data interna de conferência, não é data fatal: o aviso não traz o ato e o texto ainda não chegou.') : null,
+        h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : /PROVIS/i.test(o.titulo) ? 'Conferido no tribunal' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo)),
+        h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : ''),
+        h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'), ' via ', fonte,
+          z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias && !d.interna ? ' · ' + textoDias(z) : '', ident ? ' · ' + ident : '',
+          d.interna ? ' · data interna, não é data fatal' : ''),
         pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
       h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ' + e[0] }, e[1]),
         h('div', { class: 'ix-resp' }, z.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), ' ', primeiroNome(z.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
       h('div', { class: 'ix-acoes', onclick: ev => ev.stopPropagation() }, botoesPrazo(z)));
+  }
+  /** Folhinha de calendário: dia da semana, dia e mês, com a cor do tipo da data. */
+  function folhinha(iso, cls) {
+    if (!iso) return h('div', { class: 'ix-folha ' + (cls || '') }, h('span', { class: 'ix-fs' }, '—'), h('b', {}, '?'), h('span', { class: 'ix-fm' }, 'sem data'));
+    const d = new Date(iso + 'T12:00:00');
+    return h('div', { class: 'ix-folha ' + (cls || '') }, h('span', { class: 'ix-fs' }, d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')),
+      h('b', {}, String(d.getDate())), h('span', { class: 'ix-fm' }, d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')));
+  }
+  /** Faixa dos próximos dias: quantos prazos e compromissos em cada dia (clique leva ao grupo). */
+  function faixaDias(abertos, auds, hoje) {
+    const dias = [];
+    const venc = abertos.filter(z => z.fatal && z.fatal < hoje && !docPendente(z)).length;
+    for (let i = 0; dias.length < 7 && i < 14; i++) { const d = isoSoma(hoje, i), w = diaSem(d); if (i > 1 && (w === 0 || w === 6)) continue; dias.push(d); }
+    const cel = (rot, sub, nP, nA, cls, alvo) => h('button', { type: 'button', class: 'ix-dia ' + cls + (nP + nA ? '' : ' vazio'), onclick: () => { const g = document.getElementById(alvo); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
+      h('span', { class: 'ix-dia-rot' }, rot), h('span', { class: 'ix-dia-sub' }, sub),
+      h('b', {}, String(nP + nA)), h('span', { class: 'ix-dia-det' }, nP + nA ? [nP ? nP + (nP === 1 ? ' prazo' : ' prazos') : '', nA ? nA + (nA === 1 ? ' ato' : ' atos') : ''].filter(Boolean).join(' · ') : 'livre'));
+    return h('div', { class: 'ix-faixa', 'aria-label': 'Próximos dias' },
+      venc ? cel('Vencidos', 'sem baixa', venc, 0, 'd-venc', 'ix-g-venc') : null,
+      dias.map((d, i) => cel(i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''),
+        dataBR(d).slice(0, 5), abertos.filter(z => z.fatal === d).length, auds.filter(a => a.data === d).length, i === 0 ? 'd-hoje' : '', i === 0 ? 'ix-g-hoje' : i === 1 ? 'ix-g-amanha' : 'ix-g-prox')));
   }
   function linhaAtoIx(a) {
     const tipo = /per[ií]cia/i.test(a.tipo + ' ' + a.nome) ? 'Perícia' : 'Audiência';
     const semTest = /instru|una/i.test(a.tipo + ' ' + a.nome) && !(a.testemunhas || []).length;
     const pend = [semTest ? 'pedir as testemunhas' : '', a.devido ? 'aviso ao cliente: ' + a.devido : ''].filter(Boolean);
     return h('div', { class: 'ix-item', tabindex: '0', role: 'link', onclick: () => { location.hash = '#/audiencias'; }, onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/audiencias'; } },
-      h('div', { class: 'ix-quando' }, h('div', { class: 'ix-rot k-azul' }, tipo), h('div', { class: 'ix-data' }, dataBR(a.data).slice(0, 5)), h('div', { class: 'ix-rel' }, a.hora || 'sem horário')),
+      h('div', { class: 'ix-quando' }, folhinha(a.data, 'k-azul'), h('div', { class: 'ix-qtxt' }, h('div', { class: 'ix-rot k-azul' }, tipo), h('div', { class: 'ix-rel' }, a.hora ? 'às ' + a.hora : 'sem horário'))),
       h('div', { class: 'ix-oque' }, h('div', {}, h('span', { class: 'ix-cli' }, a.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato' }, a.nome || a.tipo)),
         h('div', { class: 'ix-proc' }, a.numero || '', a.local ? ' · ' + a.local : '', a.modo ? ' · ' + a.modo : ''),
         pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
       h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ix-ok' }, 'Na agenda')),
       h('div', { class: 'ix-acoes' }, h('a', { class: 'btn mini sec', href: '#/audiencias', onclick: ev => ev.stopPropagation() }, 'Preparar')));
   }
-  function grupoIx(titulo, itens, linha, nota) {
+  function grupoIx(titulo, itens, linha, nota, id) {
     if (!itens.length) return null;
-    return h('section', { class: 'ix-grupo' }, h('div', { class: 'ix-gtit' }, h('h3', {}, titulo), h('span', { class: 'ix-gq' }, String(itens.length)), nota ? h('span', { class: 'ix-gnota' }, nota) : null),
+    return h('section', { class: 'ix-grupo', id: id || null }, h('div', { class: 'ix-gtit' }, h('h3', {}, titulo), h('span', { class: 'ix-gq' }, String(itens.length)), nota ? h('span', { class: 'ix-gnota' }, nota) : null),
       h('div', { class: 'ix-lista' }, itens.map(linha)));
   }
   /** Aviso só quando uma fonte de intimações está atrasada (diz qual, desde quando, o que fazer e quem resolve). */
@@ -4150,10 +4173,11 @@
       const prox = abertos.filter(z => z.fatal > amanha && z.fatal <= em7).sort(porData);
       const semData = abertos.filter(z => !z.fatal);
       corpo.push(
-        grupoIx('Vencidos sem baixa', vencidos, linhaPrazoIx, 'conferir se foi feito: dar o Conferido com o comprovante ou tratar como urgente'),
-        grupoIx('Hoje', [...auds.filter(a => a.data === hoje).map(a => ({ a })), ...doDia(hoje).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
-        grupoIx('Amanhã', [...auds.filter(a => a.data === amanha).map(a => ({ a })), ...doDia(amanha).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
-        grupoIx('Próximos 7 dias', [...auds.filter(a => a.data > amanha).map(a => ({ a, d: a.data })), ...prox.map(z => ({ z, d: z.fatal }))].sort((x, y) => x.d < y.d ? -1 : 1), x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
+        faixaDias(abertos, auds, hoje),
+        grupoIx('Vencidos sem baixa', vencidos, linhaPrazoIx, 'conferir se foi feito: dar o Conferido com o comprovante ou tratar como urgente', 'ix-g-venc'),
+        grupoIx('Hoje', [...auds.filter(a => a.data === hoje).map(a => ({ a })), ...doDia(hoje).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z), '', 'ix-g-hoje'),
+        grupoIx('Amanhã', [...auds.filter(a => a.data === amanha).map(a => ({ a })), ...doDia(amanha).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z), '', 'ix-g-amanha'),
+        grupoIx('Próximos 7 dias', [...auds.filter(a => a.data > amanha).map(a => ({ a, d: a.data })), ...prox.map(z => ({ z, d: z.fatal }))].sort((x, y) => x.d < y.d ? -1 : 1), x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z), '', 'ix-g-prox'),
         grupoIx('Sem data', semData, linhaPrazoIx));
       const depois = abertos.filter(z => z.fatal > em7).sort(porData);
       if (depois.length) corpo.push(h('details', { class: 'ix-depois' }, h('summary', {}, `Mais adiante (${depois.length})`), h('div', { class: 'ix-lista' }, depois.map(linhaPrazoIx))));
