@@ -2978,3 +2978,43 @@ body.sem-sessao .chatf{display:none}
 .central-item a{color:inherit;text-decoration:none}.central-item a:hover strong{text-decoration:underline}
 .central-item.k-vermelho strong{color:#b3261e}.central-item.k-ambar strong{color:#8a5d06}
 .central-ia{color:#4a453e;background:#faf8f4;border-radius:6px;padding:4px 6px;margin-top:4px}
+
+/* ===================== 8.44 — INTIMAÇÕES em 3 partes (pedido da usuária: "só Intimações, mais organizado") ===================== */
+.ix-alerta{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;background:#fdf1dc;border:1px solid #c98a12;border-radius:10px;padding:10px 14px;margin:10px 0}
+.ix-alerta b{color:#8a5d06}.ix-alerta-item+.ix-alerta-item{margin-top:6px}
+.ix-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+.ix-num{background:#fff;border:1px solid #e4dfd6;border-radius:10px;padding:9px 12px;text-align:left;cursor:pointer;font:inherit;color:inherit;display:flex;flex-direction:column}
+.ix-num b{font-size:22px;font-variant-numeric:tabular-nums;line-height:1.2}.ix-num span{font-size:12px;color:#6b645a}
+.ix-num:hover,.ix-num.ativo{border-color:#c9a46a;box-shadow:0 0 0 1px #c9a46a}
+.ix-num.k-vermelho b{color:#a3261b}.ix-num.k-ambar b{color:#9a5b00}
+.ix-barra{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;border-bottom:1px solid #e4dfd6;margin-bottom:6px}
+.ix-abas{display:flex;gap:2px;flex-wrap:wrap}
+.ix-aba{background:none;border:0;border-bottom:2px solid transparent;padding:8px 12px;font:500 13.5px inherit;color:#6b645a;cursor:pointer;display:flex;gap:7px;align-items:center}
+.ix-aba.ativa{color:#1e1b17;border-bottom-color:#c9a46a}
+.ix-n{font-size:11px;background:#e4dfd6;color:#1e1b17;border-radius:999px;padding:1px 7px;font-variant-numeric:tabular-nums}.ix-aba.ativa .ix-n{background:#171513;color:#fff}
+.ix-filtros{display:flex;gap:8px;align-items:center;padding-bottom:6px}.ix-filtros select{font-size:12.5px;padding:4px 6px}
+.ix-filtro{font-size:12.5px;color:#6b645a;margin:8px 0}
+.ix-grupo{margin:14px 0 4px}
+.ix-gtit{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.ix-gtit h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#4a453e}
+.ix-gq{font-size:11.5px;color:#6b645a;font-variant-numeric:tabular-nums}.ix-gnota{font-size:11.5px;color:#8c8476}
+.ix-lista{background:#fff;border:1px solid #e4dfd6;border-radius:10px;overflow:hidden}
+.ix-item{display:grid;grid-template-columns:118px minmax(0,1fr) 150px minmax(170px,auto);gap:12px;align-items:center;padding:9px 12px;border-top:1px solid #eee9e1;cursor:pointer}
+.ix-item:first-child{border-top:0}.ix-item:hover{background:#faf8f4}.ix-item:focus-visible{outline:2px solid #c9a46a;outline-offset:-2px}
+.ix-item.ix-vencido{box-shadow:inset 3px 0 0 #a3261b}
+.ix-rot{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;line-height:1.2}
+.ix-rot.k-vermelho{color:#a3261b}.ix-rot.k-ambar{color:#9a5b00}.ix-rot.k-verde{color:#2e6b3f}.ix-rot.k-azul{color:#24527a}
+.ix-data{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}.ix-rel{font-size:11.5px;color:#6b645a}
+.ix-cli{font-weight:600}.ix-ato{display:inline-block;font-size:11.5px;font-weight:600;background:#171513;color:#fff;border-radius:999px;padding:1px 8px;margin-left:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.ix-proc{font-size:11.5px;color:#6b645a;font-variant-numeric:tabular-nums;margin-top:2px}
+.ix-nota{font-size:11.5px;color:#8a5d06;margin-top:2px}.ix-pend{font-size:11.5px;color:#9a5b00;margin-top:2px}
+.ix-chip{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.ix-ok{background:#e5f2e8;color:#2e6b3f}.ix-conf{background:#fdf1dc;color:#9a5b00}.ix-risco{background:#fbe6e3;color:#a3261b}.ix-info{background:#e4eef7;color:#24527a}
+.ix-resp{font-size:12px;margin-top:4px}.ix-sem{color:#a3261b}
+.ix-acoes .mini-acoes{justify-content:flex-end;flex-wrap:wrap}
+.ix-depois{margin:14px 0}.ix-depois summary{cursor:pointer;font-size:12.5px;color:#4a453e;margin-bottom:6px}
+@media (max-width:1100px){.ix-item{grid-template-columns:100px minmax(0,1fr) 140px}.ix-acoes{grid-column:2/-1}.ix-nums{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.ix-item{grid-template-columns:1fr;gap:4px}.ix-acoes{grid-column:auto}.ix-quando{display:flex;gap:8px;align-items:baseline}.ix-filtros{width:100%}.ix-filtros input{flex:1}}
+.ix-sis{color:#8a6a35;text-decoration:underline}.ix-alerta .btn{white-space:nowrap;flex:none}
+.ix-filtros input{min-width:180px}
+@media (max-width:700px){.ix-filtros{flex-wrap:wrap}.ix-filtros input{min-width:0;flex:1 1 160px}.ix-filtros select{flex:1 1 140px}}

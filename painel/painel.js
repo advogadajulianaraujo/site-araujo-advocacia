@@ -714,7 +714,6 @@
   // [rota, nome, permissão, ícone, grupo]. Relatórios, Equipe e Gerenciar acessos continuam também no menu do nome.
   const ABAS = [
     ['inicio', 'Início', null, null, 'Escritório'],
-    ['central', 'Central de Prazos', null, 'prazos', 'Escritório'],
     ['clientes', 'Clientes', null, null, 'Escritório'],
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
@@ -4015,173 +4014,175 @@
   }
   function sistemaPreferido() { try { const v = localStorage.getItem('prazos_sistema') || 'todos'; return NOME_SIS[v] ? v : 'todos'; } catch (e) { return 'todos'; } }
 
-  /* ---------- 8.42 CENTRAL DE PRAZOS E INTIMAÇÕES (pedido da usuária: "nenhuma intimação pode passar despercebida") ----------
-     Uma tela só com o que exige providência: cartões de urgência (clicar abre a lista), filtros e a situação da captura (Gmail, DJEN, robô,
-     IA). Não muda nenhum dado sozinha: cada linha leva à tela do prazo/intimação/audiência, onde está o Conferido, o OK e o histórico. */
-  async function telaCentral(params) {
-    carregando();
-    const vazio = t => h('p', { class: 'ini-vazio' }, t);
-    const hoje = hojeISO(), em3 = isoSoma(hoje, 3), ha2 = isoSoma(hoje, -2), ha60 = isoSoma(hoje, -60);
-    const [prazos, encerr, intim, audR, resumo] = await Promise.all([api('prazos.listar', {}), api('prazos.listar', { encerrados: true }).catch(() => []),
-      api('intimacoes.listar', { limite: 300 }).catch(() => ({ lista: [] })), api('audiencias.listar', { dias: 90 }).catch(() => ({ lista: [], semData: [] })), api('resumo').catch(() => ({}))]);
-    const ints = intim.lista || [], auds = (audR && audR.lista) || [], extras = { audSemData: (audR && audR.semData) || [] };
-    const iaDe = i => { try { return i.ia_dados ? JSON.parse(i.ia_dados) : null; } catch (e) { return null; } };
-    const semTexto = i => String(i.texto || '').replace(/\s+/g, ' ').length < 120 || /^\W*(documento sigiloso|conteúdo sigiloso)/i.test(String(i.texto || ''));
-    const prov = z => /PROVISÓRIO/i.test(z.descricao || '') || z.situacao === 'a definir';
-    const abertos = prazos.filter(z => SITUACOES_ABERTAS.includes(z.situacao));
-    const lote = encerr.filter(z => z.situacao === 'cumprido' && /baixa em lote/.test(z.cumprido_por || ''));
-    const pericia = (i, tipos) => { const d = iaDe(i); return d && tipos.includes(d.pericia); };
-    const G = [
-      ['novas', '🆕 Novas intimações (48 h)', 'azul', ints.filter(i => (i.recebido_em || '').slice(0, 10) >= ha2).map(x => ({ t: 'i', x }))],
-      ['leitura', '🤖 Aguardando leitura da IA', 'azul', ints.filter(i => !i.resumo_ia && !semTexto(i) && (i.recebido_em || '') >= ha60 && !(+i.ia_tentativas >= 8)).map(x => ({ t: 'i', x }))],
-      ['conferencia', '📥 Intimações aguardando conferência', 'ambar', ints.filter(i => !i.terminada_por && !(i.prazo && ['cumprido', 'cancelado'].includes(i.prazo.situacao))).map(x => ({ t: 'i', x }))],
-      ['provisorios', '⚠ Ato não identificado / conferir no tribunal', 'ambar', abertos.filter(z => filaDe(z) === 'conferir').map(x => ({ t: 'z', x }))],
-      ['calculados', '🧮 Calculados e não confirmados', 'ambar', abertos.filter(z => filaDe(z) === 'calculado').map(x => ({ t: 'z', x }))],
-      ['confirmados', '✓ Confirmados', 'verde', abertos.filter(z => filaDe(z) === 'confirmado').map(x => ({ t: 'z', x }))],
-      ['hoje', '⏰ Vencem HOJE', 'vermelho', abertos.filter(z => z.fatal === hoje).map(x => ({ t: 'z', x }))],
-      ['tres', '📆 Vencem nos próximos 3 dias', 'vermelho', abertos.filter(z => z.fatal > hoje && z.fatal <= em3).map(x => ({ t: 'z', x }))],
-      ['vencidos', '🚨 Vencidos sem comprovação', 'vermelho', abertos.filter(z => z.fatal && z.fatal < hoje).concat(lote).map(x => ({ t: 'z', x, lote: /baixa em lote/.test(x.cumprido_por || '') }))],
-      ['audiencias', '⚖ Audiências designadas (90 dias)', 'azul', auds.filter(a => a.tipo !== 'pericia' && !/per[ií]cia/i.test(a.nome || '')).map(x => ({ t: 'a', x }))],
-      ['pericias', '🩺 Perícias designadas', 'azul', auds.filter(a => a.tipo === 'pericia' || /per[ií]cia/i.test(a.nome || '')).map(x => ({ t: 'a', x }))],
-      ['pericia_aguarda', '⏳ Perícias aguardando designação', 'ambar', ints.filter(i => !i.terminada_por && pericia(i, ['aguardando_designacao', 'designar_sem_data', 'nomeacao_perito'])).map(x => ({ t: 'i', x }))],
-      ['semdata', '📅 Audiência/perícia sem data ou horário', 'ambar', (extras.audSemData || []).map(x => ({ t: 's', x })).concat(auds.filter(a => !a.hora).map(x => ({ t: 'a', x })))],
-      ['falha_ia', '❌ Falhas na leitura automática', 'vermelho', ints.filter(i => !i.resumo_ia && (+i.ia_tentativas > 0)).map(x => ({ t: 'i', x })).concat(ints.filter(i => !i.terminada_por && semTexto(i) && (i.recebido_em || '') >= ha60).map(x => ({ t: 'i', x, sigilo: true })))],
-      ['falha_sinc', '🛰 Falhas de captura e sincronização', 'vermelho', ((resumo.robo || {}).alertas || []).map(x => ({ t: 'r', x }))]
-    ];
-    // filtros
-    const f = { busca: (params.get('busca') || '').trim(), trib: params.get('trib') || '', resp: params.get('resp') || '', ato: params.get('ato') || '', ver: params.get('ver') || '' };
-    const txt = it => { const x = it.x || {}; return [x.cliente, x.numero, x.descricao, x.movimento, x.resumo_ia, x.nome, x.tipo, typeof x === 'string' ? x : ''].join(' '); };
-    const tribDe = it => (it.x && (it.x.tribunal || '')) || '';
-    const respDe = it => (it.x && (it.x.responsavel || (it.x.prazo || {}).responsavel || '')) || '';
-    const atoDe = it => { const x = it.x || {}; const d = it.t === 'i' ? iaDe(x) : null; return (d && d.ato) || (it.t === 'a' ? (/per/i.test(x.tipo + x.nome) ? 'perícia' : 'audiência') : '') || String(x.descricao || x.movimento || '').split(/[\s—-]/)[0].toLowerCase(); };
-    const passa = it => (!f.busca || bateBusca(txt(it), f.busca)) && (!f.trib || tribDe(it) === f.trib) && (!f.resp || respDe(it) === f.resp) && (!f.ato || atoDe(it).includes(f.ato));
-    const todos = G.flatMap(g => g[3]);
-    const opc = (arr, atual, rot) => h('select', { onchange: e => ir({ [rot]: e.target.value }) }, h('option', { value: '' }, 'Todos'), [...new Set(arr.filter(Boolean))].sort().map(v => h('option', { value: v, selected: v === atual }, v)));
-    const ir = mud => { const q = new URLSearchParams(Object.assign({}, f, mud)); [...q.keys()].forEach(k => { if (!q.get(k)) q.delete(k); }); location.hash = '#/central' + (q.toString() ? '?' + q : ''); };
-    const filtros = h('form', { class: 'central-filtros', onsubmit: e => { e.preventDefault(); ir({ busca: e.target.busca.value.trim() }); } },
-      h('input', { name: 'busca', type: 'search', placeholder: 'Cliente ou nº do processo…', value: f.busca }),
-      h('label', {}, 'Tribunal ', opc(todos.map(tribDe), f.trib, 'trib')),
-      h('label', {}, 'Responsável ', opc(todos.map(respDe), f.resp, 'resp')),
-      h('label', {}, 'Ato ', opc(['sentença', 'acórdão', 'decisão', 'despacho', 'audiência', 'perícia', 'citação', 'intimação'], f.ato, 'ato')),
-      h('button', { type: 'submit', class: 'btn mini' }, 'Filtrar'), (f.busca || f.trib || f.resp || f.ato) ? botao('Limpar', () => ir({ busca: '', trib: '', resp: '', ato: '' }), 'mini sec') : null);
-    const cards = h('div', { class: 'central-cards' }, G.map(([k, nome, cor, lista]) => { const n = lista.filter(passa).length;
-      return h('button', { type: 'button', class: `central-card k-${cor}${f.ver === k ? ' ativo' : ''}${n ? '' : ' zero'}`, onclick: () => ir({ ver: f.ver === k ? '' : k }) }, h('b', {}, String(n)), h('span', {}, nome)); }));
-    // linhas
-    const linha = it => {
-      const x = it.x || {};
-      if (it.t === 'r') return h('li', { class: 'central-item k-vermelho' }, h('strong', {}, '⚠ ' + x), h('div', { class: 'peq' }, 'Veja a situação dos robôs abaixo.'));
-      if (it.t === 's') return h('li', { class: 'central-item' }, h('a', { href: x.processo_id ? '#/processo/' + x.processo_id : '#/audiencias' }, h('strong', {}, `${x.tipo === 'pericia' ? 'Perícia' : 'Audiência'} designada SEM data — ${x.cliente || 'cliente a identificar'}`)),
-        h('div', { class: 'peq' }, [x.numero, x.orgao, 'desde ' + dataBR(x.desde), x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', 'abrir o processo no tribunal e lançar a data'].filter(Boolean).join(' · ')));
-      if (it.t === 'a') return h('li', { class: 'central-item' }, h('a', { href: '#/audiencias' }, h('strong', {}, `${x.nome || x.tipo || 'Ato'} — ${dataBR(x.data)}${x.hora ? ' às ' + x.hora : ' · SEM HORÁRIO'}`)),
-        h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.local, x.devido ? 'aviso ao cliente devido agora' : ''].filter(Boolean).join(' · ')));
-      if (it.t === 'z') { const venc = x.fatal && x.fatal < hoje;
-        return h('li', { class: 'central-item' + (venc ? ' k-vermelho' : filaDe(x) === 'conferir' ? ' k-ambar' : '') }, h('a', { href: '#/prazo/' + x.id }, h('strong', {}, `${x.fatal ? dataBR(x.fatal) : 'SEM DATA'} — ${String(x.descricao || 'prazo').slice(0, 110)}`)),
-          h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável', prov(x) ? 'ATO NÃO IDENTIFICADO — abrir no tribunal' : filaDe(x) === 'confirmado' ? 'confirmado' : 'calculado pelo robô, não confirmado',
-            it.lote ? 'BAIXADO EM LOTE sem comprovante (13/11) — reabra se não foi feito' : '', x.conferido_fonte ? 'fonte: ' + x.conferido_fonte : ''].filter(Boolean).join(' · ')),
-          x.resumo_ia ? h('div', { class: 'peq central-ia' }, String(x.resumo_ia).slice(0, 260)) : null); }
-      const d = iaDe(x);
-      return h('li', { class: 'central-item' + (it.sigilo ? ' k-ambar' : '') }, h('a', { href: x.prazo ? '#/prazo/' + x.prazo.id : '#/prazos?ver=intimacoes&busca=' + encodeURIComponent(x.numero || '') },
-        h('strong', {}, `${dataBR((x.recebido_em || '').slice(0, 10))} — ${String(x.movimento || 'intimação').slice(0, 100)}`)),
-        h('div', { class: 'peq' }, [x.cliente || 'cliente a identificar', x.numero, x.tribunal, x.fonte, x.responsavel ? 'com ' + x.responsavel : '', x.prazo && x.prazo.fatal ? 'prazo ' + dataBR(x.prazo.fatal) : 'sem prazo ligado'].filter(Boolean).join(' · ')),
-        it.sigilo ? h('div', { class: 'peq central-ia' }, 'Sem texto do ato (documento sigiloso ou só o aviso): INFORMAÇÃO INSUFICIENTE — CONFERÊNCIA NO TRIBUNAL') : null,
-        x.ia_erro && !x.resumo_ia ? h('div', { class: 'peq erro' }, `IA falhou ${x.ia_tentativas || 1}× — ${String(x.ia_erro).slice(25, 200)}${+x.ia_tentativas >= 8 ? ' · conferir À MÃO' : ' · tenta de novo sozinha'}`) : null,
-        x.resumo_ia ? h('div', { class: 'peq central-ia' }, String(x.resumo_ia).slice(0, 300)) : null,
-        d && (d.audiencia || d.pericia) ? h('div', { class: 'peq' }, h('strong', {}, [d.audiencia ? 'Audiência: ' + d.audiencia.replace(/_/g, ' ') : '', d.pericia ? 'Perícia: ' + d.pericia.replace(/_/g, ' ') : '', d.data_ato ? dataBR(d.data_ato) + (d.hora_ato ? ' ' + d.hora_ato : '') : '', d.local_ato || '', d.perito ? 'perito: ' + d.perito : ''].filter(Boolean).join(' · ')), ' — pendente de confirmação') : null,
-        d && d.trecho ? h('details', {}, h('summary', { class: 'peq' }, 'trecho que a IA usou'), h('blockquote', { class: 'peq' }, d.trecho)) : null);
-    };
-    const grupoVer = G.find(g => g[0] === f.ver);
-    const listas = (grupoVer ? [grupoVer] : G.filter(g => ['vencidos', 'hoje', 'tres', 'provisorios', 'falha_ia', 'falha_sinc', 'semdata', 'pericia_aguarda'].includes(g[0]))).map(([k, nome, cor, lista]) => {
-      const l = lista.filter(passa); if (!grupoVer && !l.length) return null;
-      return h('section', { class: 'caixa central-grupo k-' + cor }, h('h2', {}, `${nome} (${l.length})`),
-        l.length ? h('ul', { class: 'central-lista' }, l.slice(0, 120).map(linha)) : vazio('Nada aqui. 👏'), l.length > 120 ? h('p', { class: 'peq' }, `Mostrando 120 de ${l.length}: use os filtros.`) : null);
-    }).filter(Boolean);
-    const filaIA = ints.filter(i => !i.resumo_ia && !semTexto(i) && (i.recebido_em || '') >= ha60).length, falhasIA = ints.filter(i => +i.ia_tentativas > 0 && !i.resumo_ia).length;
-    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Central de Prazos e Intimações'),
-        h('p', {}, 'O que precisa de providência, num lugar só. Nada sai daqui sozinho: só com Conferido (com o comprovante) e o OK da advogada. A IA sugere; quem confirma é a equipe.'))),
-      h('div', { class: 'central-captura' }, h('strong', {}, 'Captura: '), `IA — ${filaIA} na fila, ${falhasIA} com falha (tenta de novo sozinha, com intervalo crescente)`,
-        (resumo.robo || {}).ia && resumo.robo.ia.erro ? h('span', { class: 'erro' }, ' · último problema da IA: ' + String(resumo.robo.ia.erro).slice(0, 140)) : null),
-      resumo.robo ? semaforoRobo(resumo.robo) : null, filtros, cards, ...listas,
-      h('p', { class: 'peq' }, 'Regras: o painel procura sozinho o ato de cada aviso (texto do DJEN e movimentações do DataJud); o que não achou fica como ATO NÃO IDENTIFICADO, com data de segurança, e nunca aparece como confirmado; vencido sem comprovação continua aqui até alguém dar o Conferido com o comprovante ou reabrir; audiência/perícia lida pela IA fica "pendente de confirmação" até alguém lançar/conferir. Nenhuma mensagem vai ao cliente sem alguém aprovar.'));
+  /* ---------- 8.44 INTIMAÇÕES (pedido da usuária: "não gostei da Central de Prazos; prefiro só Intimações, mais organizado") ----------
+     Uma tela só, em três partes: Hoje e próximos dias · Para analisar · Execução e aprovação. Poucos números (cada um abre a lista exata).
+     Robôs, versões e ferramentas ficam em "Funcionamento do sistema" (?parte=sistema); na área de trabalho só aparece um aviso quando
+     uma fonte de intimações está atrasada. Cada linha responde: o que aconteceu, o que fazer, até quando, quem cuida e o que falta. */
+  const docPendente = z => z.situacao !== 'conferido' && (/PROVIS/i.test(z.descricao || '') || z.situacao === 'a definir');
+  /** O tipo da data da linha: data interna (documento pendente) × prazo calculado × prazo confirmado × compromisso. */
+  function dataDoPrazo(z) {
+    if (/^ato:/.test(z.observacoes || '')) return { rot: 'Compromisso', cls: 'k-azul' };
+    if (docPendente(z)) return { rot: 'Consultar o tribunal até', cls: 'k-ambar', interna: true };
+    if (divergente(z)) return { rot: 'Divergência', cls: 'k-vermelho' };
+    if (z.situacao === 'conferido') return { rot: 'Prazo confirmado', cls: 'k-verde' };
+    return { rot: 'Prazo calculado', cls: 'k-ambar' };
   }
+  function estadoDoPrazo(z) {
+    if (z.situacao === 'cumprido') return z.ok_em ? ['ix-ok', 'Aprovado'] : ['ix-info', 'Feito · aguarda aprovação'];
+    if (docPendente(z)) return ['ix-conf', 'Documento pendente'];
+    if (divergente(z)) return ['ix-risco', 'Divergência'];
+    if (z.situacao === 'conferido') return ['ix-ok', 'Confirmado'];
+    return ['ix-conf', 'Calculado · confirmar'];
+  }
+  function pendenciasDoPrazo(z) {
+    const p = [];
+    if (docPendente(z)) p.push('abrir no tribunal e registrar o ato');
+    else if (divergente(z)) p.push('escolher a leitura certa');
+    else if (z.situacao === 'calculado') p.push('confirmar a data');
+    if (!z.responsavel) p.push('definir quem cuida');
+    if (!z.cliente) p.push('identificar o cliente');
+    return p;
+  }
+  function linhaPrazoIx(z) {
+    const d = dataDoPrazo(z), e = estadoDoPrazo(z), o = oQueFazer(z), pend = pendenciasDoPrazo(z);
+    const venc = z.fatal && z.fatal < hojeISO() && SITUACOES_ABERTAS.includes(z.situacao);
+    return h('div', { class: 'ix-item' + (venc ? ' ix-vencido' : ''), tabindex: '0', role: 'link', onclick: () => { location.hash = '#/prazo/' + z.id; },
+      onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/prazo/' + z.id; } },
+      h('div', { class: 'ix-quando' }, h('div', { class: 'ix-rot ' + d.cls }, d.rot), h('div', { class: 'ix-data' }, z.fatal ? dataBR(z.fatal).slice(0, 5) : '—'),
+        z.fatal ? h('div', { class: 'ix-rel' }, etiquetaContagem(z.fatal)) : null),
+      h('div', { class: 'ix-oque' },
+        h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo)),
+        h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : '', z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias ? ' · ' + textoDias(z) : ''),
+        d.interna ? h('div', { class: 'ix-nota' }, 'Data interna de conferência, não é data fatal: o aviso não traz o ato e o texto ainda não chegou.') : null,
+        pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
+      h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ' + e[0] }, e[1]),
+        h('div', { class: 'ix-resp' }, z.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), ' ', primeiroNome(z.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
+      h('div', { class: 'ix-acoes', onclick: ev => ev.stopPropagation() }, botoesPrazo(z)));
+  }
+  function linhaAtoIx(a) {
+    const tipo = /per[ií]cia/i.test(a.tipo + ' ' + a.nome) ? 'Perícia' : 'Audiência';
+    const semTest = /instru|una/i.test(a.tipo + ' ' + a.nome) && !(a.testemunhas || []).length;
+    const pend = [semTest ? 'pedir as testemunhas' : '', a.devido ? 'aviso ao cliente: ' + a.devido : ''].filter(Boolean);
+    return h('div', { class: 'ix-item', tabindex: '0', role: 'link', onclick: () => { location.hash = '#/audiencias'; }, onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/audiencias'; } },
+      h('div', { class: 'ix-quando' }, h('div', { class: 'ix-rot k-azul' }, tipo), h('div', { class: 'ix-data' }, dataBR(a.data).slice(0, 5)), h('div', { class: 'ix-rel' }, a.hora || 'sem horário')),
+      h('div', { class: 'ix-oque' }, h('div', {}, h('span', { class: 'ix-cli' }, a.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato' }, a.nome || a.tipo)),
+        h('div', { class: 'ix-proc' }, a.numero || '', a.local ? ' · ' + a.local : '', a.modo ? ' · ' + a.modo : ''),
+        pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
+      h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ix-ok' }, 'Na agenda')),
+      h('div', { class: 'ix-acoes' }, h('a', { class: 'btn mini sec', href: '#/audiencias', onclick: ev => ev.stopPropagation() }, 'Preparar')));
+  }
+  function grupoIx(titulo, itens, linha, nota) {
+    if (!itens.length) return null;
+    return h('section', { class: 'ix-grupo' }, h('div', { class: 'ix-gtit' }, h('h3', {}, titulo), h('span', { class: 'ix-gq' }, String(itens.length)), nota ? h('span', { class: 'ix-gnota' }, nota) : null),
+      h('div', { class: 'ix-lista' }, itens.map(linha)));
+  }
+  /** Aviso só quando uma fonte de intimações está atrasada (diz qual, desde quando, o que fazer e quem resolve). */
+  function avisoFontes(robo) {
+    robo = robo || {};
+    const ag = Date.now(), dj = robo.djen || {}, util = ![0, 6].includes(new Date().getDay());
+    const itens = [];
+    if (!robo.ultima || robo.atrasado) itens.push({ fonte: 'Avisos do PJe e do eproc (Gmail)', desde: robo.ultima, oque: 'Aperte "Ler agora" em Funcionamento do sistema; se continuar, conferir os e-mails dos tribunais à mão.' });
+    if (util && (!dj.ultima || ag - Date.parse(dj.ultima) > 26 * 3600e3)) itens.push({ fonte: 'Publicações do DJEN', desde: dj.ultima, oque: 'Deixar o painel aberto num computador do escritório (lê sozinho) ou conferir no site do DJEN.' });
+    if (!itens.length) return null;
+    return h('div', { class: 'ix-alerta', role: 'status' }, itens.map(x => h('div', { class: 'ix-alerta-item' },
+      h('b', {}, x.fonte + ' atrasada'), ' — pode haver intimações que o painel ainda não leu.',
+      h('div', { class: 'peq' }, 'Última leitura boa: ' + (x.desde ? quando(x.desde) : 'nenhuma') + '. ' + x.oque + ' Quem resolve: a administração.'))),
+      h('a', { class: 'btn mini sec', href: '#/prazos?parte=sistema' }, 'Ver o que fazer'));
+  }
+
   async function telaPrazos(params) {
     carregando();
-    const encerrados = params.get('encerrados') === '1';
-    const ver = params.get('ver') || 'todos';
+    const parte = ['hoje', 'analisar', 'execucao', 'sistema'].includes(params.get('parte')) ? params.get('parte') : 'hoje';
+    // links antigos (Início, Indicadores): ver=vencido/urgente/hoje → venc; conferir → confirmar; definir/fila=conferir → doc
+    const LEG = { vencido: 'venc', urgente: 'venc', hoje: 'venc', atencao: 'venc', conferir: 'confirmar', definir: 'doc' };
+    const ver = LEG[params.get('ver')] || params.get('ver') || (params.get('fila') === 'conferir' ? 'doc' : params.get('fila') === 'calculado' ? 'confirmar' : '');
     const sis = NOME_SIS[params.get('sis')] ? params.get('sis') : sistemaPreferido();
-    const [listaToda, resumo] = await Promise.all([api('prazos.listar', { encerrados }), api('resumo')]);
-    const porSis = { todos: listaToda.length, civel: 0, federal: 0, pje: 0 };
-    listaToda.forEach(z => { if (SITUACOES_ABERTAS.includes(z.situacao) || encerrados) porSis[sistemaDoPrazo(z)]++; });
-    const listaSis = sis === 'todos' ? listaToda : listaToda.filter(z => sistemaDoPrazo(z) === sis);
-    // 8.10: filas separadas — conferir no tribunal (âmbar) × calculados × confirmados (o vermelho fica só para prazo confirmado em risco)
-    const fila = ['conferir', 'calculado', 'confirmado'].includes(params.get('fila')) ? params.get('fila') : '';
-    const nFila = { conferir: 0, calculado: 0, confirmado: 0, div: 0 };
-    listaSis.forEach(z => { const f = filaDe(z); if (nFila[f] !== undefined) nFila[f]++; if (divergente(z)) nFila.div++; });
-    const lista = fila ? listaSis.filter(z => filaDe(z) === fila) : listaSis;
-    const mudarSis = v => { try { localStorage.setItem('prazos_sistema', v); } catch (e) { /* ok */ } ir({ sis: v === 'todos' ? '' : v }); };
-    const dir = params.get('ordem') === 'desc' ? 'desc' : 'asc';
+    const busca = (params.get('q') || '').trim();
     const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/prazos' + (q.toString() ? '?' + q : ''); };
-    const ordem = { dir, mudar: d => ir({ ordem: d === 'asc' ? '' : d }) };
-
-    const abertos = lista.filter(z => SITUACOES_ABERTAS.includes(z.situacao));
-    const conta = f => lista.filter(z => faixaPrazo(z) === f).length;
-    const FILTROS = [
-      ['todos', 'Todos', null],
-      ['vencido', 'Vencidos', 'vencido'], ['urgente', 'Até 2 dias', 'urgente'], ['atencao', '3 a 5 dias', 'atencao'],
-      ['definir', 'A definir', 'definir'], ['conferir', 'A conferir', null], ['hoje', 'Vencem hoje', null], ['meus', 'Meus prazos', null]];
-    const passa = z => ver === 'todos' ? true : ver === 'conferir' ? z.situacao === 'calculado' : ver === 'hoje' ? z.fatal === hojeISO() && SITUACOES_ABERTAS.includes(z.situacao)
-      : ver === 'meus' ? z.responsavel === sessao.usuario.usuario : faixaPrazo(z) === ver;
-    const nConferir = lista.filter(z => z.situacao === 'calculado').length;
-
-    // Uma tabela só: sem data fatal vai sempre no topo (é o mais perigoso); o resto pela data fatal
-    const todosOrdenados = lista.filter(passa)
-      .sort((a, b) => {
-        if (divergente(a) !== divergente(b)) return divergente(a) ? -1 : 1; // divergência da IA sempre no topo
-        if (!a.fatal !== !b.fatal) return a.fatal ? 1 : -1;
-        const x = a.fatal || '', y = b.fatal || ''; return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'asc' ? 1 : -1);
-      });
-    const nProv = lista.filter(z => SITUACOES_ABERTAS.includes(z.situacao) && /PROVISÓRIO/i.test(z.descricao || '')).length;
-
-    const kpi = (n, rotulo, cls, f) => h('button', { type: 'button', class: 'kpi ' + cls + (ver === f ? ' ativo' : ''), onclick: () => ir({ ver: ver === f ? '' : f }) },
-      h('b', {}, String(n)), h('span', {}, rotulo));
+    const admin = !!sessao.usuario.pode.usuarios;
+    if (parte === 'sistema') {
+      const resumo = await api('resumo');
+      const det = semaforoRobo(resumo.robo); det.open = true;
+      mostrar(h('div', { class: 'cab' }, h('div', {}, h('p', {}, h('a', { href: '#/prazos' }, '← Intimações')), h('h1', {}, 'Funcionamento do sistema'),
+          h('p', {}, 'Robôs que trazem as intimações, versões e ferramentas. A tela de Intimações só mostra um aviso quando uma fonte atrasa.'))),
+        det,
+        admin ? h('div', { class: 'acoes' }, botao('☁ Robô do DJEN', () => dialogoRoboDjen(), 'sec'), botao('🔧 Revisar prazos', () => dialogoRevisaoPrazos(), 'sec')) : null,
+        h('details', { class: 'caixa' }, h('summary', {}, 'Como o painel conta os prazos'),
+          h('p', {}, 'O ato vem do texto da publicação (DJEN) ou das movimentações do DataJud. A ciência é a data em que a intimação é aberta (confirmada) ou a tácita (10 dias após a expedição); no DJEN, o dia útil seguinte à disponibilização. A contagem usa dias úteis, os feriados e o recesso de 20/12 a 20/01. Sem o texto do ato, o painel não inventa prazo: mostra uma data interna para consultar o tribunal.')),
+        admin ? blocoFeriados() : null);
+      return;
+    }
+    const [listaToda, resumo, encerr, audR] = await Promise.all([api('prazos.listar', {}), api('resumo'),
+      parte === 'execucao' ? api('prazos.listar', { encerrados: true }).catch(() => []) : Promise.resolve([]),
+      parte === 'hoje' ? api('audiencias.listar', { dias: 7 }).catch(() => ({ lista: [] })) : Promise.resolve({ lista: [] })]);
+    const hoje = hojeISO(), amanha = isoSoma(hoje, 1), em7 = isoSoma(hoje, 7);
+    const bate = z => !busca || palavrasComecam([z.cliente, z.numero, z.descricao, z.responsavel].join(' '), busca) || String(z.numero || '').replace(/\D/g, '').includes(busca.replace(/\D/g, '') || '§');
+    const doSis = z => sis === 'todos' || sistemaDoPrazo(z) === sis;
+    const abertos = listaToda.filter(z => SITUACOES_ABERTAS.includes(z.situacao) && doSis(z) && bate(z));
+    const porData = (a, b) => (a.fatal || '9') < (b.fatal || '9') ? -1 : (a.fatal || '9') > (b.fatal || '9') ? 1 : 0;
+    // números (cada um abre a lista exata, em todas as partes)
+    const NUM = [
+      ['venc', 'k-vermelho', 'Vencidos, hoje e amanhã', z => z.fatal && z.fatal <= amanha && !docPendente(z)],
+      ['doc', 'k-ambar', 'Documento pendente', docPendente],
+      ['confirmar', 'k-ambar', 'Datas para confirmar', z => !docPendente(z) && (z.situacao === 'calculado' || divergente(z))],
+      ['semresp', '', 'Sem responsável', z => !z.responsavel],
+      ['meus', 'oculto', 'Meus prazos', z => z.responsavel === sessao.usuario.usuario]];
+    const numeros = h('div', { class: 'ix-nums' }, NUM.filter(x => x[1] !== 'oculto').map(([k, cor, rot, f]) => h('button', { type: 'button', class: 'ix-num ' + cor + (ver === k ? ' ativo' : ''), 'aria-pressed': String(ver === k), onclick: () => ir({ ver: ver === k ? '' : k }) },
+      h('b', {}, String(abertos.filter(f).length)), h('span', {}, rot))));
+    const ABAS_IX = [['hoje', 'Hoje e próximos dias', abertos.filter(z => !z.fatal || z.fatal <= em7).length], ['analisar', 'Para analisar', abertos.filter(z => z.situacao !== 'conferido').length],
+      ['execucao', 'Execução e aprovação', abertos.filter(z => z.situacao === 'conferido').length]];
+    const barra = h('div', { class: 'ix-barra' },
+      h('div', { class: 'ix-abas', role: 'tablist' }, ABAS_IX.map(([k, rot, n]) => h('button', { type: 'button', role: 'tab', class: 'ix-aba' + (parte === k && !ver ? ' ativa' : ''), 'aria-selected': String(parte === k && !ver), onclick: () => ir({ parte: k === 'hoje' ? '' : k, ver: '' }) }, rot, h('span', { class: 'ix-n' }, String(n))))),
+      h('div', { class: 'ix-filtros' },
+        h('input', { type: 'search', class: 'busca-peq', placeholder: 'Cliente ou nº do processo', value: busca, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) }),
+        h('select', { 'aria-label': 'Sistema', onchange: e => { try { localStorage.setItem('prazos_sistema', e.target.value); } catch (x) { /* ok */ } ir({ sis: e.target.value === 'todos' ? '' : e.target.value }); } },
+          SISTEMAS.map(([v, rot]) => h('option', { value: v, selected: sis === v }, rot)))));
+    const corpo = [];
+    if (ver) {
+      const n = NUM.find(x => x[0] === ver) || NUM[0];
+      const lista = abertos.filter(n[3]).sort(porData);
+      corpo.push(h('p', { class: 'ix-filtro' }, 'Mostrando ', h('b', {}, n[2]), ` (${lista.length}), de todas as partes. `, botao('Limpar', () => ir({ ver: '' }), 'mini sec')),
+        lista.length ? h('div', { class: 'ix-lista' }, lista.map(linhaPrazoIx)) : h('p', { class: 'ini-vazio' }, 'Nada nesta lista.'));
+    } else if (parte === 'hoje') {
+      const auds = (audR.lista || []).filter(a => a.data >= hoje && a.data <= em7);
+      const vencidos = abertos.filter(z => z.fatal && z.fatal < hoje && !docPendente(z)).sort(porData);
+      const doDia = d => abertos.filter(z => z.fatal === d).sort((a, b) => docPendente(a) - docPendente(b));
+      const prox = abertos.filter(z => z.fatal > amanha && z.fatal <= em7).sort(porData);
+      const semData = abertos.filter(z => !z.fatal);
+      corpo.push(
+        grupoIx('Vencidos sem baixa', vencidos, linhaPrazoIx, 'conferir se foi feito: dar o Conferido com o comprovante ou tratar como urgente'),
+        grupoIx('Hoje', [...auds.filter(a => a.data === hoje).map(a => ({ a })), ...doDia(hoje).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
+        grupoIx('Amanhã', [...auds.filter(a => a.data === amanha).map(a => ({ a })), ...doDia(amanha).map(z => ({ z }))], x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
+        grupoIx('Próximos 7 dias', [...auds.filter(a => a.data > amanha).map(a => ({ a, d: a.data })), ...prox.map(z => ({ z, d: z.fatal }))].sort((x, y) => x.d < y.d ? -1 : 1), x => x.a ? linhaAtoIx(x.a) : linhaPrazoIx(x.z)),
+        grupoIx('Sem data', semData, linhaPrazoIx));
+      const depois = abertos.filter(z => z.fatal > em7).sort(porData);
+      if (depois.length) corpo.push(h('details', { class: 'ix-depois' }, h('summary', {}, `Mais adiante (${depois.length})`), h('div', { class: 'ix-lista' }, depois.map(linhaPrazoIx))));
+      if (!corpo.filter(Boolean).length) corpo.push(h('p', { class: 'ini-vazio' }, '✓ Nada para hoje e os próximos 7 dias.'));
+    } else if (parte === 'analisar') {
+      const doc = abertos.filter(docPendente).sort(porData);
+      const div = abertos.filter(z => !docPendente(z) && divergente(z)).sort(porData);
+      const calc = abertos.filter(z => !docPendente(z) && !divergente(z) && z.situacao === 'calculado').sort(porData);
+      corpo.push(
+        grupoIx('Documento pendente — abrir no tribunal', doc, linhaPrazoIx, 'o aviso não traz o ato; a data é interna, para consultar'),
+        grupoIx('Divergência — conferir o ato', div, linhaPrazoIx, 'duas leituras diferentes do prazo'),
+        grupoIx('Prazo calculado — confirmar a data', calc, linhaPrazoIx, 'o painel leu o ato e contou os dias'),
+        blocoIntimacoes(sis));
+    } else {
+      const conf = abertos.filter(z => z.situacao === 'conferido').sort(porData);
+      const porResp = {};
+      conf.forEach(z => { const k = z.responsavel || ''; (porResp[k] = porResp[k] || []).push(z); });
+      const lote = (encerr || []).filter(z => z.situacao === 'cumprido' && /baixa em lote/.test(z.cumprido_por || '') && doSis(z) && bate(z));
+      corpo.push(admin ? blocoAguardandoOk({ inicio: true }) : null,
+        ...Object.keys(porResp).sort((a, b) => (a ? 0 : -1) - (b ? 0 : -1) || a.localeCompare(b)).map(k => grupoIx(k ? 'Com ' + primeiroNome(k) : 'Confirmados sem responsável', porResp[k], linhaPrazoIx)),
+        conf.length ? null : h('p', { class: 'ini-vazio' }, 'Nenhum prazo confirmado em execução.'),
+        grupoIx('Baixados em lote sem comprovante', lote, linhaPrazoIx, 'a baixa foi administrativa: se o ato não foi protocolado, reabra'));
+    }
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações'),
-        h('p', {}, `${abertos.length} prazo${abertos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : { pje: ' no PJe (trabalhista)', civel: ' no eproc cível', federal: ' no eproc federal' }[sis]} · contagem até 23h59 do dia fatal`)),
-        h('div', { class: 'barra' }, sessao.usuario.pode.usuarios ? botao('☁ Robô do DJEN', () => dialogoRoboDjen(), 'sec') : null, sessao.usuario.pode.usuarios ? botao('🔧 Revisar prazos', () => dialogoRevisaoPrazos(), 'sec') : null, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
-      semaforoRobo(resumo.robo),
-      blocoAguardandoOk(),
-      // 8.36 (pedido da usuária: "prazos muito confuso"): filas, sistema e filtros numa barra só
-      h('div', { class: 'int-barra' },
-        h('div', { class: 'int-filas', role: 'group', 'aria-label': 'Filas' },
-          [['', 'Todos', listaSis.filter(z => SITUACOES_ABERTAS.includes(z.situacao)).length], ['conferir', '⚠ Conferir no tribunal', nFila.conferir], ['calculado', 'Calculados pelo robô', nFila.calculado], ['confirmado', '✓ Confirmados', nFila.confirmado]].map(([f, rot, n]) =>
-            h('button', { type: 'button', class: 'int-fila fila-' + (f || 'todos') + (fila === f ? ' ativo' : ''), 'aria-pressed': String(fila === f), onclick: () => ir({ fila: f }) }, rot, h('span', { class: 'cb-n' }, String(n))))),
-        h('div', { class: 'int-filtros' },
-          h('label', { class: 'filtro-sel' }, 'Sistema', h('select', { onchange: e => mudarSis(e.target.value) }, SISTEMAS.map(([v, rot]) => h('option', { value: v, selected: sis === v }, rot + (v !== 'todos' ? ` (${porSis[v]})` : ''))))),
-          h('div', { class: 'chips' }, FILTROS.filter(f => !['definir', 'conferir'].includes(f[0])).map(([f, rot, cat]) => { const n = cat ? conta(cat) : null;
-            return h('button', { type: 'button', class: 'chip-filtro' + (ver === f ? ' ativo' : '') + (n && (f === 'vencido' || f === 'urgente') ? ' chip-alerta' : ''), onclick: () => ir({ ver: f === 'todos' ? '' : f }) }, rot, n ? h('span', { class: 'cb-n' }, String(n)) : null); })),
-          h('button', { type: 'button', class: 'chip-filtro ordem', onclick: () => ordem.mudar(dir === 'asc' ? 'desc' : 'asc') }, dir === 'asc' ? '▼ Urgentes primeiro' : '▲ Distantes primeiro'),
-          h('label', { class: 'marcar' }, h('input', { type: 'checkbox', checked: encerrados, onchange: e => ir({ encerrados: e.target.checked ? '1' : '' }) }), 'Cumpridos (30 dias)'))),
-      sessao.usuario.pode.usuarios && conta('vencido') ? h('div', { class: 'nota alerta baixa-lote' },
-        h('strong', {}, `${conta('vencido')} prazo(s) vencido(s) sem baixa${sis === 'todos' ? '' : ' neste sistema'}.`),
-        ' Se já foram resolvidos, dê baixa em todos de uma vez (eles saem da lista; dá para reabrir em "Mostrar cumpridos"). ',
-        botao('Dar baixa em todos os vencidos', async ev => {
-          const b = ev.target;
-          try {
-            const c = await api('prazos.baixarVencidos', { contar: true });
-            if (!confirm(`Dar baixa em ${c.vencidos} prazo(s) com data fatal antes de hoje, de todos os sistemas? Os de hoje em diante continuam.`)) return;
-            b.disabled = true; b.textContent = 'Dando baixa…';
-            const r = await api('prazos.baixarVencidos', {});
-            avisar(`${r.baixados} prazo(s) vencido(s) baixado(s).`); rota();
-          } catch (e) { avisar(e.message, true); b.disabled = false; b.textContent = 'Dar baixa em todos os vencidos'; }
-        }, 'sec mini')) : null,
-      nProv ? h('div', { class: 'nota conferir' }, h('strong', {}, `${nProv} prazo${nProv === 1 ? '' : 's'} com ato não identificado.`),
-        ' O aviso do tribunal não traz o ato (no PJe vem "documento sigiloso") e o painel ainda não achou o texto no DJEN nem a movimentação no DataJud — ele procura sozinho a cada rodada. Até lá fica uma data de segurança (5 dias). Abra no sistema do tribunal, confira o ato e aperte "Conferi no tribunal" (diz onde conferiu) ou corrija os dias. Eles ficam na fila âmbar "Conferir no tribunal" e, na agenda, aparecem como "⚠ CONFERIR".') : null,
-      h('section', { class: 'bloco-prazos' }, h('h2', {}, `Prazos das intimações (${todosOrdenados.length})`),
-        tabelaPrazos(todosOrdenados, ver === 'todos' ? 'Nenhum prazo em aberto.' : 'Nenhum prazo neste filtro.', ordem)),
-      blocoIntimacoes(sis),
-      h('details', { class: 'caixa' }, h('summary', {}, 'Como o robô calcula os prazos'),
-        h('p', {}, 'A ciência é a data em que a intimação é aberta (confirmada) ou, se ninguém abrir, a tácita: 10 dias após a expedição. No DJEN, é o dia útil seguinte à disponibilização. A contagem usa dias úteis, os feriados cadastrados e o recesso de 20/12 a 20/01, até as 23h59 do dia fatal.'),
-        h('p', {}, 'O robô roda sozinho de 6 em 6 horas (0h, 6h, 12h, 18h, aproximadamente) e recalcula os prazos em aberto. Todo prazo calculado pelo robô fica marcado até a advogada conferir no eproc ou no PJe.')),
-      sessao.usuario.pode.usuarios ? blocoFeriados() : null);
+        h('p', {}, `${abertos.length} em aberto${sis === 'todos' ? '' : ' em ' + SISTEMAS.find(x => x[0] === sis)[1]} · `, h('a', { href: '#/prazos?parte=sistema', class: 'ix-sis' }, 'Funcionamento do sistema'))),
+        h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
+      avisoFontes(resumo.robo),
+      numeros, barra, ...corpo.filter(Boolean));
   }
 
   /** Lista das intimações, sempre aberta na tela: busca, filtro do sistema, prazo de cada uma e "Marcar na agenda". */
@@ -6787,7 +6788,7 @@ function main() {
         case 'audiencias': await telaAudiencias(params); break;
         case 'chat': await telaChat(params); break;
         case 'compromisso': await telaCompromisso(params); break;
-        case 'central': await telaCentral(params); break;
+        case 'central': location.replace('#/prazos'); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
         case 'financeiro': if (id === 'receber') await telaAReceber(params); else if (id === 'caixa') await telaCaixa(params); else await telaFinanceiro(params); break;

@@ -1648,3 +1648,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ato no e-mail, segredo de justiça, notificação do PJe com PDF) ficam "ATO NÃO IDENTIFICADO" na Central até chegar o texto ou alguém abrir.
 - Teste: `.github/motor/teste/etapa843.js`.
 
+
+## 8.44 Intimações em 3 partes; a "Central de Prazos" saiu (pedido da usuária: "não gostei; prefiro só Intimações, mais organizado")
+
+- Só painel (Code.gs continua 8.43.0). Menu sem "Central de Prazos"; #/central leva a #/prazos. `telaCentral` foi apagada.
+- `telaPrazos` (#/prazos): cabeçalho "Intimações" + link "Funcionamento do sistema" (`?parte=sistema`: `semaforoRobo` aberto, Robô do DJEN,
+  Revisar prazos, como o painel conta, feriados). Na área de trabalho só `avisoFontes` (Gmail parado ou DJEN > 26 h em dia útil: qual fonte,
+  última leitura boa, o que fazer, quem resolve). 4 números que abrem a lista exata (`?ver=venc|doc|confirmar|semresp`; `meus` escondido;
+  links antigos ver=vencido/conferir/definir e fila=conferir são traduzidos). Abas (`?parte=`): Hoje e próximos dias (vencidos sem baixa,
+  hoje, amanhã, 7 dias — com audiências/perícias de `audiencias.listar`, sem data, "Mais adiante") · Para analisar (documento pendente,
+  divergência, calculado para confirmar + `blocoIntimacoes`) · Execução e aprovação (Aguardando o seu OK, confirmados por responsável,
+  baixados em lote sem comprovante). Busca `?q=` e sistema.
+- Linha (`linhaPrazoIx`): tipo da data (`dataDoPrazo`: "Consultar o tribunal até" = data INTERNA quando falta o documento, "Prazo calculado",
+  "Prazo confirmado", "Divergência", "Compromisso"), cliente + ato, processo/ciência/dias, "Falta: …" (`pendenciasDoPrazo`), estado
+  (`estadoDoPrazo`), responsável e os botões de sempre (`botoesPrazo`). `docPendente` = /PROVIS/ ou "a definir", nunca conferido. CSS `.ix-*`.
+- Prévia aprovada antes: https://claude.ai/artifact/6HrChawH3HgUP7aXZMMCj6 (dados fictícios).
