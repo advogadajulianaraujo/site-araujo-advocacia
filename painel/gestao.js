@@ -445,7 +445,7 @@
       campo('fgts_dep', 'A empresa depositou o FGTS?', 'naosei', { opcoes: [['sim', 'Sim, todos os meses'], ['nao', 'Não, nenhum mês'], ['parte', 'Só em parte'], ['naosei', 'Não sei (só conferência)']] }),
       campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'se for "em parte" e sem o extrato' }),
       campo('fgts', 'FGTS já depositado — comprovado no extrato (R$)', '', { modo: 'decimal' }),
-      chk('fgts_outro', 'FGTS contratual já calculado em outro pedido (mostra para conferência e não soma de novo)'),
+      chk('fgts_outro', 'FGTS mensal não recolhido já calculado em outro pedido (mostra para conferência e não soma de novo)'),
       chk('mfgts', 'Incluir a multa do FGTS (40% na dispensa sem justa causa/rescisão indireta; 20% no acordo)'),
       chk('m477', 'Incluir a multa do art. 477 da CLT'), chk('m467', 'Incluir a multa do art. 467 da CLT'),
       campo('base_m467', 'Base das verbas rescisórias incontroversas — art. 467 (R$)', '', { modo: 'decimal', dica: 'Informe somente a base que pretende incluir. Não usamos automaticamente todas as verbas.' }),
@@ -483,7 +483,7 @@
       out.replaceChildren(alerta || '', h('div', { class: 'calc-res' }, t.el,
         ...[`Tempo de casa: ${r.anos} ano(s) completo(s) · aviso de ${r.diasAv || 0} dias · término projetado: ${dataBR(iso(r.fim))}${ult ? ' · último dia de trabalho: ' + dataBR(iso(ult)) : ''} · prazo para a ação (2 anos): até ${dataBR(iso(somaAnos(r.fim, 2)))}.`,
           ...r.notas,
-          'Comprovado × estimado: só entram como pagos os valores informados acima (comprovados). Não se presume falta de depósito do FGTS: sem "não depositou"/"em parte" ou o valor do extrato, o FGTS contratual aparece só para conferência (linha cinza). A multa de 40% incide sobre o FGTS contratual, sem o FGTS do aviso indenizado (Tema 255 do TST; Súmula 305 para o FGTS do aviso).',
+          'FGTS: o mensal do contrato já foi recolhido pela empresa — aparece só para conferência pelo extrato (linha cinza) e não soma no total (só vira valor a receber se informar que não depositou ou depositou em parte). Entra no total o FGTS rescisório ainda não recolhido: 8% do saldo de salário, 8% do 13º devido (já com a projeção do aviso, uma vez só) e 8% do aviso indenizado (Súmula 305). A multa de 40% incide sobre a base legal (FGTS mensal + saldo + 13º sem a projeção), sem o FGTS do aviso indenizado (OJ 42, II, SDI-1; Tema 255 do TST).',
           `INSS do empregado (só conferência, saldo e 13º): ${din(r.inssConferencia)}. Não há INSS sobre aviso indenizado nem sobre férias indenizadas. IR não calculado. Cada parcela foi calculada com precisão e arredondada a 2 casas no fim.`,
           'Base: CLT arts. 137, 146, 467, 477, 483, 484-A e 487; Lei 4.090/1962; Lei 12.506/2011; Lei 8.036/1990; OJ 82 e 83 da SDI-1; Súmulas 171, 261 e 305 do TST. Estimativa: conferir antes de usar.'].map(x => h('p', { class: 'peq' }, x)),
         h('div', { class: 'g-acoes' }, h('button', { type: 'button', class: 'btn mini sec', onclick: () => copiar(t.texto, 'Resultado copiado.') }, 'Copiar resultado'))));

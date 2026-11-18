@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.44.3 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.45.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.44.3';
+var MOTOR_VERSAO = '8.45.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.44.3';
+var VERSAO = '8.45.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -138,7 +138,7 @@ var ESQUEMA = {
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
-    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por'],
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por', 'acordo', 'preparo'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -1262,6 +1262,7 @@ function audienciasLista_(dias) {
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
       avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
       modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo),
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
   });
@@ -1282,7 +1283,9 @@ function atosSemData_() {
     .sort(function (a, b) { return a.desde < b.desde ? 1 : -1; });
 }
 
-/** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência). */
+/* 8.45 (pedido da usuária: "página de audiência separada em conciliação e instrução; na conciliação o valor do acordo combinado com o
+   cliente; na instrução as testemunhas, se tem ou não"): campos novos da ficha, guardados em JSON nas colunas `acordo` e `preparo`. */
+function jsonAto_(v) { if (!v) return {}; try { var o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
 var FLUXOS = {
   Trabalhista: {
     contratado: ['Conferir procuração, contrato e declaração de hipossuficiência assinados', 'Reunir CTPS, contracheques, TRCT, extrato do FGTS e registros de ponto',

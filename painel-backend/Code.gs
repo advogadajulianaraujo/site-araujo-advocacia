@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.44.3';
+var VERSAO = '8.45.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -77,7 +77,7 @@ var ESQUEMA = {
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
-    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por'],
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por', 'acordo', 'preparo'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -5957,6 +5957,7 @@ function audienciasLista_(dias) {
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
       avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
       modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo),
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
   });
@@ -5968,6 +5969,7 @@ function audienciasLista_(dias) {
 function textoTestemunhas_(a) {
   var t = a.testemunhas || [], q = a.data ? dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '') : 'data a confirmar';
   var cab = '⚖ TESTEMUNHAS — audiência de instrução de ' + q + (a.numero ? ' (processo ' + a.numero + ')' : '') + ': ';
+  if (!t.length && a.preparo && a.preparo.tem === 'nao') return cab + 'o cliente informou que NÃO terá testemunhas.';
   if (!t.length) return cab + 'nenhuma cadastrada ainda. Pedir ao cliente o nome completo, CPF e telefone de cada testemunha (na Justiça do Trabalho, em regra até 3; no rito sumaríssimo, até 2 — conferir) e lançar na ficha da audiência.';
   return cab + t.map(function (x) { return [x.nome || 'sem nome', x.telefone ? 'tel. ' + x.telefone : '', x.cpf ? 'CPF informado' : 'falta CPF', x.confirmou === 'sim' ? 'confirmou presença' : 'presença a confirmar'].filter(String).join(', '); }).join('; ') + '.';
 }
@@ -5994,7 +5996,32 @@ function atosSemData_() {
     .sort(function (a, b) { return a.desde < b.desde ? 1 : -1; });
 }
 
-/** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência). */
+/* 8.45 (pedido da usuária: "página de audiência separada em conciliação e instrução; na conciliação o valor do acordo combinado com o
+   cliente; na instrução as testemunhas, se tem ou não"): campos novos da ficha, guardados em JSON nas colunas `acordo` e `preparo`. */
+function jsonAto_(v) { if (!v) return {}; try { var o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+var CAMPOS_ACORDO_ = { pedir: 'v', minimo: 'v', forma: ['', 'avista', 'parcelado', 'tanto'], parcelas: 'n', autorizou: 'q', obs: 't', resultado: ['', 'acordo', 'sem_acordo', 'redesignada', 'nao_houve'], valor_fechado: 'v', resultado_obs: 't' };
+var CAMPOS_PREPARO_ = { tem: ['', 'sim', 'nao', 'confirmar'], pontos: 't', documentos: 't', orientado: 'q', depoimento: 't', resultado: ['', 'realizada', 'redesignada', 'nao_houve', 'acordo'], resultado_obs: 't' };
+function limparCamposAto_(d, campos, antes, quem, agora) {
+  var o = Object.assign({}, antes || {});
+  Object.keys(campos).forEach(function (k) {
+    if (d[k] === undefined) return;
+    var t = campos[k], v = d[k];
+    if (t === 'v') o[k] = v === '' || v === null ? '' : String(Math.round(dinheiro_(v) * 100) / 100);
+    else if (t === 'n') o[k] = String(Math.max(0, Math.min(120, parseInt(v, 10) || 0)) || '');
+    else if (t === 't') o[k] = String(v || '').slice(0, 2000);
+    else if (t === 'q') { o[k] = v ? agora : ''; o[k + '_por'] = v ? quem : ''; }
+    else if (Array.isArray(t)) o[k] = t.indexOf(String(v)) >= 0 ? String(v) : '';
+  });
+  return o;
+}
+function textoAcordo_(a) {
+  var c = a.acordo || {}, q = a.data ? dataBR_(a.data) + (a.hora ? ' às ' + a.hora : '') : 'data a confirmar', r = function (v) { return v ? 'R$ ' + (+v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.') : ''; };
+  if (!c.pedir && !c.minimo) return '';
+  return '🤝 ACORDO — audiência de conciliação de ' + q + (a.numero ? ' (processo ' + a.numero + ')' : '') + ': ' + [c.pedir ? 'pedir ' + r(c.pedir) : '', c.minimo ? 'mínimo aceito pelo cliente ' + r(c.minimo) : '',
+    c.forma === 'avista' ? 'só à vista' : c.forma === 'parcelado' ? 'aceita parcelado' + (c.parcelas ? ' em até ' + c.parcelas + 'x' : '') : '', c.autorizou ? 'cliente autorizou' : 'autorização do cliente a confirmar', c.obs || ''].filter(String).join('; ') + '.';
+}
+
+/** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência, acordo, preparo). */
 function salvarFichaAto_(d, u) {
   if (!d.lembrete) throw falha_('Audiência não encontrada.');
   return comTrava_(function () {
@@ -6008,6 +6035,8 @@ function salvarFichaAto_(d, u) {
       m.testemunhas = JSON.stringify(l.slice(0, 10));
     }
     if (d.ciente) { m.ciente_em = d.ciente === 'desfazer' ? '' : agora; m.ciente_por = d.ciente === 'desfazer' ? '' : quem; }
+    if (d.acordo && typeof d.acordo === 'object') m.acordo = JSON.stringify(limparCamposAto_(d.acordo, CAMPOS_ACORDO_, jsonAto_(f && f.acordo), quem, agora));
+    if (d.preparo && typeof d.preparo === 'object') m.preparo = JSON.stringify(limparCamposAto_(d.preparo, CAMPOS_PREPARO_, jsonAto_(f && f.preparo), quem, agora));
     if (f) atualizarLinha_(fichas.tab, f, m);
     else inserirLinha_(fichas.tab, Object.assign({ chave: d.lembrete, numero: d.numero || '', data: d.data || '', hora: d.hora || '', tipo: d.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
       ciente_em: '', ciente_por: '', aviso_semana_em: '', aviso_semana_por: '', aviso_vespera_em: '', aviso_vespera_por: '', aviso_dia_em: '', aviso_dia_por: '', criado_em: agora }, m));
@@ -6015,8 +6044,14 @@ function salvarFichaAto_(d, u) {
     // 8.42: testemunhas salvas → anotação na ficha do cliente (o mesmo texto não se repete)
     if (m.testemunhas !== undefined && d.numero) {
       var pT = tabela_('Processos').linhas.filter(function (x) { return x.numero === d.numero; })[0], cT = pT ? tabela_('Clientes').linhas.filter(function (x) { return x.id === pT.cliente_id; })[0] : null;
-      var txtT = cT ? textoTestemunhas_({ data: d.data || (f && f.data), hora: d.hora || (f && f.hora), numero: d.numero, testemunhas: JSON.parse(m.testemunhas) }) : '';
+      var txtT = cT ? textoTestemunhas_({ data: d.data || (f && f.data), hora: d.hora || (f && f.hora), numero: d.numero, testemunhas: JSON.parse(m.testemunhas), preparo: m.preparo ? JSON.parse(m.preparo) : jsonAto_(f && f.preparo) }) : '';
       if (cT && String(cT.observacoes || '').indexOf(txtT) < 0) anotarCliente_({ id: cT.id, texto: txtT }, u);
+    }
+    // 8.45: acordo combinado → anotação na ficha do cliente (o mesmo texto não se repete)
+    if (m.acordo !== undefined && d.numero) {
+      var pA = tabela_('Processos').linhas.filter(function (x) { return x.numero === d.numero; })[0], cA = pA ? tabela_('Clientes').linhas.filter(function (x) { return x.id === pA.cliente_id; })[0] : null;
+      var txtA = cA ? textoAcordo_({ data: d.data || (f && f.data), hora: d.hora || (f && f.hora), numero: d.numero, acordo: JSON.parse(m.acordo) }) : '';
+      if (cA && txtA && String(cA.observacoes || '').indexOf(txtA) < 0) anotarCliente_({ id: cA.id, texto: txtA }, u);
     }
     return { ok: true };
   });

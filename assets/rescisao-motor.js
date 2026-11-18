@@ -1,7 +1,8 @@
 /* Motor ÚNICO da conta de rescisão (8.41) — usado pela calculadora do site (assets/calculadoras.js) e pela do painel (painel/gestao.js).
  * Estimativa para conferência: não substitui a análise do caso. Cada parcela é calculada com precisão e arredondada a 2 casas no fim.
  * Rescisão indireta (CLT, art. 483) = mesmas verbas da dispensa sem justa causa, com aviso prévio indenizado (30 + 3 por ano, máx. 90 —
- * Lei 12.506/2011), projeção do contrato para 13º e férias (OJ 82/83 da SDI-1), multa de 40% sobre o FGTS contratual SEM o FGTS do aviso
+ * Lei 12.506/2011), projeção do contrato para 13º e férias (OJ 82/83 da SDI-1), FGTS mensal já recolhido só para conferência, FGTS rescisório
+ * (saldo, 13º com a projeção e aviso) a receber, multa de 40% sobre a base fundiária legal SEM o FGTS do aviso
  * indenizado (Tema 255 do TST). Todas as multas são opcionais e só entram quando explicitamente selecionadas.
  */
 (function (raiz) {
@@ -87,36 +88,46 @@
       v13ant = item(X, `13º salário de ${anoAnt} não pago (${a13ant}/12)`, `${reais(rem)} ÷ 12 × ${a13ant}`, rem / 12 * a13ant);
     }
 
-    // 6) FGTS (8%) e multa — bloco separado. Não presume falta de depósito: sem "não depositou"/"em parte", o contratual fica só para conferência.
-    // Base contratual = salários do contrato (sem o mês da ruptura) + saldo de salário + 13º (anos anteriores e o do ano da ruptura SEM a projeção).
+    // 6) FGTS (8%) e multa — bloco separado (ajuste de 18/11/2026, pedido da usuária):
+    //  a) FGTS MENSAL do contrato (meses anteriores ao da ruptura + 13ºs dos anos anteriores): já recolhido pela empresa — NÃO entra no total;
+    //     fica para conferência pelo extrato e é a base da multa. Só vira valor a receber quando informado que não depositou (ou em parte).
+    //  b) FGTS RESCISÓRIO ainda não recolhido (entra no total): 8% do saldo de salário, 8% do 13º devido (já com a projeção do aviso, uma vez
+    //     só) e 8% do aviso prévio indenizado (Súmula 305 do TST).
+    //  c) Multa de 40%/20% sobre a base fundiária legal: FGTS mensal + FGTS do saldo + FGTS do 13º do ano SEM a projeção — sem o FGTS do aviso
+    //     indenizado (OJ 42, II, da SDI-1 e Tema 255 do TST).
     const mesesAntes = (() => { const iniMes = data(rup.getUTCFullYear(), rup.getUTCMonth(), 1); if (adm >= iniMes) return 0; return (iniMes - adm) / DIA / (365.25 / 12); })();
     const anosInteiros13 = (() => { let s = 0; for (let y = adm.getUTCFullYear(); y < rup.getUTCFullYear(); y++) { const ini = adm > data(y, 0, 1) ? adm : data(y, 0, 1); s += avos(ini, data(y, 11, 31)); } return s; })();
-    const base13Contrato = rem / 12 * (anosInteiros13 + (justa ? 0 : a13sem));
-    const baseContratual = rem * mesesAntes + saldoBruto + base13Contrato;
-    const fgtsContratual = r2(baseContratual * 0.08);
-    item(C, 'FGTS contratual devido no contrato (8%)', `8% × (${reais(rem)} × ${mesesAntes.toFixed(2).replace('.', ',')} meses + saldo ${reais(saldoBruto)} + 13ºs ${reais(base13Contrato)})`, fgtsContratual);
+    const base13Ant = rem / 12 * anosInteiros13;
+    const fgtsMensal = r2((rem * mesesAntes + base13Ant) * 0.08);
+    item(C, 'FGTS mensal do contrato (8%) — já recolhido: conferir pelo extrato (não soma no total)', `8% × (${reais(rem)} × ${mesesAntes.toFixed(2).replace('.', ',')} meses` + (base13Ant ? ` + 13ºs de anos anteriores ${reais(base13Ant)}` : '') + ') · é a base da multa', fgtsMensal);
     const dep = e.fgtsDep || 'naosei', comprovado = +e.fgtsComprovado || 0;
-    let aDepositar = 0, depositadoBase = fgtsContratual;
-    if (dep === 'nao') { aDepositar = fgtsContratual - comprovado; depositadoBase = fgtsContratual; }
+    let aDepositar = 0;
+    if (dep === 'nao') aDepositar = fgtsMensal - comprovado;
     else if (dep === 'parte') {
-      const mNP = Math.max(0, Math.min(mesesAntes + 1, parseInt(e.fgtsMesesNP, 10) || 0));
-      aDepositar = comprovado > 0 ? Math.max(0, fgtsContratual - comprovado) : rem * 0.08 * mNP * (1 + 1 / 12);
+      const mNP = Math.max(0, Math.min(Math.ceil(mesesAntes), parseInt(e.fgtsMesesNP, 10) || 0));
+      aDepositar = comprovado > 0 ? Math.max(0, fgtsMensal - comprovado) : rem * 0.08 * mNP * (1 + 1 / 12);
     }
-    else if (comprovado > 0) aDepositar = Math.max(0, fgtsContratual - comprovado);
+    else if (comprovado > 0) aDepositar = Math.max(0, fgtsMensal - comprovado);
     aDepositar = r2(Math.max(0, aDepositar));
     if (comprovado) item(C, '(−) Depósitos de FGTS comprovados (extrato)', 'informado', -comprovado);
     let vFgtsDif = 0;
-    if (aDepositar > 0) vFgtsDif = item(F, 'FGTS contratual a depositar (diferença)', dep === 'parte' && !comprovado ? `8% × ${reais(rem)} × meses sem depósito (+ 13º)` : `${reais(fgtsContratual)} − ${reais(comprovado)} comprovados`, aDepositar,
+    if (aDepositar > 0) vFgtsDif = item(F, 'FGTS mensal NÃO recolhido (diferença a depositar)', dep === 'parte' && !comprovado ? `8% × ${reais(rem)} × meses sem depósito (+ 13º)` : `${reais(fgtsMensal)} − ${reais(comprovado)} comprovados`, aDepositar,
       { fora: !!e.fgtsOutroPedido });
-    const vFgtsAviso = diasAv ? item(F, 'FGTS sobre o aviso prévio indenizado (8%)', `8% × ${reais(vAviso)} (Súmula 305 do TST)`, vAviso * 0.08) : 0;
-    const proj13 = !justa && a13 > a13sem ? rem / 12 * (a13 - a13sem) : 0;
-    const vFgts13proj = proj13 ? item(F, `FGTS sobre o 13º da projeção do aviso (${a13 - a13sem}/12)`, `8% × ${reais(proj13)}`, proj13 * 0.08) : 0;
+    // FGTS rescisório (ainda não recolhido)
+    const vFgtsSaldo = saldoBruto > 0 ? item(F, 'FGTS rescisório sobre o saldo de salário (8%)', `8% × ${reais(saldoBruto)}`, saldoBruto * 0.08) : 0;
+    const vFgts13 = v13 > 0 ? item(F, `FGTS rescisório sobre o 13º devido (8%)${diasAv && a13 > a13sem ? ' — já com a projeção do aviso' : ''}`, `8% × ${reais(v13)}`, v13 * 0.08) : 0;
+    const vFgtsAviso = diasAv ? item(F, 'FGTS rescisório sobre o aviso prévio indenizado (8%)', `8% × ${reais(vAviso)} (Súmula 305 do TST) · fora da base da multa`, vAviso * 0.08) : 0;
+    void vFgtsSaldo; void vFgts13; void vFgtsAviso;
+    // base fundiária legal da multa: mensal + saldo + 13º do ano SEM a projeção do aviso
+    const base13Sem = justa ? 0 : rem / 12 * a13sem;
+    const fgtsContratual = r2(fgtsMensal + (saldoBruto + base13Sem) * 0.08);
     const pct = semJusta ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
     let vMulta = 0;
     if (pct && e.multaFgts === true) vMulta = item(F, `Multa de ${pct * 100}% do FGTS (${indireta ? 'rescisão indireta' : motivo === 'acordo' ? 'acordo' : 'dispensa sem justa causa'})`,
-      `${pct * 100}% × ${reais(fgtsContratual)} (FGTS contratual; SEM o FGTS do aviso indenizado — Tema 255 do TST)`, fgtsContratual * pct);
+      `${pct * 100}% × ${reais(fgtsContratual)} (FGTS mensal ${reais(fgtsMensal)} + 8% do saldo + 8% do 13º sem a projeção; SEM o FGTS do aviso indenizado — OJ 42, II, SDI-1 / Tema 255 do TST)`, fgtsContratual * pct);
+    void vMulta;
     const subFgts = r2(F.filter(x => !x.fora).reduce((t, x) => t + x.valor, 0));
-    if (e.fgtsOutroPedido && vFgtsDif) notas.push(`FGTS contratual (${reais(vFgtsDif)}) já calculado em outro pedido: aparece para conferência e NÃO entra no total. Os demais depósitos de FGTS são discriminados separadamente; a multa do FGTS só entra quando selecionada.`);
+    if (e.fgtsOutroPedido && vFgtsDif) notas.push(`FGTS mensal não recolhido (${reais(vFgtsDif)}) já calculado em outro pedido: aparece para conferência e NÃO entra no total. O FGTS rescisório (saldo, 13º e aviso) é discriminado separadamente; a multa do FGTS só entra quando selecionada.`);
 
     // 7) Multas dos arts. 477 e 467 da CLT — só se marcadas (dependem de pressupostos)
     const M = [];

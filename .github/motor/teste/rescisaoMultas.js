@@ -13,8 +13,8 @@ const entrada = {
 const sem = calcular(entrada);
 assert.equal(sem.subtotal, 12949.44);
 assert.equal(sem.subAnt, 1668.33);
-assert.equal(sem.subFgts, 270.75);
-assert.equal(sem.total, 14888.52);
+assert.equal(sem.subFgts, 629.2); // 18/11: FGTS rescisório = saldo 205,92 + 13º 171,60 + aviso 251,68
+assert.equal(sem.total, 15246.97);
 assert.equal(sem.multas.length, 0);
 assert.ok(sem.fgts.every(x => !/^Multa de /.test(x.rot)));
 for (let mask = 0; mask < 8; mask++) {

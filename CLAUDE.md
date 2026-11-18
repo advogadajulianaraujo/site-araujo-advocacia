@@ -1707,3 +1707,21 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   = '30s'` (só o servidor usa essa chave; registrado no fim do leitura-rapida.sql) e `sbPrecarregar_` tenta de novo, uma vez, a tabela que voltou
   com 5xx/429 antes de desistir.
 
+
+## 8.45.0 Audiências por tipo + FGTS rescisório na calculadora (pedidos da usuária, 18/11/2026)
+
+- Audiências (#/audiencias): duas abas — "🤝 Conciliação" (conciliação, inicial, una sem tipo, mediação; `ehConc`) e "⚖ Instrução" — cada uma
+  com o nº de pendentes; perícias e "avisos para mandar" ficam em links discretos à direita (`?ver=pericia|avisar`). Linha mostra o resumo
+  (`resumoAcordo`/`resumoTestemunhas`: "Acordo a combinar", "pedir R$ x · mínimo R$ y", "3 testemunhas · 1 a confirmar", "Cliente sem
+  testemunhas", resultado). Conciliação: valor que vamos pedir, mínimo que o cliente aceita, forma de pagamento (+ parcelas), "o cliente
+  autorizou" (quem/quando), combinado, resultado (acordo fechado + valor / sem acordo / redesignada) e "Combinar no WhatsApp". Instrução:
+  "vai ter / não vai ter / a confirmar" testemunhas, lista (nome, CPF, telefone, obs, confirmou, Zap para a testemunha), aviso > 3, o que
+  provar, documentos para levar, "cliente orientado sobre o depoimento", resultado e "Perguntar no WhatsApp".
+- Servidor: colunas novas `acordo` e `preparo` (JSON) em Audiencias (ESQUEMA + esquema.sql; ALTER já rodado no Supabase em 18/11);
+  `salvarFichaAto_` aceita `acordo`/`preparo` (campos em `CAMPOS_ACORDO_`/`CAMPOS_PREPARO_`, `limparCamposAto_`; valores por `dinheiro_`);
+  acordo salvo vira anotação na ficha do cliente (`textoAcordo_`); "não terá testemunhas" entra no `textoTestemunhas_`.
+- Calculadora de rescisão (motor único assets/rescisao-motor.js; site e painel): FGTS MENSAL do contrato = já recolhido → linha cinza de
+  conferência pelo extrato (não soma); só vira valor a receber com "não depositou"/"em parte". Entra no total o FGTS RESCISÓRIO: 8% do saldo
+  de salário, 8% do 13º devido (já com a projeção do aviso, uma vez só) e 8% do aviso indenizado. Multa 40%/20% sobre a base legal = FGTS
+  mensal + 8% do saldo + 8% do 13º SEM a projeção (sem o FGTS do aviso — OJ 42, II, SDI-1 / Tema 255). Exemplo da usuária: FGTS 205,92 +
+  171,60 + 251,68 = 629,20; multa 1.477,67 (igual a antes).
