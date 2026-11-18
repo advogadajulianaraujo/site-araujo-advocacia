@@ -1740,3 +1740,27 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - `audiencias.listar` com `passados` traz também as dos últimos 30 dias SEM resultado (grupo "Já aconteceram — anote o resultado"); `pct_exito`
   só para perfis com financeiro. Lista até 85 dias (a cópia da agenda no banco vai até +3 meses; mais que isso iria ao Google, lento).
 - O aviso "⚠ N audiência(s)/perícia(s) designada(s) sem a data no aviso" ficou fechado: clicar mostra a lista.
+
+## 8.47.0 Chat sem travar, petição inicial em 2 passos, avisos com "Avisar agora", PIX do acordo sozinho (pedidos da usuária, 18/11/2026)
+
+- CHAT travado: cada mensagem e cada conversa aberta (chat.lido) apagava a memória de TODAS as telas (`esquecerDepois` sem 'chat' em AFETA →
+  esquecerTudo + envelhecer do banco). Agora `chat.*` não mexe na memória das telas; chat.lido só uma vez por mensagem (`st.lidoEm`); com a janela
+  aberta o ping é de 5 em 5 s (fechada, 15 s).
+- Petição inicial (pedido da usuária: "apertei Inicial feita e foi para Ajuizado, mas nem protocolamos"): quadro de Processos com a coluna
+  "Protocolar" (`colunaDoProc`: etapa contratado + Processos.inicial_feita_em). "Inicial feita →" (rota `processos.inicialFeita`, tarefa da inicial →
+  "aguardando") → coluna Protocolar com "📄 Mandar ao cliente" (WhatsApp `linkInicialCliente`; rota `processos.inicialEnviada` grava
+  inicial_enviada_em; o cartão troca na hora para "✓ cliente avisado") e "Protocolar →" (`campoProtocolo`: número OBRIGATÓRIO no padrão CNJ + vara →
+  Em andamento + aviso ao cliente com número e código). "←" volta para Petição inicial (desfazer). O Conferido da inicial SEM número não leva mais
+  para "Ajuizado": fica em Protocolar e a tarefa continua aberta. `ajuizadosSemNumero847_` (uma vez, Config FIX_AJUIZADO_847) devolveu para Protocolar
+  os processos "Ajuizado" sem número (6 em 18/11, entre eles o do Jucemar). Colunas novas em Processos: inicial_feita_em, inicial_feita_por,
+  inicial_enviada_em (ALTER já rodado no Supabase). processos.listar devolve `cliente_tel` só para quem está em Protocolar.
+- Audiências: nos detalhes (clicar no nome) os avisos viram linhas (`linhasAvisosAto`): "1 semana antes · 12/11 [Avisar agora] já avisei",
+  "Véspera · 18/11 …", "No dia …" — o botão abre o WhatsApp e já marca avisado (mesmo antes da data); "já avisei" marca sem abrir (avisou por
+  telefone); feito = "✓ avisado · Nome" + "mandar de novo".
+- Avisos no canto (`iniciarNotificacoes`): PIX recebido SÓ para a administração; intimação nova para todos.
+- PIX do ACORDO (pedido da usuária: "acordo de R$ 1.000, a doutora fica com 30%; quando cair o PIX no dia combinado, já descontar"):
+  o honorário lançado pelo "O que aconteceu?" leva a marca [acordo:valor|parcelas|pct]; `pixDeAcordo_` (início do `classificarPix_`, no robô
+  de hora em hora e na reconferência) reconhece o PIX com o valor da PARCELA DO ACORDO (empresa pagou ao escritório) ou da PARCELA DOS
+  HONORÁRIOS (cliente repassou), de 7 dias antes a 20 dias depois do vencimento → baixa sozinho a parcela de honorários (forma "PIX (Inter) —
+  acordo", recibo) e, no valor cheio, cria a tarefa "💸 Repassar R$ X ao cliente" (`[repasse:parcelaId]`). Dois acordos iguais na mesma data =
+  sugestão para conferir. Teste em etapa843.js.

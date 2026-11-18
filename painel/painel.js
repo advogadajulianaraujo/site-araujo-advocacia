@@ -99,6 +99,9 @@
     advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
   };
   function esquecerDepois(acao) {
+    // 8.47 (chat "muito travado"): mensagem e "lida" do chat não mudam nada das telas. Antes, cada mensagem (e cada conversa aberta,
+    // que marca "lida") apagava a memória de TODAS as telas e o painel inteiro buscava tudo de novo.
+    if (/^chat\./.test(acao)) return;
     try { if (window.PAINEL_BANCO && window.PAINEL_BANCO.envelhecer) window.PAINEL_BANCO.envelhecer(); } catch (e) { /* ok */ }
     const lista = AFETA[acao.split('.')[0]];
     if (!lista) { esquecerTudo(); return; }
@@ -798,21 +801,21 @@
   function iniciarNotificacoes() {
     clearInterval(notifTimer);
     const p = sessao && sessao.usuario && sessao.usuario.pode; if (!p) return;
-    const perfil = sessao.usuario.perfil, admin = !!p.usuarios, secretaria = ['secretario', 'rh'].includes(perfil);
-    if (!admin && !secretaria) return;
+    // 8.47 (pedido da usuária): aviso de PIX recebido SÓ para a administração; as outras notificações (intimação nova) para todos
+    const admin = !!p.usuarios;
     const CH = 'notif_vistos_' + sessao.usuario.usuario;
     const lerVistos = () => { try { return JSON.parse(localStorage.getItem(CH) || 'null'); } catch (e) { return null; } };
     const rodar = async () => {
       if (document.hidden || !sessao) return;
       const antes = lerVistos(), primeira = !antes, vistos = new Set(antes || []), novos = [];
       try {
-        if (p.financeiro) {
+        if (admin && p.financeiro) {
           const r = await apiFresco('fin.pix', { dias: 2 });
           (r.lista || []).forEach(x => { if (vistos.has('pix:' + x.id)) return; vistos.add('pix:' + x.id);
             const v = x.valor === null || x.valor === undefined || x.valor === '' ? '' : 'R$ ' + formatarMoeda(x.valor);
             novos.push({ ico: '💰', tit: `PIX ${v ? 'de ' + v + ' ' : ''}recebido`, sub: [primeiroNome(x.pagador || ''), x.situacao === 'baixado' ? 'baixado ✓' : x.situacao === 'a conferir' ? 'conferir' : x.situacao].filter(Boolean).join(' · '), ir: '#/financeiro?ver=pix', cls: x.situacao === 'baixado' ? 'ok' : 'atencao' }); });
         }
-        if (admin) {
+        {
           const r = await apiFresco('intimacoes.listar', { limite: 15, abertas: true });
           ((r && r.lista) || []).forEach(x => { if (vistos.has('int:' + x.id)) return; vistos.add('int:' + x.id);
             novos.push({ ico: '📨', tit: 'Intimação nova', sub: [x.numero, x.cliente || x.cliente_nome].filter(Boolean).join(' · '), ir: '#/prazos', cls: '' }); });
@@ -981,7 +984,7 @@
         if (perto || novaSala) msgsEl.scrollTop = msgsEl.scrollHeight;
       }
       const ult = (r.mensagens || []).slice(-1)[0];
-      if (ult && atual.naoLidas && verConversa && !document.hidden) api('chat.lido', { sala: st.sala, em: ult.em }).catch(() => {});
+      if (ult && atual.naoLidas && verConversa && !document.hidden && st.lidoEm !== st.sala + ult.em) { st.lidoEm = st.sala + ult.em; api('chat.lido', { sala: st.sala, em: ult.em }).catch(() => { st.lidoEm = ''; }); }
     }
     let enviando = false; // 8.42: Enter duas vezes / clique duplo não manda duas vezes
     async function enviar() {
@@ -1029,7 +1032,9 @@
       if (u.de !== sessao.usuario.usuario && st.modo === 'fechado') { chatF.abrir('pequeno', u.sala); chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; }
       chatF.carregar();
     };
-    setTimeout(vigiar, 2500); chatTimer = setInterval(vigiar, 15000);
+    // 8.47: com a janela aberta pergunta de 5 em 5 s (a consulta é pequena); fechada, de 15 em 15 s
+    let tique = 0;
+    setTimeout(vigiar, 2500); chatTimer = setInterval(() => { tique++; if ((chatF && chatF.st.modo !== 'fechado') || tique % 3 === 0) vigiar(); }, 5000);
   }
   async function telaChat(params) { // #/chat (menu e links antigos): abre a janela grande e volta para a tela de antes
     if (chatF) chatF.abrir('grande', params.get('sala') || '');
@@ -2627,10 +2632,18 @@
     pericia: 'Perícia', instrucao: 'Audiência de instrução', sentenca: 'Sentença', acordo: 'Acordo', homologacao: 'Homologação', recurso: 'Recurso',
     execucao: 'Execução / cumprimento', extinto: 'Encerrado / arquivado' };
   // colunas do quadro (Acordo e Homologação ficam juntos)
-  const COLUNAS_PROC = [['contratado', ['contratado']], ['ajuizado', ['ajuizado']], ['conciliacao', ['conciliacao']], ['andamento', ['andamento']],
+  const COLUNAS_PROC = [['contratado', ['contratado']], ['protocolar', ['contratado']], ['ajuizado', ['ajuizado']], ['conciliacao', ['conciliacao']], ['andamento', ['andamento']],
     ['pericia', ['pericia']], ['instrucao', ['instrucao']], ['sentenca', ['sentenca']], ['acordo', ['acordo', 'homologacao']], ['recurso', ['recurso']],
     ['execucao', ['execucao']], ['extinto', ['extinto']]];
-  const NOME_COLUNA = { acordo: 'Acordo / homologação' };
+  const NOME_COLUNA = { acordo: 'Acordo / homologação', protocolar: 'Protocolar' };
+  /* 8.47: "Petição inicial" = a fazer; "Protocolar" = inicial feita (mandar ao cliente e protocolar). As duas são a etapa contratado. */
+  const colunaDoProc = p => { const f = p.fase || 'andamento'; if (f === 'contratado') return p.inicial_feita_em ? 'protocolar' : 'contratado'; return (COLUNAS_PROC.find(c => c[0] !== 'protocolar' && c[1].includes(f)) || ['andamento'])[0]; };
+  function linkInicialCliente(nomeCliente, tel) {
+    const t = telefoneWhats(tel || ''); if (!t) return '';
+    const nome = nomeProprioJS(String(nomeCliente || '').split(' ')[0]);
+    return 'https://wa.me/' + t + '?text=' + encodeURIComponent(`Olá${nome ? ', ' + nome : ''}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e vou te enviar o arquivo logo abaixo para você ler com calma. ` +
+      `Veja se está tudo certo, se ficou alguma informação de fora ou se você quer mudar alguma coisa. Assim que você aprovar, damos entrada no processo e te mandamos o número para acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
+  }
   function etiquetaFase(f) { return f ? h('span', { class: 'tag fase fase-' + f }, FASES[f] || f) : '—'; }
 
   /** Mensagem pronta para avisar o cliente do processo (opcional: com um código novo de acesso ao site). */
@@ -2652,8 +2665,20 @@
   function campoNumeroInicial() {
     const inp = h('input', { id: 'f-num-inicial', inputmode: 'numeric', maxlength: 25, placeholder: '0000000-00.0000.0.00.0000 (deixe vazio se ainda não saiu)' });
     const el = h('div', { class: 'campo-inicial' }, h('label', { for: 'f-num-inicial' }, 'Número do processo (se já protocolou)'), inp,
-      h('p', { class: 'peq' }, 'Com o número, o processo vai para "Em andamento". Sem ele, vai para "Ajuizado" até o número sair.'));
+      h('p', { class: 'peq' }, 'Com o número, o processo vai para "Em andamento". Sem ele, a inicial fica em "Protocolar" (feita, ainda não protocolada).'));
     el.valor = () => inp.value.trim();
+    return el;
+  }
+  /** 8.47: "Protocolar →" — número do processo OBRIGATÓRIO (só se sabe depois de protocolar) + vara. */
+  function campoProtocolo() {
+    const num = h('input', { id: 'f-num-prot', inputmode: 'numeric', maxlength: 25, placeholder: '0000000-00.0000.0.00.0000', required: true });
+    const vara = h('input', { id: 'f-vara-prot', maxlength: 200, placeholder: 'Ex.: 1ª Vara do Trabalho de Tubarão' });
+    const erro = h('p', { class: 'erro' });
+    const el = h('div', { class: 'campo-inicial' }, h('label', { for: 'f-num-prot' }, 'Número do processo (saiu no protocolo)'), num,
+      h('label', { for: 'f-vara-prot' }, 'Vara / juízo (se já apareceu)'), vara, erro,
+      h('p', { class: 'peq' }, 'O processo vai para "Em andamento" e o painel já prepara o aviso ao cliente com o número e o código do Acompanhe.'));
+    el.valor = () => ({ numero: num.value.trim(), orgao: vara.value.trim() });
+    el.validar = () => { const ok = /^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(num.value.trim()); erro.textContent = ok ? '' : 'Informe o número do processo no padrão 0000000-00.0000.0.00.0000 (só sai depois de protocolar).'; if (!ok) num.focus(); return ok; };
     return el;
   }
 
@@ -2703,11 +2728,11 @@
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nome}! Aqui é do escritório Araújo Advocacia. Sua petição inicial ficou pronta e vou te enviar o arquivo logo abaixo para você ler com calma. ` +
         `Veja se está tudo certo, se ficou alguma informação de fora ou se você quer mudar alguma coisa. Assim que você aprovar, damos entrada no processo e te mandamos o número para acompanhar pelo site: https://araujoadvocaciasc.com.br/acompanhe/`);
     })();
-    const conferido = botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, '✓ Conferido');
-    let enviado = false; try { enviado = sessionStorage.getItem('inicial_wa_' + p.id) === '1'; } catch (e) { /* segue */ }
+    const conferido = botaoConferido('inicial', p.id, 'Quem protocolou a petição inicial?', campoProtocolo, 'Protocolar →');
+    let enviado = !!p.inicial_enviada_em; try { enviado = enviado || sessionStorage.getItem('inicial_wa_' + p.id) === '1'; } catch (e) { /* segue */ }
     const lugarConf = h('span', { class: 'inicial-conf' }, enviado || !msgFeita ? conferido : null);
     const wa = msgFeita ? h('a', { class: 'btn mini wa', href: msgFeita, target: '_blank', rel: 'noopener noreferrer', onclick: () => {
-      registrarWhats({ numero: p.numero, cliente: cliente && cliente.nome }, 'petição inicial para o cliente aprovar');
+      api('processos.inicialEnviada', { id: p.id }).catch(() => {}); // 8.47: o quadro mostra "✓ cliente avisado" e o "Protocolar →"
       try { sessionStorage.setItem('inicial_wa_' + p.id, '1'); } catch (e) { /* segue */ }
       setTimeout(() => { lugarConf.replaceChildren(conferido); lugarConf.classList.add('aparece'); }, 300);
     } }, 'WhatsApp: mandar a inicial ao cliente') : h('span', { class: 'peq' }, 'Cliente sem telefone');
@@ -2717,7 +2742,7 @@
         h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''), botaoNaoFechou(p))),
       h('ol', { class: 'passos-inicial' },
         h('li', {}, h('span', { class: 'passo-n' }, '1'),
-          h('div', {}, h('strong', {}, 'Mande a inicial para o cliente aprovar'), h('div', { class: 'peq' }, 'A mensagem diz que a petição está pronta e pede para ver se está certa ou se quer mudar algo. Anexe o arquivo no WhatsApp. Depois de mandar, o "✓ Conferido" aparece aqui do lado.')),
+          h('div', {}, h('strong', {}, enviado ? '✓ Inicial mandada ao cliente — agora protocole' : 'Mande a inicial para o cliente aprovar'), h('div', { class: 'peq' }, enviado ? 'Depois de protocolar no sistema do tribunal, aperte "Protocolar →" e informe o número do processo (e a vara).' : 'A mensagem diz que a petição está pronta e pede para ver se está certa ou se quer mudar algo. Anexe o arquivo no WhatsApp. Depois de mandar, aparece o "Protocolar →" (com o número do processo).')),
           h('div', { class: 'barra inicial-acoes' }, wa, lugarConf))));
   }
 
@@ -2802,11 +2827,28 @@
       catch (e) { avisar(e.message, true); if (el) el.classList.remove('movendo'); }
     };
     const ordemCol = COLUNAS_PROC.map(c => c[0]);
-    const colDe = f => (COLUNAS_PROC.find(c => c[1].includes(f)) || ['andamento'])[0];
+    const inicialFeita = async (p, el, desfazer) => {
+      if (el) el.classList.add('movendo');
+      try { await api('processos.inicialFeita', { id: p.id, desfazer: !!desfazer }); avisar(desfazer ? 'Voltou para Petição inicial.' : 'Inicial pronta: agora mande ao cliente e depois protocole.'); rota(); }
+      catch (e) { avisar(e.message, true); if (el) el.classList.remove('movendo'); }
+    };
+    // coluna Protocolar: 1º mandar a inicial ao cliente; depois "Protocolar →" (número do processo)
+    const botoesProtocolar = p => {
+      const prot = botaoConferido('inicial', p.id, 'Quem protocolou a petição inicial?', campoProtocolo, 'Protocolar →');
+      if (p.inicial_enviada_em) return [h('span', { class: 'proc-enviada', title: 'Mandada ao cliente em ' + dataBR(String(p.inicial_enviada_em).slice(0, 10)) }, '✓ cliente avisado'), prot];
+      const link = linkInicialCliente(p.cliente_nome, p.cliente_tel);
+      prot.classList.add('sec');
+      const wa = link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', title: 'Abre o WhatsApp com a mensagem pronta; anexe o arquivo da inicial',
+        onclick: ev => { p.inicial_enviada_em = new Date().toISOString(); const a = ev.currentTarget; setTimeout(() => { prot.classList.remove('sec'); a.replaceWith(h('span', { class: 'proc-enviada' }, '✓ cliente avisado')); }, 200);
+          api('processos.inicialEnviada', { id: p.id }).catch(e => avisar(e.message, true)); } }, '📄 Mandar ao cliente')
+        : h('a', { class: 'btn mini sec', href: '#/processo/' + p.id, title: 'Cliente sem telefone no cadastro' }, 'Sem telefone');
+      return [wa, prot];
+    };
     // 8.35.6 (pedido da usuária, com a foto do CRM): quadro de processos IGUAL ao do CRM — colunas com bolinha, nome e número; cartões limpos
     const iniciais = n => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
     const quadroProc = h('div', { class: 'crm-quadro quadro-proc' }, COLUNAS_PROC.map(([col, fasesCol]) => {
-      const daFase = lista.filter(p => fasesCol.includes(p.fase || 'andamento'))
+      void fasesCol;
+      const daFase = lista.filter(p => colunaDoProc(p) === col)
         .sort((a, b) => ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1));
       const i = ordemCol.indexOf(col);
       const cartao = p => {
@@ -2820,14 +2862,16 @@
           h('div', { class: 'crm-card-pe', onclick: ev => ev.stopPropagation() },
             h('span', { class: 'crm-quem' }, h('span', { class: 'crm-av', title: p.responsavel ? 'Com ' + p.responsavel : 'Sem responsável' }, p.responsavel ? iniciais(p.responsavel) : '—')),
             h('span', { class: 'crm-bts' },
-              i > 0 && col !== 'contratado' ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1], card) }, '←') : null,
-              col === 'contratado' ? [botaoNaoFechou(p), botaoConferido('inicial', p.id, 'Quem fez a petição inicial?', campoNumeroInicial, 'Inicial feita →')]
+              col === 'protocolar' ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para Petição inicial (ainda não está pronta)', onclick: () => inicialFeita(p, card, true) }, '←')
+                : i > 0 && col !== 'contratado' ? h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para ' + (NOME_COLUNA[ordemCol[i - 1]] || FASES[ordemCol[i - 1]]), onclick: () => moverFase(p, ordemCol[i - 1] === 'protocolar' ? 'contratado' : ordemCol[i - 1], card) }, '←') : null,
+              col === 'contratado' ? [botaoNaoFechou(p), h('button', { type: 'button', class: 'btn mini', title: 'A petição inicial ficou pronta: vai para "Protocolar" (mandar ao cliente e protocolar)', onclick: () => inicialFeita(p, card) }, 'Inicial feita →')]
+                : col === 'protocolar' ? botoesProtocolar(p)
                 : i < ordemCol.length - 1 ? h('button', { type: 'button', class: 'btn mini sec', title: 'Concluir etapa e passar para ' + (NOME_COLUNA[ordemCol[i + 1]] || FASES[ordemCol[i + 1]]), onclick: () => moverFase(p, ordemCol[i + 1], card) }, '→') : null)));
         return card;
       };
       const sec = h('section', { class: 'crm-col', 'data-fase': col,
         ondragover: ev => { ev.preventDefault(); sec.classList.add('alvo'); }, ondragleave: () => sec.classList.remove('alvo'),
-        ondrop: ev => { ev.preventDefault(); sec.classList.remove('alvo'); const id = ev.dataTransfer.getData('text/plain'); const p = lista.find(x => x.id === id); if (p && colDe(p.fase) !== col) moverFase(p, col); } },
+        ondrop: ev => { ev.preventDefault(); sec.classList.remove('alvo'); const id = ev.dataTransfer.getData('text/plain'); const p = lista.find(x => x.id === id); if (!p || colunaDoProc(p) === col) return; if (col === 'protocolar') { if (p.fase === 'contratado') inicialFeita(p); else avisar('Só processos na Petição inicial vão para Protocolar.', true); } else if (col === 'contratado' && colunaDoProc(p) === 'protocolar') inicialFeita(p, null, true); else moverFase(p, col); } },
         h('header', {}, h('span', { class: 'crm-ponto' }), h('strong', {}, NOME_COLUNA[col] || FASES[col]), h('span', { class: 'visao-n' }, String(daFase.length))),
         h('div', { class: 'crm-col-corpo' }, daFase.length ? daFase.slice(0, 40).map(cartao) : h('p', { class: 'peq crm-vazio' }, 'Arraste um processo para cá'),
           daFase.length > 40 ? h('a', { class: 'peq', href: '#/processos?visao=lista&fase=' + col }, `+ ${daFase.length - 40} — ver na lista`) : null));
@@ -3484,7 +3528,7 @@
         h('h2', {}, titulo || 'Quem fez?'),
         h('p', { class: 'peq' }, /Passar/.test(titulo || '') ? 'Aperte o nome: vai para as Tarefas dessa pessoa.' : 'Aperte o nome de quem fez. Some da lista da equipe e vai para o OK da administração e para o relatório.'),
         campoExtra,
-        h('div', { class: 'quem-grade' }, lista.map(x => h('button', { type: 'button', class: 'quem-bt' + (x.usuario === eu ? ' eu' : ''), onclick: () => fim({ usuario: x.usuario, nome: x.nome, extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' }) },
+        h('div', { class: 'quem-grade' }, lista.map(x => h('button', { type: 'button', class: 'quem-bt' + (x.usuario === eu ? ' eu' : ''), onclick: () => { if (campoExtra && campoExtra.validar && !campoExtra.validar()) return; fim({ usuario: x.usuario, nome: x.nome, extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' }); } },
           h('span', { class: 'quem-ini' }, iniciais(x.nome)), h('span', { class: 'quem-nome' }, x.nome, x.usuario === eu ? h('small', {}, ' (você)') : null)))),
         h('div', { class: 'acoes' }, botao('Cancelar', () => fim(null), 'sec'))].filter(Boolean));
       caixa.addEventListener('close', () => { caixa.remove(); if (!feito) { feito = true; resolve(null); } });
@@ -3505,7 +3549,7 @@
     if (!q) return false;
     const alvo = sumirNaHora(origem);
     let r;
-    try { r = await api('trabalho.conferir', tipo === 'prazo' ? { tipo, id, por: q.usuario, comprovante: q.extra || '' } : { tipo, id, por: q.usuario, numero: q.extra || '' }); }
+    try { r = await api('trabalho.conferir', tipo === 'prazo' ? { tipo, id, por: q.usuario, comprovante: q.extra || '' } : q.extra && typeof q.extra === 'object' ? { tipo, id, por: q.usuario, numero: q.extra.numero || '', orgao: q.extra.orgao || '' } : { tipo, id, por: q.usuario, numero: q.extra || '' }); }
     catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; }
     avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
     // 8.11: inicial protocolada → abre o processo com a mensagem do WhatsApp pronta (com o código do Acompanhe gerado sozinho)
@@ -3793,7 +3837,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.46.0';
+  const VERSAO_PAINEL = '8.47.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4621,6 +4665,26 @@
       return h('span', { class: 'aud-chip futuro', title: 'Este aviso sai em ' + dataBR(dia) }, rot + ' · ' + dataBR(dia).slice(0, 5));
     }));
   }
+  /** 8.47 (pedido da usuária: "1 semana antes · 25/11 [avisar agora]; véspera · [avisar agora]; clicou = avisado"): os avisos ao cliente
+   *  em linhas, cada um com a data e um botão pequeno que abre o WhatsApp com a mensagem pronta e já marca como avisado; "já avisei"
+   *  marca sem abrir o WhatsApp (avisou por telefone). Vale para qualquer aviso, mesmo antes da data. */
+  function linhasAvisosAto(a, aoMudar) {
+    const hoje = hojeISO();
+    return h('div', { class: 'aud-av-lista' }, avisosDoAto(a).map(q => {
+      const feito = a.avisos && a.avisos[q] && a.avisos[q].em ? a.avisos[q] : null;
+      const dia = q === 'nova' ? (feito ? String(feito.em).slice(0, 10) : hoje) : (a.dias_aviso || {})[q] || a.data;
+      const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
+      const marcar = () => api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: q, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo })
+        .then(() => { a.avisos = a.avisos || {}; a.avisos[q] = { em: new Date().toISOString(), por: sessao.usuario.nome }; if (aoMudar) aoMudar(); }).catch(e => avisar(e.message, true));
+      const devido = !feito && (a.devido === q || dia <= hoje);
+      return h('div', { class: 'aud-av' + (feito ? ' ok' : devido ? ' devido' : '') },
+        h('span', { class: 'aud-av-rot' }, ROT_AVISO[q]),
+        h('span', { class: 'aud-av-dia' }, q === 'nova' && !feito ? 'agora' : dataBR(dia).slice(0, 5)),
+        feito ? h('span', { class: 'aud-av-feito', title: quandoAvisado(feito.em, feito.por) }, '✓ avisado' + (feito.por ? ' · ' + primeiroNome(feito.por) : '')) : null,
+        link ? botaoAvisar(link, 'Avisar agora', feito, marcar, 'aud-av-bt' + (devido ? ' forte' : ''), 'mandar de novo') : h('span', { class: 'peq' }, 'sem telefone'),
+        feito ? null : h('button', { type: 'button', class: 'link-btn aud-av-ja', title: 'Avisou por telefone ou pessoalmente: só marcar', onclick: marcar }, 'já avisei'));
+    }));
+  }
   /* 8.46 (pedido da usuária: "mais simples e mais automatizado"): Conciliação = em cada linha o VALOR COMBINADO com o cliente + o OK dele;
      clicar no nome abre os detalhes (o que o cliente quer, anotações, avisos). No dia (ou depois), botão amarelo "O que aconteceu?": fechou
      acordo (valor, honorários — o % do êxito do cliente ou 30% —, parcelas e 1º pagamento → lança no Financeiro sozinho), não fechou
@@ -4784,7 +4848,7 @@
         box.replaceChildren(
           h('div', { class: 'aud-det-cab' }, h('span', { class: 'peq' }, [nomeDia(a.data, true), a.numero, a.local].filter(Boolean).join(' · ')),
             h('span', { class: 'g-acoes' }, ciente, a.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + a.processo_id }, 'Processo') : null)),
-          a.data >= hoje ? h('div', {}, h('b', { class: 'aud-det-t' }, 'Avisos ao cliente'), chipsAvisosAto(a, () => { desenhar(); redesenhar(); })) : null,
+          a.data >= hoje ? h('div', {}, h('b', { class: 'aud-det-t' }, 'Avisos ao cliente'), linhasAvisosAto(a, () => { desenhar(); redesenhar(); })) : null,
           h('div', { class: 'aud-linha' }, modo, link),
           notas, esp,
           (() => { const t = h('textarea', { rows: 2, placeholder: 'Outras anotações da audiência', onchange: ev => { a.obs = ev.target.value; salvarAto(a, { obs: a.obs }, 'Anotação salva.'); } }); t.value = a.obs || ''; return t; })());
@@ -5884,7 +5948,7 @@
   }
   /** Barras deitadas (ex.: processos por área). */
   /** Gráfico de rosca (redondo) com legenda clicável. itens: [{ nome, valor, cor?, ir? }] */
-  const CORES_FASE = { contratado: '#7a4fc0', ajuizado: '#2f6fd0', conciliacao: '#2a9fd6', andamento: '#1d8a8a', pericia: '#8a6a37', instrucao: '#1d5fa8',
+  const CORES_FASE = { contratado: '#7a4fc0', protocolar: '#c07a1f', ajuizado: '#2f6fd0', conciliacao: '#2a9fd6', andamento: '#1d8a8a', pericia: '#8a6a37', instrucao: '#1d5fa8',
     sentenca: '#c98a12', acordo: '#e0a23a', homologacao: '#b08d57', recurso: '#d0602d', execucao: '#1f8a4c', extinto: '#9aa0aa' };
   const CORES_GRAF = ['#2A2622', '#C9A46A', '#3D6B8C', '#4F7F6A', '#8C5A7A', '#B5653C', '#6E7F3A', '#8A6A38', '#5A6B8C', '#9aa0aa'];
   function grafRosca(itens, opc) {

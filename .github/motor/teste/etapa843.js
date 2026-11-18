@@ -54,3 +54,23 @@ const ra = C.vencidosRapido_();
 assert(ra && ra.atos === 1 && zz('Z844e').situacao === 'cumprido' && zz('Z844e').ok_em, 'audiência de ontem sai da lista (sem ir para o OK)');
 assert(zz('Z844f').situacao === 'calculado', 'audiência de amanhã continua');
 console.log("fim");
+// 8.47: acordo fechado na audiência (R$ 1.000 em 2x, 30%) → honorário no Financeiro; PIX de R$ 500 no dia combinado dá baixa nos R$ 150 e cria o repasse
+{
+  const proc = C.tabela_('Processos').linhas.find(p => p.numero && p.cliente_id), hoje = C.hojeSP_();
+  const admin = { usuario: 'admin', nome: 'Admin', perfil: 'administrador' };
+  const r = C.audienciaResultado_({ lembrete: 'E:teste847', numero: proc.numero, data: C.somarDias_(hoje, -1), hora: '14:00', tipo: 'conciliacao', resultado: 'acordo', valor: '1.000,00', pct: '30', parcelas: '2', primeiro: hoje, lancar: true }, admin);
+  const hon = C.tabela_('Honorarios').linhas.find(x => x.id === r.honorario_id);
+  const parc = C.tabela_('Parcelas').linhas.filter(p => p.honorario_id === r.honorario_id);
+  assert(hon && /\[acordo:1000\|2\|30\]/.test(hon.observacoes) && parc.length === 2 && parc.every(p => Math.abs(C.dinheiro_(p.valor) - 150) < 0.01), 'acordo de R$ 1.000 em 2x → honorário de 30% em 2 parcelas de R$ 150');
+  const k = { clientes: C.tabela_('Clientes').linhas, tabParc: C.tabela_('Parcelas'), apelidos: {}, pagasPeloPix: {}, tol: 10, categorias: {} };
+  const linha = { situacao: 'a conferir', cliente_id: '', parcela_id: '', motivo: '', sugestao: '', recibo: '', categoria: '' };
+  const ok = C.classificarPix_(linha, { valor: 500, pagador: 'EMPRESA QUALQUER LTDA' }, new Date(), k);
+  const p1 = C.tabela_('Parcelas').linhas.find(p => p.id === linha.parcela_id);
+  assert(ok && linha.situacao === 'baixado' && p1 && p1.pago_em && /REPASSAR R\$ 350/.test(linha.motivo), 'PIX de R$ 500 (parcela do acordo) dá baixa sozinho nos R$ 150 e avisa o repasse de R$ 350');
+  assert(C.tabela_('Tarefas').linhas.some(t => /\[repasse:/.test(t.descricao || '') && /350/.test(t.titulo)), 'tarefa "Repassar R$ 350 ao cliente" criada');
+  const linha2 = { situacao: 'a conferir', cliente_id: '', parcela_id: '', motivo: '', sugestao: '', recibo: '', categoria: '' };
+  const k2 = Object.assign({}, k, { tabParc: C.tabela_('Parcelas'), pagasPeloPix: { [linha.parcela_id]: 1 } });
+  C.classificarPix_(linha2, { valor: 500, pagador: 'EMPRESA QUALQUER LTDA' }, new Date(), k2);
+  assert(linha2.situacao !== 'baixado' || linha2.parcela_id !== linha.parcela_id, 'o mesmo PIX não baixa a mesma parcela duas vezes');
+}
+console.log("fim 847");

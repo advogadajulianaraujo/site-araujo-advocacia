@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.46.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.46.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.47.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.47.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.46.0';
+var VERSAO = '8.47.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -110,7 +110,7 @@ var ESQUEMA = {
     'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
     'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima'], // 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
@@ -524,6 +524,8 @@ var ROTAS = {
   'audiencias.resultado': { fn: audienciaResultado_ },
   'audiencias.salvar': { fn: salvarFichaAto_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
+  'processos.inicialFeita': { fn: inicialFeita_ },     // 8.47: Petição inicial → Protocolar (mandar ao cliente, depois protocolar)
+  'processos.inicialEnviada': { fn: inicialEnviada_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
   'future.resumo': { future: true, fn: futureResumo_ },
   'future.unidade': { future: true, fn: futureUnidade_ },
@@ -1827,10 +1829,12 @@ var CAMPOS_PROCESSO = ['cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sist
 
 function listarProcessos_(d) {
   var busca = normalizar_(d.busca || '');
-  var nomes = {};
-  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var nomes = {}, tels = {};
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; tels[c.id] = c.telefone; });
   return tabela_('Processos').linhas
-    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; x.fase = faseDe_(p); return x; })
+    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; x.fase = faseDe_(p);
+      if (x.fase === 'contratado' && p.inicial_feita_em) x.cliente_tel = tels[p.cliente_id] || ''; // 8.47: botão "mandar a inicial ao cliente" no quadro
+      return x; })
     .filter(function (p) {
       if (d.semCliente && p.cliente_id) return false;
       if (!busca) return true;
@@ -1949,6 +1953,52 @@ function aoProtocolar_(p, u) {
   try { if (aliasDatajud_(p.numero)) { var a = andamentosProcesso_({ id: p.id, atualizar: true }, u); r.andamentos = (a.lista || []).length; } } catch (e2) { /* o robô lê de 4 em 4 h */ }
   return r;
 }
+/* 8.47 (pedido da usuária: "apertei Inicial feita; primeiro quero mandar ao cliente e depois protocolar — uma aba Protocolar para não
+   confundir"): "Inicial feita" leva o processo (ainda na etapa Petição inicial) para a coluna "Protocolar" do quadro; ali o 1º botão manda a
+   inicial ao cliente no WhatsApp (grava inicial_enviada_em) e depois "Protocolar →" pede o número (Conferido da inicial, como antes).
+   A tarefa da inicial vai para "Aguardando cliente". `desfazer` volta para a coluna Petição inicial. */
+function inicialFeita_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Processos'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Processo não encontrado.');
+    if (p.numero && !d.desfazer) throw falha_('Este processo já tem número: já foi protocolado.');
+    var agora = new Date().toISOString(), quem = u.nome || u.usuario;
+    atualizarLinha_(tab, p, d.desfazer ? { inicial_feita_em: '', inicial_feita_por: '', inicial_enviada_em: '', atualizado_em: agora, atualizado_por: u.usuario }
+      : { inicial_feita_em: agora, inicial_feita_por: quem, atualizado_em: agora, atualizado_por: u.usuario });
+    var tabT = tabela_('Tarefas'), marca = '[inicial:' + p.id + ']';
+    tabT.linhas.filter(function (t) { return String(t.descricao || '').indexOf(marca) >= 0 && abertaT_(t); }).forEach(function (t) {
+      atualizarLinha_(tabT, t, { etapa: d.desfazer ? 'fazendo' : 'aguardando', atualizado_em: agora, atualizado_por: u.usuario,
+        historico: (t.historico ? t.historico + '\n' : '') + dataBR_(hojeSP_()) + ' ' + quem + ': ' + (d.desfazer ? 'voltou para fazer a inicial' : 'inicial feita — mandar ao cliente e protocolar') });
+    });
+    registrar_(u.usuario, d.desfazer ? 'petição inicial: voltou' : 'petição inicial feita', p.id + ' ' + (p.cliente_nome || ''));
+    return { ok: true };
+  });
+}
+/** 8.47: uma vez (Config FIX_AJUIZADO_847) — processos que o Conferido antigo levou para "Ajuizado" SEM número (nem protocolados ainda)
+ *  voltam para a etapa Petição inicial, coluna "Protocolar". Quem foi ajuizado por movimentação do tribunal tem número e não entra. */
+function ajuizadosSemNumero847_() {
+  if (config_('FIX_AJUIZADO_847')) return 0;
+  var tab = tabela_('Processos'), agora = new Date().toISOString(), n = 0;
+  tab.linhas.forEach(function (p) {
+    if (p.numero || p.fase !== 'ajuizado' || p.status === 'arquivado') return;
+    atualizarLinha_(tab, p, { fase: 'contratado', fase_auto: '', inicial_feita_em: p.inicial_feita_em || p.atualizado_em || agora, proximo_ato: p.proximo_ato === 'Aguardando o número do processo' ? 'Protocolar a ação' : p.proximo_ato, atualizado_em: agora, atualizado_por: 'robô' });
+    n++;
+  });
+  setConfig_('FIX_AJUIZADO_847', agora + ' · ' + n + ' processo(s) sem número voltaram para "Protocolar"', 'Ajuizados sem número que voltaram para Protocolar (uma vez)');
+  if (n) registrar_('robô', 'petição inicial: protocolar', n + ' processo(s) estavam em "Ajuizado" sem número e voltaram para "Protocolar"');
+  return n;
+}
+function inicialEnviada_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Processos'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Processo não encontrado.');
+    var agora = new Date().toISOString();
+    atualizarLinha_(tab, p, { inicial_enviada_em: agora, inicial_feita_em: p.inicial_feita_em || agora, inicial_feita_por: p.inicial_feita_por || (u.nome || u.usuario), atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'WhatsApp ao cliente', 'petição inicial para o cliente aprovar · ' + (p.cliente_nome || p.id));
+    return { ok: true };
+  });
+}
+
 function concluirPeticaoInicial_(proc, u) {
   var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']', agora = new Date().toISOString(), quem = '';
   tab.linhas.forEach(function (x) {
@@ -5474,6 +5524,7 @@ function classificarPix_(linha, dados, quando, k) {
   var baixou = false;
   var catAntes = k.categorias[nomeComparavel_(dados.pagador)];
   if (catAntes) { linha.situacao = 'ignorado'; linha.categoria = catAntes; linha.motivo = 'Não é honorário (' + catAntes + '): o mesmo pagador já foi marcado assim antes.'; return false; }
+    if (pixDeAcordo_(linha, dados, quando, k)) return true; // 8.47: parcela de ACORDO (valor cheio ou só os honorários) no dia combinado
     var achou = clienteDoPagador_(dados.pagador, k.clientes) || clientePor2Nomes_(dados.pagador, k.clientes);
     if (!achou || !achou.certeza) { // já pagou antes por este cliente (baixa feita à mão uma vez) → reconhece
       var cidA = k.apelidos[nomeComparavel_(dados.pagador)];
@@ -5526,6 +5577,50 @@ function classificarPix_(linha, dados, quando, k) {
         linha.motivo = 'Honorário de ' + achou.cliente.nome + ' de um mês anterior à importação (o painel só tinha as próximas parcelas): lançado como parcela paga em ' + dataBR_(diaSP_(quando)) + '.'; }
     }
     return baixou;
+}
+
+/** 8.47 (pedido da usuária: "fechou acordo de R$ 1.000, a doutora fica com 30%; quando cair o PIX no dia combinado, já descontar
+ *  sozinho"): o honorário lançado pelo "O que aconteceu?" das Audiências leva a marca [acordo:valor|parcelas|pct]. Um PIX cujo valor é
+ *  a PARCELA DO ACORDO (valor ÷ parcelas — a empresa pagou na conta do escritório) ou a PARCELA DOS HONORÁRIOS (o cliente repassou os 30%),
+ *  chegando de 7 dias antes a 20 dias depois do vencimento, dá baixa sozinho na parcela de honorários; no valor cheio, anota quanto
+ *  repassar ao cliente e cria a tarefa do repasse. Só baixa quando UMA parcela bate (duas iguais = fica para conferir). */
+function pixDeAcordo_(linha, dados, quando, k) {
+  var diaPix = diaSP_(quando), v = +dados.valor || 0; if (!(v > 0)) return false;
+  var hons = {}; tabela_('Honorarios').linhas.forEach(function (h) { var m = /\[acordo:([\d.]+)\|(\d+)\|([\d.]+)\]/.exec(h.observacoes || ''); if (m && !/cancel|retirad|encerrad/.test(h.situacao || '')) hons[h.id] = { h: h, total: +m[1], n: +m[2], pct: +m[3] }; });
+  if (!Object.keys(hons).length) return false;
+  var cands = [];
+  k.tabParc.linhas.forEach(function (p) {
+    var a = hons[p.honorario_id]; if (!a || p.pago_em || !p.vencimento || k.pagasPeloPix[p.id]) return;
+    var dd = diffDias_(diaPix, p.vencimento); if (dd < -7 || dd > 20) return; // PIX de 7 dias antes a 20 dias depois do vencimento
+    var vh = dinheiro_(p.valor), va1 = a.total / a.n, va2 = vh * 100 / a.pct, tol = Math.max(0.05, va1 * 0.005); // parcela do acordo correspondente
+    var cheio = Math.abs(v - va1) <= tol || Math.abs(v - va2) <= tol, soHon = Math.abs(v - vh) < 0.01;
+    if (cheio || soHon) cands.push({ p: p, a: a, cheio: cheio && !soHon, vh: vh, dist: Math.abs(dd) });
+  });
+  if (!cands.length) return false;
+  cands.sort(function (x, y) { return x.dist - y.dist; });
+  var c = cands[0], cli = k.clientes.filter(function (x) { return x.id === c.p.cliente_id; })[0] || {};
+  if (cands.length > 1 && cands[1].dist === c.dist && cands[1].p.honorario_id !== c.p.honorario_id) {
+    linha.cliente_id = c.p.cliente_id; linha.sugestao = c.p.id;
+    linha.motivo = 'Parece parcela de ACORDO, mas há mais de um acordo com esse valor nesta data. Confira e confirme.'; return false;
+  }
+  var res = pagarParcela_({ id: c.p.id, data: diaPix, valor: txtDinheiro_(c.vh), forma: 'PIX (Inter) — acordo' }, U_ROBO_PIX);
+  k.pagasPeloPix[c.p.id] = 1; k.tabParc = tabela_('Parcelas');
+  linha.situacao = 'baixado'; linha.parcela_id = c.p.id; linha.cliente_id = c.p.cliente_id; linha.recibo = res.recibo && res.recibo.pdf || '';
+  var repasse = c.cheio ? Math.round((v - c.vh) * 100) / 100 : 0;
+  linha.motivo = (c.cheio ? 'Parcela do ACORDO recebida (' + reaisTxt_(v) + '): honorários de ' + String(c.a.pct).replace('.', ',') + '% = ' + reaisTxt_(c.vh) + ' baixados sozinhos; REPASSAR ' + reaisTxt_(repasse) + ' ao cliente ' + (cli.nome || '') + '.'
+    : 'Honorários do acordo (' + String(c.a.pct).replace('.', ',') + '%) pagos pelo cliente: baixa automática.') + (c.p.numero ? ' ' + c.p.numero + 'ª parcela.' : '');
+  if (repasse > 0) {
+    try {
+      var agora = new Date().toISOString(), tabT = tabela_('Tarefas'), marca = '[repasse:' + c.p.id + ']';
+      if (!tabT.linhas.some(function (t) { return (t.descricao || '').indexOf(marca) >= 0; })) {
+        var proc = c.a.h.processo_id ? tabela_('Processos').linhas.filter(function (x) { return x.id === c.a.h.processo_id; })[0] : null;
+        inserirLinha_(tabT, { id: novoId_('T'), titulo: '💸 Repassar ' + reaisTxt_(repasse) + ' ao cliente — ' + (cli.nome || 'acordo'), descricao: 'PIX do acordo recebido em ' + dataBR_(diaPix) + ' (' + reaisTxt_(v) + ', pago por ' + (dados.pagador || '—') + '). Honorários de ' + String(c.a.pct).replace('.', ',') + '% (' + reaisTxt_(c.vh) + ') já baixados. Falta transferir ' + reaisTxt_(repasse) + ' ao cliente e mandar o comprovante.\n' + marca,
+          responsavel: (proc && proc.responsavel) || respSecretaria_() || '', processo_id: (proc && proc.id) || '', numero: (proc && proc.numero) || '', cliente_id: cli.id || '', vence_em: diaPix, etapa: 'afazer', peso: '1', situacao: 'ativa',
+          concluida_por: '', concluida_em: '', historico: '', criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô', prioridade: 'alta', checklist: '', repetir: '', ok_por: '', ok_em: '' });
+      }
+    } catch (eT) { /* a baixa já foi; a tarefa não é essencial */ }
+  }
+  return true;
 }
 
 /** 8.37.3 (pedido da usuária: "tem diversos PIX que eu não sei o que é"): explica o PIX que não é de cliente.
@@ -6107,7 +6202,8 @@ function audienciaResultado_(d, u) {
       honTot = Math.round(valor * pct) / 100;
       hon = salvarHonorario_({ honorario: { cliente_id: c.id, processo_id: p.id, tipo: 'parcelado', valor_total: honTot, parcelas: n, primeiro_vencimento: d.primeiro,
         descricao: 'Honorários (' + String(pct).replace('.', ',') + '%) do acordo de ' + reaisTxt_(valor) + ' — audiência de ' + dataBR_(d.data || ''),
-        observacoes: 'Lançado pela tela Audiências: acordo de ' + reaisTxt_(valor) + ' em ' + n + 'x, 1º pagamento em ' + dataBR_(d.primeiro) + (d.obs ? ' · ' + String(d.obs).slice(0, 300) : '') } }, u);
+        observacoes: 'Lançado pela tela Audiências: acordo de ' + reaisTxt_(valor) + ' em ' + n + 'x, 1º pagamento em ' + dataBR_(d.primeiro) + (d.obs ? ' · ' + String(d.obs).slice(0, 300) : '') +
+          ' [acordo:' + valor + '|' + n + '|' + pct + ']' } }, u);
       o.honorario_id = hon.id;
     }
     var m = {}; m[campo] = JSON.stringify(o); m.atualizado_em = agora; m.atualizado_por = u.usuario;
@@ -6551,7 +6647,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['vencidos844', baixarVencidos844_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
@@ -10399,16 +10495,20 @@ function conferirTrabalho_(d, u) {
       if (numero && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(numero)) throw falha_('Número do processo inválido (use o padrão 0000000-00.0000.0.00.0000) ou deixe em branco.');
       if (numero && tabP.linhas.some(function (x) { return x.id !== p.id && x.numero === numero; })) throw falha_('Esse número já está em outro processo.');
       var m = { atualizado_em: agora, atualizado_por: u.usuario, fase_auto: '' };
-      if (numero) { m.numero = numero; m.tribunal = p.tribunal || tribunalDoNumero_(numero); m.fase = 'andamento'; }
-      else m.fase = 'ajuizado';
-      if (p.proximo_ato === 'Ajuizar a ação') m.proximo_ato = numero ? '' : 'Aguardando o número do processo';
+      // 8.47 (pedido da usuária: "foi para Ajuizado, mas nem entramos com o processo ainda"): SEM número a inicial está FEITA, não
+      // protocolada → fica na etapa Petição inicial, coluna "Protocolar" (inicial_feita_em), e a tarefa continua aberta (aguardando).
+      if (numero) { m.numero = numero; m.tribunal = p.tribunal || tribunalDoNumero_(numero); m.fase = 'andamento'; if (d.orgao) m.orgao = String(d.orgao).trim().slice(0, 200); }
+      else { m.fase = 'contratado'; if (!p.inicial_feita_em) { m.inicial_feita_em = agora; m.inicial_feita_por = quem.nome; } }
+      if (p.proximo_ato === 'Ajuizar a ação' || (!numero && !p.proximo_ato)) m.proximo_ato = numero ? '' : 'Protocolar a ação';
+      if (numero && p.proximo_ato === 'Protocolar a ação') m.proximo_ato = '';
       atualizarLinha_(tabP, p, m);
       var tabT = tabela_('Tarefas'), marca = '[inicial:' + p.id + ']', achou = false;
       tabT.linhas.forEach(function (x) {
         if ((x.descricao || '').indexOf(marca) < 0) return;
         achou = true;
+        if (!numero) { if (!x.concluida_em) atualizarLinha_(tabT, x, { etapa: 'aguardando', historico: historicoMais_(x.historico, u, 'petição inicial feita por ' + quem.nome + ' — falta mandar ao cliente e protocolar'), atualizado_em: agora, atualizado_por: u.usuario }); return; }
         atualizarLinha_(tabT, x, { etapa: 'protocolado', concluida_em: x.concluida_em || agora, concluida_por: quem.usuario, numero: numero || x.numero,
-          historico: historicoMais_(x.historico, u, 'conferido: petição inicial feita por ' + quem.nome), atualizado_em: agora, atualizado_por: u.usuario });
+          historico: historicoMais_(x.historico, u, 'conferido: petição inicial protocolada por ' + quem.nome), atualizado_em: agora, atualizado_por: u.usuario });
       });
       if (!achou) tarefaPeticaoInicial_(p, u);
       var cli = p.cliente_id ? (tabela_('Clientes').linhas.filter(function (c) { return c.id === p.cliente_id; })[0] || {}).nome : '';

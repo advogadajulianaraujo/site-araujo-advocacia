@@ -124,7 +124,7 @@ var ESQUEMA = {
     'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id'],
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
     'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima'], // 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
@@ -249,10 +249,12 @@ function parcelasAbertasCliente_(cid, parcelas, hons) {
 
 function listarProcessos_(d) {
   var busca = normalizar_(d.busca || '');
-  var nomes = {};
-  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; });
+  var nomes = {}, tels = {};
+  tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; tels[c.id] = c.telefone; });
   return tabela_('Processos').linhas
-    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; x.fase = faseDe_(p); return x; })
+    .map(function (p) { var x = limpar_(p); x.cliente_nome = nomes[p.cliente_id] || p.cliente_nome || ''; x.tem_andamentos = !!p.andamentos && p.andamentos !== '-'; delete x.andamentos; x.fase = faseDe_(p);
+      if (x.fase === 'contratado' && p.inicial_feita_em) x.cliente_tel = tels[p.cliente_id] || ''; // 8.47: botão "mandar a inicial ao cliente" no quadro
+      return x; })
     .filter(function (p) {
       if (d.semCliente && p.cliente_id) return false;
       if (!busca) return true;
