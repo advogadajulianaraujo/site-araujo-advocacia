@@ -2,7 +2,7 @@
  * Estimativa para conferência: não substitui a análise do caso. Cada parcela é calculada com precisão e arredondada a 2 casas no fim.
  * Rescisão indireta (CLT, art. 483) = mesmas verbas da dispensa sem justa causa, com aviso prévio indenizado (30 + 3 por ano, máx. 90 —
  * Lei 12.506/2011), projeção do contrato para 13º e férias (OJ 82/83 da SDI-1), multa de 40% sobre o FGTS contratual SEM o FGTS do aviso
- * indenizado (Tema 255 do TST). As multas dos arts. 467 e 477 da CLT ficam em campos próprios e só entram se marcadas.
+ * indenizado (Tema 255 do TST). Todas as multas são opcionais e só entram quando explicitamente selecionadas.
  */
 (function (raiz) {
   'use strict';
@@ -22,7 +22,7 @@
   /** e = { salario, medias, admissao (Date), ruptura (Date), ultimoTrabalho (Date|null), motivo: sem_justa|indireta|pedido|acordo|justa,
    *  aviso: indenizado|trabalhado, diasSaldo (número ou null = automático), saldoPago (R$ comprovado), feriasGozadas (períodos completos já
    *  gozados e pagos) ou feriasPendentes (quantos períodos completos faltam), decimoAnoPago (R$ do 13º do ano da ruptura já pago), decimoAnterior: pago|nao_pago, fgtsDep: sim|nao|parte|naosei,
-   *  fgtsMesesNP, fgtsComprovado (R$), fgtsOutroPedido (bool), multa477 (bool), multa467 (bool) } */
+   *  fgtsMesesNP, fgtsComprovado (R$), fgtsOutroPedido (bool), multaFgts (bool), multa477 (bool), multa467 (bool), baseMulta467 (R$) } */
   function calcular(e) {
     const sal = +e.salario || 0, med = +e.medias || 0, rem = sal + med;
     const adm = e.admissao, rup = e.ruptura, motivo = e.motivo;
@@ -113,17 +113,20 @@
     const vFgts13proj = proj13 ? item(F, `FGTS sobre o 13º da projeção do aviso (${a13 - a13sem}/12)`, `8% × ${reais(proj13)}`, proj13 * 0.08) : 0;
     const pct = semJusta ? 0.4 : motivo === 'acordo' ? 0.2 : 0;
     let vMulta = 0;
-    if (pct) vMulta = item(F, `Multa de ${pct * 100}% do FGTS (${indireta ? 'rescisão indireta' : motivo === 'acordo' ? 'acordo' : 'dispensa sem justa causa'})`,
+    if (pct && e.multaFgts === true) vMulta = item(F, `Multa de ${pct * 100}% do FGTS (${indireta ? 'rescisão indireta' : motivo === 'acordo' ? 'acordo' : 'dispensa sem justa causa'})`,
       `${pct * 100}% × ${reais(fgtsContratual)} (FGTS contratual; SEM o FGTS do aviso indenizado — Tema 255 do TST)`, fgtsContratual * pct);
     const subFgts = r2(F.filter(x => !x.fora).reduce((t, x) => t + x.valor, 0));
-    if (e.fgtsOutroPedido && vFgtsDif) notas.push(`FGTS contratual (${reais(vFgtsDif)}) já calculado em outro pedido: aparece para conferência e NÃO entra no total. A multa e o FGTS do aviso continuam no total.`);
+    if (e.fgtsOutroPedido && vFgtsDif) notas.push(`FGTS contratual (${reais(vFgtsDif)}) já calculado em outro pedido: aparece para conferência e NÃO entra no total. Os demais depósitos de FGTS são discriminados separadamente; a multa do FGTS só entra quando selecionada.`);
 
     // 7) Multas dos arts. 477 e 467 da CLT — só se marcadas (dependem de pressupostos)
     const M = [];
-    const v477 = r2(sal), v467 = r2(subtotal * 0.5);
-    M.push({ rot: 'Multa do art. 477, § 8º, da CLT (1 salário)', conta: 'cabe se as verbas não foram pagas em 10 dias do fim do contrato (na rescisão indireta, depende do entendimento do juízo)', valor: v477, incluir: !!e.multa477 });
-    M.push({ rot: 'Multa do art. 467 da CLT (50% das verbas rescisórias incontroversas)', conta: 'cabe só sobre a parte INCONTROVERSA não paga na 1ª audiência; aqui, 50% do subtotal como referência', valor: v467, incluir: !!e.multa467 });
-    const subMultas = r2(M.filter(x => x.incluir).reduce((t, x) => t + x.valor, 0));
+    if (e.multa477 === true) M.push({ rot: 'Multa do art. 477, § 8º, da CLT (1 salário)', conta: '1 × ' + reais(sal) + ' — inclusão selecionada', valor: r2(sal), incluir: true });
+    if (e.multa467 === true) {
+      const base467 = Number(e.baseMulta467);
+      if (!Number.isFinite(base467) || base467 <= 0) throw new Error('Informe a base das verbas rescisórias incontroversas para incluir a multa do art. 467.');
+      M.push({ rot: 'Multa do art. 467 da CLT (50% da base incontroversa informada)', conta: '50% × ' + reais(base467) + ' — base informada, sem presumir o subtotal inteiro', valor: r2(base467 * 0.5), incluir: true });
+    }
+    const subMultas = r2(M.reduce((t, x) => t + x.valor, 0));
     const subAnt = r2(X.reduce((t, x) => t + x.valor, 0));
     const total = r2(subtotal + subAnt + subFgts + subMultas);
     // INSS só para conferência (não sai do cálculo bruto)
