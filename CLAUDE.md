@@ -1687,6 +1687,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   /baixa em lote|sem comprova/). Esta regra SUBSTITUI o "não baixar vencido" da 8.42 (decisão da usuária). Nada é apagado.
 - Em 18/11 (simulação nos dados reais): 14 vencidos → 6 com petição juntada (Israel 13/11 etc.), 6 só ciência/acordo, 2 sem comprovação.
 - Teste em `.github/motor/teste/etapa843.js`.
+- 8.44.2 (pedido da usuária): `vencidosRapido_` no `aquecerGatilho` (10 em 10 min, horário do escritório) — lê só Prazos e só roda a baixa
+  (na trava + `sbEnviarSujas_`) se houver vencido para retirar. `vencidoParaRetirar_`: prazo que o robô ou a baixa em lote já retirou e a
+  equipe REABRIU (observações com "saiu da lista em" / "baixa automática:" / "sem prazo: … (robô," / "baixa em lote em") nunca é retirado de novo.
 - 8.44.1 (Code.gs): a rodada do robô de 18/11 11h12 caiu com "O banco de dados não respondeu agora": a leitura de uma tabela inteira pelo
   servidor passou dos 8 s do `authenticator` (já chegava a 7,8 s) e a rodada INTEIRA foi perdida. `alter role service_role set statement_timeout
   = '30s'` (só o servidor usa essa chave; registrado no fim do leitura-rapida.sql) e `sbPrecarregar_` tenta de novo, uma vez, a tabela que voltou

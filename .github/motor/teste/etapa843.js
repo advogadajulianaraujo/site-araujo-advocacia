@@ -40,4 +40,11 @@ const rv = C.baixarVencidos844_(); const zz = id => C.tabela_('Prazos').linhas.f
 assert(zz('Z844a').situacao === 'cumprido' && /petição juntada/.test(zz('Z844a').cumprido_por), 'vencido com petição juntada depois do aviso → cumprido (vai para o OK)');
 assert(zz('Z844b').situacao === 'cancelado' && /só para ciência/.test(zz('Z844b').observacoes), 'vencido que era só ciência → sem prazo');
 assert(zz('Z844c').situacao === 'cumprido' && /sem comprovação/.test(zz('Z844c').cumprido_por) && zz('Z844c').ok_em, 'vencido sem nada → baixa "sem comprovação" (lista para reabrir), fora do OK');
+// 8.44.2: reaberto pela equipe NÃO é retirado de novo; o robô de 10 em 10 min só trabalha quando há vencido
+C.mudarSituacaoPrazo_({ id: 'Z844c', situacao: 'reabrir' }, { usuario: 'admin', nome: 'Admin' });
+assert(zz('Z844c').situacao === 'calculado', 'prazo reaberto volta a ficar aberto');
+assert(C.vencidosRapido_() === 0 && zz('Z844c').situacao === 'calculado', 'robô não retira de novo o prazo que a equipe reabriu');
+C.inserirLinha_(C.tabela_('Prazos'), { id: 'Z844d', processo_id: '', numero: nums[2], intimacao_id: 'I844c', descricao: 'Prazo de 5 dias indicado na intimação', dias: '5', contagem: 'uteis', ciencia: ant, fatal: ont, situacao: 'calculado', origem: 'robô', observacoes: 'PJe: aviso', criado_em: new Date().toISOString() });
+const rr = C.vencidosRapido_();
+assert(rr && rr.sem === 1 && zz('Z844d').situacao === 'cumprido', 'robô de 10 em 10 min retira o vencido novo');
 console.log("fim");

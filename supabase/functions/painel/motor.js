@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.44.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.44.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.44.2 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.44.2';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.44.1';
+var VERSAO = '8.44.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2653,12 +2653,26 @@ function identificarProvisorios_() {
 var RE_JUNTADA_ = /juntad[ao]s?\s+(a\s+|de\s+)?(peti[cç][aã]o|manifesta|quesitos|contrarraz|recurso|embargos|r[ée]plica|impugna|c[áa]lculos|rol|documento)|apresenta[cç][aã]o de quesitos|protocolad[ao] peti/i;
 var RE_ENCERROU_ = /homologa[cç][aã]o de acordo|suspenso o processo por homologa|extinta a execu|extin[cç][aã]o (do processo|da execu)|arquivad[oa]s? definitiv|baixa definitiva|tr[aâ]nsito em julgado/i;
 var RE_FAZER_ = /manifest|apresent|junt|indic|comprov|deposit|recolh|cumpr|pagar|pague|emend|inform|requer|especific|impugn|regulariz|juntar|fornec/;
+/* 8.44.2: prazo vencido que o robô ainda deve retirar. Se alguém REABRIU um prazo que o robô (ou a baixa em lote) já tinha retirado, ele fica
+   aberto: a pessoa disse que não foi feito, e o robô não passa por cima. */
+var RE_JA_RETIRADO_ = /saiu da lista em|baixa autom[aá]tica:|sem prazo: .*\(rob[oô],|baixa em lote em/;
+function vencidoParaRetirar_(z, hoje) {
+  return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje && z.ciencia && !/^ato:/.test(z.observacoes || '') && !RE_JA_RETIRADO_.test(z.observacoes || '');
+}
+/* 8.44.2 (pedido da usuária): também no robô de 10 em 10 min. Lê só os Prazos; as outras tabelas só quando há vencido para retirar. */
+function vencidosRapido_() {
+  var hoje = hojeSP_();
+  if (!tabela_('Prazos').linhas.some(function (z) { return vencidoParaRetirar_(z, hoje); })) return 0;
+  var n = comTrava_(baixarVencidos844_);
+  try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
+  return n;
+}
 function baixarVencidos844_() {
   var hoje = hojeSP_(), tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes'), procs = {}, porNum = {}, porId = {}, agora = new Date().toISOString(), n = { feito: 0, ciencia: 0, sem: 0 };
   tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
   tabI.linhas.forEach(function (i) { porId[i.id] = i; (porNum[i.numero] = porNum[i.numero] || []).push(i); });
   tabZ.linhas.forEach(function (z) {
-    if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || !z.fatal || z.fatal >= hoje || /^ato:/.test(z.observacoes || '') || !z.ciencia) return;
+    if (!vencidoParaRetirar_(z, hoje)) return;
     var aviso = String((porId[z.intimacao_id] || {}).recebido_em || '').slice(0, 10) || somarDias_(z.ciencia, -3);
     var movs = (porNum[z.numero] || []).map(function (i) { return { d: String(i.recebido_em || '').slice(0, 10), n: String(i.movimento || ''), i: i }; });
     var p = procs[z.processo_id] || {};
@@ -9973,6 +9987,7 @@ function aquecerGatilho() {
     P.setProperty('AQUECER_PESADO_EM', String(Date.now()));
     try { roboExtrasAtualizar_(); } catch (eX2) { /* segue */ }
   }
+  try { vencidosRapido_(); } catch (eVc) { /* o robô de hora em hora tenta de novo */ }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
   contarTempoRobo_(Date.now() - t0);
 }
