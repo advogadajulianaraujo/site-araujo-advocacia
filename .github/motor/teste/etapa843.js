@@ -74,3 +74,34 @@ console.log("fim");
   assert(linha2.situacao !== 'baixado' || linha2.parcela_id !== linha.parcela_id, 'o mesmo PIX não baixa a mesma parcela duas vezes');
 }
 console.log("fim 847");
+// 8.48: audiência só no "próximo ato" do processo (importada do sistema antigo) entra na agenda + tarefa do horário; não repete
+{
+  const hoje = C.hojeSP_(), d = C.somarDias_(hoje, 3), d2 = C.somarDias_(hoje, 5);
+  const tp = C.tabela_('Processos'), cli = C.tabela_('Clientes').linhas[0];
+  C.inserirLinha_(tp, { id: 'P848a', cliente_id: cli.id, numero: '5005562-20.2026.8.24.0075', proximo_ato: 'Instrução', proximo_ato_data: d, area: 'Cível', status: 'ativo', fase: 'andamento', criado_em: new Date().toISOString() });
+  C.inserirLinha_(tp, { id: 'P848b', cliente_id: cli.id, numero: '0000999-11.2026.5.12.0041', proximo_ato: 'Conciliação 14h30', proximo_ato_data: d2, area: 'Trabalhista', status: 'ativo', fase: 'andamento', criado_em: new Date().toISOString() });
+  const n1 = C.atosDoProximoAto_(400);
+  const ev = C.tabela_('Eventos').linhas;
+  const ea = ev.find(e => e.numero === '5005562-20.2026.8.24.0075'), eb = ev.find(e => e.numero === '0000999-11.2026.5.12.0041');
+  assert(n1 >= 2 && ea && /instru/.test(ea.tipo) && ea.data === d && eb && /concilia/.test(eb.tipo) && eb.hora === '14:30', 'audiências que estavam só no próximo ato entram na agenda (instrução sem hora; conciliação 14:30)');
+  assert(C.tabela_('Tarefas').linhas.some(t => /Conferir o HORÁRIO/.test(t.titulo) && (t.descricao || '').indexOf('[horaato:5005562-20.2026.8.24.0075:') >= 0), 'sem horário → tarefa "Conferir o HORÁRIO"');
+  assert(!C.tabela_('Tarefas').linhas.some(t => (t.descricao || '').indexOf('[horaato:0000999-11.2026.5.12.0041:') >= 0), 'com horário → sem tarefa de horário');
+  const antes = C.tabela_('Eventos').linhas.length;
+  assert(C.atosDoProximoAto_(400) === 0 && C.atosDoProximoAtoRapido_() === 0 && C.tabela_('Eventos').linhas.length === antes, 'segunda rodada não repete');
+  assert(C.nomeNoTitulo_('Audiência conciliatória — João Maria Ferreira dos Santos', 'JOÃO MARIA FERREIRA DOS SANTOS') && !C.nomeNoTitulo_('Audiência — João Pedro Silva', 'João Maria Ferreira'), 'nome do cliente no título do evento lançado à mão é reconhecido');
+}
+console.log("fim 848");
+// 8.48: aviso do tribunal aberto / apagado no Gmail → marcado na intimação (nunca dá baixa no prazo)
+{
+  const ti = C.tabela_('Intimacoes'), hoje = C.hojeSP_(), rec = new Date().toISOString();
+  C.inserirLinha_(ti, { id: 'IGM1', chave: 'gm1', fonte: 'PJe TRT12', recebido_em: rec, numero: '0000111-11.2026.5.12.0041', movimento: 'x', texto: '', gmail_id: 'MSG1', criado_em: rec });
+  C.inserirLinha_(ti, { id: 'IGM2', chave: 'gm2', fonte: 'PJe TRT12', recebido_em: rec, numero: '0000222-22.2026.5.12.0041', movimento: 'x', texto: '', gmail_id: 'MSG2', criado_em: rec });
+  C.inserirLinha_(ti, { id: 'IGM3', chave: 'gm3', fonte: 'PJe TRT12', recebido_em: rec, numero: '0000333-33.2026.5.12.0041', movimento: 'x', texto: '', gmail_id: '', criado_em: rec });
+  const msg = (id, sub, lido, lixo) => ({ getId: () => id, getSubject: () => sub, getDate: () => new Date(rec), isUnread: () => !lido, isInTrash: () => lixo });
+  const antigo = C.GmailApp;
+  C.GmailApp = { search: q => /(^|\s)in:trash/.test(q) ? [['t2']] : [['t1']], getMessagesForThreads: th => th.map(t => t[0] === 't2' ? [msg('MSG2', 'x', true, true)] : [msg('MSG1', 'x', true, false), msg('MSGX', '[TRT12] Processo 0000333-33.2026.5.12.0041', true, false)]) };
+  let n; try { n = C.gmailSituacao_(); } catch (e) { console.log("erro gmail:", e.message); } finally { C.GmailApp = antigo; }
+  const g = id => C.tabela_('Intimacoes').linhas.find(x => x.id === id);
+  assert(n === 3 && g('IGM1').gmail_lido_em && !g('IGM1').gmail_apagado_em && g('IGM2').gmail_apagado_em && g('IGM3').gmail_lido_em, 'Gmail: aberto, apagado e o antigo (sem id) achado pelo nº do processo no assunto');
+}
+console.log("fim gmail");

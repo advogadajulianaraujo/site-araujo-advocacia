@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.47.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.48.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.47.0';
+var MOTOR_VERSAO = '8.48.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.47.0';
+var VERSAO = '8.48.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -127,7 +127,7 @@ var ESQUEMA = {
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
-    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima'], // 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
+    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em'], // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
     'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte'],
@@ -605,6 +605,7 @@ function prazoPublico_(z, procs, nomes) {
   x.sistema = p.sistema || '';
   x.fila = filaPrazo_(z);
   x.avisar_cliente = avisoClienteDe_(z, (prazoPublico_.intims || {})[z.intimacao_id]);
+  x.gmail = ((prazoPublico_.intims || {})[z.intimacao_id] || {}).gmail || ''; // 8.48: o aviso do tribunal foi aberto/apagado no Gmail?
   x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(z.resumo_ia || '');
   // 8.37.3 (pedido da usuária: "quero que sempre veja se está no prazo"): se a IA leu outro nº de dias no texto do ato, mostra a data
   // final POR ESSE TEXTO ao lado da do painel (a do painel continua valendo: na dúvida, a mais curta). Só informa; nunca muda o prazo.
@@ -629,7 +630,7 @@ function listarPrazos_(d) {
   var tel = {};
   tabela_('Clientes').linhas.forEach(function (c) { nomes[c.id] = c.nome; tel[c.id] = c.telefone; });
   prazoPublico_.tel = tel;
-  var intims = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { intims[i.id] = { movimento: i.movimento, texto: String(i.texto || '').slice(0, 1500) }; }); } catch (e) { /* segue */ }
+  var intims = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { intims[i.id] = { movimento: i.movimento, texto: String(i.texto || '').slice(0, 1500), gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '' }; }); } catch (e) { /* segue */ }
   prazoPublico_.intims = intims;
   var limiteFechados = somarDias_(hojeSP_(), -30);
   return tabela_('Prazos').linhas
@@ -1116,6 +1117,12 @@ function obterHonorario_(d) {
  * Cria ou altera um honorário. Ao criar um parcelado, gera as parcelas (n, primeiro vencimento);
  * ao criar um mensal, gera as mensalidades até 2 meses à frente.
  */
+function nomeNoTitulo_(titulo, nome) {
+  var t = ' ' + normalizar_(titulo).replace(/[^a-z0-9 ]/g, ' ') + ' ', ps = normalizar_(nome).replace(/[^a-z ]/g, ' ').split(' ').filter(function (x) { return x.length >= 3 && !/^(das|dos|del|der)$/.test(x); });
+  if (ps.length < 2) return false;
+  if (t.indexOf(' ' + ps[0] + ' ') < 0) return false;
+  return ps.slice(1).some(function (x) { return t.indexOf(' ' + x + ' ') >= 0; });
+}
 function listarPix_(d) {
   var dias = Math.min(parseInt(d.dias, 10) || 60, 365), desde = new Date(Date.now() - dias * 86400000).toISOString();
   var clientes = {}, tabParc = tabela_('Parcelas'), parc = {};
@@ -1175,6 +1182,12 @@ function atosDaAgenda_(hoje, ate, eventos, fresco) {
       });
     }
     lista.sort(function (a, b) { return (ORDEM_AG[TIPO_AG[a.agenda]] - ORDEM_AG[TIPO_AG[b.agenda]]) || (a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0); });
+    var nomeDoNum = null; // 8.48: nº do processo → nome do cliente (só se precisar)
+    var nomeNum = function (num) {
+      if (!nomeDoNum) { nomeDoNum = {}; var cl = {}; tabela_('Clientes').linhas.forEach(function (c) { cl[c.id] = c.nome; });
+        tabela_('Processos').linhas.forEach(function (p) { if (p.numero) nomeDoNum[p.numero] = cl[p.cliente_id] || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || ''; }); }
+      return nomeDoNum[num] || '';
+    };
     lista.forEach(function (ev) {
       var txt = ev.titulo + ' ' + (ev.descricao || '');
       var num = (RE_CNJ.exec(txt) || [])[1] || '';
@@ -1182,6 +1195,8 @@ function atosDaAgenda_(hoje, ate, eventos, fresco) {
       if (data < hoje || data > ate) return;
       var tipo = TIPO_AG[ev.agenda], evId = String(ev.id);
       if (atos.some(function (a) { return (a.ev && a.ev.evento_id === evId) || (num && a.numero === num && a.data === data && a.tipo === tipo); })) return;
+      var horaEv = ev.diaTodo ? '' : String(ev.inicio).slice(11, 16);
+      if (!num && atos.some(function (a) { return a.data === data && (!a.hora || !horaEv || a.hora === horaEv) && a.numero && nomeNoTitulo_(ev.titulo, nomeNum(a.numero)); })) return;
       atos.push({ chave: 'G:' + evId.slice(0, 40) + ':' + data, tipo: tipo, nome: tipo === 'pericia' ? 'perícia' : tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação',
         data: data, hora: ev.diaTodo ? '' : String(ev.inicio).slice(11, 16), numero: num, local: ev.local || '', titulo: ev.titulo });
     });

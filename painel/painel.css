@@ -3146,3 +3146,9 @@ body.sem-sessao .chatf{display:none}
 .aud-av .btn.mini.wa.aud-av-bt.feito { background: none; color: #8c8476; border: 0; text-decoration: underline; padding: 0; font-weight: 400; }
 .aud-av-ja { font-size: 12px; color: #8c8476; }
 @media (max-width: 600px) { .aud-av { grid-template-columns: 1fr auto; } .aud-av-feito, .aud-av-ja { grid-column: 1 / -1; } }
+
+/* 8.48 — aviso do tribunal aberto/apagado no Gmail */
+.gm-selo { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 9px; line-height: 17px; white-space: nowrap; }
+.gm-aberto { background: #e8f3ec; color: #2d6a45; }
+.gm-apagado { background: #f1ece4; color: #6b5a3c; }
+.gm-nao { background: #fdf0e0; color: #9a5a12; }

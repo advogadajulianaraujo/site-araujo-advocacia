@@ -1764,3 +1764,29 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   HONORÁRIOS (cliente repassou), de 7 dias antes a 20 dias depois do vencimento → baixa sozinho a parcela de honorários (forma "PIX (Inter) —
   acordo", recibo) e, no valor cheio, cria a tarefa "💸 Repassar R$ X ao cliente" (`[repasse:parcelaId]`). Dois acordos iguais na mesma data =
   sugestão para conferir. Teste em etapa843.js.
+
+## 8.48.0 Nenhuma audiência fora da agenda (pedido da usuária, 18/11/2026: "a audiência da Márcia não estava no sistema")
+
+- CAUSA: a data da audiência estava só no "próximo ato" do processo (importado do sistema antigo: "Instrução" + data); Agenda e Audiências
+  leem só o Google Agenda e os atos que o robô tira das intimações (o aviso do PJe/DJEN da Márcia nunca trouxe a data). Eram 34 processos assim.
+- `atosDoProximoAto_(limite)`: processo ativo com número e próximo ato de audiência/perícia (`RE_ATO_PROX`) de hoje até +3 anos que não está em
+  Eventos → `marcarAto_` (Google Agenda certa, Eventos, lembrete, os 4 avisos), os MAIS PRÓXIMOS primeiro. Sem horário no texto → tarefa
+  "⚖ Conferir o HORÁRIO" (`[horaato:numero:data]`, urgente se for em 2 dias). Roda no aquecedor de 10 em 10 min (`atosDoProximoAtoRapido_`, só
+  trava se faltar algum) e nos robôs do escritório (40 por rodada).
+- Sem audiência repetida: `eventoGoogleDoAto_` e `atosDaAgenda_` reconhecem o evento lançado À MÃO sem o número mas com o NOME do cliente no
+  título (`nomeNoTitulo_`: primeiro nome + outro nome) no mesmo dia/hora. `limparAtosDuplicados848_` (uma vez, Config FIX_ATOS_DUP_848) apagou o
+  evento do robô que tinha gêmeo à mão (caso dos "2 João") e ligou Eventos ao lançado à mão.
+- "Feito" no lugar do "Conferido" (pedido da usuária): `escolherQuem` não mostra mais a equipe — quem fez = quem está logado; sem campo extra
+  grava na hora, com campo (comprovante do prazo, nº do processo) abre só o campo e "✓ Feito". Tudo vai para "Aguardando o seu OK" e some da
+  lista de quem fez; "Devolver" da administração reabre o prazo/intimação/tarefa. "🙋 Eu faço" e "Passar para…" SAÍRAM (`botoesEuFaco` só mostra
+  o responsável; a distribuição é a de "Quem faz o quê").
+- Chat: trocar de conversa abre na hora com o que já estava na tela (`st.cache` por sala) e a resposta atrasada da conversa anterior não puxa
+  mais de volta (`st.seq`).
+- Processos sem número: `semNumeroParaProtocolar848_` (uma vez, Config FIX_SEMNUM_848) levou para "Protocolar" a inicial sem número criada há
+  mais de 5 dias (conferir se já foi protocolada). Sem cliente: `parteDoEscritorio_` entende o e-mail [PUSH] do PJe ("Réu: … Advogados do Réu:
+  … JULIAN"; papéis sem diferenciar maiúscula) e `identificarPartes_` tenta de novo todos uma vez (Config FIX_PARTES_848). O e-mail do eproc
+  não traz as partes; SIGILO fica de fora.
+- Gmail aberto/apagado (pedido da usuária: "tem gente que vê o prazo pelo Gmail"): Intimacoes.gmail_id (id da mensagem, gravado na leitura),
+  gmail_lido_em, gmail_apagado_em. `gmailSituacao_` (robô de hora em hora; 2 buscas: in:trash e is:read, 60 dias, `getMessagesForThreads`)
+  marca o que foi aberto/apagado; os antigos sem id pelo nº do processo no assunto + dia. Selo "✉ aberto / apagado / não aberto no Gmail"
+  (`seloGmail`) na intimação e no prazo (`gmail` em prazos.listar). Só INFORMA: apagar o e-mail nunca dá baixa no prazo.

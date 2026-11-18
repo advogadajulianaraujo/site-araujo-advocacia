@@ -950,15 +950,30 @@
       return d.toDateString() === hj.toDateString() ? 'Hoje' : d.toDateString() === ont.toDateString() ? 'Ontem' : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
     const hora = iso => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const comLinks = t => { const out = []; String(t).split(/(https?:\/\/[^\s]+)/g).forEach((p, i) => out.push(i % 2 ? h('a', { href: p, target: '_blank', rel: 'noopener' }, p) : p)); return out; };
+    // 8.48 (pedido da usuária: "quando aperto numa conversa e depois em outra, trava"): a resposta ATRASADA da conversa anterior
+    // não volta mais para ela (antes `st.sala = r.sala` puxava de volta) e cada conversa já vista abre NA HORA com o que estava
+    // na tela (st.cache), conferindo por trás.
+    st.cache = {}; st.seq = 0;
     async function carregar() {
       if (!sessao || st.modo === 'fechado') return;
+      const salaPedida = st.sala, n = ++st.seq;
+      const guardado = st.cache[salaPedida];
+      if (guardado) desenhar(guardado);
+      else if (raiz.dataset.vista !== 'lista' && !st.desenho.startsWith(salaPedida)) { st.desenho = ''; msgsEl.replaceChildren(h('p', { class: 'chat-vazio' }, 'Abrindo a conversa…')); }
       let r;
-      try { r = await apiFresco('chat.listar', { sala: st.sala }); } catch (e) { msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
-      st.dados = r; st.sala = r.sala || 'geral';
+      try { r = await apiFresco('chat.listar', { sala: salaPedida }); }
+      catch (e) { if (n === st.seq && !guardado) msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      st.cache[r.sala || salaPedida] = r;
+      if (n !== st.seq || st.sala !== salaPedida) return; // já trocou de conversa: esta resposta só fica guardada
+      if (r.sala && r.sala !== salaPedida) st.sala = r.sala; // conversa que não existe mais → a do servidor (geral)
+      desenhar(r);
+    }
+    function desenhar(r) {
+      st.dados = r;
       const verConversa = raiz.dataset.vista !== 'lista';
       chatBadge((r.salas || []).reduce((a, x) => a + (verConversa && x.sala === st.sala ? 0 : x.naoLidas || 0), 0));
       listaEl.replaceChildren(...(r.salas || []).map(x => h('button', { type: 'button', class: 'chat-sala' + (x.sala === st.sala && st.modo === 'grande' ? ' atual' : '') + (x.naoLidas && !(verConversa && x.sala === st.sala) ? ' nova' : ''),
-        onclick: () => { st.sala = x.sala; st.desenho = ''; vista('conversa'); setTimeout(() => ta.focus(), 30); } },
+        onclick: () => { if (st.sala === x.sala && raiz.dataset.vista !== 'lista') return; st.sala = x.sala; vista('conversa'); setTimeout(() => ta.focus(), 30); } },
         h('span', { class: 'chat-av' + (x.tipo === 'geral' ? ' geral' : '') }, x.tipo === 'geral' ? '👥' : String(x.nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase()),
         h('span', { class: 'chat-sala-txt' }, h('b', {}, x.nome), h('small', {}, x.ultima ? (x.ultima.de === eu ? 'Você: ' : x.tipo === 'geral' ? primeiroNome(x.ultima.nome) + ': ' : '') + x.ultima.texto : x.tipo === 'geral' ? 'recados para todos' : 'sem mensagens')),
         x.naoLidas && !(verConversa && x.sala === st.sala) ? h('span', { class: 'chat-n' }, String(x.naoLidas)) : null)));
@@ -993,7 +1008,7 @@
       enviando = true; enviarBt.disabled = true;
       const prov = h('div', { class: 'chat-msg meu enviando' }, h('span', { class: 'chat-txt' }, ...comLinks(texto)), h('span', { class: 'chat-hora' }, 'enviando…'));
       msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = ''; ta.style.height = '';
-      try { await api('chat.enviar', { sala: st.sala, texto }); st.desenho = ''; await carregar(); }
+      try { await api('chat.enviar', { sala: st.sala, texto }); await carregar(); }
       catch (e) { prov.remove(); if (!ta.value.trim()) ta.value = texto; avisar('A mensagem NÃO foi enviada: ' + e.message + ' — o texto voltou para a caixa.', true); }
       finally { enviando = false; enviarBt.disabled = false; ta.focus(); }
     }
@@ -1264,7 +1279,7 @@
           h('div', { class: 'minha-semana-topo' }, h('b', {}, String(meu.semana.total)), h('span', {}, meu.semana.total === 1 ? 'ação registrada' : 'ações registradas'),
             meu.semana.posicao ? h('span', { class: 'tag mini-tag ok' }, `${meu.semana.posicao}º da equipe`) : null),
           cats.length ? h('div', { class: 'eq-tiles mini' }, cats.map(c => h('div', { class: 'eq-tile', 'data-cor': corCat(c.id) }, h('span', { class: 'eq-tile-ico' }, icoCat(c.id)), h('b', {}, String(meu.semana.grupos[c.id])), h('span', {}, c.nome))))
-            : vazio('Ainda nada nesta semana. Use "✓ Conferido" quando terminar algo: conta aqui e no relatório.'),
+            : vazio('Ainda nada nesta semana. Use "✓ Feito" quando terminar algo: conta aqui e no relatório.'),
           meu.semana.itens.length ? h('ul', { class: 'minha-linha' }, meu.semana.itens.slice(0, 6).map(x => h('li', {},
             h('span', { class: 'eq-ponto', 'data-cor': corCat(x.cat) }), h('time', {}, new Date(x.quando).toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })), ' ', x.texto || x.acao))) : null));
       el.querySelectorAll('[data-cor]').forEach(x => x.style.setProperty('--c', x.dataset.cor));
@@ -2738,7 +2753,7 @@
     } }, 'WhatsApp: mandar a inicial ao cliente') : h('span', { class: 'peq' }, 'Cliente sem telefone');
     return h('section', { class: 'caixa inicial-caixa destaque-caixa' },
       h('div', { class: 'inicial-cab' }, h('span', { class: 'inicial-ico', 'aria-hidden': 'true' }, '⚖'),
-        h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Ninguém pegou ainda. Aperte "Eu faço" para ir para as suas Tarefas.')),
+        h('div', { class: 'inicial-tit' }, h('h2', {}, 'Petição inicial'), h('p', { class: 'peq' }, p.responsavel ? 'Responsável: ' + (p.responsavel === sessao.usuario.usuario ? 'você' : p.responsavel) + ' · está nas Tarefas dessa pessoa' : 'Vai sozinha para quem cuida da área (Configurações › Quem faz o quê).')),
         h('div', { class: 'barra' }, botoesEuFaco('inicial', p.id, ''), botaoNaoFechou(p))),
       h('ol', { class: 'passos-inicial' },
         h('li', {}, h('span', { class: 'passo-n' }, '1'),
@@ -3514,23 +3529,22 @@
   /* ---------- Conferido (equipe) → OK (administração) ---------- */
 
   const iniciais = n => String(n || '?').split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
-  /** Janela com a equipe: a pessoa aperta o nome de quem fez. Devolve o usuário escolhido (ou null). */
+  /** 8.48 (pedido da usuária: "não precisa colocar qual pessoa fez; bote a pessoa que apertou o botão"): quem fez = quem está logado.
+   *  Sem campo extra, grava na hora; com campo (comprovante, número do processo), abre só esse campo e o botão "✓ Feito". */
   async function escolherQuem(titulo, extra) {
-    const equipe = await api('equipe.listar').catch(() => [{ usuario: sessao.usuario.usuario, nome: sessao.usuario.nome }]);
-    const eu = sessao.usuario.usuario;
-    const lista = equipe.slice().sort((a, b) => (b.usuario === eu) - (a.usuario === eu));
+    const eu = { usuario: sessao.usuario.usuario, nome: sessao.usuario.nome };
+    if (!extra) return Object.assign({ extra: '' }, eu);
     return new Promise(resolve => {
       const caixa = h('dialog', { class: 'dialogo quem-fez' });
       let feito = false;
       const fim = v => { if (feito) return; feito = true; caixa.close(); resolve(v); };
-      const campoExtra = extra ? extra() : null;
+      const campoExtra = extra();
+      const ok = () => { if (campoExtra && campoExtra.validar && !campoExtra.validar()) return; fim(Object.assign({}, eu, { extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' })); };
       caixa.append(...[
-        h('h2', {}, titulo || 'Quem fez?'),
-        h('p', { class: 'peq' }, /Passar/.test(titulo || '') ? 'Aperte o nome: vai para as Tarefas dessa pessoa.' : 'Aperte o nome de quem fez. Some da lista da equipe e vai para o OK da administração e para o relatório.'),
+        h('h2', {}, String(titulo || 'Feito').replace(/^Quem protocolou/i, 'Protocolou').replace(/^Quem fez (est[ae] )?/i, 'Feito: ').replace(/\?$/, '')),
+        h('p', { class: 'peq' }, 'Fica no seu nome (' + eu.nome + ') e vai para o OK da administração.'),
         campoExtra,
-        h('div', { class: 'quem-grade' }, lista.map(x => h('button', { type: 'button', class: 'quem-bt' + (x.usuario === eu ? ' eu' : ''), onclick: () => { if (campoExtra && campoExtra.validar && !campoExtra.validar()) return; fim({ usuario: x.usuario, nome: x.nome, extra: campoExtra && campoExtra.valor ? campoExtra.valor() : '' }); } },
-          h('span', { class: 'quem-ini' }, iniciais(x.nome)), h('span', { class: 'quem-nome' }, x.nome, x.usuario === eu ? h('small', {}, ' (você)') : null)))),
-        h('div', { class: 'acoes' }, botao('Cancelar', () => fim(null), 'sec'))].filter(Boolean));
+        h('div', { class: 'acoes' }, botao('Cancelar', () => fim(null), 'sec'), h('button', { type: 'button', class: 'btn quem-bt', onclick: ok }, '✓ Feito'))].filter(Boolean));
       caixa.addEventListener('close', () => { caixa.remove(); if (!feito) { feito = true; resolve(null); } });
       document.body.append(caixa);
       caixa.showModal();
@@ -3551,7 +3565,7 @@
     let r;
     try { r = await api('trabalho.conferir', tipo === 'prazo' ? { tipo, id, por: q.usuario, comprovante: q.extra || '' } : q.extra && typeof q.extra === 'object' ? { tipo, id, por: q.usuario, numero: q.extra.numero || '', orgao: q.extra.orgao || '' } : { tipo, id, por: q.usuario, numero: q.extra || '' }); }
     catch (e) { if (alvo) alvo.classList.remove('saindo'); throw e; }
-    avisar(r.repetido ? 'Já estava conferido' + (r.por ? ' por ' + r.por : '') + '.' : `✓ Conferido: feito por ${r.por}. Agora aguarda o OK da administração.`);
+    avisar(r.repetido ? 'Já estava marcado como feito' + (r.por ? ' por ' + r.por : '') + '.' : '✓ Feito. Foi para o OK da administração.');
     // 8.11: inicial protocolada → abre o processo com a mensagem do WhatsApp pronta (com o código do Acompanhe gerado sozinho)
     if (tipo === 'inicial' && r.protocolado) { guardarProtocolo(id, r); location.hash = '#/processo/' + id + '?avisar=1'; return true; }
     if (/^#\/prazo\//.test(location.hash)) { location.hash = '#/prazos'; return true; } // 8.19: conferiu dentro do prazo → fecha a tela do prazo
@@ -3563,23 +3577,13 @@
     return h('button', { type: 'button', class: 'btn mini terminei', onclick: async ev => {
       ev.stopPropagation(); const b = ev.currentTarget; b.disabled = true;
       try { if (!(await conferirTrabalho(tipo, id, titulo, extra, b))) b.disabled = false; } catch (e) { b.disabled = false; avisar(e.message, true); }
-    } }, rotulo || '✓ Conferido');
+    } }, String(rotulo || '✓ Feito').replace('Conferido', 'Feito'));
   }
-  /** "🙋 Eu faço" (pega para si; vai para as Tarefas da pessoa) e, para a administração, "Passar para…". */
+  /** 8.48 (pedido da usuária): sem "Eu faço" e sem "Passar para…" — o trabalho vai sozinho para quem cuida da área (Quem faz o quê);
+   *  aqui só aparece o responsável. */
   function botoesEuFaco(tipo, id, responsavel) {
-    const eu = sessao.usuario.usuario, pode = sessao.usuario.pode;
-    const pegar = async (para, b) => {
-      b.disabled = true;
-      try { const r = await api('trabalho.assumir', { tipo, id, para }); avisar(para && para !== eu ? `Passado para ${r.para}: já está nas Tarefas dessa pessoa.` : 'É seu: já está nas suas Tarefas.'); rota(); }
-      catch (e) { b.disabled = false; avisar(e.message, true); }
-    };
-    return [
-      responsavel ? h('span', { class: 'tag mini-tag resp-tag', title: 'Responsável' }, '👤 ' + (responsavel === eu ? 'você' : responsavel)) : null,
-      responsavel !== eu ? h('button', { type: 'button', class: 'btn mini sec eu-faco', onclick: ev => { ev.stopPropagation(); pegar('', ev.currentTarget); } }, '🙋 Eu faço') : null,
-      pode.usuarios || pode.conferePrazos ? h('button', { type: 'button', class: 'btn mini sec', onclick: async ev => {
-        ev.stopPropagation(); const b = ev.currentTarget;
-        const q = await escolherQuem('Passar para quem?'); if (q) pegar(q.usuario, b);
-      } }, 'Passar para…') : null];
+    const eu = sessao.usuario.usuario;
+    return [responsavel ? h('span', { class: 'tag mini-tag resp-tag', title: 'Responsável' }, '👤 ' + (responsavel === eu ? 'você' : responsavel)) : null];
   }
 
   /** Para a administração: OK final ou devolver para a equipe. */
@@ -3651,7 +3655,7 @@
       h('div', { class: 'qf-linhas' }, AREAS_DIST.map(([a, nome]) => { dist[tipo][a] = dist[tipo][a] || []; return h('div', { class: 'qf-linha' }, h('b', {}, nome), chips(dist[tipo][a])); })));
     const redis = h('input', { type: 'checkbox', checked: true });
     mostrar(
-      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Quem faz o quê'), h('p', {}, 'Cada trabalho novo vai sozinho para a pessoa certa. Com duas ou mais pessoas na mesma área, vai para quem está com menos coisa aberta (o número ao lado do nome). Dá sempre para trocar à mão com "Passar para…".'))),
+      h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Quem faz o quê'), h('p', {}, 'Cada trabalho novo vai sozinho para a pessoa certa. Com duas ou mais pessoas na mesma área, vai para quem está com menos coisa aberta (o número ao lado do nome).'))),
       sugeriu ? h('div', { class: 'nota' }, '✨ Já deixei marcado como você descreveu (Lara no trabalhista, Davi e Jennifer no cível, Jennifer na família, Gustavo no previdenciário e a secretaria no resto). Confira e aperte "Salvar".') : null,
       tabelaTipo('prazo', '⏱ Prazos e intimações', 'Quem recebe os prazos novos que o robô lê dos tribunais, conforme a área do processo.'),
       tabelaTipo('inicial', '⚖ Petições iniciais', 'Quem faz a petição inicial quando o cliente assina a procuração e o contrato.'),
@@ -3837,7 +3841,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.47.0';
+  const VERSAO_PAINEL = '8.48.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4113,6 +4117,13 @@
     if (!z.cliente) p.push('identificar o cliente');
     return p;
   }
+  /** 8.48: o aviso do tribunal foi aberto/apagado no Gmail? (só informa; o prazo continua até alguém marcar Feito) */
+  function seloGmail(g) {
+    if (g === 'apagado') return h('span', { class: 'gm-selo gm-apagado', title: 'O e-mail do tribunal foi apagado no Gmail. Isso NÃO dá baixa no prazo.' }, '✉ apagado no Gmail');
+    if (g === 'aberto') return h('span', { class: 'gm-selo gm-aberto', title: 'Alguém já abriu o e-mail do tribunal no Gmail.' }, '✉ aberto no Gmail');
+    if (g === 'nao') return h('span', { class: 'gm-selo gm-nao', title: 'Ninguém abriu ainda o e-mail do tribunal no Gmail.' }, '✉ não aberto no Gmail');
+    return null;
+  }
   function linhaPrazoIx(z) {
     const d = dataDoPrazo(z), e = estadoDoPrazo(z), o = oQueFazer(z), pend = pendenciasDoPrazo(z);
     const venc = z.fatal && z.fatal < hojeISO() && SITUACOES_ABERTAS.includes(z.situacao);
@@ -4126,7 +4137,7 @@
         h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : ''),
         h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'), ' via ', fonte,
           z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias && !d.interna ? ' · ' + textoDias(z) : '', ident ? ' · ' + ident : '',
-          d.interna ? ' · data interna, não é data fatal' : ''),
+          d.interna ? ' · data interna, não é data fatal' : '', z.gmail ? ' · ' : '', seloGmail(z.gmail)),
         pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
       h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ' + e[0] }, e[1]),
         h('div', { class: 'ix-resp' }, z.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), ' ', primeiroNome(z.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
@@ -4305,7 +4316,7 @@
     campoBusca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { busca = campoBusca.value.trim(); limite = 30; carregar(); }, 350); });
     const chkTodas = h('label', { class: 'marcar' }, h('input', { type: 'checkbox', onchange: ev => { todas = ev.target.checked; limite = 30; carregar(); } }), 'Mostrar também as já conferidas');
     caixa.append(h('div', { class: 'cab-intim' }, titulo, h('div', { class: 'barra' }, chkTodas, campoBusca)),
-      h('p', { class: 'peq' }, 'O que o robô leu (Gmail do eproc e do PJe, DJEN), da mais nova para a mais antiga. Avise o cliente no WhatsApp e aperte "Conferido" quando terminar: sai da lista e vai para o OK da administração. Nada é apagado.'), corpo);
+      h('p', { class: 'peq' }, 'O que o robô leu (Gmail do eproc e do PJe, DJEN), da mais nova para a mais antiga. Avise o cliente no WhatsApp e aperte "Feito" quando terminar: sai da lista e vai para o OK da administração. Nada é apagado.'), corpo);
     carregar();
     return caixa;
   }
@@ -4327,6 +4338,7 @@
         h('strong', {}, new Date(i.recebido_em).toLocaleDateString('pt-BR')), h('span', { class: 'tag mini-tag' }, i.fonte || '—'),
         i.processo_id ? h('a', { class: 'num', href: '#/processo/' + i.processo_id }, i.numero) : h('span', { class: 'num' }, i.numero),
         i.cliente ? h('span', { class: 'peq' }, '· ' + i.cliente) : null,
+        seloGmail(i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : ''),
         acessoTribunal(i.numero)),
       h('div', { class: 'intim-mov' }, i.movimento || '—'),
       i.partes_cliente && !i.cliente ? h('div', { class: 'peq' }, 'Cliente no aviso: ' + i.partes_cliente) : null,
@@ -4454,8 +4466,8 @@
       conferir || z.situacao === 'conferido' ? ['Conferir o ato e a data no tribunal', z.situacao === 'conferido' || feito, z.situacao === 'conferido' ? 'conferido' + (z.conferido_por ? ' por ' + z.conferido_por : '') : 'o aviso não deixa claro: abra no PJe/eproc e use "Conferi no tribunal" ou "📌 Data do PJe/eproc"'] : null,
       ['Fazer o ato' + (meta ? ' até ' + dataBR(meta) + ' (meta)' : ''), feito, z.fatal ? 'fatal ' + dataBR(z.fatal) : 'sem data fatal'],
       tipoAviso ? ['Avisar o cliente (' + tipoAviso + ')', false, 'botão "✨ Avisar": a IA escreve, você confere e manda'] : null,
-      ['✓ Conferido (quem fez)', feito, feito ? 'por ' + (z.cumprido_por || '—') : 'aperte quando terminar'],
-      ['OK da administração', !!z.ok_em, z.ok_em ? 'OK de ' + z.ok_por : 'depois do Conferido']].filter(Boolean);
+      ['✓ Feito', feito, feito ? 'por ' + (z.cumprido_por || '—') : 'aperte quando terminar'],
+      ['OK da administração', !!z.ok_em, z.ok_em ? 'OK de ' + z.ok_por : 'depois do Feito']].filter(Boolean);
     const atual = passos.findIndex(p => !p[1]);
     return h('ol', { class: 'passos-prazo' }, passos.map((p, i) => h('li', { class: p[1] ? 'ok' : i === atual ? 'agora' : '' },
       h('b', {}, (p[1] ? '✓ ' : '') + p[0]), h('small', {}, p[2]))));
@@ -6261,7 +6273,7 @@
         h('div', { class: 'tf-linha' },
           h('div', { class: 'visoes', role: 'tablist' },
             [['dia', 'Lista do dia'], ['quadro', 'Quadro'], ['lista', 'Tabela']].map(([v, rot]) => h('button', { type: 'button', class: 'visao-bt' + (visao === v ? ' ativo' : ''), onclick: () => { localStorageSet('tarefas_visao86', v); ir({ ver: v }); } }, rot))),
-          r.todos === false ? h('span', { class: 'peq' }, 'Aqui ficam só as suas: o que você pegou ("Eu faço") e o que passaram para você.') : h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'De quem' },
+          r.todos === false ? h('span', { class: 'peq' }, 'Aqui ficam só as suas.') : h('div', { class: 'seg-sistema', role: 'group', 'aria-label': 'De quem' },
             opQuem.slice(0, 3).map(([v, rot]) => h('button', { type: 'button', class: 'seg' + (quem === v ? ' ativo' : ''), 'aria-pressed': String(quem === v), onclick: () => mudarQuem(v) }, rot)),
             opQuem.length > 3 ? h('select', { 'aria-label': 'Pessoa', class: 'seg-sel', onchange: ev => mudarQuem(ev.target.value || 'todos') },
               h('option', { value: '' }, 'Pessoa…'), opQuem.slice(3).map(([v, rot]) => h('option', { value: v, selected: quem === v }, rot))) : null),
