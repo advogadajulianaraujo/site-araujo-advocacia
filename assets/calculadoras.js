@@ -56,6 +56,22 @@
     fr.fgts_dep.addEventListener('change', mostraNP); mostraNP();
     const num = v => parseFloat(String(v || '').replace(/\./g, '').replace(',', '.')) || 0;
     const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const atualizarMultas = () => {
+      fr.base_m467.closest('label').hidden = !fr.m467.checked;
+      fr.base_m467.disabled = !fr.m467.checked;
+      fr.base_m467.required = fr.m467.checked;
+      const temMultaFgts = ['sem_justa', 'indireta', 'acordo'].includes(fr.motivo.value);
+      fr.mfgts.disabled = !temMultaFgts;
+      if (!temMultaFgts) fr.mfgts.checked = false;
+    };
+    const invalidarResultado = () => {
+      atualizarMultas();
+      const out = $('#res-rescisao');
+      if (!out.hidden) out.textContent = 'Dados alterados. Clique em Calcular a estimativa para atualizar o resultado.';
+    };
+    fr.addEventListener('input', invalidarResultado);
+    fr.addEventListener('change', invalidarResultado);
+    atualizarMultas();
     fr.addEventListener('submit', ev => {
       ev.preventDefault();
       const out = $('#res-rescisao');
@@ -65,15 +81,16 @@
         r = window.RESCISAO.calcular({ salario: num(fr.salario.value), medias: num(fr.medias.value), admissao: lerData(fr.admissao.value), ruptura: lerData(fr.saida.value),
           motivo: fr.motivo.value, aviso: fr.aviso.value, saldoPago: num(fr.saldo_pago.value), feriasPendentes: fr.ferias_pend.value, decimoAnoPago: num(fr.decimo_pago.value),
           decimoAnterior: fr.decimo_ant.value, fgtsDep: fr.fgts_dep.value, fgtsMesesNP: fr.meses_np.value, fgtsComprovado: num(fr.fgts.value), fgtsOutroPedido: fr.fgts_outro.checked,
-          multa477: fr.m477.checked, multa467: fr.m467.checked });
+          multaFgts: fr.mfgts.checked, multa477: fr.m477.checked, multa467: fr.m467.checked, baseMulta467: num(fr.base_m467.value) });
       } catch (e) { out.innerHTML = '<p class="calc-erro">' + esc(e.message) + '</p>'; out.hidden = false; return; }
       const sec = t => `<tr class="calc-sec"><th scope="rowgroup" colspan="2">${t}</th></tr>`;
       const lin = (x, cls) => `<tr class="${cls || ''}"><th scope="row">${esc(x.rot)}${x.conta ? `<small class="calc-conta">${esc(x.conta)}</small>` : ''}</th><td>${reais(x.valor)}</td></tr>`;
       const tot = (rot, v) => linha('<b>' + rot + '</b>', '<b>' + reais(v) + '</b>', 'calc-total');
       let h = sec(r.indireta ? 'Verbas da rescisão indireta (as mesmas da dispensa sem justa causa) — valores brutos' : 'Verbas rescisórias — valores brutos') + r.verbas.map(x => lin(x)).join('') + tot('Subtotal das verbas rescisórias', r.subtotal);
       if (r.anteriores.length) h += sec('Parcelas anteriores não pagas (fora do subtotal acima)') + r.anteriores.map(x => lin(x)).join('') + tot('Subtotal das parcelas anteriores', r.subAnt);
-      h += sec('FGTS e multa (bloco separado)') + r.contratual.map(x => lin(x, 'calc-conf')).join('') + r.fgts.map(x => lin(x.fora ? Object.assign({}, x, { rot: x.rot + ' — já calculado em outro pedido (não soma)' }) : x)).join('') + tot('Subtotal do FGTS e da multa', r.subFgts);
-      h += sec('Multas dos arts. 467 e 477 da CLT (só entram se marcadas)') + r.multas.map(x => lin(Object.assign({}, x, { rot: x.rot + (x.incluir ? ' — incluída' : ' — não incluída') }))).join('');
+      const fgtsMulta = r.fgts.some(x => /^Multa de /.test(x.rot));
+      h += sec('FGTS' + (fgtsMulta ? ' e multa selecionada' : '') + ' (bloco separado)') + r.contratual.map(x => lin(x, 'calc-conf')).join('') + r.fgts.map(x => lin(x.fora ? Object.assign({}, x, { rot: x.rot + ' — já calculado em outro pedido (não soma)' }) : x)).join('') + tot('Subtotal do FGTS' + (fgtsMulta ? ' e da multa selecionada' : ''), r.subFgts);
+      if (r.multas.length) h += sec('Multas selecionadas') + r.multas.map(x => lin(x)).join('') + tot('Subtotal das multas selecionadas', r.subMultas);
       h += tot('Total estimado', r.total);
       out.innerHTML = (r.indireta ? '<p class="calc-alerta-txt"><b>Rescisão indireta (CLT, art. 483):</b> quando a empresa comete falta grave, o trabalhador pode pedir na Justiça o fim do contrato com os mesmos direitos de quem é dispensado sem justa causa, inclusive o aviso prévio indenizado e a multa de 40% do FGTS. Os valores dependem do reconhecimento pelo juiz.</p>' : '') +
         `<table class="calc-tab"><tbody>${h}</tbody></table>
