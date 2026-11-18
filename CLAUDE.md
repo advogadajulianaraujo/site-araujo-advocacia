@@ -1817,3 +1817,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   marcadas, fecharam, não fecharam, taxa; colunas das últimas 8 semanas. "Novos/Fechados" do topo seguem o período.
 - CRM integrado: `crmSincronizar_` também põe no funil o cliente ANTIGO (importado) que gerou procuração/contrato depois de CRM_CLIENTES_DESDE
   (em 18/11: 3 clientes tinham assinado sem cartão). Conferido: todo cliente cadastrado pelo painel desde 08/09 já tem cartão.
+- 8.49.1 (pedido da usuária: "às vezes é lançado um processo sem número que não vai ter; quero que apague o honorário também"): "🗑 Apagar este
+  processo" pergunta em seguida "Apagar também o HONORÁRIO lançado para esta ação?" (só perfis com financeiro). `apagarProcessoSemNumero_` com
+  `honorario`: retira os honorários ligados ao processo (Honorarios.processo_id) ou lançados pelo "Assinado" desta inicial (Assinaturas.
+  honorarios_lancados) — parcelas NÃO pagas apagadas (e o boleto/Pix cancelado), as pagas ficam; situação "retirado" com o motivo.

@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.49.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.49.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.49.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.49.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.49.0';
+var VERSAO = '8.49.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -7346,10 +7346,29 @@ function apagarProcessoSemNumero_(d, u) {
       atualizarLinha_(tabT, t, { situacao: 'cancelada', historico: historicoMais_(t.historico, u, 'processo sem número apagado'), atualizado_em: agora, atualizado_por: u.usuario }); n++;
     });
     var tabA = tabela_('Assinaturas');
+    // 8.49 (pedido da usuária: "às vezes é lançado um processo sem número que não vai ter; quero que apague o honorário também"):
+    // com d.honorario, os honorários DESTA ação (ligados ao processo ou lançados pelo "Assinado" que abriu esta inicial) são retirados:
+    // parcelas NÃO pagas saem; as pagas ficam registradas (situação "retirado").
+    var hons = [];
+    if (d.honorario) {
+      if (!((PERFIS[u.perfil] || {}).financeiro)) throw falha_('Só quem cuida do financeiro pode apagar o honorário junto. Apague só o processo ou peça à administração.');
+      var ids = {};
+      tabela_('Honorarios').linhas.forEach(function (h) { if (h.processo_id === pr.id && !/retirad|cancel/.test(h.situacao || '')) ids[h.id] = 1; });
+      tabA.linhas.forEach(function (a) { if (a.processo_id === pr.id) String(a.honorarios_lancados || '').split('|')[1] && String(a.honorarios_lancados).split('|')[1].split(',').forEach(function (x) { if (x) ids[x] = 1; }); });
+      hons = Object.keys(ids);
+    }
     tabA.linhas.filter(function (a) { return a.processo_id === pr.id; }).forEach(function (a) { atualizarLinha_(tabA, a, { processo_id: '' }); });
+    var nParc = 0;
+    hons.forEach(function (hid) {
+      var tabH = tabela_('Honorarios'), h = tabH.linhas.filter(function (x) { return x.id === hid; })[0];
+      if (!h || /retirad|cancel/.test(h.situacao || '')) return;
+      var parc = tabela_('Parcelas');
+      parc.linhas.filter(function (x) { return x.honorario_id === h.id && !x.pago_em; }).forEach(function (x) { if (x.asaas_id) { try { asaas_('delete', '/payments/' + x.asaas_id); } catch (eA) { /* segue */ } } apagarLinha_(parc, x); nParc++; });
+      atualizarLinha_(tabH, h, { situacao: 'retirado', observacoes: ((h.observacoes || '') + ' | RETIRADO em ' + dataBR_(hojeSP_()) + ' por ' + (u.nome || u.usuario) + ': o processo sem número foi apagado (a ação não vai ter)').replace(/^ \| /, ''), atualizado_em: agora, atualizado_por: u.usuario });
+    });
     apagarLinha_(tabP, pr);
-    registrar_(u.usuario, 'processo sem número apagado', (pr.cliente_id || '') + ' · ' + (pr.tipo_acao || pr.area || '') + ' · ' + n + ' tarefa(s) cancelada(s)');
-    return { ok: true, tarefas: n };
+    registrar_(u.usuario, 'processo sem número apagado', (pr.cliente_id || '') + ' · ' + (pr.tipo_acao || pr.area || '') + ' · ' + n + ' tarefa(s) cancelada(s)' + (hons.length ? ' · ' + hons.length + ' honorário(s) retirado(s), ' + nParc + ' parcela(s) em aberto apagada(s)' : ''));
+    return { ok: true, tarefas: n, honorarios: hons.length, parcelas: nParc };
   });
 }
 /** Robô: procuração/contrato sem assinatura há 7 dias → tarefa "lembrar o cliente" (de novo a cada 7 dias, até 3 vezes). */

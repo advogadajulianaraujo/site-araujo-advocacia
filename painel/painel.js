@@ -2730,9 +2730,11 @@
     if (p.numero) return null;
     const naoFechou = p.status === 'arquivado' && /Não fechou:/.test(p.observacoes || '');
     const apagar = h('button', { type: 'button', class: 'btn mini sec perigo', title: 'Ainda não foi protocolado: apaga o processo e cancela as tarefas dele', onclick: async ev => {
-      if (!confirm(`Apagar este processo de ${p.cliente_nome || 'cliente'}${p.tipo_acao ? ' (' + p.tipo_acao + ')' : ''}?\n\nSó dá porque ainda não tem número (não foi protocolado). As tarefas dele são canceladas. O honorário NÃO é mexido: se for o caso, use "Retirar honorário" em Cobranças.`)) return;
+      if (!confirm(`Apagar este processo de ${p.cliente_nome || 'cliente'}${p.tipo_acao ? ' (' + p.tipo_acao + ')' : ''}?\n\nSó dá porque ainda não tem número (não foi protocolado). As tarefas dele são canceladas.`)) return;
+      // 8.49: pergunta se o honorário desta ação sai junto (parcelas não pagas são apagadas; as pagas ficam registradas)
+      const hon = sessao.usuario.pode.financeiro && confirm('Apagar também o HONORÁRIO lançado para esta ação?\n\nOK = sim, a ação não vai ter: as parcelas não pagas saem do Financeiro (as já pagas ficam registradas).\nCancelar = não, manter o honorário.');
       ev.target.disabled = true;
-      try { const r = await api('processos.apagar', { id: p.id }); avisar('Processo apagado.' + (r.tarefas ? ` ${r.tarefas} tarefa(s) cancelada(s).` : '')); location.hash = p.cliente_id ? '#/cliente/' + p.cliente_id : '#/processos'; }
+      try { const r = await api('processos.apagar', { id: p.id, honorario: hon }); avisar('Processo apagado.' + (r.tarefas ? ` ${r.tarefas} tarefa(s) cancelada(s).` : '') + (r.honorarios ? ` ${r.honorarios} honorário(s) retirado(s) (${r.parcelas} parcela(s) em aberto apagadas).` : hon ? ' Não havia honorário ligado a esta ação.' : '')); location.hash = p.cliente_id ? '#/cliente/' + p.cliente_id : '#/processos'; }
       catch (e) { avisar(e.message, true); ev.target.disabled = false; }
     } }, '🗑 Apagar este processo (não foi protocolado)');
     const fechou = naoFechou ? h('button', { type: 'button', class: 'btn mini', onclick: async ev => {
@@ -3852,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.49.0';
+  const VERSAO_PAINEL = '8.49.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

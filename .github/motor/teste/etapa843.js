@@ -119,3 +119,14 @@ console.log("fim gmail");
   assert(C.tabela_('Prazos').linhas.find(x => x.id === 'Z848s').situacao === 'calculado', 'o reaberto não sai sozinho de novo');
 }
 console.log("fim 848b");
+// 8.49: apagar processo sem número + o honorário da ação (parcelas não pagas saem; pagas ficam)
+{
+  const tp = C.tabela_('Processos'), cli = C.tabela_('Clientes').linhas[1], admin = { usuario: 'admin', nome: 'Admin', perfil: 'administrador' };
+  C.inserirLinha_(tp, { id: 'P849x', cliente_id: cli.id, numero: '', area: 'Cível', status: 'ativo', fase: 'contratado', criado_em: new Date().toISOString() });
+  C.inserirLinha_(C.tabela_('Honorarios'), { id: 'H849x', cliente_id: cli.id, processo_id: 'P849x', tipo: 'fixo', descricao: 'teste', valor_total: '300', situacao: 'ativo', criado_em: new Date().toISOString() });
+  ['1', '2', '3'].forEach(k => C.inserirLinha_(C.tabela_('Parcelas'), { id: 'Q849' + k, honorario_id: 'H849x', cliente_id: cli.id, numero: k, valor: '100', vencimento: C.somarDias_(C.hojeSP_(), +k * 30), pago_em: k === '1' ? C.hojeSP_() : '', criado_em: new Date().toISOString() }));
+  const r = C.apagarProcessoSemNumero_({ id: 'P849x', honorario: true }, admin);
+  const h = C.tabela_('Honorarios').linhas.find(x => x.id === 'H849x'), ps = C.tabela_('Parcelas').linhas.filter(x => x.honorario_id === 'H849x');
+  assert(r.honorarios === 1 && r.parcelas === 2 && h.situacao === 'retirado' && ps.length === 1 && ps[0].pago_em && !C.tabela_('Processos').linhas.some(x => x.id === 'P849x'), 'processo sem número apagado com o honorário: 2 parcelas abertas saem, a paga fica');
+}
+console.log("fim 849");
