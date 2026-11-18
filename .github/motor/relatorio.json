@@ -1,5 +1,5 @@
 {
- "versao": "8.45.0",
+ "versao": "8.46.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -167,6 +167,7 @@
     "Clientes",
     "Eventos",
     "Feriados",
+    "Honorarios",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -178,7 +179,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 54
+   "funcoes": 55
   },
   "audiencias.listar": {
    "tabelas": [
@@ -187,6 +188,7 @@
     "Clientes",
     "Eventos",
     "Feriados",
+    "Honorarios",
     "Processos",
     "Tarefas",
     "Usuarios"
@@ -196,7 +198,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 44
+   "funcoes": 45
   },
   "eu.painel": {
    "tabelas": [
@@ -411,7 +413,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 52
+   "funcoes": 53
   },
   "fin.painel": {
    "tabelas": [

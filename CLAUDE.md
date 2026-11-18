@@ -1725,3 +1725,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   de salário, 8% do 13º devido (já com a projeção do aviso, uma vez só) e 8% do aviso indenizado. Multa 40%/20% sobre a base legal = FGTS
   mensal + 8% do saldo + 8% do 13º SEM a projeção (sem o FGTS do aviso — OJ 42, II, SDI-1 / Tema 255). Exemplo da usuária: FGTS 205,92 +
   171,60 + 251,68 = 629,20; multa 1.477,67 (igual a antes).
+
+## 8.46.0 Audiências mais simples e automáticas (pedido da usuária, 18/11/2026)
+
+- Conciliação: em cada linha o VALOR COMBINADO com o cliente (campo R$ na própria linha → acordo.pedir) e "OK do cliente" (acordo.autorizou);
+  clicar no NOME abre os detalhes (`detalhes`): avisos ao cliente, online/presencial, últimas anotações do cliente (`obs_cliente`), "O que o
+  cliente quer" (acordo.obs), mínimo e forma de pagamento (opcionais), WhatsApp para combinar, Processo, ciência. Instrução: nome do cliente,
+  resumo das testemunhas na linha; nos detalhes, vai ter/não vai ter, testemunhas, o que provar, documentos, orientado, WhatsApp.
+- No dia e depois (`pendenteRes`: data ≤ hoje sem resultado), botão AMARELO "O que aconteceu?" (`dialogoResultadoAto`): Fechou acordo / Não fechou
+  (quanto ofereceram) / Redesignada / Não aconteceu (instrução: Realizada / Teve acordo / …). Fechou acordo → valor, parcelas, 1º pagamento e
+  honorários % (do honorário de ÊXITO do cliente, `pct_exito`; sem ele, 30%) com prévia "30% de R$ X = R$ Y em Nx" → rota `audiencias.resultado`
+  (`audienciaResultado_`): grava o resultado na ficha, cria o honorário PARCELADO no Financeiro (salvarHonorario_; não lança 2 vezes:
+  honorario_id), leva o processo para a etapa Acordo e anota na ficha do cliente; a tela abre o honorário criado.
+- `audiencias.listar` com `passados` traz também as dos últimos 30 dias SEM resultado (grupo "Já aconteceram — anote o resultado"); `pct_exito`
+  só para perfis com financeiro. Lista até 85 dias (a cópia da agenda no banco vai até +3 meses; mais que isso iria ao Google, lento).
+- O aviso "⚠ N audiência(s)/perícia(s) designada(s) sem a data no aviso" ficou fechado: clicar mostra a lista.

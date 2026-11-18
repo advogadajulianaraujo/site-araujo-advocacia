@@ -3793,7 +3793,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.45.0';
+  const VERSAO_PAINEL = '8.46.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4621,160 +4621,220 @@
       return h('span', { class: 'aud-chip futuro', title: 'Este aviso sai em ' + dataBR(dia) }, rot + ' · ' + dataBR(dia).slice(0, 5));
     }));
   }
-  /* 8.45 (pedido da usuária: "página de audiência separada: conciliação e instrução; na conciliação o valor do acordo combinado com o
-     cliente; na instrução as testemunhas do cliente, se tem ou não; analise o que mais ajuda"): duas abas (Conciliação · Instrução); perícias
-     num link discreto. Cada linha já mostra o que falta (acordo a combinar / testemunhas a definir) e a ficha abre na própria linha. */
+  /* 8.46 (pedido da usuária: "mais simples e mais automatizado"): Conciliação = em cada linha o VALOR COMBINADO com o cliente + o OK dele;
+     clicar no nome abre os detalhes (o que o cliente quer, anotações, avisos). No dia (ou depois), botão amarelo "O que aconteceu?": fechou
+     acordo (valor, honorários — o % do êxito do cliente ou 30% —, parcelas e 1º pagamento → lança no Financeiro sozinho), não fechou
+     (quanto ofereceram) ou redesignada. Instrução: nome do cliente, testemunhas e o mesmo "O que aconteceu?". Avisos ao cliente continuam. */
   const realBR = v => v === '' || v === undefined || v === null || isNaN(+v) ? '' : 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ehConc = a => a.tipo !== 'instrucao' && a.tipo !== 'pericia';
-  function resumoAcordo(a) {
-    const c = a.acordo || {};
-    if (c.resultado === 'acordo') return ['ok', 'Acordo fechado' + (c.valor_fechado ? ' · ' + realBR(c.valor_fechado) : '')];
-    if (c.resultado === 'sem_acordo') return ['info', 'Sem acordo'];
-    if (c.resultado === 'redesignada') return ['info', 'Redesignada'];
-    if (!c.pedir && !c.minimo) return ['falta', 'Acordo a combinar com o cliente'];
-    return [c.autorizou ? 'ok' : 'falta', [c.pedir ? 'pedir ' + realBR(c.pedir) : '', c.minimo ? 'mínimo ' + realBR(c.minimo) : ''].filter(Boolean).join(' · ') + (c.autorizou ? '' : ' · falta o OK do cliente')];
+  const numMoeda = v => { const t = String(v || '').replace(/[R$\s]/g, ''); const n = /,/.test(t) ? parseFloat(t.replace(/\./g, '').replace(',', '.')) : parseFloat(t); return isNaN(n) ? 0 : n; };
+  function resultadoDe(a) { const o = (ehConc(a) ? a.acordo : a.preparo) || {}; return o.resultado ? o : (a.acordo && a.acordo.resultado ? a.acordo : null); }
+  function chipResultado(a) {
+    const o = resultadoDe(a); if (!o) return null;
+    const t = { acordo: '🤝 Acordo ' + realBR(o.valor_fechado), sem_acordo: 'Sem acordo' + (o.proposta ? ' (ofereceram ' + realBR(o.proposta) + ')' : ''), redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' }[o.resultado] || o.resultado;
+    return h('span', { class: 'aud-l-res ' + (o.resultado === 'acordo' || o.resultado === 'realizada' ? 'r-ok' : 'r-info'), title: o.resultado_por ? 'Anotado por ' + o.resultado_por : '' }, t);
   }
   function resumoTestemunhas(a) {
     const p = a.preparo || {}, t = (a.testemunhas || []).filter(x => x.nome);
-    if (p.resultado === 'realizada') return ['ok', 'Audiência realizada'];
-    if (p.resultado === 'redesignada') return ['info', 'Redesignada'];
-    if (p.tem === 'nao') return ['ok', 'Cliente sem testemunhas'];
-    if (!t.length) return ['falta', p.tem === 'sim' ? 'Vai ter testemunhas: falta anotar' : 'Testemunhas: perguntar ao cliente'];
+    if (p.tem === 'nao') return ['ok', 'Sem testemunhas'];
+    if (!t.length) return ['falta', p.tem === 'sim' ? 'Testemunhas: falta anotar' : 'Testemunhas: perguntar'];
     const conf = t.filter(x => x.confirmou).length;
-    return [conf === t.length ? 'ok' : 'falta', `${t.length} testemunha${t.length > 1 ? 's' : ''} · ${conf === t.length ? 'todas confirmaram' : (t.length - conf) + ' a confirmar'}`];
+    return [conf === t.length ? 'ok' : 'falta', `${t.length} testemunha${t.length > 1 ? 's' : ''}${conf === t.length ? ' · confirmadas' : ' · ' + (t.length - conf) + ' a confirmar'}`];
   }
-  function linkZapAto(a, texto) {
-    const tel = telefoneWhats(a.telefone || '');
-    return tel ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(texto) : '';
-  }
+  function linkZapAto(a, texto) { const tel = telefoneWhats(a.telefone || ''); return tel ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(texto) : ''; }
   const quandoAto = a => dataBR(a.data) + (a.hora ? ' às ' + a.hora : '');
-  function campoMoedaAto(rotulo, valor, onSalvar) {
-    const i = h('input', { type: 'text', inputmode: 'decimal', 'data-moeda': '1', placeholder: 'R$ 0,00', value: valor !== '' && valor !== undefined ? formatarMoeda(+valor) : '', 'aria-label': rotulo + ' (R$)' });
-    i.addEventListener('change', () => onSalvar(i.value));
-    return h('label', { class: 'aud-campo' }, h('span', {}, rotulo), i);
+  const salvarAto = (a, m, msg) => api('audiencias.salvar', Object.assign({ lembrete: a.lembrete, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo }, m)).then(() => { if (msg) avisar(msg); }).catch(e => avisar(e.message, true));
+
+  /** "O que aconteceu na audiência?" — e, se fechou acordo, lança os honorários no Financeiro. */
+  function dialogoResultadoAto(a) {
+    const conc = ehConc(a), caixa = h('dialog', { class: 'dialogo aud-dlg' });
+    const corpo = h('div', {});
+    const titulo = h('div', {}, h('h2', {}, 'O que aconteceu na audiência?'), h('p', { class: 'peq' }, [a.cliente || 'cliente a identificar', (NOME_ATO[a.tipo] || a.nome), quandoAto(a), a.numero].filter(Boolean).join(' · ')));
+    const enviar = async (dados, bt) => {
+      bt.disabled = true; bt.textContent = 'Salvando…';
+      try {
+        const r = await api('audiencias.resultado', Object.assign({ lembrete: a.lembrete, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo }, dados));
+        caixa.close();
+        avisar(r.honorario_id ? `Acordo anotado e honorários de ${realBR(r.honorarios)} lançados no Financeiro.` : 'Anotado.');
+        if (r.honorario_id) location.hash = '#/honorario/' + r.honorario_id; else rota();
+      } catch (e) { avisar(e.message, true); bt.disabled = false; bt.textContent = 'Salvar'; }
+    };
+    const telaAcordo = () => {
+      const c = a.acordo || {};
+      const vAc = h('input', { type: 'text', inputmode: 'decimal', 'data-moeda': '1', placeholder: 'R$ 0,00', value: c.pedir ? formatarMoeda(+c.pedir) : '', 'aria-label': 'Valor do acordo (R$)' });
+      const pct = h('input', { type: 'number', min: 0, max: 100, step: '0.5', value: a.pct_exito || 30, 'aria-label': 'Honorários (%)' });
+      const nParc = h('input', { type: 'number', min: 1, max: 120, value: c.parcelas || 1, 'aria-label': 'Parcelas' });
+      const prim = h('input', { type: 'date', value: isoSoma(hojeISO(), 30), 'aria-label': 'Data do 1º pagamento' });
+      const lancar = h('input', { type: 'checkbox', checked: true });
+      const obs = h('textarea', { rows: 2, placeholder: 'Observação (ex.: depósito na conta do escritório; multa de 50% se atrasar)' });
+      const previa = h('p', { class: 'aud-previa' });
+      const conta = () => {
+        const v = numMoeda(vAc.value), p = +pct.value || 0, n = Math.max(1, parseInt(nParc.value, 10) || 1), hon = Math.round(v * p) / 100;
+        previa.replaceChildren(!v ? 'Informe o valor do acordo.' : lancar.checked ? h('span', {}, `Honorários: ${String(p).replace('.', ',')}% de ${realBR(v)} = `, h('b', {}, realBR(hon)), n > 1 ? ` em ${n}x de ${realBR(Math.round(hon / n * 100) / 100)}` : ' à vista', prim.value ? ` · 1º pagamento em ${dataBR(prim.value)}` : '', ' → vai para o Financeiro sozinho.') : 'Só anota o acordo (sem lançar honorários).');
+      };
+      [vAc, pct, nParc, prim, lancar].forEach(i => { i.addEventListener('input', conta); i.addEventListener('change', conta); });
+      const bt = h('button', { type: 'button', class: 'btn' }, 'Salvar');
+      bt.addEventListener('click', () => {
+        if (!numMoeda(vAc.value)) return avisar('Informe o valor do acordo.', true);
+        enviar({ resultado: 'acordo', valor: vAc.value, pct: pct.value, parcelas: nParc.value, primeiro: prim.value, lancar: lancar.checked, obs: obs.value }, bt);
+      });
+      corpo.replaceChildren(h('h3', {}, '🤝 Fechou acordo'),
+        h('div', { class: 'aud-grade' },
+          h('label', { class: 'aud-campo' }, h('span', {}, 'Valor do acordo'), vAc),
+          h('label', { class: 'aud-campo' }, h('span', {}, 'Em quantas parcelas'), nParc),
+          h('label', { class: 'aud-campo' }, h('span', {}, 'Data do 1º pagamento'), prim),
+          h('label', { class: 'aud-campo' }, h('span', {}, a.pct_exito ? 'Honorários (%) — do contrato do cliente' : 'Honorários (%) — sem contrato de êxito no painel: 30%'), pct)),
+        h('label', { class: 'aud-ok' }, lancar, ' Lançar os honorários no Financeiro (parcelas nas mesmas datas do acordo)'),
+        obs, previa,
+        h('div', { class: 'acoes' }, bt, botao('← Voltar', escolher, 'sec')));
+      conta(); vAc.focus();
+    };
+    const telaSem = () => {
+      const prop = h('input', { type: 'text', inputmode: 'decimal', 'data-moeda': '1', placeholder: 'R$ 0,00 (opcional)', 'aria-label': 'Quanto a outra parte ofereceu (R$)' });
+      const obs = h('textarea', { rows: 2, placeholder: 'Observação (ex.: empresa não fez proposta; instrução marcada)' });
+      const bt = h('button', { type: 'button', class: 'btn' }, 'Salvar');
+      bt.addEventListener('click', () => enviar({ resultado: 'sem_acordo', proposta: prop.value, obs: obs.value }, bt));
+      corpo.replaceChildren(h('h3', {}, 'Não fechou acordo'), h('label', { class: 'aud-campo' }, h('span', {}, 'Quanto a outra parte ofereceu'), prop), obs, h('div', { class: 'acoes' }, bt, botao('← Voltar', escolher, 'sec')));
+    };
+    const telaSimples = (res, rot, dica) => {
+      const obs = h('textarea', { rows: 2, placeholder: dica });
+      const bt = h('button', { type: 'button', class: 'btn' }, 'Salvar');
+      bt.addEventListener('click', () => enviar({ resultado: res, obs: obs.value }, bt));
+      corpo.replaceChildren(h('h3', {}, rot), obs, h('div', { class: 'acoes' }, bt, botao('← Voltar', escolher, 'sec')));
+    };
+    function escolher() {
+      const op = (cls, txt, fn) => h('button', { type: 'button', class: 'aud-op ' + cls, onclick: fn }, txt);
+      corpo.replaceChildren(h('div', { class: 'aud-ops' },
+        conc ? op('verde', '🤝 Fechou acordo', telaAcordo) : op('verde', '✓ Audiência realizada', () => telaSimples('realizada', '✓ Audiência realizada', 'Anotação (ex.: sentença em 30 dias; prazo para razões finais)')),
+        conc ? op('cinza', '✗ Não fechou acordo', telaSem) : op('verde2', '🤝 Teve acordo', telaAcordo),
+        op('cinza', '📅 Redesignada', () => telaSimples('redesignada', '📅 Redesignada', 'Nova data e motivo (lance a nova data na agenda)')),
+        op('cinza', 'Não aconteceu', () => telaSimples('nao_houve', 'Não aconteceu', 'Motivo'))));
+    }
+    escolher();
+    caixa.append(titulo, corpo, h('div', { class: 'acoes' }, botao('Fechar', () => caixa.close(), 'sec mini')));
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa); caixa.showModal();
   }
 
   async function telaAudiencias(params) {
     carregando();
     const ver = ['conciliacao', 'instrucao', 'pericia', 'avisar'].includes(params.get('ver')) ? params.get('ver') : 'conciliacao';
-    const r = await api('audiencias.listar', { dias: 120 });
+    const r = await api('audiencias.listar', { dias: 85, passados: true }); // até 85 dias: a cópia da agenda no banco vai do mês passado a +3 meses (mais que isso iria ao Google, lento)
     const lista = (r.lista || []).map(a => Object.assign(a, { acordo: a.acordo || {}, preparo: a.preparo || {}, testemunhas: a.testemunhas || [] }));
-    const conc = lista.filter(ehConc), inst = lista.filter(a => a.tipo === 'instrucao'), peri = lista.filter(a => a.tipo === 'pericia');
-    const nAvisar = lista.filter(a => a.devido).length;
-    const filtrada = ver === 'instrucao' ? inst : ver === 'pericia' ? peri : ver === 'avisar' ? lista.filter(a => a.devido) : conc;
+    const hoje = hojeISO();
+    const pendenteRes = a => a.data <= hoje && !resultadoDe(a);
+    const conc = lista.filter(ehConc), inst = lista.filter(a => a.tipo === 'instrucao'), peri = lista.filter(a => a.tipo === 'pericia' && a.data >= hoje);
+    const nAvisar = lista.filter(a => a.devido && a.data >= hoje).length;
+    const filtrada = ver === 'instrucao' ? inst : ver === 'pericia' ? peri : ver === 'avisar' ? lista.filter(a => a.devido && a.data >= hoje) : conc;
+    const nPend = l => l.filter(a => pendenteRes(a) || (a.data >= hoje && (ehConc(a) ? !(a.acordo.pedir && a.acordo.autorizou) : a.tipo === 'instrucao' && resumoTestemunhas(a)[0] === 'falta'))).length;
     const topo = h('header', { class: 'carteira-topo' },
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Escritório'), h('h1', {}, 'Audiências'),
-        h('p', {}, 'Conciliação: o acordo combinado com o cliente. Instrução: as testemunhas. Avisos ao cliente: quando sai, 1 semana antes, véspera e no dia.')),
+        h('p', {}, 'Combine com o cliente antes; no dia, anote o que aconteceu. Se fechar acordo, os honorários vão para o Financeiro sozinhos.')),
       h('div', { class: 'carteira-acoes' }, botao('Ver na agenda', () => { location.hash = '#/agenda?visao=semana'; }, 'sec')));
-    const aba = (k, rot, n, falta) => h('a', { class: 'aud-aba' + (ver === k ? ' ativa' : ''), href: '#/audiencias' + (k === 'conciliacao' ? '' : '?ver=' + k), role: 'tab', 'aria-selected': String(ver === k) },
-      rot, h('span', { class: 'ix-n' }, String(n)), falta ? h('span', { class: 'aud-aba-falta', title: 'precisam de algo' }, falta + ' pendente' + (falta > 1 ? 's' : '')) : null);
-    const faltaConc = conc.filter(a => resumoAcordo(a)[0] === 'falta').length, faltaInst = inst.filter(a => resumoTestemunhas(a)[0] === 'falta').length;
-    const abas = h('div', { class: 'aud-abas', role: 'tablist' }, aba('conciliacao', '🤝 Conciliação', conc.length, faltaConc), aba('instrucao', '⚖ Instrução', inst.length, faltaInst),
+    const aba = (k, rot, l) => { const p = nPend(l); return h('a', { class: 'aud-aba' + (ver === k ? ' ativa' : ''), href: '#/audiencias' + (k === 'conciliacao' ? '' : '?ver=' + k), role: 'tab', 'aria-selected': String(ver === k) },
+      rot, h('span', { class: 'ix-n' }, String(l.length)), p ? h('span', { class: 'aud-aba-falta' }, p + ' pendente' + (p > 1 ? 's' : '')) : null); };
+    const abas = h('div', { class: 'aud-abas', role: 'tablist' }, aba('conciliacao', '🤝 Conciliação', conc), aba('instrucao', '⚖ Instrução', inst),
       h('span', { class: 'aud-abas-dir' }, nAvisar ? h('a', { class: 'aud-link-avisar' + (ver === 'avisar' ? ' ativa' : ''), href: '#/audiencias?ver=avisar' }, `📲 ${nAvisar} aviso${nAvisar > 1 ? 's' : ''} para mandar`) : null,
         peri.length ? h('a', { class: 'aud-link-peri' + (ver === 'pericia' ? ' ativa' : ''), href: '#/audiencias?ver=pericia' }, `Perícias (${peri.length})`) : null));
 
-    const cartao = a => {
-      const sec = h('article', { class: 'aud-cartao aud-' + a.tipo + (a.devido ? ' aud-tem-aviso' : '') });
+    // detalhes (abrem ao clicar no nome do cliente)
+    const detalhes = (a, redesenhar) => {
+      const box = h('div', { class: 'aud-det' });
       const desenhar = () => {
-        const salvar = (m, msg) => api('audiencias.salvar', Object.assign({ lembrete: a.lembrete, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo }, m)).then(() => { if (msg) avisar(msg); }).catch(e => avisar(e.message, true));
-        const setA = (k, v, msg) => { a.acordo[k] = v; salvar({ acordo: { [k]: v } }, msg || 'Salvo.'); };
-        const setP = (k, v, msg) => { a.preparo[k] = v; salvar({ preparo: { [k]: v } }, msg || 'Salvo.'); };
-        const modo = h('select', { 'aria-label': 'Online ou presencial', onchange: ev => { a.modo = ev.target.value; salvar({ modo: a.modo }, 'Anotado.'); desenhar(); } },
-          [['', 'Online ou presencial?'], ['presencial', 'Presencial'], ['online', 'Online (vídeo)']].map(([v, t]) => h('option', { value: v, selected: a.modo === v }, t)));
-        const link = a.modo === 'online' ? h('input', { type: 'url', placeholder: 'Link da sala de vídeo (opcional)', value: a.link || '', onchange: ev => { a.link = ev.target.value; salvar({ link: a.link }, 'Link guardado.'); } }) : null;
-        const ciente = a.ciente_em ? h('button', { type: 'button', class: 'btn mini sec feito-ciente', title: quandoAvisado(a.ciente_em, a.ciente_por).replace('Avisado', 'Ciente').replace(' · clique para mandar de novo', ''), onclick: () => { a.ciente_em = ''; salvar({ ciente: 'desfazer' }); desenhar(); } }, '✓ Equipe ciente')
-          : h('button', { type: 'button', class: 'btn mini', onclick: () => { a.ciente_em = new Date().toISOString(); a.ciente_por = sessao.usuario.nome; salvar({ ciente: 'sim' }, 'Marcado: equipe ciente.'); desenhar(); } }, 'Dar ciência');
         const nome1 = nomeProprioJS(String(a.cliente || '').split(' ')[0] || '');
-        let especifico = null;
+        const modo = a.tipo === 'pericia' ? null : h('select', { 'aria-label': 'Online ou presencial', onchange: ev => { a.modo = ev.target.value; salvarAto(a, { modo: a.modo }, 'Anotado.'); desenhar(); redesenhar(); } },
+          [['', 'Online ou presencial?'], ['presencial', 'Presencial'], ['online', 'Online (vídeo)']].map(([v, t]) => h('option', { value: v, selected: a.modo === v }, t)));
+        const link = a.modo === 'online' ? h('input', { type: 'url', placeholder: 'Link da sala de vídeo', value: a.link || '', onchange: ev => { a.link = ev.target.value; salvarAto(a, { link: a.link }, 'Link guardado.'); } }) : null;
+        const notas = a.obs_cliente ? h('div', { class: 'aud-notas' }, h('b', {}, 'Últimas anotações do cliente'), h('pre', {}, a.obs_cliente)) : null;
+        let esp = null;
         if (ehConc(a)) {
           const c = a.acordo;
-          const zap = linkZapAto(a, `Olá${nome1 ? ', ' + nome1 : ''}! Aqui é do escritório Araújo Advocacia. A sua audiência de conciliação é em ${quandoAto(a)}${a.modo === 'online' ? ' (online)' : a.modo === 'presencial' ? ' (presencial)' : ''}. Ela é uma tentativa de acordo com a outra parte. Para irmos preparados: qual o valor MÍNIMO que você aceitaria num acordo? Prefere receber à vista ou aceita parcelado? Assim que responder, deixamos combinado.`);
-          especifico = h('section', { class: 'aud-bloco aud-acordo' },
-            h('div', { class: 'aud-sub' }, h('b', {}, '🤝 Acordo combinado com o cliente'), zap ? h('a', { class: 'btn mini wa', href: zap, target: '_blank', rel: 'noopener' }, 'Combinar no WhatsApp') : h('span', { class: 'peq' }, 'sem telefone no cadastro')),
-            h('div', { class: 'aud-grade' },
-              campoMoedaAto('Valor que vamos pedir', c.pedir, v => setA('pedir', v, 'Valor do pedido salvo.')),
-              campoMoedaAto('Mínimo que o cliente aceita', c.minimo, v => setA('minimo', v, 'Valor mínimo salvo.')),
-              h('label', { class: 'aud-campo' }, h('span', {}, 'Forma de pagamento aceita'),
-                h('select', { onchange: ev => { setA('forma', ev.target.value); desenhar(); } }, [['', '—'], ['avista', 'Só à vista'], ['parcelado', 'Aceita parcelado'], ['tanto', 'Tanto faz']].map(([v, t]) => h('option', { value: v, selected: (c.forma || '') === v }, t)))),
-              c.forma === 'parcelado' ? h('label', { class: 'aud-campo' }, h('span', {}, 'Em até quantas vezes'), h('input', { type: 'number', min: 1, max: 120, value: c.parcelas || '', onchange: ev => setA('parcelas', ev.target.value) })) : null),
-            h('label', { class: 'aud-ok' }, h('input', { type: 'checkbox', checked: !!c.autorizou, onchange: ev => { setA('autorizou', ev.target.checked, ev.target.checked ? 'Anotado: o cliente autorizou.' : 'Desmarcado.'); desenhar(); } }),
-              ' O cliente autorizou esses valores', c.autorizou ? h('small', {}, ' · ' + quandoAvisado(c.autorizou, c.autorizou_por).replace('Avisado ', '').replace(' · clique para mandar de novo', '')) : null),
-            h('textarea', { rows: 2, placeholder: 'Combinado com o cliente (ex.: aceita sem multa; quer a baixa na carteira; não abre mão das horas extras)', onchange: ev => setA('obs', ev.target.value, 'Anotação do acordo salva.') }, c.obs || ''),
-            h('div', { class: 'aud-res' }, h('span', {}, 'Depois da audiência:'),
-              h('select', { 'aria-label': 'Resultado', onchange: ev => { setA('resultado', ev.target.value, 'Resultado anotado.'); desenhar(); } }, [['', 'resultado…'], ['acordo', 'Acordo fechado'], ['sem_acordo', 'Sem acordo'], ['redesignada', 'Redesignada'], ['nao_houve', 'Não aconteceu']].map(([v, t]) => h('option', { value: v, selected: (c.resultado || '') === v }, t))),
-              c.resultado === 'acordo' ? campoMoedaAto('Valor fechado', c.valor_fechado, v => setA('valor_fechado', v, 'Valor do acordo salvo.')) : null),
-            c.minimo && c.pedir && +c.minimo > +c.pedir ? h('p', { class: 'aud-aviso' }, '⚠ O mínimo está maior que o valor pedido.') : null);
+          const zap = linkZapAto(a, `Olá${nome1 ? ', ' + nome1 : ''}! Aqui é do escritório Araújo Advocacia. A sua audiência de conciliação é em ${quandoAto(a)}${a.modo === 'online' ? ' (online)' : a.modo === 'presencial' ? ' (presencial)' : ''}. Ela é uma tentativa de acordo com a outra parte. Para irmos preparados: qual o valor MÍNIMO que você aceitaria? Prefere à vista ou aceita parcelado?`);
+          const quer = h('textarea', { rows: 3, placeholder: 'O que o cliente quer / falou para a audiência (ex.: aceita parcelado; quer a baixa na carteira; não abre mão das horas extras)', onchange: ev => { c.obs = ev.target.value; salvarAto(a, { acordo: { obs: c.obs } }, 'Anotado.'); } });
+          quer.value = c.obs || '';
+          const minimo = h('input', { type: 'text', inputmode: 'decimal', 'data-moeda': '1', placeholder: 'R$ 0,00', value: c.minimo ? formatarMoeda(+c.minimo) : '', 'aria-label': 'Mínimo que o cliente aceita (R$)', onchange: ev => { c.minimo = numMoeda(ev.target.value) || ''; salvarAto(a, { acordo: { minimo: ev.target.value } }, 'Mínimo salvo.'); } });
+          const forma = h('select', { onchange: ev => { c.forma = ev.target.value; salvarAto(a, { acordo: { forma: c.forma } }, 'Anotado.'); } }, [['', '—'], ['avista', 'Só à vista'], ['parcelado', 'Aceita parcelado'], ['tanto', 'Tanto faz']].map(([v, t]) => h('option', { value: v, selected: (c.forma || '') === v }, t)));
+          esp = h('div', {}, h('label', { class: 'aud-campo largo' }, h('span', {}, 'O que o cliente quer'), quer),
+            h('div', { class: 'aud-grade' }, h('label', { class: 'aud-campo' }, h('span', {}, 'Mínimo que aceita (opcional)'), minimo), h('label', { class: 'aud-campo' }, h('span', {}, 'Forma de pagamento'), forma)),
+            zap ? h('a', { class: 'btn mini wa', href: zap, target: '_blank', rel: 'noopener' }, 'Combinar o valor no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.'));
         } else if (a.tipo === 'instrucao') {
           const p = a.preparo, tl = a.testemunhas;
-          const zap = linkZapAto(a, `Olá${nome1 ? ', ' + nome1 : ''}! Aqui é do escritório Araújo Advocacia. A sua audiência de instrução (em que o juiz ouve as partes e as testemunhas) é em ${quandoAto(a)}${a.modo === 'online' ? ' (online)' : a.modo === 'presencial' ? ' (presencial)' : ''}. Você vai levar testemunhas? Se sim, mande o nome completo, o CPF e o telefone de cada uma. Se não tiver testemunhas, nos avise também.`);
+          const zap = linkZapAto(a, `Olá${nome1 ? ', ' + nome1 : ''}! Aqui é do escritório Araújo Advocacia. A sua audiência de instrução (o juiz ouve as partes e as testemunhas) é em ${quandoAto(a)}${a.modo === 'online' ? ' (online)' : a.modo === 'presencial' ? ' (presencial)' : ''}. Você vai levar testemunhas? Se sim, mande o nome completo, o CPF e o telefone de cada uma. Se não tiver, nos avise também.`);
           if (p.tem !== 'nao' && !tl.length) tl.push({ nome: '', cpf: '', telefone: '', obs: '' });
           const linhaT = (t, i) => h('div', { class: 'aud-test' },
-            ['nome', 'cpf', 'telefone', 'obs'].map(k => h('input', { type: 'text', value: t[k] || '', placeholder: { nome: 'Nome completo', cpf: 'CPF', telefone: 'Telefone', obs: 'Observação (ex.: ex-colega do setor)' }[k],
-              'aria-label': k, inputmode: k === 'cpf' || k === 'telefone' ? 'numeric' : 'text', oninput: ev => { t[k] = ev.target.value; } })),
+            ['nome', 'cpf', 'telefone', 'obs'].map(k => h('input', { type: 'text', value: t[k] || '', placeholder: { nome: 'Nome completo', cpf: 'CPF', telefone: 'Telefone', obs: 'Observação' }[k], 'aria-label': k, inputmode: k === 'cpf' || k === 'telefone' ? 'numeric' : 'text', oninput: ev => { t[k] = ev.target.value; } })),
             h('label', { class: 'aud-conf' }, h('input', { type: 'checkbox', checked: !!t.confirmou, onchange: ev => { t.confirmou = ev.target.checked; } }), 'confirmou'),
-            t.telefone ? h('a', { class: 'btn mini sec', href: 'https://wa.me/' + telefoneWhats(t.telefone) + '?text=' + encodeURIComponent(`Olá${t.nome ? ', ' + nomeProprioJS(t.nome.split(' ')[0]) : ''}! Aqui é do escritório Araújo Advocacia. Você foi indicado(a) como testemunha na audiência de ${quandoAto(a)}. Pode confirmar que consegue participar?`), target: '_blank', rel: 'noopener', title: 'Confirmar com a testemunha' }, 'Zap') : null,
+            t.telefone ? h('a', { class: 'btn mini sec', href: 'https://wa.me/' + telefoneWhats(t.telefone) + '?text=' + encodeURIComponent(`Olá${t.nome ? ', ' + nomeProprioJS(t.nome.split(' ')[0]) : ''}! Aqui é do escritório Araújo Advocacia. Você foi indicado(a) como testemunha na audiência de ${quandoAto(a)}. Pode confirmar que consegue participar?`), target: '_blank', rel: 'noopener' }, 'Zap') : null,
             h('button', { type: 'button', class: 'btn mini sec', 'aria-label': 'Tirar', onclick: () => { tl.splice(i, 1); desenhar(); } }, '×'));
-          const qtd = tl.filter(t => t.nome).length;
-          especifico = h('section', { class: 'aud-bloco aud-preparo' },
-            h('div', { class: 'aud-sub' }, h('b', {}, '⚖ Testemunhas do cliente'), zap ? h('a', { class: 'btn mini wa', href: zap, target: '_blank', rel: 'noopener' }, 'Perguntar no WhatsApp') : h('span', { class: 'peq' }, 'sem telefone no cadastro')),
+          esp = h('div', {},
             h('div', { class: 'segmentado aud-tem', role: 'group', 'aria-label': 'O cliente terá testemunhas?' }, [['sim', 'Vai ter testemunhas'], ['nao', 'Não vai ter'], ['confirmar', 'A confirmar']].map(([v, t]) =>
-              h('button', { type: 'button', class: (p.tem || '') === v ? 'ativo' : '', onclick: () => { setP('tem', v, 'Anotado.'); desenhar(); } }, t))),
-            p.tem === 'nao' ? h('p', { class: 'peq' }, 'Anotado: o cliente não terá testemunhas. A prova fica nos documentos e no depoimento.') : h('div', {},
-              tl.map(linhaT),
-              qtd > 3 ? h('p', { class: 'aud-aviso' }, '⚠ Mais de 3 testemunhas: na Justiça do Trabalho, em regra, são até 3 (rito sumaríssimo, até 2). Conferir.') : null,
+              h('button', { type: 'button', class: (p.tem || '') === v ? 'ativo' : '', onclick: () => { p.tem = v; salvarAto(a, { preparo: { tem: v } }, 'Anotado.'); desenhar(); redesenhar(); } }, t))),
+            p.tem === 'nao' ? null : h('div', {}, tl.map(linhaT),
+              tl.filter(t => t.nome).length > 3 ? h('p', { class: 'aud-aviso' }, '⚠ Mais de 3: na Justiça do Trabalho, em regra, até 3 (sumaríssimo, até 2).') : null,
               h('div', { class: 'g-acoes' }, botao('+ Testemunha', () => { tl.push({ nome: '', cpf: '', telefone: '', obs: '' }); desenhar(); }, 'sec mini'),
-                botao('Salvar testemunhas', () => salvar({ testemunhas: tl.filter(t => t.nome || t.telefone || t.cpf), preparo: { tem: tl.some(t => t.nome) ? 'sim' : (p.tem || '') } }, 'Testemunhas salvas.').then(() => { if (tl.some(t => t.nome)) p.tem = 'sim'; }), 'mini'))),
+                botao('Salvar testemunhas', () => { const ok = tl.filter(t => t.nome || t.telefone || t.cpf); if (ok.some(t => t.nome)) p.tem = 'sim'; salvarAto(a, { testemunhas: ok, preparo: { tem: p.tem || '' } }, 'Testemunhas salvas.').then(redesenhar); }, 'mini'))),
             h('div', { class: 'aud-grade' },
-              h('label', { class: 'aud-campo largo' }, h('span', {}, 'O que precisamos provar'), h('textarea', { rows: 2, placeholder: 'Ex.: horas extras após as 18h; função de motorista; assédio do gerente', onchange: ev => setP('pontos', ev.target.value) }, p.pontos || '')),
-              h('label', { class: 'aud-campo largo' }, h('span', {}, 'Documentos para levar'), h('textarea', { rows: 2, placeholder: 'Ex.: documento com foto, CTPS, prints, fotos, holerites', onchange: ev => setP('documentos', ev.target.value) }, p.documentos || ''))),
-            h('label', { class: 'aud-ok' }, h('input', { type: 'checkbox', checked: !!p.orientado, onchange: ev => { setP('orientado', ev.target.checked, ev.target.checked ? 'Anotado: cliente orientado.' : 'Desmarcado.'); desenhar(); } }),
-              ' Cliente orientado sobre o depoimento (chegar 30 min antes, falar só o que sabe, levar documento com foto)'),
-            h('div', { class: 'aud-res' }, h('span', {}, 'Depois da audiência:'),
-              h('select', { 'aria-label': 'Resultado', onchange: ev => { setP('resultado', ev.target.value, 'Resultado anotado.'); desenhar(); } }, [['', 'resultado…'], ['realizada', 'Realizada'], ['acordo', 'Teve acordo'], ['redesignada', 'Redesignada'], ['nao_houve', 'Não aconteceu']].map(([v, t]) => h('option', { value: v, selected: (p.resultado || '') === v }, t))),
-              p.resultado ? h('input', { type: 'text', placeholder: 'Anotação (ex.: sentença em 30 dias)', value: p.resultado_obs || '', onchange: ev => setP('resultado_obs', ev.target.value) }) : null));
+              h('label', { class: 'aud-campo' }, h('span', {}, 'O que precisamos provar'), (() => { const t = h('textarea', { rows: 2, onchange: ev => salvarAto(a, { preparo: { pontos: ev.target.value } }, 'Salvo.') }); t.value = p.pontos || ''; return t; })()),
+              h('label', { class: 'aud-campo' }, h('span', {}, 'Documentos para levar'), (() => { const t = h('textarea', { rows: 2, onchange: ev => salvarAto(a, { preparo: { documentos: ev.target.value } }, 'Salvo.') }); t.value = p.documentos || ''; return t; })())),
+            h('label', { class: 'aud-ok' }, h('input', { type: 'checkbox', checked: !!p.orientado, onchange: ev => { p.orientado = ev.target.checked; salvarAto(a, { preparo: { orientado: ev.target.checked } }, 'Anotado.'); } }), ' Cliente orientado sobre o depoimento'),
+            zap ? h('a', { class: 'btn mini wa', href: zap, target: '_blank', rel: 'noopener' }, 'Pedir as testemunhas no WhatsApp') : h('span', { class: 'peq' }, 'Cliente sem telefone no cadastro.'));
         }
-        const obs = h('textarea', { rows: 2, placeholder: 'Outras anotações', onchange: ev => { a.obs = ev.target.value; salvar({ obs: a.obs }, 'Anotação salva.'); } });
-        obs.value = a.obs || '';
-        sec.replaceChildren(
-          h('div', { class: 'aud-cab' },
-            h('div', { class: 'selo-data' + (a.data === hojeISO() ? ' faixa-hoje' : '') }, h('b', {}, a.data.slice(8, 10)), h('span', {}, new Date(a.data + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'short' }).replace('.', ''))),
-            h('div', { class: 'aud-tit' }, h('strong', {}, (NOME_ATO[a.tipo] || a.nome) + (a.hora ? ' · ' + a.hora : ' · sem horário')),
-              h('span', {}, a.cliente || a.titulo || 'cliente a identificar'),
-              h('span', { class: 'peq' }, [nomeDia(a.data, true), a.numero, a.local].filter(Boolean).join(' · '))),
-            h('div', { class: 'aud-cab-dir' }, ciente, a.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + a.processo_id }, 'Processo') : null)),
-          chipsAvisosAto(a, desenhar),
-          h('div', { class: 'aud-linha' }, a.tipo !== 'pericia' ? modo : null, link),
-          especifico, obs);
+        const ciente = a.ciente_em ? h('button', { type: 'button', class: 'btn mini sec', onclick: () => { a.ciente_em = ''; salvarAto(a, { ciente: 'desfazer' }); desenhar(); } }, '✓ Equipe ciente')
+          : h('button', { type: 'button', class: 'btn mini sec', onclick: () => { a.ciente_em = new Date().toISOString(); salvarAto(a, { ciente: 'sim' }, 'Equipe ciente.'); desenhar(); } }, 'Dar ciência');
+        box.replaceChildren(
+          h('div', { class: 'aud-det-cab' }, h('span', { class: 'peq' }, [nomeDia(a.data, true), a.numero, a.local].filter(Boolean).join(' · ')),
+            h('span', { class: 'g-acoes' }, ciente, a.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + a.processo_id }, 'Processo') : null)),
+          a.data >= hoje ? h('div', {}, h('b', { class: 'aud-det-t' }, 'Avisos ao cliente'), chipsAvisosAto(a, () => { desenhar(); redesenhar(); })) : null,
+          h('div', { class: 'aud-linha' }, modo, link),
+          notas, esp,
+          (() => { const t = h('textarea', { rows: 2, placeholder: 'Outras anotações da audiência', onchange: ev => { a.obs = ev.target.value; salvarAto(a, { obs: a.obs }, 'Anotação salva.'); } }); t.value = a.obs || ''; return t; })());
       };
       desenhar();
-      return sec;
+      return box;
     };
-    const bolinhas = a => h('span', { class: 'aud-bols', 'aria-label': 'Avisos ao cliente' }, avisosDoAto(a).map(q => {
+    const bolinhas = a => a.data < hoje ? h('span', { class: 'aud-bols' }) : h('span', { class: 'aud-bols', 'aria-label': 'Avisos ao cliente' }, avisosDoAto(a).map(q => {
       const feito = a.avisos && a.avisos[q] && a.avisos[q].em;
       return h('i', { class: 'aud-bol ' + (feito ? 'ok' : a.devido === q ? 'devido' : ''), title: ROT_AVISO[q] + (feito ? ': avisado' : a.devido === q ? ': AVISAR AGORA' : ': ainda não') });
     }));
     let aberta = null;
     const linha = a => {
+      const li = h('li', { class: 'aud-item aud-r' + (a.devido && a.data >= hoje ? ' devido' : '') + (a.data === hoje ? ' hoje' : '') + (pendenteRes(a) ? ' aud-passou' : '') });
       const caixa = h('div', { class: 'aud-ficha', hidden: true });
-      const li = h('li', { class: 'aud-item' + (a.devido ? ' devido' : '') + (a.data === hojeISO() ? ' hoje' : '') });
-      const res = ehConc(a) ? resumoAcordo(a) : a.tipo === 'instrucao' ? resumoTestemunhas(a) : null;
-      const btn = h('button', { type: 'button', class: 'aud-linha-bt', 'aria-expanded': 'false', onclick: () => {
-        const abrir = caixa.hidden;
-        if (aberta && aberta !== li) { aberta.querySelector('.aud-ficha').hidden = true; aberta.classList.remove('aberta'); aberta.querySelector('.aud-linha-bt').setAttribute('aria-expanded', 'false'); }
-        if (abrir && !caixa.firstChild) caixa.append(cartao(a));
-        caixa.hidden = !abrir; li.classList.toggle('aberta', abrir); btn.setAttribute('aria-expanded', String(abrir)); aberta = abrir ? li : null;
-      } },
-        h('span', { class: 'aud-l-data' }, h('b', {}, dataBR(a.data).slice(0, 5)), h('small', {}, nomeDia(a.data))),
+      const meio = h('span', { class: 'aud-meio' });
+      const desenharMeio = () => {
+        const res = chipResultado(a);
+        if (res) return meio.replaceChildren(res);
+        if (ehConc(a)) {
+          const c = a.acordo;
+          const inp = h('input', { type: 'text', inputmode: 'decimal', 'data-moeda': '1', class: 'aud-valor', placeholder: 'R$ 0,00', value: c.pedir ? formatarMoeda(+c.pedir) : '', 'aria-label': 'Valor combinado com o cliente (R$)',
+            onchange: ev => { c.pedir = numMoeda(ev.target.value) || ''; salvarAto(a, { acordo: { pedir: ev.target.value } }, c.pedir ? 'Valor combinado salvo.' : 'Valor apagado.'); desenharMeio(); } });
+          const ok = h('button', { type: 'button', class: 'aud-okbt' + (c.autorizou ? ' sim' : ''), title: c.autorizou ? 'O cliente concordou' + (c.autorizou_por ? ' — anotado por ' + c.autorizou_por : '') : 'Marcar: o cliente concordou com este valor',
+            onclick: () => { c.autorizou = c.autorizou ? '' : new Date().toISOString(); salvarAto(a, { acordo: { autorizou: !!c.autorizou } }, c.autorizou ? 'Anotado: o cliente concordou.' : 'Desmarcado.'); desenharMeio(); } }, c.autorizou ? '✓ Cliente OK' : 'OK do cliente');
+          meio.replaceChildren(h('label', { class: 'aud-valor-l' }, h('small', {}, 'Valor combinado'), inp), ok);
+        } else if (a.tipo === 'instrucao') {
+          const rt = resumoTestemunhas(a);
+          meio.replaceChildren(h('span', { class: 'aud-l-res r-' + rt[0] }, rt[1]));
+        } else meio.replaceChildren(h('span', { class: 'aud-l-tipo aud-t-pericia' }, 'Perícia'));
+      };
+      desenharMeio();
+      const abrir = () => {
+        const vai = caixa.hidden;
+        if (aberta && aberta !== li) { aberta.querySelector('.aud-ficha').hidden = true; aberta.classList.remove('aberta'); }
+        if (vai && !caixa.firstChild) caixa.append(detalhes(a, desenharMeio));
+        caixa.hidden = !vai; li.classList.toggle('aberta', vai); aberta = vai ? li : null;
+      };
+      const acao = pendenteRes(a) ? h('button', { type: 'button', class: 'aud-oqa', onclick: () => dialogoResultadoAto(a) }, 'O que aconteceu?')
+        : resultadoDe(a) ? h('button', { type: 'button', class: 'link-btn peq', onclick: () => dialogoResultadoAto(a), title: 'Corrigir o resultado' }, 'mudar') : h('span', {});
+      li.append(h('div', { class: 'aud-r-linha' },
+        h('span', { class: 'aud-l-data' }, h('b', {}, dataBR(a.data).slice(0, 5)), h('small', {}, a.data === hoje ? 'hoje' : nomeDia(a.data))),
         h('span', { class: 'aud-l-hora num' }, a.hora || '—'),
-        h('span', { class: 'aud-l-quem' }, h('b', {}, a.cliente || a.titulo || 'cliente a identificar'), h('small', {}, [a.numero, a.modo === 'online' ? 'online' : a.modo === 'presencial' ? 'presencial' : ''].filter(Boolean).join(' · '))),
-        res ? h('span', { class: 'aud-l-res r-' + res[0] }, res[1]) : h('span', { class: 'aud-l-tipo aud-t-' + a.tipo }, NOME_ATO[a.tipo] || a.nome || 'Audiência'),
-        bolinhas(a),
-        h('span', { class: 'aud-l-seta', 'aria-hidden': 'true' }, '▾'));
-      li.append(btn, caixa);
+        h('button', { type: 'button', class: 'aud-nome', 'aria-expanded': 'false', onclick: abrir, title: 'Ver detalhes, anotações e avisos' },
+          h('b', {}, a.cliente || a.titulo || 'cliente a identificar'), h('small', {}, [ehConc(a) && a.tipo !== 'conciliacao' ? (NOME_ATO[a.tipo] || a.nome) : '', a.numero, a.modo === 'online' ? 'online' : a.modo === 'presencial' ? 'presencial' : ''].filter(Boolean).join(' · '))),
+        meio, bolinhas(a), acao), caixa);
       return li;
     };
-    const semData = (r.semData || []).length ? h('section', { class: 'caixa aud-semdata' },
-      h('h3', {}, `⚠ ${r.semData.length} audiência(s)/perícia(s) designada(s) sem a data no aviso`),
+    const semData = (r.semData || []).length ? h('details', { class: 'caixa aud-semdata' },
+      h('summary', {}, `⚠ ${r.semData.length} audiência(s)/perícia(s) designada(s) sem a data no aviso`, h('span', { class: 'peq' }, ' — clique para ver')),
       h('p', { class: 'peq' }, 'O tribunal avisou que marcou, mas o texto veio sem a data (PJe "documento sigiloso"). Abra o processo no sistema, veja a data e lance aqui: entra na agenda e nos avisos ao cliente.'),
       h('ul', { class: 'aud-sd-lista' }, r.semData.map(x => h('li', {},
         h('span', { class: 'aud-l-tipo aud-t-' + (x.tipo === 'pericia' ? 'pericia' : 'conciliacao') }, x.tipo === 'pericia' ? 'Perícia' : 'Audiência'),
@@ -4782,13 +4842,14 @@
         h('span', { class: 'aud-sd-acoes' },
           h('button', { type: 'button', class: 'btn mini', onclick: () => caixaMarcarAto({ numero: x.numero, processo_id: x.processo_id, texto: x.tipo === 'pericia' ? 'perícia' : 'audiência' }) }, '📅 Lançar a data'),
           x.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + x.processo_id }, 'Processo') : null))))) : null;
-    const VAZIO = { conciliacao: 'Nenhuma audiência de conciliação nos próximos 120 dias.', instrucao: 'Nenhuma audiência de instrução nos próximos 120 dias.', pericia: 'Nenhuma perícia marcada.', avisar: 'Nenhum aviso para mandar agora. 👏' };
-    const DICA = { conciliacao: 'Combine com o cliente ANTES: quanto pedir, o mínimo que ele aceita e a forma de pagamento. Fica anotado também na ficha do cliente.',
-      instrucao: 'Pergunte ao cliente se terá testemunhas (nome, CPF e telefone) e confirme a presença de cada uma. Fica anotado também na ficha do cliente.' };
-    mostrar(topo, abas, DICA[ver] ? h('p', { class: 'peq aud-dica' }, DICA[ver]) : null, ver === 'conciliacao' || ver === 'avisar' ? semData : null,
-      filtrada.length ? h('ul', { class: 'aud-lista2' }, filtrada.slice().sort((x, y) => (x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1).map(linha))
-        : h('p', { class: 'vazio' }, VAZIO[ver]),
-      h('p', { class: 'peq aud-legenda' }, h('i', { class: 'aud-bol ok' }), ' avisado  ', h('i', { class: 'aud-bol devido' }), ' avisar agora  ', h('i', { class: 'aud-bol' }), ' ainda não — as bolinhas são: audiência nova · 1 semana antes · véspera · no dia. Clique na linha para abrir a ficha.'));
+    const ordem = filtrada.slice().sort((x, y) => (pendenteRes(y) - pendenteRes(x)) || ((x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1));
+    const passadas = ordem.filter(pendenteRes), proximas = ordem.filter(a => !pendenteRes(a));
+    const VAZIO = { conciliacao: 'Nenhuma audiência de conciliação marcada nos próximos meses.', instrucao: 'Nenhuma audiência de instrução marcada.', pericia: 'Nenhuma perícia marcada.', avisar: 'Nenhum aviso para mandar agora. 👏' };
+    mostrar(topo, semData, abas,
+      passadas.length ? h('section', {}, h('h3', { class: 'aud-gt amarelo' }, `Já aconteceram — anote o resultado (${passadas.length})`), h('ul', { class: 'aud-lista2' }, passadas.map(linha))) : null,
+      proximas.length ? h('section', {}, passadas.length ? h('h3', { class: 'aud-gt' }, 'Próximas') : null, h('ul', { class: 'aud-lista2' }, proximas.map(linha)))
+        : passadas.length ? null : h('p', { class: 'vazio' }, VAZIO[ver]),
+      h('p', { class: 'peq aud-legenda' }, h('i', { class: 'aud-bol ok' }), ' avisado  ', h('i', { class: 'aud-bol devido' }), ' avisar agora  ', h('i', { class: 'aud-bol' }), ' ainda não — avisos ao cliente: audiência nova · 1 semana antes · véspera · no dia. Clique no nome do cliente para ver os detalhes.'));
   }
 
   async function telaAgenda(params) {

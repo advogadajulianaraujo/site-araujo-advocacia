@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.45.0';
+var VERSAO = '8.46.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -473,7 +473,8 @@ var ROTAS = {
   'inicio.extras': { fn: inicioExtras_ },
   'inicio.acoes': { fn: inicioAcoes_ },
   'agenda.avisado': { fn: marcarAvisado_ },
-  'audiencias.listar': { fn: function (d) { return { lista: audienciasLista_(d.dias || 60), semData: atosSemData_(), hoje: hojeSP_() }; } },
+  'audiencias.listar': { fn: function (d, u) { return { lista: audienciasLista_(d.dias || 60, d.passados ? 30 : 0, !!(u && (PERFIS[u.perfil] || {}).financeiro)), semData: atosSemData_(), hoje: hojeSP_() }; } },
+  'audiencias.resultado': { fn: audienciaResultado_ },
   'audiencias.salvar': { fn: salvarFichaAto_ },
   'processos.fase': { fn: mudarFaseProcesso_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
@@ -5944,20 +5945,28 @@ function tarefasDeAviso_(tabT) {
 function testemunhasDe_(f) { try { var l = JSON.parse((f && f.testemunhas) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
 
 /** Lista para a tela Audiências e para o Início: atos de hoje até +dias, com cliente, avisos, ficha e o aviso devido agora. */
-function audienciasLista_(dias) {
+function audienciasLista_(dias, passados, comFin) {
   var hoje = hojeSP_(), ate = somarDias_(hoje, Math.min(120, Math.max(1, +dias || 60))), fer = mapaFeriados_();
-  var clis = {}, procs = {};
+  var clis = {}, procs = {}, exito = {};
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
+  // 8.46: percentual do honorário de êxito do cliente (sugestão ao lançar o acordo; sem nenhum, a tela sugere 30%)
+  if (passados && comFin) tabela_('Honorarios').linhas.forEach(function (x) { if (x.tipo === 'exito' && !/cancel|retirad|encerrad/.test(x.situacao || '') && dinheiro_(x.percentual) > 0) exito[x.cliente_id] = dinheiro_(x.percentual); });
   var tAv = tarefasDeAviso_(tabela_('Tarefas')), fichas = fichasAtos_();
-  return atosDaAgenda_(hoje, ate, tabela_('Eventos')).slice(0, 150).map(function (a) {
+  // 8.46: com `passados` a lista também traz as audiências dos últimos N dias que ainda não têm o resultado anotado ("o que aconteceu?")
+  var desde = passados ? somarDias_(hoje, -passados) : hoje;
+  return atosDaAgenda_(desde, ate, tabela_('Eventos')).filter(function (a) {
+    if (a.data >= hoje) return true;
+    var f = fichaDoAto_(fichas, a) || {}, r = jsonAto_(a.tipo === 'instrucao' ? f.preparo : f.acordo).resultado || (a.tipo === 'instrucao' ? jsonAto_(f.acordo).resultado : '');
+    return a.tipo !== 'pericia' && !r;
+  }).slice(0, 170).map(function (a) {
     var p = procs[a.numero] || {}, c = clis[p.cliente_id] || {}, e = a.ev || {}, f = fichaDoAto_(fichas, a) || {};
     var av = estadoAvisosAto_(a, tAv, fichas), feitos = { nova: !!av.nova.em, semana: !!av.semana.em, vespera: !!av.vespera.em, dia: !!av.dia.em }, novo = atoNovo_(a, fichas);
     return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
       avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
       modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
-      acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo),
+      acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo), passou: a.data < hoje, pct_exito: exito[c.id] || '', obs_cliente: passados ? String(c.observacoes || '').split(/\n/).filter(String).slice(-3).join('\n').slice(0, 1500) : '',
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
   });
@@ -6019,6 +6028,58 @@ function textoAcordo_(a) {
   if (!c.pedir && !c.minimo) return '';
   return '🤝 ACORDO — audiência de conciliação de ' + q + (a.numero ? ' (processo ' + a.numero + ')' : '') + ': ' + [c.pedir ? 'pedir ' + r(c.pedir) : '', c.minimo ? 'mínimo aceito pelo cliente ' + r(c.minimo) : '',
     c.forma === 'avista' ? 'só à vista' : c.forma === 'parcelado' ? 'aceita parcelado' + (c.parcelas ? ' em até ' + c.parcelas + 'x' : '') : '', c.autorizou ? 'cliente autorizou' : 'autorização do cliente a confirmar', c.obs || ''].filter(String).join('; ') + '.';
+}
+
+/** 8.46 (pedido da usuária: "no dia da audiência, o que aconteceu: fechou acordo por tal valor / não fechou; se fechou, lançar os honorários
+ *  automaticamente — geralmente 30% — com o 1º pagamento e como vai ser"): grava o resultado na ficha e, com acordo + lancar, cria o honorário
+ *  parcelado (percentual × valor do acordo) no Financeiro, leva o processo para a etapa Acordo e anota na ficha do cliente. Não lança duas vezes. */
+function audienciaResultado_(d, u) {
+  if (!d.lembrete) throw falha_('Audiência não encontrada.');
+  var RES = { acordo: 1, sem_acordo: 1, redesignada: 1, nao_houve: 1, realizada: 1 };
+  if (!RES[d.resultado]) throw falha_('Escolha o que aconteceu na audiência.');
+  var valor = dinheiro_(d.valor) || 0, pct = dinheiro_(d.pct) || 0, n = parseInt(d.parcelas, 10) || 1;
+  if (d.resultado === 'acordo' && !(valor > 0)) throw falha_('Informe o valor do acordo.');
+  if (d.resultado === 'acordo' && d.lancar) {
+    if (!(pct > 0 && pct <= 100)) throw falha_('Informe o percentual dos honorários.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.primeiro || '')) throw falha_('Informe a data do 1º pagamento.');
+    if (n < 1 || n > 120) throw falha_('Número de parcelas inválido.');
+  }
+  return comTrava_(function () {
+    var fichas = fichasAtos_(), f = fichas.porChave[d.lembrete], agora = new Date().toISOString(), quem = u.nome || u.usuario;
+    var campo = d.tipo === 'instrucao' ? 'preparo' : 'acordo', o = jsonAto_(f && f[campo]);
+    if (d.resultado === 'acordo' && o.honorario_id && d.lancar) throw falha_('Os honorários deste acordo já foram lançados no Financeiro.');
+    o.resultado = d.resultado; o.resultado_em = agora; o.resultado_por = quem;
+    o.resultado_obs = String(d.obs || '').slice(0, 1000);
+    if (d.resultado === 'acordo') { o.valor_fechado = String(valor); o.parcelas_acordo = String(n); o.primeiro = d.primeiro || ''; o.pct = pct ? String(pct) : ''; }
+    if (d.resultado === 'sem_acordo') o.proposta = dinheiro_(d.proposta) ? String(dinheiro_(d.proposta)) : '';
+    var p = d.numero ? tabela_('Processos').linhas.filter(function (x) { return x.numero === d.numero; })[0] : null;
+    var c = p ? tabela_('Clientes').linhas.filter(function (x) { return x.id === p.cliente_id; })[0] : null;
+    var hon = null, honTot = 0;
+    if (d.resultado === 'acordo' && d.lancar) {
+      if (!c) throw falha_('O processo desta audiência não está ligado a um cliente. Ligue o cliente no processo e tente de novo.');
+      honTot = Math.round(valor * pct) / 100;
+      hon = salvarHonorario_({ honorario: { cliente_id: c.id, processo_id: p.id, tipo: 'parcelado', valor_total: honTot, parcelas: n, primeiro_vencimento: d.primeiro,
+        descricao: 'Honorários (' + String(pct).replace('.', ',') + '%) do acordo de ' + reaisTxt_(valor) + ' — audiência de ' + dataBR_(d.data || ''),
+        observacoes: 'Lançado pela tela Audiências: acordo de ' + reaisTxt_(valor) + ' em ' + n + 'x, 1º pagamento em ' + dataBR_(d.primeiro) + (d.obs ? ' · ' + String(d.obs).slice(0, 300) : '') } }, u);
+      o.honorario_id = hon.id;
+    }
+    var m = {}; m[campo] = JSON.stringify(o); m.atualizado_em = agora; m.atualizado_por = u.usuario;
+    if (f) atualizarLinha_(fichas.tab, f, m);
+    else inserirLinha_(fichas.tab, Object.assign({ chave: d.lembrete, numero: d.numero || '', data: d.data || '', hora: d.hora || '', tipo: d.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
+      ciente_em: '', ciente_por: '', criado_em: agora }, m));
+    if (d.resultado === 'acordo' && p && avancaFase_(p.fase, 'acordo')) atualizarLinha_(tabela_('Processos'), p, { fase: 'acordo', atualizado_em: agora, atualizado_por: u.usuario });
+    if (c) {
+      var q = (d.tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação') + ' de ' + dataBR_(d.data || '');
+      var txt = d.resultado === 'acordo' ? '🤝 ACORDO FECHADO na ' + q + ': ' + reaisTxt_(valor) + ' em ' + n + 'x' + (d.primeiro ? ' (1º pagamento ' + dataBR_(d.primeiro) + ')' : '') + (hon ? '; honorários ' + String(pct).replace('.', ',') + '% = ' + reaisTxt_(honTot) + ' lançados no Financeiro' : '') + '.'
+        : d.resultado === 'sem_acordo' ? '⚖ ' + q + ': SEM ACORDO' + (o.proposta ? ' (a outra parte ofereceu ' + reaisTxt_(+o.proposta) + ')' : '') + '.'
+        : d.resultado === 'redesignada' ? '📅 ' + q + ': REDESIGNADA (conferir a nova data na agenda).'
+        : d.resultado === 'realizada' ? '⚖ ' + q + ': realizada.' : '⚖ ' + q + ': não aconteceu.';
+      if (d.obs) txt += ' ' + String(d.obs).slice(0, 500);
+      anotarCliente_({ id: c.id, texto: txt }, u);
+    }
+    registrar_(u.usuario, 'audiência: resultado', (d.numero || '') + ' ' + d.resultado + (hon ? ' · honorário ' + hon.id : ''));
+    return { ok: true, honorario_id: hon ? hon.id : '', honorarios: honTot };
+  });
 }
 
 /** Grava a ficha da audiência (modo, link, testemunhas, observação, ciência, acordo, preparo). */
