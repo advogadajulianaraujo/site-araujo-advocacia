@@ -1,5 +1,12 @@
 # Regras permanentes do painel (Araújo Advocacia)
 
+## Calculadora: multas só por escolha expressa (18/11/2026)
+
+- No site e no painel, nenhuma multa vem selecionada ou entra automaticamente: multa do FGTS (40%/20%), art. 477 e art. 467 têm opções separadas.
+- Multa desmarcada não aparece na tabela nem no resultado copiado. Alterar um dado/opção invalida o resultado anterior até recalcular.
+- Art. 467 exige informar a base incontroversa; não presume 50% de todo o subtotal rescisório.
+- Ajuste restrito ao motor da calculadora e às duas interfaces; não muda Code.gs nem as versões dos motores Google/Supabase.
+
 Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
 ## Prazos: nunca sem data (regra do escritório)

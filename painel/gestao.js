@@ -414,14 +414,16 @@
     sec((r.indireta ? 'Verbas rescisórias — rescisão indireta (equivalente à dispensa sem justa causa)' : 'Verbas rescisórias') + ' · valores brutos');
     r.verbas.forEach(x => lin(x)); tot('Subtotal das verbas rescisórias', r.subtotal);
     if (r.anteriores.length) { sec('Parcelas anteriores não pagas (fora do subtotal acima)'); r.anteriores.forEach(x => lin(x)); tot('Subtotal das parcelas anteriores', r.subAnt); }
-    sec('FGTS e multa (bloco separado)');
+    sec('FGTS' + (r.fgts.some(x => /^Multa de /.test(x.rot)) ? ' e multa selecionada' : '') + ' (bloco separado)');
     r.contratual.forEach(x => lin(x, 'calc-conf'));
     r.fgts.forEach(x => lin(Object.assign({}, x, x.fora ? { rot: x.rot + ' — já calculado em outro pedido (não soma)' } : {})));
-    tot('Subtotal do FGTS e da multa', r.subFgts);
-    sec('Multas dos arts. 467 e 477 da CLT (só entram se marcadas)');
-    r.multas.forEach(x => lin(Object.assign({}, x, { rot: x.rot + (x.incluir ? ' — INCLUÍDA' : ' — não incluída') })));
-    if (r.subMultas) tot('Subtotal das multas incluídas', r.subMultas);
-    tot('TOTAL CONSOLIDADO (verbas + anteriores + FGTS/multa + multas marcadas)', r.total);
+    tot('Subtotal do FGTS' + (r.fgts.some(x => /^Multa de /.test(x.rot)) ? ' e da multa selecionada' : ''), r.subFgts);
+    if (r.multas.length) {
+      sec('Multas selecionadas');
+      r.multas.forEach(x => lin(x));
+      tot('Subtotal das multas selecionadas', r.subMultas);
+    }
+    tot('TOTAL DAS PARCELAS INCLUÍDAS', r.total);
     return { el: h('table', { class: 'tabela calc-tab calc-tab3' }, h('tbody', {}, linhas)), texto: txt.join('\n') };
   }
   function calcRescisao(out) {
@@ -444,8 +446,26 @@
       campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'se for "em parte" e sem o extrato' }),
       campo('fgts', 'FGTS já depositado — comprovado no extrato (R$)', '', { modo: 'decimal' }),
       chk('fgts_outro', 'FGTS contratual já calculado em outro pedido (mostra para conferência e não soma de novo)'),
+      chk('mfgts', 'Incluir a multa do FGTS (40% na dispensa sem justa causa/rescisão indireta; 20% no acordo)'),
       chk('m477', 'Incluir a multa do art. 477 da CLT'), chk('m467', 'Incluir a multa do art. 467 da CLT'),
+      campo('base_m467', 'Base das verbas rescisórias incontroversas — art. 467 (R$)', '', { modo: 'decimal', dica: 'Informe somente a base que pretende incluir. Não usamos automaticamente todas as verbas.' }),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Calcular')));
+    const base467 = form.querySelector('[name="base_m467"]');
+    const atualizarMultas = () => {
+      base467.parentElement.hidden = !form.m467.checked;
+      base467.disabled = !form.m467.checked;
+      base467.required = form.m467.checked;
+      const temMultaFgts = ['sem_justa', 'indireta', 'acordo'].includes(form.motivo.value);
+      form.mfgts.disabled = !temMultaFgts;
+      if (!temMultaFgts) form.mfgts.checked = false;
+    };
+    const invalidarResultado = () => {
+      atualizarMultas();
+      if (out.hasChildNodes()) out.replaceChildren(h('p', { class: 'peq', role: 'status' }, 'Dados alterados. Clique em Calcular para atualizar o resultado.'));
+    };
+    form.addEventListener('input', invalidarResultado);
+    form.addEventListener('change', invalidarResultado);
+    atualizarMultas();
     form.addEventListener('submit', ev => {
       ev.preventDefault();
       if (!window.RESCISAO) { out.replaceChildren(h('p', { class: 'erro' }, 'A calculadora não carregou: aperte F5.')); return; }
@@ -454,7 +474,8 @@
         r = window.RESCISAO.calcular({ salario: num(form.salario.value), medias: num(form.medias.value), admissao: lerData(form.admissao.value), ruptura: lerData(form.saida.value),
           motivo: form.motivo.value, aviso: form.aviso.value, diasSaldo: form.dias_saldo.value.trim() === '' ? null : +form.dias_saldo.value, saldoPago: num(form.saldo_pago.value),
           feriasGozadas: +form.ferias_gozadas.value || 0, decimoAnoPago: num(form.decimo_pago.value), decimoAnterior: form.decimo_ant.value, fgtsDep: form.fgts_dep.value,
-          fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_outro.checked, multa477: form.m477.checked, multa467: form.m467.checked });
+          fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_outro.checked, multaFgts: form.mfgts.checked,
+          multa477: form.m477.checked, multa467: form.m467.checked, baseMulta467: num(form.base_m467.value) });
       } catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
       const t = tabelaRescisao(r);
       const alerta = r.indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'cálculo para a petição — verbas da dispensa sem justa causa com aviso indenizado, valores BRUTOS, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Conferir antes de usar.') : null;
