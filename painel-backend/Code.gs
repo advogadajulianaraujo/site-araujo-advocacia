@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.49.2';
+var VERSAO = '8.49.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -5332,7 +5332,9 @@ function identificarPartes_() {
     if (Date.now() - t0 > 60000) return;
     tentadas[p.numero] = hoje;
     var achou = null;
-    (intims[p.numero] || []).some(function (tx) { achou = parteDoEscritorio_(tx); return !!achou; });
+    // 8.49.3: o tribunal já deu o nome E o papel de quem o escritório representa (acusado, executado, autor…) → é o cliente
+    if (p.polo && p.cliente_nome && !/a identificar|SIGILO|segredo/i.test(p.cliente_nome) && p.cliente_nome.length >= 5) achou = { nome: String(p.cliente_nome).toUpperCase().trim(), polo: p.polo };
+    if (!achou) (intims[p.numero] || []).some(function (tx) { achou = parteDoEscritorio_(tx); return !!achou; });
     if (!achou) {
       try {
         GmailApp.search('"' + p.numero + '" from:jus.br in:anywhere -in:trash', 0, 6).some(function (th) {

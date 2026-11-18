@@ -1828,4 +1828,4 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   o prazo do PJe sumia — caso do 0000005, ciência 11/11 → 23/11); `separarPublicacoes849_` (uma vez, Config FIX_PUBLIC_849) separou as dos
   últimos 45 dias. (3) Processos sem cliente: `parteDoPeticionamento_` lê o e-mail do eproc "Peticionamento Eletrônico - Envio de Processo
   Finalizado" ("Nome da(s) Parte(s): FULANO - *AUTOR* X …": cliente = polo ativo; processo originário também; o escritório como parte não
-  decide); `identificarPartes_` agora tenta também os em SIGILO, 25 por rodada, e começa tudo de novo uma vez (Config FIX_PARTES_849).
+  decide); `identificarPartes_` agora tenta também os em SIGILO, 25 por rodada, e começa tudo de novo uma vez (Config FIX_PARTES_849). 8.49.3: processo que já tem o nome E o papel (polo) de quem o escritório representa vira cadastro direto.
