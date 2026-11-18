@@ -79,6 +79,16 @@
   function lembrarVersao(v) { try { if (v) localStorage.setItem(VER_SERV, v); } catch (e) { /* privado */ } }
   try { const v0 = localStorage.getItem(VER_SERV); if (v0 && M() && v0 !== M().versao) carregarMotor(v0); } catch (e) { /* privado */ }
   function desligarPor(min, motivo) { motivoOff = motivo; desligadoAte = Date.now() + min * 60000; return null; }
+  /* 8.44.3: o navegador guarda as páginas do painel por até 10 min (GitHub Pages). Quem abriu um painel MAIS VELHO que o Google ficava
+     10 min com o banco desligado (todas as telas no Google, 1–2 min de tela parada; 18/11 13h02). Agora o painel se recarrega sozinho,
+     uma vez por versão, para pegar os arquivos novos. */
+  const numVer = v => String(v || '').split('.').map(n => +n || 0).reduce((a, n) => a * 1000 + n, 0);
+  function recarregarSeVelho(ver) {
+    if (!M() || numVer(ver) <= numVer(M().versao)) return false;
+    try { if (sessionStorage.getItem('painel_recarregou') === ver) return false; sessionStorage.setItem('painel_recarregou', ver); } catch (e) { return false; }
+    setTimeout(() => location.reload(), 50);
+    return true;
+  }
 
   /* ---------- 8.38: cópia das tabelas guardada NESTE computador, criptografada ----------
      Antes, cada entrada baixava de novo todas as tabelas (~7 MB: intimações, processos, clientes…) e só depois mostrava o Início
@@ -99,7 +109,15 @@
     finally { db.close(); }
   }
   const hexBytes = h => Uint8Array.from(h.match(/../g).map(x => parseInt(x, 16)));
-  function assinaturaCache() { return JSON.stringify([S.versao, S.u && S.u.id, S.u && S.u.perfil, S.permissoes || {}, S.tarefasFiltradasOk || []]); }
+  // 8.44.3: sem a versão do Google — antes, cada atualização do Google fazia TODOS baixarem as tabelas inteiras de novo (~7 MB). Vale o
+  // ESQUEMA (colunas) do motor: mudou alguma coluna, baixa tudo; senão a cópia continua e só o que mudou vem do banco.
+  const esqAss = {};
+  function esquemaAss() {
+    const v = M() ? M().versao : '';
+    if (!esqAss[v]) { const e = (M() && M().esquema) || {}; let h = 0; const t = JSON.stringify(Object.keys(e).sort().map(k => [k, e[k]])); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; esqAss[v] = String(h); }
+    return esqAss[v];
+  }
+  function assinaturaCache() { return JSON.stringify(['e' + esquemaAss(), S.u && S.u.id, S.u && S.u.perfil, S.permissoes || {}, S.tarefasFiltradasOk || []]); }
   async function pegarChave() {
     const cab = { apikey: S.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(S.chave)) cab.Authorization = 'Bearer ' + S.chave;
     const r = await fetch(S.url + '/rest/v1/rpc/painel_cache_chave', { method: 'POST', headers: cab, body: JSON.stringify({ p_token: S.token }), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
@@ -171,7 +189,7 @@
       try {
         const r = await chamarApps('banco.sessao', {});
         if (!r || !r.ligado) return desligarPor(10, (r && r.motivo) || 'desligado');
-        if (r.versao !== M().versao && !(await carregarMotor(r.versao))) return desligarPor(10, 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes');
+        if (r.versao !== M().versao && !(await carregarMotor(r.versao))) { lembrarVersao(r.versao); recarregarSeVelho(r.versao); return desligarPor(2, 'o Code.gs (' + r.versao + ') e o painel (' + M().versao + ') são de versões diferentes'); }
         S = r; motivoOff = ''; lembrarVersao(r.versao); guardar('painel_banco', r); lembrarEdge(r); acordar(); aoTerSessao(); return S;
       } catch (e) { return desligarPor(2, String(e.message || e)); } finally { pedindo = null; }
     })();
@@ -217,6 +235,7 @@
     if (!r || r.voltar) return null;
     if (!r.ok) throw new Error(r.erro || 'Não foi possível entrar.');
     const d = r.dados, b = d.banco; delete d.banco;
+    if (b && b.token && b.versao !== M().versao && !(await carregarMotor(b.versao))) { lembrarVersao(b.versao); guardar('painel_banco', b); recarregarSeVelho(b.versao); }
     if (b && b.token && (b.versao === M().versao || await carregarMotor(b.versao))) { S = b; motivoOff = ''; desligadoAte = 0; lembrarVersao(b.versao); guardar('painel_banco', b); lembrarEdge(b); aoTerSessao(); }
     medir('login', 'supabase', performance.now() - t0);
     return d;
