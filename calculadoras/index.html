@@ -23,8 +23,8 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Início","item":"https://araujoadvocaciasc.com.br/"},{"@type":"ListItem","position":2,"name":"Trabalhista","item":"https://araujoadvocaciasc.com.br/trabalhista/"},{"@type":"ListItem","position":3,"name":"Calculadoras","item":"https://araujoadvocaciasc.com.br/calculadoras/"}]}</script>
 <script src="/assets/ads-measurement.js" defer></script>
 <script src="/assets/site.js?v=12" defer></script>
-<script src="/assets/rescisao-motor.js?v=1" defer></script>
-<script src="/assets/calculadoras.js?v=9" defer></script>
+<script src="/assets/rescisao-motor.js?v=2" defer></script>
+<script src="/assets/calculadoras.js?v=10" defer></script>
 <link rel="stylesheet" href="/assets/calculadoras.css?v=4">
 </head>
 <body data-area="trabalhista">
@@ -82,9 +82,11 @@
 <div class="linha2"><label>A empresa depositou o FGTS?<select name="fgts_dep"><option value="naosei">Não sei</option><option value="sim">Sim, todos os meses</option><option value="nao">Não, não depositou nenhum mês</option><option value="parte">Só em parte (alguns meses faltaram)</option></select></label>
 <label>FGTS depositado (extrato, opcional, R$)<input name="fgts" inputmode="decimal" placeholder="Veja no app FGTS"></label></div>
 <label class="campo-fgtsnp" hidden>Quantos meses ficaram sem depósito?<input name="meses_np" inputmode="numeric" placeholder="Veja no extrato do app FGTS"></label>
-<label class="calc-chk"><input type="checkbox" name="fgts_outro"> O FGTS já foi calculado em outro pedido (não somar de novo)</label>
+<label class="calc-chk"><input type="checkbox" name="fgts_outro"> O FGTS contratual já foi calculado em outro pedido (não somar de novo)</label>
+<label class="calc-chk"><input type="checkbox" name="mfgts"> Incluir a multa do FGTS (40% na dispensa sem justa causa/rescisão indireta; 20% no acordo)</label>
 <label class="calc-chk"><input type="checkbox" name="m477"> Incluir a multa do art. 477 da CLT (acerto pago fora do prazo de 10 dias)</label>
 <label class="calc-chk"><input type="checkbox" name="m467"> Incluir a multa do art. 467 da CLT (verbas incontroversas não pagas na 1ª audiência)</label>
+<label hidden>Base das verbas rescisórias incontroversas — art. 467 (R$)<input name="base_m467" inputmode="decimal" placeholder="Informe somente a base incontroversa"></label>
 <button class="btn" type="submit">Calcular a estimativa</button>
 </form>
 <div class="calc-res" id="res-rescisao" role="status" hidden></div>
