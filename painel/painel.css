@@ -3037,3 +3037,15 @@ body.sem-sessao .chatf{display:none}
 .ix-dia.vazio b{color:#c4bdb1}
 @media (max-width:1100px){.ix-item{grid-template-columns:160px minmax(0,1fr) 140px}}
 @media (max-width:700px){.ix-item{grid-template-columns:1fr}.ix-faixa{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* 8.44.3 — Intimações: dia por extenso, audiências novas, filtro por tribunal */
+.ix-num.zero { opacity: .55; }
+.ix-num.zero b { color: var(--cinza, #8a857c); }
+.ix-n.alerta { background: #F3D9A4; color: #6B4A0E; }
+.ix-chip.ix-novo { margin-left: 6px; font-size: 11px; padding: 1px 7px; }
+.ix-sel-sis { max-width: 340px; }
+.ix-gtit h3 { text-transform: none; letter-spacing: 0; font-size: 14px; color: #1e1b17; }
+#ix-g-hoje .ix-gtit h3, #ix-g-venc .ix-gtit h3 { color: #a3261b; }
+#ix-g-atos .ix-gtit h3 { color: #1d4f7a; }
+.ix-rodape { margin: 14px 2px 0; font-size: 13px; }
+@media (max-width: 700px) { .ix-sel-sis { max-width: 100%; width: 100%; } }

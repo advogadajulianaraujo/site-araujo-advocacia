@@ -47,4 +47,10 @@ assert(C.vencidosRapido_() === 0 && zz('Z844c').situacao === 'calculado', 'robô
 C.inserirLinha_(C.tabela_('Prazos'), { id: 'Z844d', processo_id: '', numero: nums[2], intimacao_id: 'I844c', descricao: 'Prazo de 5 dias indicado na intimação', dias: '5', contagem: 'uteis', ciencia: ant, fatal: ont, situacao: 'calculado', origem: 'robô', observacoes: 'PJe: aviso', criado_em: new Date().toISOString() });
 const rr = C.vencidosRapido_();
 assert(rr && rr.sem === 1 && zz('Z844d').situacao === 'cumprido', 'robô de 10 em 10 min retira o vencido novo');
+// 8.44.3: audiência que já aconteceu sai da lista (não é prazo); a de amanhã continua
+C.inserirLinha_(C.tabela_('Prazos'), { id: 'Z844e', processo_id: '', numero: nums[0], intimacao_id: '', descricao: 'Audiência em ontem: preparar audiência', dias: '0', contagem: 'uteis', ciencia: '', fatal: C.somarDias_(C.hojeSP_(), -1), situacao: 'calculado', origem: 'robô', observacoes: 'ato:audiência de instrução | DJEN', criado_em: new Date().toISOString() });
+C.inserirLinha_(C.tabela_('Prazos'), { id: 'Z844f', processo_id: '', numero: nums[0], intimacao_id: '', descricao: 'Audiência amanhã', dias: '0', contagem: 'uteis', ciencia: '', fatal: C.somarDias_(C.hojeSP_(), 1), situacao: 'calculado', origem: 'robô', observacoes: 'ato:audiência de conciliação | DJEN', criado_em: new Date().toISOString() });
+const ra = C.vencidosRapido_();
+assert(ra && ra.atos === 1 && zz('Z844e').situacao === 'cumprido' && zz('Z844e').ok_em, 'audiência de ontem sai da lista (sem ir para o OK)');
+assert(zz('Z844f').situacao === 'calculado', 'audiência de amanhã continua');
 console.log("fim");

@@ -1690,6 +1690,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.44.2 (pedido da usuária): `vencidosRapido_` no `aquecerGatilho` (10 em 10 min, horário do escritório) — lê só Prazos e só roda a baixa
   (na trava + `sbEnviarSujas_`) se houver vencido para retirar. `vencidoParaRetirar_`: prazo que o robô ou a baixa em lote já retirou e a
   equipe REABRIU (observações com "saiu da lista em" / "baixa automática:" / "sem prazo: … (robô," / "baixa em lote em") nunca é retirado de novo.
+- 8.44.3 (pedidos da usuária, 18/11/2026): (1) audiência/perícia ("ato:") com data passada sai sozinha (`baixarVencidos844_`: cumprido
+  "robô (o ato já aconteceu)", com ok, sem ir para o OK) — "o que aconteceu ontem não preciso, só as novas". (2) Intimações: abas "Prazos e
+  audiências" (audiências/perícias NOVAS = marcadas nos últimos 7 dias, `linhaAtoNovo`; Atrasados; um grupo por dia com o nome por extenso,
+  `tituloDia`; "Depois desta semana"), "Conferir no tribunal" (SÓ ato não identificado + leitura divergente; prazo calculado pelo robô não
+  conta mais — antes "Para analisar" mostrava 144) e "Em execução e aprovação"; links antigos parte=analisar e ver=confirmar continuam. A
+  faixa de dias e as audiências da semana saíram. (3) Filtro por TRIBUNAL (`seletorSistema`, `TRIB_ATUA`/`TRIB_LUGAR`, `filtroSisOk`, valor
+  "t:TRT6"): TRT12, TJSC, TRF4, TRT6 (Pernambuco), TRT23, TRT16, TST, TJRS… com o nº em aberto; tribunais novos entram sozinhos.
+  (4) TRAVAMENTO de 18/11 13h02 (achado no registro do Supabase): o navegador do Luis abriu o painel guardado em cache (GitHub Pages guarda
+  10 min) com motor mais velho que o Google; o arquivo painel/motor-<versão do Google>.js ainda não existia → banco desligado 10 min → tudo
+  no Google (1,5 min de tela parada). Agora o publicar também grava painel/motor-<VERSÃO NOVA>.js, o painel velho se recarrega sozinho uma
+  vez (`recarregarSeVelho` em banco.js) e a cópia local não depende mais da versão do Google (assinatura = colunas do ESQUEMA), então uma
+  atualização do Google não faz todos baixarem ~7 MB de novo. REGRA: ao publicar, gravar painel/motor-<VERSÃO NOVA>.js junto do motor.js.
 - 8.44.1 (Code.gs): a rodada do robô de 18/11 11h12 caiu com "O banco de dados não respondeu agora": a leitura de uma tabela inteira pelo
   servidor passou dos 8 s do `authenticator` (já chegava a 7,8 s) e a rodada INTEIRA foi perdida. `alter role service_role set statement_timeout
   = '30s'` (só o servidor usa essa chave; registrado no fim do leitura-rapida.sql) e `sbPrecarregar_` tenta de novo, uma vez, a tabela que voltou

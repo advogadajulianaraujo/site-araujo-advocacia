@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.44.2 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.44.2';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.44.3 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.44.3';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.44.2';
+var VERSAO = '8.44.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2657,7 +2657,8 @@ var RE_FAZER_ = /manifest|apresent|junt|indic|comprov|deposit|recolh|cumpr|pagar
    aberto: a pessoa disse que não foi feito, e o robô não passa por cima. */
 var RE_JA_RETIRADO_ = /saiu da lista em|baixa autom[aá]tica:|sem prazo: .*\(rob[oô],|baixa em lote em/;
 function vencidoParaRetirar_(z, hoje) {
-  return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.fatal && z.fatal < hoje && z.ciencia && !/^ato:/.test(z.observacoes || '') && !RE_JA_RETIRADO_.test(z.observacoes || '');
+  if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || !z.fatal || z.fatal >= hoje || RE_JA_RETIRADO_.test(z.observacoes || '')) return false;
+  return /^ato:/.test(z.observacoes || '') || !!z.ciencia; // 8.44.3: audiência/perícia que já aconteceu também sai
 }
 /* 8.44.2 (pedido da usuária): também no robô de 10 em 10 min. Lê só os Prazos; as outras tabelas só quando há vencido para retirar. */
 function vencidosRapido_() {
@@ -2673,6 +2674,12 @@ function baixarVencidos844_() {
   tabI.linhas.forEach(function (i) { porId[i.id] = i; (porNum[i.numero] = porNum[i.numero] || []).push(i); });
   tabZ.linhas.forEach(function (z) {
     if (!vencidoParaRetirar_(z, hoje)) return;
+    if (/^ato:/.test(z.observacoes || '')) { // 8.44.3 (pedido da usuária: "o que aconteceu ontem, como audiência, não preciso; só as novas")
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (o ato já aconteceu)', cumprido_em: agora, etapa: 'protocolado', ok_por: 'robô', ok_em: agora,
+        observacoes: z.observacoes + ' | ato de ' + dataBR_(z.fatal) + ' já aconteceu: saiu da lista em ' + dataBR_(hoje), atualizado_em: agora, atualizado_por: 'robô' });
+      intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: 'robô', terminada_em: agora, ok_por: 'sem prazo', ok_em: agora }); });
+      n.atos = (n.atos || 0) + 1; return;
+    }
     var aviso = String((porId[z.intimacao_id] || {}).recebido_em || '').slice(0, 10) || somarDias_(z.ciencia, -3);
     var movs = (porNum[z.numero] || []).map(function (i) { return { d: String(i.recebido_em || '').slice(0, 10), n: String(i.movimento || ''), i: i }; });
     var p = procs[z.processo_id] || {};
@@ -2705,7 +2712,7 @@ function baixarVencidos844_() {
     }
     if (junt || fim || soCiencia) intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: 'robô', terminada_em: agora, ok_por: junt ? '' : 'sem prazo', ok_em: junt ? '' : agora }); });
   });
-  if (n.feito + n.ciencia + n.sem) registrar_('robô', 'vencidos retirados', n.feito + ' feitos (petição juntada), ' + n.ciencia + ' só ciência, ' + n.sem + ' sem comprovação');
+  if (n.feito + n.ciencia + n.sem + (n.atos || 0)) registrar_('robô', 'vencidos retirados', n.feito + ' feitos (petição juntada), ' + n.ciencia + ' só ciência, ' + n.sem + ' sem comprovação, ' + (n.atos || 0) + ' audiência(s)/perícia(s) que já aconteceram');
   return n;
 }
 
