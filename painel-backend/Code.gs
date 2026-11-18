@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.44.0';
+var VERSAO = '8.44.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -15674,6 +15674,13 @@ function sbPrecarregar_(nomes, forcar) {
   var pedidos = faltam.map(function (n) { return { url: c.url + '/rest/v1/rpc/painel_tabela', method: 'post', contentType: 'application/json', headers: cab, muteHttpExceptions: true, payload: JSON.stringify({ p_tabela: sbTabela_(n), p_escritorio: esc }) }; });
   var resp;
   try { resp = UrlFetchApp.fetchAll(pedidos); } catch (eF) { faltam.forEach(function (n) { sbNotaLeitura_(n, 'planilha (banco sem resposta)'); }); return; } // 8.30: sem internet/banco fora
+  // 8.44: leitura que falhou (banco cortou por tempo, 5xx) tenta de novo UMA vez, sozinha, antes de desistir — antes uma falha derrubava a rodada do robô
+  resp = resp.map(function (r, i) {
+    var cod = r.getResponseCode();
+    if (cod < 500 && cod !== 429) return r;
+    try { Utilities.sleep(800); } catch (eS) { /* simulador */ }
+    try { return UrlFetchApp.fetch(pedidos[i].url, pedidos[i]); } catch (eR) { return r; }
+  });
   resp.forEach(function (r, i) {
     var cod = r.getResponseCode();
     if (cod === 404) { PropertiesService.getScriptProperties().setProperty('SUPABASE_TABELA_RPC', 'nao|' + Date.now()); return; }

@@ -583,3 +583,9 @@ begin
     if q <> p.qual then execute format('alter policy %I on %I.%I using (%s)', p.policyname, p.schemaname, p.tablename, q); end if;
   end loop;
 end $$;
+
+-- 8.44: o robô do servidor (chave service_role) lê tabelas inteiras e grava em lote; com o limite de 8 s do authenticator, leituras de
+-- 7,8 s viravam erro e derrubavam a rodada do robô inteira (18/11/2026). Só o servidor usa esta chave; o navegador (anon) tem o próprio limite.
+alter role service_role set statement_timeout = '30s';
+notify pgrst, 'reload config';
+

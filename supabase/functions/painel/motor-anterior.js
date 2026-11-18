@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.43.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.43.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.44.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.44.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.43.0';
+var VERSAO = '8.44.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2640,6 +2640,59 @@ function identificarProvisorios_() {
   });
   if (feitos) registrar_('robô', 'prazos identificados', feitos + ' ato(s) identificado(s) pelo texto (DJEN) ou pelo DataJud');
   return { feitos: feitos };
+}
+
+/** 8.44 (pedido da usuária, 18/11/2026: "tem prazos que a gente faz e não dá ciência no painel, e tem prazos que só dão ciência; os vencidos,
+ *  retire"): todo prazo VENCIDO ainda aberto sai da lista sozinho, cada um com o motivo anotado:
+ *  1) FEITO — depois do aviso entrou "Juntada de petição / manifestação / quesitos…" no mesmo processo (PJe/eproc ou DataJud) → cumprido, vai
+ *     para o OK da administração conferir;
+ *  2) SÓ CIÊNCIA — acordo/extinção/arquivamento depois do aviso, ou o ato era só para ciência (audiência/perícia marcada, ciência de petição,
+ *     notificação de processo novo) → "sem prazo";
+ *  3) SEM COMPROVAÇÃO — nada achado → baixa marcada "vencido sem comprovação" (lista "Baixados sem comprovante" em Intimações › Execução,
+ *     com Reabrir). Nada é apagado; tudo fica no histórico do prazo. Prazo de audiência/perícia ("ato:") não entra. */
+var RE_JUNTADA_ = /juntad[ao]s?\s+(a\s+|de\s+)?(peti[cç][aã]o|manifesta|quesitos|contrarraz|recurso|embargos|r[ée]plica|impugna|c[áa]lculos|rol|documento)|apresenta[cç][aã]o de quesitos|protocolad[ao] peti/i;
+var RE_ENCERROU_ = /homologa[cç][aã]o de acordo|suspenso o processo por homologa|extinta a execu|extin[cç][aã]o (do processo|da execu)|arquivad[oa]s? definitiv|baixa definitiva|tr[aâ]nsito em julgado/i;
+var RE_FAZER_ = /manifest|apresent|junt|indic|comprov|deposit|recolh|cumpr|pagar|pague|emend|inform|requer|especific|impugn|regulariz|juntar|fornec/;
+function baixarVencidos844_() {
+  var hoje = hojeSP_(), tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes'), procs = {}, porNum = {}, porId = {}, agora = new Date().toISOString(), n = { feito: 0, ciencia: 0, sem: 0 };
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabI.linhas.forEach(function (i) { porId[i.id] = i; (porNum[i.numero] = porNum[i.numero] || []).push(i); });
+  tabZ.linhas.forEach(function (z) {
+    if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || !z.fatal || z.fatal >= hoje || /^ato:/.test(z.observacoes || '') || !z.ciencia) return;
+    var aviso = String((porId[z.intimacao_id] || {}).recebido_em || '').slice(0, 10) || somarDias_(z.ciencia, -3);
+    var movs = (porNum[z.numero] || []).map(function (i) { return { d: String(i.recebido_em || '').slice(0, 10), n: String(i.movimento || ''), i: i }; });
+    var p = procs[z.processo_id] || {};
+    if (p.andamentos && p.andamentos.charAt(0) === '[') { try { JSON.parse(p.andamentos).forEach(function (m) { movs.push({ d: String(m.d || '').slice(0, 10), n: String(m.n || '') }); }); } catch (e) { /* segue */ } }
+    var depois = movs.filter(function (m) { return m.d && m.d >= aviso && m.d <= hoje; });
+    var junt = depois.filter(function (m) { return RE_JUNTADA_.test(m.n); }).sort(function (a, b) { return a.d < b.d ? 1 : -1; })[0]; // a mais recente
+    var fim = movs.filter(function (m) { return m.d && m.d >= somarDias_(aviso, -5) && RE_ENCERROU_.test(m.n); })[0];
+    // o ato era só para ciência? (frase "fica intimado para ciência…" sem nada a fazer, audiência/perícia marcada, processo novo)
+    var soCiencia = /^(Perícia marcada|Intimação de audiência|Distribuição)/.test(z.descricao || '');
+    if (!soCiencia && /Notificação com documento anexado/.test(z.observacoes || '') && movs.some(function (m) { return /distribu[ií]do/i.test(m.n) && Math.abs(diffDias_(m.d, aviso)) <= 5; })) soCiencia = true;
+    if (!soCiencia) (porNum[z.numero] || []).forEach(function (i) {
+      var dia = String(i.recebido_em || '').slice(0, 10); if (!i.texto || Math.abs(diffDias_(dia, aviso)) > 4) return;
+      var f = fraseIntimado_(normalizar_(semEntidades_(i.texto)));
+      if (f && /ciencia/.test(f) && !prazosNoTexto_(f, true).length && !RE_FAZER_.test(f.replace(/tomar ciencia|para ciencia|a ciencia|da ciencia/g, ''))) soCiencia = true;
+    });
+    var obs = (z.observacoes ? z.observacoes + ' | ' : '');
+    if (fim) junt = null; // acordo/extinção explica melhor que a petição
+    if (junt) {
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (petição juntada em ' + dataBR_(junt.d) + ')', cumprido_em: agora, etapa: 'protocolado',
+        observacoes: obs + 'baixa automática: "' + junt.n.slice(0, 70) + '" em ' + dataBR_(junt.d) + ' — conferir se foi do escritório', atualizado_em: agora, atualizado_por: 'robô' });
+      n.feito++;
+    } else if (fim || soCiencia) {
+      atualizarLinha_(tabZ, z, { situacao: 'cancelado', observacoes: obs + 'sem prazo: ' + (fim ? '"' + fim.n.slice(0, 60) + '" em ' + dataBR_(fim.d) : 'o ato era só para ciência') + ' (robô, ' + dataBR_(hoje) + ')',
+        atualizado_em: agora, atualizado_por: 'robô' });
+      n.ciencia++;
+    } else {
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (vencido sem comprovação)', cumprido_em: agora, etapa: 'protocolado', ok_por: 'robô (sem comprovação — conferir)', ok_em: agora,
+        observacoes: obs + 'vencido sem comprovação: saiu da lista em ' + dataBR_(hoje) + '; se NÃO foi feito, reabra', atualizado_em: agora, atualizado_por: 'robô' });
+      n.sem++;
+    }
+    if (junt || fim || soCiencia) intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: 'robô', terminada_em: agora, ok_por: junt ? '' : 'sem prazo', ok_em: junt ? '' : agora }); });
+  });
+  if (n.feito + n.ciencia + n.sem) registrar_('robô', 'vencidos retirados', n.feito + ' feitos (petição juntada), ' + n.ciencia + ' só ciência, ' + n.sem + ' sem comprovação');
+  return n;
 }
 
 /** Situação de arquivo pela movimentação. */
@@ -6381,7 +6434,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['vencidos844', baixarVencidos844_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
