@@ -1821,3 +1821,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   processo" pergunta em seguida "Apagar também o HONORÁRIO lançado para esta ação?" (só perfis com financeiro). `apagarProcessoSemNumero_` com
   `honorario`: retira os honorários ligados ao processo (Honorarios.processo_id) ou lançados pelo "Assinado" desta inicial (Assinaturas.
   honorarios_lancados) — parcelas NÃO pagas apagadas (e o boleto/Pix cancelado), as pagas ficam; situação "retirado" com o motivo.
+- 8.49.2 (perguntas da usuária: "vai acontecer de novo?"): (1) Petição juntada NO MESMO DIA do aviso é da OUTRA parte (o aviso costuma ser
+  para responder a ela): só conta como "feito" a juntada a partir do dia SEGUINTE (`baixarVencidos844_` e `reabrirVencidosCedo848_`); reabertura
+  de novo, uma vez (Config FIX_REABRIR_849) — caso do 0000486 (contrarrazões ao RO, prazo 19/11 no PJe). (2) Duas publicações do DJEN com
+  textos/atos diferentes no mesmo processo viram DOIS prazos (`outraPublicacao_` no `registrarIntimacao_`; antes a 2ª entrava no prazo da 1ª e
+  o prazo do PJe sumia — caso do 0000005, ciência 11/11 → 23/11); `separarPublicacoes849_` (uma vez, Config FIX_PUBLIC_849) separou as dos
+  últimos 45 dias. (3) Processos sem cliente: `parteDoPeticionamento_` lê o e-mail do eproc "Peticionamento Eletrônico - Envio de Processo
+  Finalizado" ("Nome da(s) Parte(s): FULANO - *AUTOR* X …": cliente = polo ativo; processo originário também; o escritório como parte não
+  decide); `identificarPartes_` agora tenta também os em SIGILO, 25 por rodada, e começa tudo de novo uma vez (Config FIX_PARTES_849).
