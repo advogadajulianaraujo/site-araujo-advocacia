@@ -1668,3 +1668,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   no DataJud" (de onde o painel tirou o prazo). Em "Hoje e próximos dias", faixa dos próximos dias (`faixaDias`: vencidos + 7 dias úteis com
   prazos e atos de cada dia; clicar rola até o grupo).
 
+## 8.44.0 Vencidos saem sozinhos, com o motivo (pedido da usuária, 18/11/2026: "tem prazos que a gente faz e não dá ciência no painel, e
+## tem prazos que só dão ciência; os vencidos, retire" — ex.: o do Israel, manifestação já juntada)
+
+- `baixarVencidos844_` (robôs do escritório, toda rodada): prazo aberto com fatal ANTES de hoje (fora "ato:") sai da lista: (1) acordo/
+  extinção/arquivamento depois do aviso (`RE_ENCERROU_`) → cancelado "sem prazo: …"; (2) "Juntada de petição / manifestação / quesitos…"
+  (`RE_JUNTADA_`, intimações do PJe/eproc ou DataJud) depois do aviso → cumprido "robô (petição juntada em dd/mm)" — a MAIS RECENTE; vai
+  para o OK da administração conferir se foi do escritório; (3) só ciência (perícia/audiência marcada, notificação de processo novo, frase
+  "intimado para ciência" sem nada a fazer) → cancelado "o ato era só para ciência"; (4) nada → cumprido "robô (vencido sem comprovação)" com
+  ok já dado e a marca "se NÃO foi feito, reabra" — aparece em Intimações › Execução › "Baixados em lote sem comprovante" (regex
+  /baixa em lote|sem comprova/). Esta regra SUBSTITUI o "não baixar vencido" da 8.42 (decisão da usuária). Nada é apagado.
+- Em 18/11 (simulação nos dados reais): 14 vencidos → 6 com petição juntada (Israel 13/11 etc.), 6 só ciência/acordo, 2 sem comprovação.
+- Teste em `.github/motor/teste/etapa843.js`.
+

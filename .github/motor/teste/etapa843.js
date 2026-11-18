@@ -27,4 +27,17 @@ C.inserirLinha_(tabI, { id: 'I843b', chave: 'teste843b', fonte: 'DJEN', recebido
 const r = C.identificarProvisorios_();
 const z2 = C.tabela_('Prazos').linhas.find(x => x.id === 'Z843');
 assert(r.feitos >= 1 && z2.dias === '10' && !/PROVIS/.test(z2.descricao) && z2.fatal > hoje && /identificado pelo texto/.test(z2.observacoes), 'robô identificou o ato pelo DJEN: 10 dias, data nova e anotado (' + z2.descricao.slice(0, 60) + ')');
+// 8.44: vencido com petição juntada depois do aviso → cumprido; só ciência → sem prazo; nada → sem comprovação (com marca para reabrir)
+const ont = C.somarDias_(C.hojeSP_(), -3), ant = C.somarDias_(C.hojeSP_(), -9);
+const tz2 = C.tabela_('Prazos'), ti2 = C.tabela_('Intimacoes');
+const nums = tz2.linhas.slice(10, 13).map(z => z.numero);
+[['I844a', 'Z844a', nums[0], 'Juntada a petição de Manifestação'], ['I844b', 'Z844b', nums[1], 'Expedido(a) intimação'], ['I844c', 'Z844c', nums[2], 'Expedido(a) intimação']].forEach(([iid, zid, num, mov], k) => {
+  C.inserirLinha_(ti2, { id: iid, chave: iid, fonte: 'PJe TRT12', recebido_em: ant + 'T12:00:00Z', numero: num, movimento: 'Expedido(a) intimação', texto: '', criado_em: new Date().toISOString() });
+  C.inserirLinha_(tz2, { id: zid, processo_id: '', numero: num, intimacao_id: iid, descricao: k === 1 ? 'Perícia marcada: ciência (5 dias)' : 'Prazo de 5 dias indicado na intimação', dias: '5', contagem: 'uteis', ciencia: ant, fatal: ont, situacao: 'calculado', origem: 'robô', observacoes: 'PJe: aviso', criado_em: new Date().toISOString() });
+  if (k === 0) C.inserirLinha_(ti2, { id: 'I844j', chave: 'I844j', fonte: 'PJe TRT12', recebido_em: C.somarDias_(ant, 2) + 'T12:00:00Z', numero: num, movimento: mov, texto: '', criado_em: new Date().toISOString() });
+});
+const rv = C.baixarVencidos844_(); const zz = id => C.tabela_('Prazos').linhas.find(x => x.id === id);
+assert(zz('Z844a').situacao === 'cumprido' && /petição juntada/.test(zz('Z844a').cumprido_por), 'vencido com petição juntada depois do aviso → cumprido (vai para o OK)');
+assert(zz('Z844b').situacao === 'cancelado' && /só para ciência/.test(zz('Z844b').observacoes), 'vencido que era só ciência → sem prazo');
+assert(zz('Z844c').situacao === 'cumprido' && /sem comprovação/.test(zz('Z844c').cumprido_por) && zz('Z844c').ok_em, 'vencido sem nada → baixa "sem comprovação" (lista para reabrir), fora do OK');
 console.log("fim");

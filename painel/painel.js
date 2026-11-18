@@ -3793,7 +3793,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.43.0';
+  const VERSAO_PAINEL = '8.44.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4195,7 +4195,7 @@
       const conf = abertos.filter(z => z.situacao === 'conferido').sort(porData);
       const porResp = {};
       conf.forEach(z => { const k = z.responsavel || ''; (porResp[k] = porResp[k] || []).push(z); });
-      const lote = (encerr || []).filter(z => z.situacao === 'cumprido' && /baixa em lote/.test(z.cumprido_por || '') && doSis(z) && bate(z));
+      const lote = (encerr || []).filter(z => z.situacao === 'cumprido' && /baixa em lote|sem comprova/.test(z.cumprido_por || '') && doSis(z) && bate(z));
       corpo.push(admin ? blocoAguardandoOk({ inicio: true }) : null,
         ...Object.keys(porResp).sort((a, b) => (a ? 0 : -1) - (b ? 0 : -1) || a.localeCompare(b)).map(k => grupoIx(k ? 'Com ' + primeiroNome(k) : 'Confirmados sem responsável', porResp[k], linhaPrazoIx)),
         conf.length ? null : h('p', { class: 'ini-vazio' }, 'Nenhum prazo confirmado em execução.'),
