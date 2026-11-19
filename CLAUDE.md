@@ -1943,3 +1943,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Conexão direta com PJe/eproc (pergunta da usuária): desde 16/05/2025 a intimação do advogado particular é a PUBLICAÇÃO no DJEN e o prazo conta
   dela (art. 224 CPC; o PJe só repete essa conta). O DJEN já é lido pelo painel aberto/extensão. O webservice MNI do PJe/eproc exige login/
   certificado do advogado guardado no sistema e ABRIR o teor da comunicação por ele registra a CIÊNCIA — não usar.
+- 8.53.2 (pedidos da usuária, 19/11/2026: "começar a usar as tarefas de verdade, bem designadas, copiando o ADVBOX"; "bairro no cadastro, o PJe
+  pede"; "o que a pessoa fez, no Início"):
+  - Tarefas com TIPO (coluna `categoria` em Tarefas; `CATEGORIAS_TAREFA` no Code.gs, `TIPOS_T` em painel.js): 📞 Falar com o cliente, 📝 Petição,
+    📤 Protocolo, 🖋 Procuração / documentos, ⚖ Audiência / perícia, ⏱ Prazo / intimação, 🤝 Extrajudicial, 💰 Financeiro, 🗂 Administrativo,
+    • Outro. As tarefas do robô ganham o tipo sozinhas (`categoriaTarefa_`: marcas [inicial:], [lembrete:], [intim:], [assinatura:], [valor:]… e o
+    título; "Protocolar…" = protocolo). Lista do dia: chip colorido em cada linha, filtro "Tipo:" com contagem (`?cat=`), campo "Anotar" com o tipo
+    (adivinha pelo texto — `adivinharTipo`) e botões de modelo "Começar por:" (como no ADVBOX). Formulário com "Tipo da tarefa" e responsável
+    obrigatório (tarefa nova sem responsável fica com quem criou — `salvarTarefa_`). Quadro e Tabela mostram o tipo.
+  - Início de TODOS os perfis: "✅ O que eu fiz" (`blocoOQueFiz`, Hoje | Semana | Mês, localStorage `fiz_per`): quantas tarefas e prazos a própria
+    pessoa terminou, quantos no prazo, os tipos (chips) e a lista; busca sozinho `tarefas.listar` (dias 31; concluida_por = usuário ou nome).
+  - Bairro: coluna própria `bairro` em Clientes (ESQUEMA, CAMPOS_CLIENTE, esquema.sql; ALTER já rodado no Supabase). O formulário mostra o campo
+    preenchido (o endereço aparece sem o bairro no fim: `semBairroNoFim`) e o bairro continua no fim do `endereco` (procurações e contratos não
+    mudam). A ficha mostra "Bairro" (ou "falta — o PJe pede"). /cadastro/ do site e o robô do WhatsApp também gravam a coluna.

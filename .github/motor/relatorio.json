@@ -1,5 +1,5 @@
 {
- "versao": "8.53.1",
+ "versao": "8.53.2",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -130,7 +130,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 33
+   "funcoes": 35
   },
   "feriados.listar": {
    "tabelas": [
@@ -232,7 +232,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 37
+   "funcoes": 39
   },
   "documentos.assinaturas": {
    "tabelas": [
@@ -465,8 +465,8 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 38
+   "funcoes": 40
   }
  },
- "funcoes": 158
+ "funcoes": 160
 }

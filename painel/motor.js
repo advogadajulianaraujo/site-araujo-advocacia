@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.1 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.2 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.53.1';
+var MOTOR_VERSAO = '8.53.2';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.53.1';
+var VERSAO = '8.53.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -121,7 +121,7 @@ var ESQUEMA = {
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
-    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id'],
+    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id', 'bairro'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
@@ -161,7 +161,7 @@ var ESQUEMA = {
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
-    'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
+    'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em', 'categoria'], // 8.53: tipo da tarefa (como no ADVBOX)
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
   Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
   SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
@@ -1723,7 +1723,7 @@ function itemPrazo_(z, procs, nomesCli, hoje) {
   var entregue = diaSP_(z.cumprido_em);
   return { tipo: 'prazo', id: z.id, titulo: z.descricao || 'Prazo', numero: z.numero, processo_id: z.processo_id,
     cliente: nomesCli[p.cliente_id] || p.cliente_nome || '', cliente_id: p.cliente_id || '', responsavel: z.responsavel || '',
-    vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''),
+    vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''), categoria: /^ato:/.test(z.observacoes || '') ? 'audiencia' : 'prazo',
     atrasada: !fim && !!z.fatal && z.fatal < hoje, concluida_em: z.cumprido_em || '', concluida_por: z.cumprido_por || '',
     no_prazo: fim ? (!z.fatal || !entregue || entregue <= z.fatal) : null, situacao_prazo: z.situacao, resumo_ia: z.resumo_ia || '' };
 }
@@ -1736,7 +1736,7 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
     etapa: t.etapa || 'afazer', peso: parseInt(t.peso, 10) || 1, atrasada: !fim && !!t.vence_em && t.vence_em < hoje,
     concluida_em: t.concluida_em || '', concluida_por: t.concluida_por || '', criado_por: t.criado_por || '',
     no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '',
-    prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '',
+    prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '', categoria: categoriaTarefa_(t),
     inicial: /\[inicial:/.test(t.descricao || ''), ato: atoDaTarefa_(t.descricao), telefone: (telCli || {})[t.cliente_id] || '',
     wa: ((/\[wa:([a-z]+)\]/.exec(t.descricao || '') || [])[1]) || (/\[inicial:/.test(t.descricao || '') ? 'inicial' : /\[protocolo:/.test(t.descricao || '') ? 'protocolo' : '') };
 }
@@ -1749,6 +1749,25 @@ function atoDaTarefa_(desc) {
 function lerChecklist_(txt) {
   try { var a = JSON.parse(txt || '[]'); return Array.isArray(a) ? a.slice(0, 30).map(function (x) { return { t: String(x.t || '').slice(0, 140), ok: !!x.ok }; }) : []; } catch (e) { return []; }
 }
+var CATEGORIAS_TAREFA = ['cliente', 'peticao', 'protocolo', 'documentos', 'audiencia', 'prazo', 'extrajudicial', 'financeiro', 'administrativo', 'outro'];
+function categoriaTarefa_(t) {
+  if (CATEGORIAS_TAREFA.indexOf(t.categoria) >= 0) return t.categoria;
+  var d = String(t.descricao || ''), x = String(t.titulo || '') + ' ' + d;
+  if (/\[inicial:/.test(d)) return 'peticao';
+  if (/^\s*protocol|\bprotocolar\b/i.test(String(t.titulo || ''))) return 'protocolo';
+  if (/\[(lembrete|retomar|avaliacao|protocolo|wa):/.test(d) || /\b(avisar|ligar|whats|falar com|retornar|cliente: |lembrar o cliente|pedir avalia)/i.test(x)) return 'cliente';
+  if (/\[(ato|agenda|horaato):/.test(d) || /audi[eê]ncia|per[ií]cia|testemunha/i.test(x)) return 'audiencia';
+  if (/\[intim:/.test(d) || /intima[cç][aã]o|prazo/i.test(x)) return 'prazo';
+  if (/\[(assinatura|assinar):/.test(d) || /procura[cç][aã]o|contrato|assinatura|documento|cadastro/i.test(x)) return 'documentos';
+  if (/\[(valor|repasse|pix):/.test(d) || /alvar[aá]|rpv|precat|levantar|repassar|honor[aá]rio|cobran|pagamento|boleto/i.test(x)) return 'financeiro';
+  if (/\[parado:/.test(d) || /peti[cç][aã]o|recurso|contesta|r[eé]plica|manifesta|impulso|embargos|c[aá]lculos?\b|quesitos/i.test(x)) return 'peticao';
+  if (/protocol/i.test(x)) return 'protocolo';
+  if (/extrajudicial|notifica[cç][aã]o|cart[oó]rio|inss|requerimento administrativo|acordo extra|negocia/i.test(x)) return 'extrajudicial';
+  if (/\[google:|instagram|perfil do google|blog|sistema|planilha/i.test(x)) return 'administrativo';
+  return 'outro';
+}
+
+/** Pontos e entregas por pessoa (tarefas e prazos concluídos no período). */
 function pontosPorPessoa_(itens, desde, nomesU) {
   var porNome = {};
   Object.keys(nomesU).forEach(function (k) { porNome[normalizar_(nomesU[k])] = k; });

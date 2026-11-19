@@ -696,6 +696,13 @@
     const vistos = new Set();
     return achados.filter(x => !vistos.has(x.t) && vistos.add(x.t)).sort((a, b) => b.cel - a.cel).map(x => x.t).slice(0, 3);
   }
+  /** 8.53: o endereço guardado termina com ", Bairro"; no formulário o bairro fica no campo dele (sem repetir). */
+  function semBairroNoFim(end, bairro) {
+    end = String(end || ''); bairro = String(bairro || '').trim();
+    if (!bairro) return end;
+    const i = end.toLowerCase().lastIndexOf(', ' + bairro.toLowerCase());
+    return i >= 0 && i + bairro.length + 2 === end.length ? end.slice(0, i) : end;
+  }
   /** Para os links: um número, ou vários separados por "_" (o clique pergunta qual usar). */
   function telefoneWhats(bruto) { return telefonesWhats(bruto).join('_'); }
   /** Cliente com mais de um número: pergunta qual (o último usado vem primeiro e fica lembrado neste computador). */
@@ -1693,7 +1700,7 @@
           atalho('#/audiencias?ver=avisar', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
           atalho('#/', 'Cobranças', ext.cobrancas.length, `${vencemHoje} vencem hoje · ${naoPagos.length} em atraso`, naoPagos.length ? 'alerta' : ''),
           atalho('#/clientes', 'Aniversários', ext.aniversarios.length, 'hoje')),
-        blocoMeuDia, acoes, blocoEsperando,
+        blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
         extras ? null : h('p', { class: 'nota' }, 'O Google está demorando para responder: os blocos abaixo aparecem sozinhos assim que chegarem.'),
         blocoAudNovas,
         h('div', { class: 'ini-duas' }, blocoAudHoje, blocoAudiencias),
@@ -1709,8 +1716,8 @@
           atalho('#/tarefas', 'Atrasadas', meu ? meu.atrasadas : 0, meu && meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu && meu.atrasadas ? 'alerta' : ''),
           atalho('#/prazos', 'Prazos', pz.abertos || 0, pz.vencendo ? `${pz.vencendo} vencem em 5 dias` : 'em aberto no escritório', pz.vencidos ? 'atencao' : ''),
           atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
-        blocoMeuDia, acoes, blocoEsperando,
-        h('div', { class: 'ini-duas' }, blocoAgenda, blocoMinhaSemana),
+        blocoMeuDia, h('div', { class: 'ini-duas' }, blocoOQueFiz(), blocoMinhaSemana), acoes, blocoEsperando,
+        blocoAgenda,
         pill);
       return;
     }
@@ -1722,13 +1729,47 @@
         atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
         atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
       blocoAguardandoOk({ inicio: true }),
-      blocoMeuDia, acoes, blocoEsperando,
+      blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
       blocoAudNovas,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
       ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
       agMini, pill);
   }
 
+  /** 8.53 (pedido da usuária: "uma demanda do que já foi feito, para a pessoa ver o que ELA fez; no Início, bonito"): o relatório da própria
+   *  pessoa — Hoje | Semana | Mês, quantas tarefas e prazos terminou, por TIPO (cores das tarefas), quantos no prazo e a lista. Busca sozinho. */
+  function blocoOQueFiz() {
+    const eu = sessao.usuario.usuario, euNome = sessao.usuario.nome || '';
+    let per = 'semana'; try { per = localStorage.getItem('fiz_per') || 'semana'; } catch (e) { /* ok */ }
+    const corpo = h('div', { class: 'fiz-corpo' }, h('p', { class: 'peq' }, 'Carregando o que você fez…'));
+    const seg = h('div', { class: 'fiz-seg', role: 'group', 'aria-label': 'Período' });
+    const caixa = h('section', { class: 'caixa fiz' }, h('div', { class: 'fiz-topo' }, h('h2', {}, '✅ O que eu fiz'), seg), corpo);
+    let dados = null;
+    const desenhar = () => {
+      seg.replaceChildren(...[['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês']].map(([v, t]) => h('button', { type: 'button', class: 'seg' + (per === v ? ' ativo' : ''), 'aria-pressed': String(per === v),
+        onclick: () => { per = v; try { localStorage.setItem('fiz_per', v); } catch (e) { /* ok */ } desenhar(); } }, t)));
+      if (!dados) return;
+      const hoje = dados.hoje, d = new Date(hoje + 'T12:00:00');
+      const ini = per === 'hoje' ? hoje : per === 'mes' ? hoje.slice(0, 8) + '01' : isoSoma(hoje, -((d.getDay() + 6) % 7));
+      const meus = (dados.itens || []).filter(x => /protocolado|concluido/.test(x.etapa) && x.concluida_em && diaLocal(x.concluida_em) >= ini &&
+        (x.concluida_por === eu || (euNome && x.concluida_por === euNome))).sort((a, b) => a.concluida_em < b.concluida_em ? 1 : -1);
+      const noPrazo = meus.filter(x => x.no_prazo).length;
+      const porTipo = {}; meus.forEach(x => { const c = x.categoria || 'outro'; porTipo[c] = (porTipo[c] || 0) + 1; });
+      const nomePer = per === 'hoje' ? 'hoje' : per === 'mes' ? 'neste mês' : 'nesta semana';
+      corpo.replaceChildren(
+        h('div', { class: 'fiz-num' }, h('b', {}, String(meus.length)), h('span', {}, (meus.length === 1 ? 'tarefa / prazo feito ' : 'tarefas e prazos feitos ') + nomePer),
+          meus.length ? h('span', { class: 'tag mini-tag ' + (noPrazo === meus.length ? 'ok' : 'atencao') }, `${noPrazo} no prazo`) : null),
+        meus.length ? h('div', { class: 'fiz-tipos' }, TIPOS_T.filter(t => porTipo[t[0]]).map(t => h('span', { class: 'tt-chip tt-' + t[0] }, t[1] + ' ' + t[2] + ' ', h('b', {}, String(porTipo[t[0]])))))
+          : h('p', { class: 'peq' }, per === 'hoje' ? 'Ainda nada hoje. Quando terminar algo, marque ✓ em Tarefas ou "✓ Feito" no prazo: aparece aqui.' : 'Nada marcado como feito ' + nomePer + '.'),
+        meus.length ? h('ul', { class: 'fiz-lista' }, meus.slice(0, 8).map(x => h('li', { onclick: () => { location.hash = x.tipo === 'prazo' ? '#/prazo/' + x.id : '#/tarefas?ver=lista'; } },
+          chipTipo(x.categoria, true), h('span', { class: 'fiz-tit' }, x.titulo, x.cliente ? h('small', {}, ' · ' + x.cliente) : null),
+          h('time', {}, new Date(x.concluida_em).toLocaleString('pt-BR', per === 'hoje' ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit' }))))) : null,
+        meus.length > 8 ? h('a', { class: 'peq fiz-mais', href: '#/tarefas?ver=lista' }, `ver todas as ${meus.length} em Tarefas →`) : null);
+    };
+    desenhar();
+    api('tarefas.listar', { dias: 31 }).then(r => { dados = r; desenhar(); }).catch(e => { corpo.replaceChildren(h('p', { class: 'peq' }, 'Não deu para carregar agora: ' + e.message)); });
+    return caixa;
+  }
   /** 8.25 (pedido da usuária): agenda PEQUENA no Início, em tabela (hoje · amanhã · 7 dias), que dá para minimizar (lembra a escolha). */
   function blocoAgendaMini() {
     let aberta = true; try { aberta = localStorage.getItem('inicio_agenda') !== 'fechada'; } catch (e) { /* ok */ }
@@ -2469,8 +2510,8 @@
       h('fieldset', {}, h('legend', {}, 'Endereço e contato'),
         h('div', { class: 'campos' },
           campo('cep', 'CEP', c.cep, { modo: 'numeric', max: 9, dica: 'Preenche rua e cidade sozinho' }),
-          campo('endereco', novo ? 'Endereço (rua e número)' : 'Endereço (rua, número, bairro)', c.endereco, { max: 200, obrigatorio: novo }),
-          campo('bairro', 'Bairro', '', { max: 80, obrigatorio: novo, dica: novo ? 'O CEP preenche sozinho' : 'só se faltar no endereço acima' }),
+          campo('endereco', 'Endereço (rua, número e complemento)', semBairroNoFim(c.endereco, c.bairro), { max: 200, obrigatorio: novo }),
+          campo('bairro', 'Bairro', c.bairro || '', { max: 80, obrigatorio: novo, dica: c.bairro || novo ? 'O CEP preenche sozinho · o PJe pede o bairro' : 'cadastro antigo: o bairro pode estar no fim do endereço — copie para cá' }),
           campo('cidade', 'Cidade', c.cidade, { max: 80 }),
           campo('uf', 'UF', c.uf, { max: 2 }),
           campo('telefone', 'Telefone / WhatsApp', c.telefone, { tipo: 'tel', max: 30 }),
@@ -2515,8 +2556,9 @@
 
     aoEnviar(form, async fd => {
       const dados = Object.fromEntries(fd.entries());
-      // 8.39.8 (pedido da usuária: "bote a opção bairro"): o bairro tem campo próprio e entra no fim do endereço ("Rua X, nº 10, Centro")
-      const bairro = String(dados.bairro || '').trim(); delete dados.bairro;
+      // 8.53 (pedido da usuária: "coloque bairro no cadastro; no PJe precisa"): o bairro é coluna própria (aparece separado na ficha) e também
+      // vai no fim do endereço ("Rua X, nº 10, Centro"), para procurações e contratos continuarem com o endereço inteiro.
+      const bairro = String(dados.bairro || '').trim(); dados.bairro = bairro;
       if (bairro && !String(dados.endereco || '').toLowerCase().includes(bairro.toLowerCase())) dados.endereco = String(dados.endereco || '').trim().replace(/[,\s]+$/, '') + ', ' + bairro;
       if (dados.tipo === 'PJ') { delete dados.rg; delete dados.nascimento; delete dados.estado_civil; delete dados.profissao; delete dados.genero; }
       if (novo) {
@@ -2829,7 +2871,7 @@
           ...dado(pf ? 'CPF' : 'CNPJ', c.cpf_cnpj), ...dado('RG', pf ? c.rg : ''), ...dado('Nascimento', c.nascimento ? dataBR(c.nascimento) + (idade ? ` (${idade} anos)` : '') : ''),
           ...dado('Estado civil', pf ? c.estado_civil : ''), ...dado('Profissão', pf ? c.profissao : ''), ...dado('Representante', pf ? '' : c.representante),
           ...dado('Telefone', c.telefone ? [c.telefone, tel ? h('a', { class: 'fg-wa', href: 'https://wa.me/' + tel, target: '_blank', rel: 'noopener' }, 'WhatsApp') : null] : ''),
-          ...dado('E-mail', c.email), ...dado('Endereço', endereco), ...dado('Área', c.area), ...dado('Tipo de ação', c.tipo_acao), ...dado('Como chegou', c.origem)),
+          ...dado('E-mail', c.email), ...dado('Endereço', endereco), ...dado('Bairro', c.bairro || h('span', { class: 'peq' }, 'falta — o PJe pede (✎ editar)')), ...dado('Área', c.area), ...dado('Tipo de ação', c.tipo_acao), ...dado('Como chegou', c.origem)),
         faltam.length ? h('p', { class: 'fg-falta' }, 'Falta: ', h('b', {}, faltam.join(', ')), ' ', h('button', { type: 'button', class: 'link', onclick: () => abrirAba('cadastro') }, 'completar')) : null);
       const hoje = hojeISO();
       const ativos = r.processos.filter(p => p.status !== 'arquivado');
@@ -4128,7 +4170,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.53.1';
+  const VERSAO_PAINEL = '8.53.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6439,6 +6481,26 @@
   const NOME_PRI = Object.fromEntries(PRIORIDADES);
   const ORD_PRI = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
 
+  /* 8.53 (pedido da usuária: "copiar as tarefas do ADVBOX; às vezes é falar com cliente, protocolo, procuração, petição, extrajudicial"):
+     TIPO de cada tarefa, com ícone e cor. O servidor reconhece o tipo das tarefas do robô (categoriaTarefa_). */
+  const TIPOS_T = [
+    ['cliente', '📞', 'Falar com o cliente', 'Ligar / WhatsApp para '],
+    ['peticao', '📝', 'Petição', 'Fazer petição: '],
+    ['protocolo', '📤', 'Protocolo', 'Protocolar '],
+    ['documentos', '🖋', 'Procuração / documentos', 'Preparar procuração e contrato — '],
+    ['audiencia', '⚖', 'Audiência / perícia', 'Preparar audiência — '],
+    ['prazo', '⏱', 'Prazo / intimação', ''],
+    ['extrajudicial', '🤝', 'Extrajudicial', 'Extrajudicial: '],
+    ['financeiro', '💰', 'Financeiro', ''],
+    ['administrativo', '🗂', 'Administrativo', ''],
+    ['outro', '•', 'Outro', '']];
+  const TIPO_T = Object.fromEntries(TIPOS_T.map(t => [t[0], t]));
+  const chipTipo = (cat, curto) => { const t = TIPO_T[cat] || TIPO_T.outro; return h('span', { class: 'tt-chip tt-' + t[0], title: t[2] }, t[1], curto ? null : ' ' + t[2]); };
+  const adivinharTipo = txt => { const x = String(txt || '');
+    return /\b(lig(ar|ue)|whats|avisar|falar com|retornar|mandar mensagem|cliente)\b/i.test(x) ? 'cliente' : /protocol/i.test(x) ? 'protocolo'
+      : /procura[cç][aã]o|contrato|assinatura|documento|declara[cç]/i.test(x) ? 'documentos' : /audi[eê]ncia|per[ií]cia|testemunha/i.test(x) ? 'audiencia'
+      : /peti[cç][aã]o|recurso|contesta|r[eé]plica|manifesta|embargos|inicial|c[aá]lculo/i.test(x) ? 'peticao'
+      : /extrajudicial|notifica|cart[oó]rio|inss|acordo|negocia/i.test(x) ? 'extrajudicial' : /alvar|rpv|pagamento|cobran|honor/i.test(x) ? 'financeiro' : ''; };
   async function telaTarefas(params) {
     carregando();
     const r = await api('tarefas.listar', {});
@@ -6448,6 +6510,7 @@
     const tipo = params.get('tipo') || '';
     const so = params.get('so') || '';
     const pri = params.get('pri') || '';
+    const cat = params.get('cat') || '';
     const busca = params.get('q') || '';
     const visao = ['lista', 'quadro', 'dia'].includes(params.get('ver')) ? params.get('ver') : (localStorageGet('tarefas_visao86') || 'dia');
     const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/tarefas' + (q.toString() ? '?' + q : ''); };
@@ -6457,7 +6520,7 @@
     const passa = x => (quem === 'todos' || (quem === 'eu' ? x.responsavel === eu : quem === 'ninguem' ? !x.responsavel : x.responsavel === quem)) &&
       (!tipo || x.tipo === tipo) && (so !== 'atrasadas' || x.atrasada) && (so !== 'hoje' || x.vence_em === hoje) &&
       (so !== 'semana' || (x.vence_em && x.vence_em <= isoSoma(hoje, 7))) &&
-      (!pri || (x.prioridade || 'normal') === pri) && (!qn || semAcentoG([x.titulo, x.cliente, x.numero, x.descricao].join(' ')).includes(qn));
+      (!pri || (x.prioridade || 'normal') === pri) && (!cat || (x.categoria || 'outro') === cat) && (!qn || semAcentoG([x.titulo, x.cliente, x.numero, x.descricao].join(' ')).includes(qn));
     const itens = r.itens.filter(passa);
     const abertos = itens.filter(x => !/protocolado|concluido/.test(x.etapa));
     const atrasadas = abertos.filter(x => x.atrasada).length;
@@ -6488,7 +6551,7 @@
         ondragstart: ev => { ev.dataTransfer.setData('text/plain', x.tipo + '|' + x.id); el.classList.add('arrastando'); },
         ondragend: () => el.classList.remove('arrastando'),
         onclick: () => abrir(x), onkeydown: ev => { if (ev.key === 'Enter') el.click(); } },
-        h('div', { class: 'ct-topo' }, h('span', { class: 'tag ' + (x.tipo === 'prazo' ? 'info' : '') }, x.tipo === 'prazo' ? 'prazo' : x.inicial ? 'inicial' : 'tarefa'),
+        h('div', { class: 'ct-topo' }, chipTipo(x.categoria),
           x.prioridade && x.prioridade !== 'normal' ? h('span', { class: 'tag mini-tag pri-' + x.prioridade }, NOME_PRI[x.prioridade]) : null,
           x.provisorio ? h('span', { class: 'tag atencao' }, 'provisório') : null,
           x.repetir ? h('span', { class: 'tag mini-tag', title: 'Repete ' + x.repetir }, '↻ ' + x.repetir) : null,
@@ -6526,7 +6589,7 @@
         h('thead', {}, h('tr', {}, ['', 'Tarefa', 'Cliente / processo', 'Responsável', 'Entregar até', 'Etapa', ''].map(t => h('th', { scope: 'col' }, t)))),
         h('tbody', {}, l.map(x => h('tr', { class: (x.atrasada ? 'atrasada ' : '') + 'pri-linha-' + (x.prioridade || 'normal'), onclick: () => abrir(x) },
           h('td', { 'data-r': 'Prioridade' }, h('span', { class: 'pri-ponto pri-' + (x.prioridade || 'normal'), title: NOME_PRI[x.prioridade || 'normal'] })),
-          h('td', { 'data-r': 'Tarefa' }, h('strong', {}, x.titulo), h('div', { class: 'peq' }, x.tipo === 'prazo' ? 'prazo processual' : x.inicial ? 'petição inicial' : 'tarefa', x.repetir ? ' · ↻ ' + x.repetir : ''), progresso(x)),
+          h('td', { 'data-r': 'Tarefa' }, h('strong', {}, x.titulo), h('div', { class: 'peq' }, chipTipo(x.categoria), x.repetir ? ' · ↻ ' + x.repetir : ''), progresso(x)),
           h('td', { 'data-r': 'Cliente' }, [x.cliente, x.numero].filter(Boolean).join(' · ') || '—'),
           h('td', { 'data-r': 'Responsável' }, x.responsavel ? nomeDe(x.responsavel) : h('span', { class: 'peq' }, 'ninguém')),
           h('td', { 'data-r': 'Entregar até' }, x.vence_em ? dataBR(x.vence_em) : '—', ' ', x.vence_em && !/protocolado|concluido/.test(x.etapa) ? etiquetaContagem(x.vence_em) : null),
@@ -6555,7 +6618,7 @@
           : h('button', { type: 'button', class: 'td-check', title: 'Marcar como feito', 'aria-label': 'Marcar como feito: ' + x.titulo, onclick: ev => { ev.stopPropagation(); feitoRapido(x, el); } }, '');
         el.append(check,
           h('div', { class: 'td-txt' },
-            h('div', { class: 'td-tit' }, x.titulo, x.prioridade === 'urgente' ? h('span', { class: 'tag mini-tag pri-urgente' }, 'Urgente') : null, x.tipo === 'prazo' ? h('span', { class: 'tag mini-tag info' }, 'prazo') : null),
+            h('div', { class: 'td-tit' }, chipTipo(x.categoria, true), ' ', x.titulo, x.prioridade === 'urgente' ? h('span', { class: 'tag mini-tag pri-urgente' }, 'Urgente') : null),
             h('div', { class: 'peq' }, [x.cliente, x.numero, quem !== 'eu' && x.responsavel ? '👤 ' + nomeDe(x.responsavel) : '', (x.checklist || []).length ? `☑ ${(x.checklist || []).filter(i => i.ok).length}/${x.checklist.length}` : ''].filter(Boolean).join(' · '))),
           h('div', { class: 'td-lado', onclick: ev => ev.stopPropagation() },
             x.ato ? botaoWhatsAto(x) : x.wa && MOTIVO_WA[x.wa] ? botaoWhatsTarefa(x) : null,
@@ -6563,8 +6626,14 @@
         return el;
       };
       // anotar rápido: o que, para quem, quando
+      let tipoMexido = false;
+      const selTipo = h('select', { name: 'categoria', 'aria-label': 'Tipo da tarefa', class: 'td-tipo', onchange: () => { tipoMexido = true; } },
+        TIPOS_T.filter(t => t[0] !== 'prazo').map(t => h('option', { value: t[0] }, t[1] + ' ' + t[2])));
+      selTipo.value = 'outro';
       const fAdd = h('form', { class: 'td-add', novalidate: true },
-        h('input', { name: 'titulo', placeholder: 'O que precisa ser feito? (ex.: ligar para a Maria sobre os documentos)', maxlength: 200, 'aria-label': 'Nova tarefa', required: true }),
+        h('input', { name: 'titulo', placeholder: 'O que precisa ser feito? (ex.: ligar para a Maria sobre os documentos)', maxlength: 200, 'aria-label': 'Nova tarefa', required: true,
+          oninput: ev => { if (!tipoMexido) { const g = adivinharTipo(ev.target.value); if (g) selTipo.value = g; } } }),
+        selTipo,
         h('select', { name: 'responsavel', 'aria-label': 'Para quem' }, r.usuarios.map(u => h('option', { value: u.usuario, selected: u.usuario === (quem !== 'eu' && quem !== 'todos' && quem !== 'ninguem' ? quem : eu) }, u.usuario === eu ? 'Para mim' : 'Para ' + u.nome))),
         h('select', { name: 'quando', 'aria-label': 'Quando' }, [['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['semana', 'Esta semana'], ['', 'Sem data']].map(([v, t]) => h('option', { value: v }, t))),
         h('button', { type: 'submit', class: 'btn' }, '+ Anotar'));
@@ -6573,7 +6642,7 @@
         const titulo = fAdd.titulo.value.trim(); if (!titulo) { fAdd.titulo.focus(); return; }
         const q = fAdd.quando.value, vence = q === 'hoje' ? hoje : q === 'amanha' ? amanha : q === 'semana' ? isoSoma(hoje, 4) : '';
         fAdd.querySelector('button').disabled = true;
-        try { await api('tarefas.salvar', { tarefa: { titulo, responsavel: fAdd.responsavel.value, vence_em: vence, prioridade: 'normal', peso: 1 } }); avisar('Anotado ✓'); await apiFresco('tarefas.listar', {}).catch(() => null); rota(); }
+        try { await api('tarefas.salvar', { tarefa: { titulo, categoria: selTipo.value, responsavel: fAdd.responsavel.value, vence_em: vence, prioridade: 'normal', peso: 1 } }); avisar('Anotado ✓'); await apiFresco('tarefas.listar', {}).catch(() => null); rota(); }
         catch (e) { avisar(e.message, true); fAdd.querySelector('button').disabled = false; }
       });
       const blocos = grupos.map(([nome, f, cls]) => {
@@ -6582,7 +6651,9 @@
         return h('section', { class: 'td-grupo ' + cls }, h('h2', {}, nome, h('span', { class: 'seg-n' }, String(l.length))), h('ul', { class: 'td-lista' }, l.slice(0, 60).map(linha)));
       }).filter(Boolean);
       const feitasHoje = itens.filter(x => /protocolado|concluido/.test(x.etapa) && diaLocal(x.concluida_em) === hoje);
-      return h('div', { class: 'td-dia' }, h('section', { class: 'caixa' }, fAdd),
+      const modelos = h('div', { class: 'td-modelos', 'aria-label': 'Modelos de tarefa' }, h('span', { class: 'peq' }, 'Começar por:'),
+        TIPOS_T.filter(t => t[3]).map(t => h('button', { type: 'button', class: 'tt-chip tt-' + t[0] + ' tt-bt', onclick: () => { fAdd.titulo.value = t[3]; selTipo.value = t[0]; tipoMexido = true; fAdd.titulo.focus(); } }, t[1] + ' ' + t[2])));
+      return h('div', { class: 'td-dia' }, h('section', { class: 'caixa' }, fAdd, modelos),
         blocos.length ? blocos : h('div', { class: 'caixa vazio-t' }, 'Nada pendente aqui. 🎉 Use o campo acima para anotar o que precisa ser feito.'),
         feitasHoje.length ? h('details', { class: 'td-feitas' }, h('summary', {}, `✓ ${feitasHoje.length} feita(s) hoje`), h('ul', { class: 'td-lista' }, feitasHoje.map(x => h('li', { class: 'td-item feita' }, h('span', { class: 'td-check marcado' }, '✓'), h('div', { class: 'td-txt' }, h('div', { class: 'td-tit' }, x.titulo), h('div', { class: 'peq' }, x.concluida_por ? 'feito por ' + nomeDe(x.concluida_por) : '')))))) : null);
     };
@@ -6625,7 +6696,10 @@
         h('div', { class: 'chips' },
           [['', 'Tudo'], ['prazo', 'Só prazos'], ['tarefa', 'Só tarefas']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (tipo === v ? ' ativo' : ''), onclick: () => ir({ tipo: v }) }, rot)),
           [['atrasadas', 'Atrasadas'], ['hoje', 'Para hoje'], ['semana', 'Próximos 7 dias']].map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro' + (so === v ? ' ativo' : ''), onclick: () => ir({ so: so === v ? '' : v }) }, rot)),
-          PRIORIDADES.slice(0, 2).map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro pri-chip-' + v + (pri === v ? ' ativo' : ''), onclick: () => ir({ pri: pri === v ? '' : v }) }, '⚑ ' + rot)))),
+          PRIORIDADES.slice(0, 2).map(([v, rot]) => h('button', { type: 'button', class: 'chip-filtro pri-chip-' + v + (pri === v ? ' ativo' : ''), onclick: () => ir({ pri: pri === v ? '' : v }) }, '⚑ ' + rot))),
+        h('div', { class: 'chips tt-filtros' }, h('span', { class: 'peq' }, 'Tipo:'),
+          TIPOS_T.map(t => { const n = r.itens.filter(x => !/protocolado|concluido/.test(x.etapa) && (x.categoria || 'outro') === t[0] && (quem === 'todos' || (quem === 'eu' ? x.responsavel === eu : quem === 'ninguem' ? !x.responsavel : x.responsavel === quem))).length;
+            return n || cat === t[0] ? h('button', { type: 'button', class: 'tt-chip tt-' + t[0] + ' tt-bt' + (cat === t[0] ? ' ativo' : ''), 'aria-pressed': String(cat === t[0]), onclick: () => ir({ cat: cat === t[0] ? '' : t[0] }) }, t[1] + ' ' + t[2] + ' ', h('b', {}, String(n))) : null; }))),
       visao === 'dia' ? listaDia() : visao === 'lista' ? tabelaLista() : comSetas(h('div', { class: 'quadro-t' }, colunas)),
       visao === 'dia' ? null : placar, cfg);
   }
@@ -6656,7 +6730,8 @@
     const form = h('form', { class: 'campos', novalidate: true },
       h('h2', { class: 'largo' }, novo ? 'Nova tarefa' : 'Tarefa'),
       campo('titulo', 'O que precisa ser feito', x.titulo, { obrigatorio: true, largo: true, dica: 'Ex.: Pedir documentos para a cliente, protocolar juntada…' }),
-      campo('responsavel', 'Responsável', x.responsavel, { opcoes: [['', '— ninguém —']].concat(r.usuarios.map(u => [u.usuario, u.nome])) }),
+      campo('categoria', 'Tipo da tarefa', x.categoria && x.categoria !== 'prazo' ? x.categoria : (adivinharTipo(x.titulo) || 'outro'), { opcoes: TIPOS_T.filter(t => t[0] !== 'prazo').map(t => [t[0], t[1] + ' ' + t[2]]) }),
+      campo('responsavel', 'Responsável', x.responsavel || (novo ? sessao.usuario.usuario : ''), { opcoes: (novo ? [] : [['', '— ninguém —']]).concat(r.usuarios.map(u => [u.usuario, u.nome])), dica: novo ? 'Toda tarefa fica com alguém: escolha quem vai fazer.' : '' }),
       campo('vence_em', 'Entregar até', x.vence_em, { tipo: 'date' }),
       campo('prioridade', 'Prioridade', x.prioridade || 'normal', { opcoes: PRIORIDADES }),
       campo('repetir', 'Repetir', x.repetir || '', { opcoes: [['', 'Não repete'], ['semanal', 'Toda semana'], ['mensal', 'Todo mês']] }),
