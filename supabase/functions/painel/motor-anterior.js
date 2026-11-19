@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.51.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.51.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.51.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.51.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.51.0';
+var VERSAO = '8.51.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3676,9 +3676,15 @@ function paramsAvisoAto_(a, q, nomeCli, ficha) {
   var quando = q === 'dia' ? 'HOJE' + hora : q === 'vespera' ? (diffDias_(a.data, hojeSP_()) === 1 ? 'amanhã (' + sem + ', ' + dm + ')' : 'na ' + sem + ' (' + dm + ')') + hora : 'na ' + sem + ', ' + dm + hora;
   var nomeAto = a.tipo === 'pericia' ? 'perícia' : a.tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação';
   var modo = (ficha && ficha.modo) || '', link = (ficha && ficha.link) || '';
-  var onde = modo === 'online' ? (link ? 'Será por vídeo, neste link: ' + link + '.' : 'Será por vídeo; mandaremos o link antes.') : a.local ? 'Local: ' + String(a.local).slice(0, 150) + '.' : modo === 'presencial' ? 'Será presencial.' : '';
-  var oque = a.tipo === 'pericia' ? 'Leve documento com foto e todos os exames, laudos e atestados.' : a.tipo === 'instrucao' ? 'Leve documento com foto, chegue 30 minutos antes e confirme com as suas testemunhas.' : 'É uma tentativa de acordo. Leve documento com foto e chegue 30 minutos antes.';
-  return [nome, nomeAto, quando, (onde ? onde + ' ' : '') + oque];
+  // 8.51.1 (pedido da usuária: "às vezes é online, PRINCIPALMENTE online; damos a opção de vir aqui no escritório — tem que tomar cuidado"):
+  // a "sala" do PJe é a sala virtual da vara: nunca vai para o cliente. Audiência = online, a não ser que a ficha diga "presencial".
+  var onde, oque;
+  if (a.tipo === 'pericia') { onde = ''; oque = 'Leve documento com foto e todos os exames, laudos e atestados que tiver.'; }
+  else if (modo === 'presencial') { onde = 'Será PRESENCIAL' + (a.local && !/sala|videoconf|virtual/i.test(a.local) ? ', em ' + String(a.local).slice(0, 120) : ', no fórum') + '. Chegue 30 minutos antes, com documento com foto.'; oque = ''; }
+  else { onde = 'Será ONLINE (por vídeo)' + (link ? ', neste link: ' + link : '; mandamos o link antes') + '. Se preferir, você pode participar aqui do nosso escritório: é só nos avisar.'; oque = 'Tenha em mãos um documento com foto.'; }
+  if (a.tipo === 'instrucao') oque = (oque ? oque + ' ' : '') + 'Confirme com as suas testemunhas.';
+  else if (a.tipo !== 'pericia') oque = (oque ? oque + ' ' : '') + 'É uma tentativa de acordo.';
+  return [nome, nomeAto, quando, ((onde ? onde + ' ' : '') + oque).trim()];
 }
 function avisosAutomaticos_(ctx) {
   if (config_('WHATS_AVISO_AUTO') === 'nao' || !whatsToken_() || !config_('WHATS_PHONE_ID')) return 0;

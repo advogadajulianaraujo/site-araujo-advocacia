@@ -222,3 +222,53 @@ console.log("fim 850c");
   C.UrlFetchApp.fetch = f0;
 }
 console.log("fim 851");
+// 8.51.2: travas do aviso automático (revisão "sem brecha")
+{
+  let modo = 'ok'; const enviados = [], f0 = C.UrlFetchApp.fetch;
+  C.UrlFetchApp.fetch = (url, op) => {
+    if (!/graph\.facebook\.com/.test(url)) return f0(url, op);
+    const resp = (code, o) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(o) });
+    if (/message_templates/.test(url)) return resp(200, { data: [{ name: 'aviso_audiencia_araujo', status: 'APPROVED' }] });
+    if (/\/messages$/.test(url)) { if (modo === 'instavel') return resp(503, { error: { message: 'Service temporarily unavailable' } }); if (modo === 'recusa') return resp(400, { error: { message: 'Recipient phone number not in allowed list', code: 131030 } }); enviados.push(JSON.parse(op.payload)); return resp(200, { messages: [{ id: 'wamid.X' + enviados.length }] }); }
+    return resp(200, {});
+  };
+  const hoje = C.hojeSP_(), dep = C.somarDias_(hoje, 6), tabT = C.tabela_('Tarefas'), tabE = C.tabela_('Eventos'), fichas = C.fichasAtos_();
+  const cli = C.tabela_('Clientes').linhas.find(c => /99999-1234/.test(c.telefone || ''));
+  const pr = C.tabela_('Processos').linhas.find(p => p.numero && p.id);
+  const base = { etapa: 'afazer', situacao: 'ativa', criado_em: new Date().toISOString(), responsavel: 'maria', processo_id: pr.id, numero: pr.numero, cliente_id: cli.id };
+  const nova = (id, k, q, data, hora, extra) => C.inserirLinha_(tabT, Object.assign({ id, titulo: id, descricao: 'x\n[ato:conciliacao|' + data + '|' + hora + '|Sala Principal - VARA]\n[lembrete:' + k + (q === 'semana' ? '' : '|' + q) + ']' }, base, extra || {}));
+  const T = id => C.tabela_('Tarefas').linhas.find(t => t.id === id);
+  const rodar = h => C.avisosAutomaticos_({ agora: new Date(hoje + 'T' + h + ':00-03:00') });
+  // (a) falha passageira do Meta → não vai para a secretaria; tenta na próxima rodada e sai
+  nova('Ta', 'Ka', 'semana', dep, '10:00'); modo = 'instavel'; rodar('10:00');
+  assert(!/whatsauto/.test(T('Ta').descricao) && !T('Ta').concluida_em, 'falha passageira do Meta: a tarefa espera a próxima rodada (não vira falha)');
+  modo = 'ok'; rodar('11:00'); assert(/whatsauto:enviado/.test(T('Ta').descricao) && enviados.length === 1, 'na rodada seguinte o aviso sai');
+  // (b) recusa definitiva → secretaria
+  nova('Tb', 'Kb', 'semana', dep, '11:00'); modo = 'recusa'; rodar('11:10'); modo = 'ok';
+  assert(/whatsauto:falhou/.test(T('Tb').descricao) && !T('Tb').concluida_em, 'número recusado pelo Meta: fica com a secretaria');
+  // (c) a mesma mensagem nunca sai duas vezes (marca nas Propriedades, mesmo que a planilha "perca" a gravação)
+  nova('Tc', 'Ka', 'semana', dep, '10:00'); const antes = enviados.length; rodar('11:20');
+  assert(enviados.length === antes && /whatsauto:enviado/.test(T('Tc').descricao), 'tarefa repetida do mesmo aviso: não manda de novo, só fecha');
+  // (d) secretaria já avisou → não manda
+  C.inserirLinha_(fichas.tab, { chave: 'Kd', numero: pr.numero, data: dep, hora: '09:00', tipo: 'conciliacao', aviso_semana_em: new Date().toISOString(), aviso_semana_por: 'Maria', criado_em: new Date().toISOString() });
+  nova('Td', 'Kd', 'semana', dep, '09:00'); const a2 = enviados.length; rodar('11:30');
+  assert(enviados.length === a2 && /ja-avisado/.test(T('Td').descricao), 'secretaria já tinha avisado: robô não manda');
+  // (e) audiência cancelada na agenda → não manda e fecha
+  C.inserirLinha_(tabE, { chave: 'ato|' + pr.numero + '|audiência|' + C.somarDias_(hoje, 8) + '|10:00', tipo: 'audiência de conciliação', numero: pr.numero, data: C.somarDias_(hoje, 8), hora: '10:00', evento_id: 'apagado (o aviso do PJe diz que este ato foi cancelado)', criado_em: new Date().toISOString() });
+  nova('Te', 'Ke', 'semana', C.somarDias_(hoje, 8), '10:00'); const a3 = enviados.length; rodar('11:40');
+  assert(enviados.length === a3 && T('Te').situacao === 'cancelada', 'audiência cancelada: aviso não sai e a tarefa fecha');
+  // (f) aviso do dia depois do horário da audiência → não manda
+  nova('Tf', 'Kf', 'dia', hoje, '09:00'); const a4 = enviados.length; rodar('10:15');
+  assert(enviados.length === a4 && !T('Tf').concluida_em, 'aviso do dia depois do horário: não manda (fica com a secretaria)');
+  // (g) a "Sala Principal" do PJe não aparece; online + escritório
+  const ult = enviados[0].template.components[0].parameters.map(x => x.text).join(' | ');
+  assert(!/Sala/.test(ult) && /ONLINE/.test(ult) && /escritório/.test(ult), 'mensagem sem a sala virtual: ' + ult);
+  // (h) empresa: nome inteiro; resposta "ok, mas não vou poder ir" vai para a equipe
+  assert(C.paramsAvisoAto_({ tipo: 'conciliacao', data: dep, hora: '10:00' }, 'semana', 'JD ALIMENTOS LTDA', null)[0] === 'JD ALIMENTOS LTDA', 'cliente empresa: nome inteiro');
+  const conv = C.conversaDoTelefone_('5548999991234', '');
+  C.PropertiesService.getScriptProperties().setProperty('AVISO_WA_99991234', JSON.stringify({ chave: 'Ka', q: 'semana', data: dep, numero: pr.numero, em: new Date().toISOString() }));
+  const r2 = C.respostaAvisoAto_(conv, 'ok, mas não vou poder ir');
+  assert(r2 && r2.equipe && !r2.resposta, '"ok, mas não vou poder ir" → equipe (não é confirmação)');
+  C.UrlFetchApp.fetch = f0;
+}
+console.log("fim 851b");

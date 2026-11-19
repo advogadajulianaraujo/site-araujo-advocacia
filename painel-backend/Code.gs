@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.51.1';
+var VERSAO = '8.51.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3623,7 +3623,7 @@ function telWhatsServidor_(t) {
 }
 /** Monta as 4 partes do modelo: nome, o ato, quando, o que fazer. */
 function paramsAvisoAto_(a, q, nomeCli, ficha) {
-  var nome = primeiroNomeTxt_(nomeCli) || 'tudo bem';
+  var nome = /\b(ltda|s\/?a|eireli|epp|me|cia|com[eé]rcio|ind[uú]stria|servi[cç]os|associa|condom[ií]nio)\b|\d/i.test(String(nomeCli || '')) ? String(nomeCli).trim().slice(0, 60) : (primeiroNomeTxt_(nomeCli) || 'tudo bem');
   var dt = new Date(a.data + 'T12:00:00Z'), sem = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'][dt.getUTCDay()];
   var dm = a.data.slice(8, 10) + '/' + a.data.slice(5, 7), hora = a.hora ? ', às ' + a.hora : '';
   var quando = q === 'dia' ? 'HOJE' + hora : q === 'vespera' ? (diffDias_(a.data, hojeSP_()) === 1 ? 'amanhã (' + sem + ', ' + dm + ')' : 'na ' + sem + ' (' + dm + ')') + hora : 'na ' + sem + ', ' + dm + hora;
@@ -3639,6 +3639,8 @@ function paramsAvisoAto_(a, q, nomeCli, ficha) {
   else if (a.tipo !== 'pericia') oque = (oque ? oque + ' ' : '') + 'É uma tentativa de acordo.';
   return [nome, nomeAto, quando, ((onde ? onde + ' ' : '') + oque).trim()];
 }
+/** Resumo curto e estável de um texto (para nomes de marcas nas Propriedades). */
+function hashCurto_(t) { var h1 = 5381, h2 = 52711; t = String(t || ''); for (var i = 0; i < t.length; i++) { var c = t.charCodeAt(i); h1 = (h1 * 33) ^ c; h2 = (h2 * 33) ^ c; h1 |= 0; h2 |= 0; } return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36); }
 function avisosAutomaticos_(ctx) {
   if (config_('WHATS_AVISO_AUTO') === 'nao' || !whatsToken_() || !config_('WHATS_PHONE_ID')) return 0;
   var agora = (ctx && ctx.agora) || new Date(), hm = +Utilities.formatDate(agora, TZ, 'H') * 60 + +Utilities.formatDate(agora, TZ, 'm');
@@ -3656,10 +3658,26 @@ function avisosAutomaticos_(ctx) {
     if (a.data < hojeSP_()) return;
     var p = procs[t.numero] || {}, c = clis[t.cliente_id || p.cliente_id] || {}, tel = telWhatsServidor_(c.telefone), f = fichas.porChave[chave];
     var quando = new Date().toISOString();
+    var fechar = function (motivo) { atualizarLinha_(tabT, t, { situacao: 'cancelada', descricao: t.descricao + '\n[whatsauto:cancelado]', historico: historicoMais_(t.historico, { nome: 'robô' }, motivo), atualizado_em: quando, atualizado_por: 'robô' }); };
+    // 8.51.2 travas (revisão "sem brecha"): (1) nunca manda o mesmo aviso duas vezes — a marca fica nas Propriedades ANTES da planilha,
+    // então nem uma gravação perdida depois do envio repete a mensagem; (2) a secretaria já avisou → não manda; (3) resultado já anotado
+    // (acordo, redesignada, não houve) → não manda; (4) ato cancelado/remarcado na agenda → não manda e fecha a tarefa; (5) aviso do dia
+    // depois do horário da audiência → não manda (fica com a secretaria).
+    var props = PropertiesService.getScriptProperties(), marcaEnv = 'AVISO_ENV_' + hashCurto_(chave + '|' + q);
+    if (props.getProperty(marcaEnv)) { atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: quando, concluida_por: 'robô', ok_por: 'robô', ok_em: quando, descricao: t.descricao + '\n[whatsauto:enviado]', atualizado_em: quando, atualizado_por: 'robô' }); return; }
+    if (f && f['aviso_' + q + '_em']) { atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: quando, concluida_por: 'robô', ok_por: 'robô', ok_em: quando, descricao: t.descricao + '\n[whatsauto:ja-avisado]', atualizado_em: quando, atualizado_por: 'robô' }); return; }
+    if (f && (jsonAto_(f.acordo).resultado || jsonAto_(f.preparo).resultado)) return fechar('aviso não mandado: o resultado da audiência já foi anotado');
+    var evs = (ctx && ctx.eventos ? ctx.eventos : tabela_('Eventos')).linhas.filter(function (e) { return e.numero === a.numero && (e.data === a.data || String(e.chave || '').split('|')[3] === a.data); });
+    if (evs.length && evs.every(function (e) { return /apagado/.test(e.evento_id || '') || e.data !== a.data; })) return fechar('aviso não mandado: a audiência foi cancelada ou mudou de data na agenda');
+    if (q === 'dia' && a.hora && a.data === hojeSP_() && Utilities.formatDate(agora, TZ, 'HH:mm') >= a.hora) return;
     var marcaFalha = function (motivo) { atualizarLinha_(tabT, t, { descricao: t.descricao + '\n[whatsauto:falhou]', historico: historicoMais_(t.historico, { nome: 'robô' }, 'WhatsApp automático não saiu (' + motivo + '): avisar à mão'), atualizado_em: quando, atualizado_por: 'robô' }); falhas.push((c.nome || t.numero) + ': ' + motivo); };
     if (!tel) return marcaFalha('cliente sem telefone válido no cadastro');
+    var enviado = false;
     try {
-      var waId = whatsEnviarModelo_(tel, paramsAvisoAto_(a, q, c.nome || p.cliente_nome, f));
+      props.setProperty(marcaEnv, quando); enviado = true;
+      var waId;
+      try { waId = whatsEnviarModelo_(tel, paramsAvisoAto_(a, q, c.nome || p.cliente_nome, f)); }
+      catch (eEnv) { props.deleteProperty(marcaEnv); enviado = false; if (/timeout|tempor|try again|rate|limit|5\d\d|unavailable|interno|internal/i.test(String(eEnv.message || eEnv)) && !/131026|131047|132/.test(String(eEnv.message || eEnv))) return; throw eEnv; }
       var conv = conversaDoTelefone_(tel, c.nome || '');
       registrarMsg_(conv, 'saida', 'modelo', '[Aviso automático — ' + NOME_AVISO_ATO[q] + '] ' + paramsAvisoAto_(a, q, c.nome || p.cliente_nome, f).join(' | '), waId, 'robô');
       PropertiesService.getScriptProperties().setProperty('AVISO_WA_' + tel.slice(-8), JSON.stringify({ chave: chave, q: q, data: a.data, numero: t.numero, em: quando }));
@@ -3668,7 +3686,11 @@ function avisosAutomaticos_(ctx) {
       atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: quando, concluida_por: 'robô', ok_por: 'robô', ok_em: quando, descricao: t.descricao + '\n[whatsauto:enviado]',
         historico: historicoMais_(t.historico, { nome: 'robô' }, 'aviso enviado sozinho pelo WhatsApp oficial para ' + tel), atualizado_em: quando, atualizado_por: 'robô' });
       n++;
-    } catch (e) { marcaFalha(String(e.message || e).slice(0, 120)); }
+    } catch (e) {
+      // a mensagem JÁ saiu e algo depois falhou: não devolve para a secretaria (ela mandaria de novo) — a marca fecha a tarefa na próxima rodada
+      if (enviado) { try { atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: quando, concluida_por: 'robô', ok_por: 'robô', ok_em: quando, descricao: t.descricao + '\n[whatsauto:enviado]', atualizado_em: quando, atualizado_por: 'robô' }); n++; } catch (e2) { /* fecha na próxima */ } }
+      else marcaFalha(String(e.message || e).slice(0, 120));
+    }
   });
   if (n || falhas.length) registrar_('robô', 'whatsapp ao cliente', n + ' aviso(s) de audiência enviado(s) sozinho(s)' + (falhas.length ? '; ' + falhas.length + ' ficaram para a secretaria: ' + falhas.join('; ').slice(0, 300) : ''));
   return n;
@@ -3681,7 +3703,9 @@ function respostaAvisoAto_(conv, texto) {
   if (!av.em || Date.now() - Date.parse(av.em) > 3 * 86400000) { props.deleteProperty(k); return null; }
   var t = String(texto || '').trim();
   props.deleteProperty(k);
-  if (t.length <= 80 && /^(sim|ok|okay|certo|confirm|combinado|vou|estarei|irei|beleza|blz|obrigad|recebi|ciente|t[aá] bom|ta|pode deixar|perfeito|👍|🙏|✅|positivo)/i.test(normalizar_(t) || t)) {
+  var nt = normalizar_(t);
+  var negativo = /\b(nao|n|nem|imprevist|remarc|adiar|doente|hospital|viaj|trabalh|outro dia|mudar|cancel|presencial|escritorio|link|duvida)\b|\?/.test(nt);
+  if (t.length <= 80 && !negativo && /^(sim|ok|okay|certo|confirm|combinado|vou|estarei|irei|beleza|blz|obrigad|recebi|ciente|ta bom|ta|pode deixar|perfeito|positivo|👍|🙏|✅)/i.test(nt || t)) {
     try { var fichas = fichasAtos_(), f = fichas.porChave[av.chave]; if (f) atualizarLinha_(fichas.tab, f, { obs: ((f.obs || '') + '\nCliente confirmou pelo WhatsApp (' + NOME_AVISO_ATO[av.q] + ') em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ': "' + t.slice(0, 60) + '"').trim(), atualizado_em: new Date().toISOString(), atualizado_por: 'robô' }); } catch (e) { /* segue */ }
     return { resposta: 'Perfeito, obrigada pela confirmação! Qualquer dúvida ou imprevisto, é só chamar por aqui.' };
   }

@@ -1883,3 +1883,9 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   que vem do PJe ("Sala 1", "Sala Principal - VARA…", videoconferência) é a sala VIRTUAL da vara e nunca vai para o cliente. Aviso de audiência
   (automático `paramsAvisoAto_` e o do botão `textoAvisoAto`) = "Será ONLINE (por vídeo)… Se preferir, você pode participar aqui do nosso
   escritório: é só nos avisar", salvo quando a ficha da audiência está marcada PRESENCIAL ("no fórum" / endereço real). Perícia: só o que levar.
+- 8.51.2 (revisão "sem brecha" do aviso automático, `avisosAutomaticos_`): marca do envio nas Propriedades ANTES da planilha (AVISO_ENV_<hashCurto_>):
+  o mesmo aviso nunca sai duas vezes, nem se a gravação na planilha se perder depois do envio; secretaria já avisou (ficha aviso_*_em) → não manda;
+  resultado da audiência já anotado ou ato cancelado/remarcado na agenda (Eventos "apagado"/outra data) → não manda e fecha a tarefa; aviso do dia
+  depois do horário → não manda; falha passageira do Meta (503/timeout) → tenta na próxima rodada (não vira tarefa); recusa definitiva → secretaria;
+  mensagem já saiu e algo depois falhou → tarefa fecha (a secretaria não manda de novo). Cliente empresa (LTDA, CNPJ…) → nome inteiro. Resposta com
+  "não", "?", imprevisto, remarcar, presencial, escritório, link… → equipe (não é confirmação).
