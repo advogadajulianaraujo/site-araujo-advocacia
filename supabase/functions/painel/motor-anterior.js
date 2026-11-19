@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.50.3 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.50.3';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.51.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.51.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.50.3';
+var VERSAO = '8.51.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3244,6 +3244,7 @@ function rodarRobo_(quem) {
     try { limparAtosImpossiveis_(ctx); } catch (eLA) { erros.push('Agenda (limpeza): ' + (eLA.message || eLA)); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
+    try { avisosAutomaticos_(ctx); } catch (eW) { erros.push('Avisos automáticos pelo WhatsApp: ' + (eW.message || eW)); }
     try { robosEscritorio_(ctx); } catch (eR) { erros.push('Robôs do escritório: ' + (eR.message || eR)); }
     try { sincronizarAgenda_(ctx, 45000); } catch (eS) { erros.push('Agenda do Google: ' + (eS.message || eS)); }
     definirPendentes_(ctx);
@@ -3606,6 +3607,126 @@ function atosCancelados_() {
   if (uma) setConfig_('FIX_PROXATO_850', new Date().toISOString() + ' · ' + n + ' ato(s) cancelado(s)/velho(s) tirado(s) da agenda: ' + lista.join(', '), 'Audiências do próximo ato conferidas no PJe (8.50.3, uma vez)');
   if (n) registrar_('robô', 'agenda', n + ' audiência(s)/perícia(s) cancelada(s) ou remarcada(s) tirada(s) da agenda: ' + lista.join(', ').slice(0, 400));
   return n;
+}
+/* ---------- 8.51 Avisos de audiência pelo WhatsApp oficial, sem clique (pedido da usuária, 19/11/2026) ----------
+   O WhatsApp só deixa a EMPRESA começar a conversa com um MODELO aprovado pelo Meta. O painel cria sozinho o modelo
+   "aviso_audiencia_araujo" (categoria Utilidade, pt_BR) na conta do WhatsApp (WABA achada pelo token: debug_token) e confere a
+   aprovação de 3 em 3 h. Aprovado → os avisos 1 SEMANA antes, na VÉSPERA e NO DIA saem sozinhos (das 8h às 19h; o do dia a partir
+   das 7h30), a tarefa da secretaria fecha ("enviado pelo WhatsApp automático") e a ficha da audiência marca o aviso. Sem telefone,
+   número inválido ou o Meta recusou → a tarefa fica para a secretaria (como antes). Config WHATS_AVISO_AUTO = nao desliga.
+   A resposta do cliente: "ok/confirmo/vou…" → agradece e anota "cliente confirmou"; outra coisa → vai para a equipe (robô pausa). */
+var WHATS_MODELO_AVISO = 'aviso_audiencia_araujo';
+function whatsWaba_() {
+  var w = config_('WHATS_WABA_ID'); if (w) return w;
+  var t = whatsToken_(); if (!t) return '';
+  try {
+    var r = UrlFetchApp.fetch(WHATS_API + 'debug_token?input_token=' + encodeURIComponent(t) + '&access_token=' + encodeURIComponent(t), { muteHttpExceptions: true });
+    var j = JSON.parse(r.getContentText() || '{}'), esc = ((j.data || {}).granular_scopes || []);
+    var g = esc.filter(function (x) { return x.scope === 'whatsapp_business_management' || x.scope === 'whatsapp_business_messaging'; }).map(function (x) { return (x.target_ids || [])[0]; }).filter(Boolean)[0];
+    if (g) { setConfig_('WHATS_WABA_ID', String(g), 'Conta do WhatsApp Business (WABA) — achada pelo token'); return String(g); }
+  } catch (e) { /* segue */ }
+  return '';
+}
+var CORPO_MODELO_AVISO_ = 'Olá, {{1}}! Aqui é do escritório Araújo Advocacia. Lembrete: a sua {{2}} será {{3}}. {{4}} Por favor, responda esta mensagem confirmando que recebeu.';
+/** Status do modelo no Meta (APPROVED / PENDING / REJECTED / sem modelo); cria se não existir. Guarda em Config WHATS_MODELO_AVISO_ST. */
+function whatsModeloAviso_(forcar) {
+  var props = PropertiesService.getScriptProperties(), ult = +(props.getProperty('WHATS_MODELO_CONF') || 0), st = config_('WHATS_MODELO_AVISO_ST') || '';
+  if (!forcar && /^APPROVED/.test(st) && Date.now() - ult < 12 * 3600000) return 'APPROVED';
+  if (!forcar && Date.now() - ult < 3 * 3600000) return st.split(' ')[0];
+  props.setProperty('WHATS_MODELO_CONF', String(Date.now()));
+  var waba = whatsWaba_(), t = whatsToken_();
+  if (!waba || !t) { setConfig_('WHATS_MODELO_AVISO_ST', 'SEM_CONTA ' + new Date().toISOString(), 'Modelo do aviso de audiência no Meta'); return 'SEM_CONTA'; }
+  var h = { Authorization: 'Bearer ' + t };
+  var r = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + waba + '/message_templates?name=' + WHATS_MODELO_AVISO + '&fields=name,status,language,rejected_reason', { muteHttpExceptions: true, headers: h });
+  var j = {}; try { j = JSON.parse(r.getContentText() || '{}'); } catch (e) { j = {}; }
+  var m = (j.data || []).filter(function (x) { return x.name === WHATS_MODELO_AVISO; })[0];
+  if (!m && r.getResponseCode() === 200) {
+    var c = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + waba + '/message_templates', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: h,
+      payload: JSON.stringify({ name: WHATS_MODELO_AVISO, language: 'pt_BR', category: 'UTILITY',
+        components: [{ type: 'BODY', text: CORPO_MODELO_AVISO_, example: { body_text: [['Maria', 'audiência de conciliação', 'na segunda-feira, 23/11, às 14:00', 'Será por vídeo; o link vai antes.']] } }] }) });
+    var jc = {}; try { jc = JSON.parse(c.getContentText() || '{}'); } catch (e) { jc = {}; }
+    st = c.getResponseCode() === 200 ? (jc.status || 'PENDING') : 'ERRO ' + ((jc.error || {}).message || c.getResponseCode());
+  } else st = m ? m.status + (m.rejected_reason && m.rejected_reason !== 'NONE' ? ' ' + m.rejected_reason : '') : 'ERRO ' + (((j.error || {}).message) || r.getResponseCode());
+  setConfig_('WHATS_MODELO_AVISO_ST', String(st).slice(0, 200) + ' · ' + new Date().toISOString(), 'Modelo do aviso de audiência no Meta');
+  return String(st).split(' ')[0];
+}
+function whatsEnviarModelo_(para, params) {
+  var resp = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + config_('WHATS_PHONE_ID') + '/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + whatsToken_() },
+    payload: JSON.stringify({ messaging_product: 'whatsapp', to: para, type: 'template', template: { name: WHATS_MODELO_AVISO, language: { code: 'pt_BR' },
+      components: [{ type: 'body', parameters: params.map(function (x) { return { type: 'text', text: String(x || '-').replace(/[\n\t]+/g, ' ').replace(/ {4,}/g, ' ').slice(0, 900) }; }) }] } })
+  });
+  var j = {}; try { j = JSON.parse(resp.getContentText()); } catch (e) { /* segue */ }
+  if (resp.getResponseCode() !== 200) throw new Error(((j.error || {}).message || 'código ' + resp.getResponseCode()).slice(0, 200));
+  return ((j.messages || [])[0] || {}).id || '';
+}
+/** Telefone do cliente no formato do WhatsApp (55 + DDD + número); '' se não der para confiar. Dois números → o primeiro. */
+function telWhatsServidor_(t) {
+  var d = String(t || '').split(/\/|\bou\b|\be\b|,|;/)[0].replace(/\D/g, '');
+  if (d.length > 11 && d.indexOf('55') === 0) d = d.slice(2);
+  if (d.length > 11 && d.charAt(0) === '0') d = d.slice(1);
+  if (d.charAt(0) === '0') d = d.slice(1);
+  return d.length === 10 || d.length === 11 ? '55' + d : '';
+}
+/** Monta as 4 partes do modelo: nome, o ato, quando, o que fazer. */
+function paramsAvisoAto_(a, q, nomeCli, ficha) {
+  var nome = primeiroNomeTxt_(nomeCli) || 'tudo bem';
+  var dt = new Date(a.data + 'T12:00:00Z'), sem = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'][dt.getUTCDay()];
+  var dm = a.data.slice(8, 10) + '/' + a.data.slice(5, 7), hora = a.hora ? ', às ' + a.hora : '';
+  var quando = q === 'dia' ? 'HOJE' + hora : q === 'vespera' ? (diffDias_(a.data, hojeSP_()) === 1 ? 'amanhã (' + sem + ', ' + dm + ')' : 'na ' + sem + ' (' + dm + ')') + hora : 'na ' + sem + ', ' + dm + hora;
+  var nomeAto = a.tipo === 'pericia' ? 'perícia' : a.tipo === 'instrucao' ? 'audiência de instrução' : 'audiência de conciliação';
+  var modo = (ficha && ficha.modo) || '', link = (ficha && ficha.link) || '';
+  var onde = modo === 'online' ? (link ? 'Será por vídeo, neste link: ' + link + '.' : 'Será por vídeo; mandaremos o link antes.') : a.local ? 'Local: ' + String(a.local).slice(0, 150) + '.' : modo === 'presencial' ? 'Será presencial.' : '';
+  var oque = a.tipo === 'pericia' ? 'Leve documento com foto e todos os exames, laudos e atestados.' : a.tipo === 'instrucao' ? 'Leve documento com foto, chegue 30 minutos antes e confirme com as suas testemunhas.' : 'É uma tentativa de acordo. Leve documento com foto e chegue 30 minutos antes.';
+  return [nome, nomeAto, quando, (onde ? onde + ' ' : '') + oque];
+}
+function avisosAutomaticos_(ctx) {
+  if (config_('WHATS_AVISO_AUTO') === 'nao' || !whatsToken_() || !config_('WHATS_PHONE_ID')) return 0;
+  var agora = (ctx && ctx.agora) || new Date(), hm = +Utilities.formatDate(agora, TZ, 'H') * 60 + +Utilities.formatDate(agora, TZ, 'm');
+  if (hm < 450 || hm > 19 * 60) return 0;
+  if (whatsModeloAviso_(false) !== 'APPROVED') return 0;
+  var tabT = tabela_('Tarefas'), fichas = fichasAtos_(), procs = {}, clis = {}, n = 0, falhas = [];
+  tabela_('Processos').linhas.forEach(function (p) { if (p.numero) procs[p.numero] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  tabT.linhas.filter(function (t) { return abertaT_(t) && t.situacao !== 'cancelada' && /\[lembrete:/.test(t.descricao || '') && !/\[avisonova\]/.test(t.descricao || '') && !/\[whatsauto:/.test(t.descricao || ''); }).slice(0, 30).forEach(function (t) {
+    var lem = (/\[lembrete:([^\]]+)\]/.exec(t.descricao) || [])[1] || '', q = /\|dia$/.test(lem) ? 'dia' : /\|vespera$/.test(lem) ? 'vespera' : /\|nova$/.test(lem) ? '' : 'semana';
+    if (!q || (q !== 'dia' && hm < 480)) return;
+    var chave = lem.replace(/\|(dia|vespera|nova)$/, ''), ato = /\[ato:([^|\]]*)\|(\d{4}-\d{2}-\d{2})\|([^|\]]*)\|([^\]]*)\]/.exec(t.descricao || '');
+    if (!ato) return;
+    var a = { tipo: ato[1], data: ato[2], hora: ato[3], local: String(ato[4] || '').trim(), numero: t.numero };
+    if (a.data < hojeSP_()) return;
+    var p = procs[t.numero] || {}, c = clis[t.cliente_id || p.cliente_id] || {}, tel = telWhatsServidor_(c.telefone), f = fichas.porChave[chave];
+    var quando = new Date().toISOString();
+    var marcaFalha = function (motivo) { atualizarLinha_(tabT, t, { descricao: t.descricao + '\n[whatsauto:falhou]', historico: historicoMais_(t.historico, { nome: 'robô' }, 'WhatsApp automático não saiu (' + motivo + '): avisar à mão'), atualizado_em: quando, atualizado_por: 'robô' }); falhas.push((c.nome || t.numero) + ': ' + motivo); };
+    if (!tel) return marcaFalha('cliente sem telefone válido no cadastro');
+    try {
+      var waId = whatsEnviarModelo_(tel, paramsAvisoAto_(a, q, c.nome || p.cliente_nome, f));
+      var conv = conversaDoTelefone_(tel, c.nome || '');
+      registrarMsg_(conv, 'saida', 'modelo', '[Aviso automático — ' + NOME_AVISO_ATO[q] + '] ' + paramsAvisoAto_(a, q, c.nome || p.cliente_nome, f).join(' | '), waId, 'robô');
+      PropertiesService.getScriptProperties().setProperty('AVISO_WA_' + tel.slice(-8), JSON.stringify({ chave: chave, q: q, data: a.data, numero: t.numero, em: quando }));
+      var m = {}; m['aviso_' + q + '_em'] = quando; m['aviso_' + q + '_por'] = 'robô (WhatsApp automático)'; m.atualizado_em = quando; m.atualizado_por = 'robô';
+      if (f) atualizarLinha_(fichas.tab, f, m);
+      atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: quando, concluida_por: 'robô', ok_por: 'robô', ok_em: quando, descricao: t.descricao + '\n[whatsauto:enviado]',
+        historico: historicoMais_(t.historico, { nome: 'robô' }, 'aviso enviado sozinho pelo WhatsApp oficial para ' + tel), atualizado_em: quando, atualizado_por: 'robô' });
+      n++;
+    } catch (e) { marcaFalha(String(e.message || e).slice(0, 120)); }
+  });
+  if (n || falhas.length) registrar_('robô', 'whatsapp ao cliente', n + ' aviso(s) de audiência enviado(s) sozinho(s)' + (falhas.length ? '; ' + falhas.length + ' ficaram para a secretaria: ' + falhas.join('; ').slice(0, 300) : ''));
+  return n;
+}
+/** A resposta do cliente a um aviso automático (até 3 dias): confirmação simples → agradece e anota; outra coisa → equipe. */
+function respostaAvisoAto_(conv, texto) {
+  var props = PropertiesService.getScriptProperties(), k = 'AVISO_WA_' + String(conv.telefone || '').replace(/\D/g, '').slice(-8), v = props.getProperty(k);
+  if (!v) return null;
+  var av = {}; try { av = JSON.parse(v); } catch (e) { return null; }
+  if (!av.em || Date.now() - Date.parse(av.em) > 3 * 86400000) { props.deleteProperty(k); return null; }
+  var t = String(texto || '').trim();
+  props.deleteProperty(k);
+  if (t.length <= 80 && /^(sim|ok|okay|certo|confirm|combinado|vou|estarei|irei|beleza|blz|obrigad|recebi|ciente|t[aá] bom|ta|pode deixar|perfeito|👍|🙏|✅|positivo)/i.test(normalizar_(t) || t)) {
+    try { var fichas = fichasAtos_(), f = fichas.porChave[av.chave]; if (f) atualizarLinha_(fichas.tab, f, { obs: ((f.obs || '') + '\nCliente confirmou pelo WhatsApp (' + NOME_AVISO_ATO[av.q] + ') em ' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ': "' + t.slice(0, 60) + '"').trim(), atualizado_em: new Date().toISOString(), atualizado_por: 'robô' }); } catch (e) { /* segue */ }
+    return { resposta: 'Perfeito, obrigada pela confirmação! Qualquer dúvida ou imprevisto, é só chamar por aqui.' };
+  }
+  return { equipe: 'Resposta ao aviso de audiência (' + (av.numero || '') + ', ' + dataBR_(av.data || '') + '): ' + t.slice(0, 300) };
 }
 /** 8.50.3, aos poucos (Config FIX_TIPO_850 quando terminar; Properties TIPO850_FEITOS): audiência futura marcada pelo robô como conciliação
  *  ou "tipo a conferir" é conferida no e-mail [PUSH] do PJe; se o aviso diz "Audiência de INSTRUÇÃO … designada (mesma data)", o evento
@@ -15426,6 +15547,8 @@ function whatsCerebro_(conv, texto, tipo, novo, sim, midia) {
   var quando = fora ? ' no próximo horário de atendimento (seg. a sex., 8h–12h e 13h30–18h)' : ' em instantes';
   var t = String(texto || '').trim(), tn = normalizar_(t);
 
+  // 8.51: resposta a um aviso de audiência que o robô mandou sozinho
+  if (!sim && !midia) { var ra = respostaAvisoAto_(conv, t); if (ra) { if (ra.resposta) return ra.resposta; return paraEquipe('Obrigada! Já passei a sua mensagem para a equipe, que responde' + quando + '.', ra.equipe); } }
   // 0) perguntou se é robô: a verdade, em uma frase, e oferece a equipe
   if (PERGUNTA_ROBO.test(t) && !midia) return 'É o atendimento automático do escritório, e ' + quemAtende_() + ' acompanha tudo de perto. Se preferir, chamo alguém da equipe agora mesmo; é só dizer.';
   // 0b) foto ou PDF recebido
@@ -15745,6 +15868,8 @@ function whatsConfig_(d, u) {
   if (d.pix_txt !== undefined) setConfig_('WHATS_PIX_TXT', String(d.pix_txt).slice(0, 400), 'Dados do Pix que o robô manda (consulta e checagem)');
   if (d.valor !== undefined) { var vv = +String(d.valor).replace(/\D/g, ''); if (!vv) throw falha_('Informe o valor da consulta (só números).'); setConfig_('WHATS_VALOR', String(vv), 'Valor da consulta (R$)'); }
   if (d.ligado !== undefined) setConfig_('WHATS_BOT', d.ligado ? 'sim' : 'nao', 'Robô do WhatsApp respondendo sozinho?');
+  if (d.aviso_auto !== undefined) setConfig_('WHATS_AVISO_AUTO', d.aviso_auto ? 'sim' : 'nao', 'Avisos de audiência pelo WhatsApp oficial sem clique (8.51)');
+  if (d.modelo_conferir) { try { whatsModeloAviso_(true); } catch (eM) { /* status fica com o erro */ } }
   if (d.app_secret !== undefined) {
     var sec = String(d.app_secret || '').replace(/[\s"'`<>]/g, '');
     if (sec && !/^[0-9a-f]{32}$/i.test(sec)) throw falha_('A "Chave secreta do aplicativo" do Meta tem 32 letras e números (no app do Meta: Configurações do app › Básico › Chave secreta do aplicativo › Mostrar).');
@@ -15755,7 +15880,8 @@ function whatsConfig_(d, u) {
   var ponteSb; try { ponteSb = whatsPonteSupabase_(!!(d.novaChave || d.app_secret !== undefined)); } catch (eP) { ponteSb = { ok: false, motivo: String(eP && eP.message || eP).slice(0, 200) }; }
   var r = { ponte: ponteSb, temSecret: !!props.getProperty('WHATS_APP_SECRET'), verifyToken: props.getProperty('WHATS_VERIFY') || '',
     urlRetorno: sbConf_().url ? sbConf_().url + '/functions/v1/whatsapp' : '', temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
-    pix_txt: pixTexto_(), valor: valorConsulta_(), chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_() };
+    pix_txt: pixTexto_(), valor: valorConsulta_(), chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_(),
+    avisoAuto: config_('WHATS_AVISO_AUTO') !== 'nao', modeloAviso: config_('WHATS_MODELO_AVISO_ST') || '' };
   if (d.testar) {
     var tel = String(d.testar).replace(/\D/g, ''); if (tel.length < 12) throw falha_('Informe o seu número com DDI e DDD (ex.: 5548999998888).');
     whatsEnviar_(tel, 'Teste do painel Araújo Advocacia: o WhatsApp está ligado. ✓'); r.teste = true; setConfig_('WHATS_ERRO', '', 'Último problema ao mandar mensagem pelo WhatsApp'); r.erro = '';

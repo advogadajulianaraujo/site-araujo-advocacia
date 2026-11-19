@@ -3854,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.51.0';
+  const VERSAO_PAINEL = '8.51.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6098,16 +6098,19 @@
     const nomeAto = (NOME_ATO[tipo] || 'audiência').toLowerCase();
     const sua = tipo === 'pericia' ? 'sua perícia' : 'sua ' + nomeAto;
     const modo = x.modo || '';
-    const onde = modo === 'online' ? (x.link ? ` Será por vídeo, neste link: ${x.link}` : ' Será por vídeo: mandaremos o link antes.')
-      : ato.local ? ` Local: ${ato.local}.` : modo === 'presencial' ? ' Será presencial: confirmaremos o endereço.' : '';
-    const perguntaModo = !modo && tipo !== 'pericia' ? '\n\nAinda estamos confirmando se será por vídeo ou presencial; avisaremos você. Se for por vídeo, você vai precisar de celular ou computador com internet e câmera.' : '';
+    // 8.51.1: a "sala" do PJe é a sala virtual da vara (não vai para o cliente); audiência = online, salvo se a ficha disser presencial,
+    // e o escritório oferece que o cliente participe daqui
+    const onde = tipo === 'pericia' ? (ato.local && !/sala|videoconf|virtual/i.test(ato.local) ? ` Local: ${ato.local}.` : '')
+      : modo === 'presencial' ? ` Será PRESENCIAL${ato.local && !/sala|videoconf|virtual/i.test(ato.local) ? ', em ' + ato.local : ', no fórum'}.`
+      : ` Será ONLINE (por vídeo)${x.link ? ', neste link: ' + x.link : '; mandamos o link antes'}. Se preferir, você pode participar aqui do nosso escritório: é só nos avisar.`;
+    const perguntaModo = !modo && tipo !== 'pericia' ? '\n\nPara participar de casa, você vai precisar de celular ou computador com internet e câmera.' : '';
     const explica = {
       conciliacao: 'A audiência de conciliação é uma TENTATIVA DE ACORDO entre você e a outra parte, com a ajuda de um conciliador. Ainda não é o julgamento. Se surgir uma proposta, vamos conversar antes de você decidir.',
       instrucao: 'A audiência de instrução é a fase das PROVAS: o juiz ouve você, a outra parte e as testemunhas. É muito importante comparecer.',
       pericia: 'A perícia é o exame feito por um perito nomeado pelo juiz. Leve documento com foto e todos os exames, laudos, receitas e atestados que tiver.'
     }[tipo] || '';
     const testem = tipo === 'instrucao' ? '\n\nVocê tem TESTEMUNHAS? Se tiver, mande para nós, de cada uma: nome completo, CPF e telefone. Combine com elas a data: precisam ir com documento com foto.' : '';
-    const levar = tipo === 'pericia' ? '' : ' Leve documento com foto e chegue (ou entre no link) 30 minutos antes.';
+    const levar = tipo === 'pericia' ? '' : modo === 'presencial' ? ' Leve documento com foto e chegue 30 minutos antes.' : ' Tenha em mãos um documento com foto e entre no link 15 minutos antes.';
     let msg;
     if (quando === 'dia') msg = `Bom dia, ${nome}! Aqui é do escritório Araújo Advocacia. Lembrete: HOJE é a ${sua}${proc}${hora}.${onde}${levar}${tipo === 'instrucao' ? ' Confirme com as suas testemunhas.' : ''}\n\nPor favor, responda confirmando que vai. Qualquer imprevisto, avise a gente na hora.`;
     else if (quando === 'vespera') {

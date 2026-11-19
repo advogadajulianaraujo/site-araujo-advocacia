@@ -212,7 +212,7 @@ console.log("fim 850c");
   const e1 = enviados[0] || {};
   assert(n === 1 && enviados.length === 1 && e1.to === '5548999991234' && e1.type === 'template' && e1.template.name === 'aviso_audiencia_araujo', 'aviso da véspera saiu sozinho pelo modelo aprovado, para 55+DDD+número');
   const ps = e1.template.components[0].parameters.map(x => x.text);
-  assert(/amanhã/.test(ps[2]) && /14:30/.test(ps[2]) && /audiência de instrução/.test(ps[1]) && /testemunhas/.test(ps[3]), 'mensagem: ' + ps.join(' | '));
+  assert(/amanhã/.test(ps[2]) && /14:30/.test(ps[2]) && /audiência de instrução/.test(ps[1]) && /testemunhas/.test(ps[3]) && /ONLINE/.test(ps[3]) && /nosso escritório/.test(ps[3]) && !/Sala 1/.test(ps.join(' ')), 'mensagem: ' + ps.join(' | '));
   assert(ta.concluida_em && /whatsauto:enviado/.test(ta.descricao) && !tb.concluida_em && /whatsauto:falhou/.test(tc.descricao) && !tc.concluida_em, 'tarefa da véspera fecha; "audiência nova" continua com a secretaria; sem telefone fica para a secretaria');
   assert(C.avisosAutomaticos_({ agora: new Date(hoje + 'T13:05:00-03:00') }) === 0 && enviados.length === 1, 'não manda duas vezes');
   assert(C.avisosAutomaticos_({ agora: new Date(hoje + 'T21:00:00-03:00') }) === 0, 'fora do horário (21h) não manda');

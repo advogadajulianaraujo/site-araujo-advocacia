@@ -1879,3 +1879,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   (`[whatsauto:falhou]` + motivo no histórico). Config WHATS_AVISO_AUTO = nao desliga (Chatbot do WhatsApp › ⚙ Ligar / configurar).
 - Resposta do cliente até 3 dias (`respostaAvisoAto_`, Properties AVISO_WA_<8 dígitos>): "ok/confirmo/vou…" → agradece e anota "Cliente confirmou
   pelo WhatsApp" nas observações da ficha da audiência; outra coisa → vai para a equipe (robô pausa).
+- 8.51.1 (pedido da usuária: "às vezes é online, PRINCIPALMENTE online; damos a opção de vir aqui no escritório — tem que tomar cuidado"): o "local"
+  que vem do PJe ("Sala 1", "Sala Principal - VARA…", videoconferência) é a sala VIRTUAL da vara e nunca vai para o cliente. Aviso de audiência
+  (automático `paramsAvisoAto_` e o do botão `textoAvisoAto`) = "Será ONLINE (por vídeo)… Se preferir, você pode participar aqui do nosso
+  escritório: é só nos avisar", salvo quando a ficha da audiência está marcada PRESENCIAL ("no fórum" / endereço real). Perícia: só o que levar.
