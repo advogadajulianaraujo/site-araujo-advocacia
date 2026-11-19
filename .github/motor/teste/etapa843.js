@@ -130,3 +130,36 @@ console.log("fim 848b");
   assert(r.honorarios === 1 && r.parcelas === 2 && h.situacao === 'retirado' && ps.length === 1 && ps[0].pago_em && !C.tabela_('Processos').linhas.some(x => x.id === 'P849x'), 'processo sem número apagado com o honorário: 2 parcelas abertas saem, a paga fica');
 }
 console.log("fim 849");
+// 8.50: publicação do DJEN para a OUTRA parte não abre prazo; acordo com a empresa que paga
+{
+  const cab = 'PODER JUDICIÁRIO JUSTIÇA DO TRABALHO 1ª VARA DO TRABALHO DE TUBARÃO ATSum 0000001-11.2026.5.12.0006 RECLAMANTE: MARIA FICTICIA DA SILVA RECLAMADO: EMPRESA INVENTADA LTDA E OUTROS (1) INTIMAÇÃO ';
+  const proc = { cliente_nome: 'Maria Fictícia da Silva' };
+  assert(/EMPRESA INVENTADA/.test(C.outraParteDjen_(cab + 'Destinatário: EMPRESA INVENTADA LTDA Fica V. Sa. intimado(a) para apresentar contrarrazões.', proc)), 'DJEN para a empresa (outra parte) é reconhecido');
+  assert(!C.outraParteDjen_(cab + 'Destinatário: MARIA FICTICIA DA SILVA Fica V. Sa. intimado(a) para ciência.', proc), 'DJEN para a nossa cliente fica');
+  assert(!C.outraParteDjen_(cab + 'Destinatário: EMPRESA INVENTADA LTDA Fica intimado.', { cliente_nome: 'a identificar' }), 'cliente desconhecido: não decide (o prazo continua)');
+  assert(!C.outraParteDjen_(cab + 'Fica V. Sa. intimado(a) para ciência. Intimado(s) / Citado(s) - OUTRA PESSOA QUALQUER', proc), 'destinatário fora do cabeçalho: não decide');
+  const recl = 'RECLAMANTE: JOAO INVENTADO PEREIRA RECLAMADO: COMERCIO FICTICIO LTDA INTIMAÇÃO Fica V. Sa. intimado(a) para ciência da sentença. Intimado(s) / Citado(s) - JOAO INVENTADO PEREIRA';
+  assert(/JOAO/.test(C.outraParteDjen_(recl, { cliente_nome: 'COMERCIO FICTICIO LTDA' })), 'escritório do lado da empresa: intimação do reclamante é da outra parte');
+  // registrarIntimacao_ não abre prazo para a outra parte
+  const tp = C.tabela_('Processos'), pr = tp.linhas.find(p => p.numero && p.cliente_id);
+  const cli = C.tabela_('Clientes').linhas.find(c => c.id === pr.cliente_id);
+  const ctx = C.contextoRobo_();
+  const texto = 'PODER JUDICIÁRIO ATOrd ' + pr.numero + ' RECLAMANTE: ' + cli.nome.toUpperCase() + ' RECLAMADO: EMPRESA INVENTADA LTDA INTIMAÇÃO Destinatário: EMPRESA INVENTADA LTDA Fica V. Sa. intimado(a) para, querendo, apresentar contrarrazões ao recurso no prazo de 8 dias. ' + 'x '.repeat(80);
+  const antes = ctx.prazos.linhas.length;
+  C.registrarIntimacao_(ctx, { chave: 'djen|t850', fonte: 'DJEN', recebido_em: new Date().toISOString(), numero: pr.numero, tribunal: 'TRT12', movimento: 'Intimação', texto, tipo: 'publicacao', ciencia: C.hojeSP_(), ciencia_tipo: 'publicação no DJEN' });
+  const iz = ctx.intim.linhas.find(i => i.chave === 'djen|t850');
+  assert(ctx.prazos.linhas.length === antes && /outra parte/.test(iz.terminada_por), 'DJEN da outra parte entra em "Todas", sem prazo');
+  // acordo com a empresa que paga → marca no honorário; PIX dela é reconhecido mesmo com outro acordo de mesmo valor
+  const admin = { usuario: 'admin', nome: 'Admin', perfil: 'administrador' }, hoje = C.hojeSP_();
+  const r = C.audienciaResultado_({ lembrete: 'E:teste850', numero: pr.numero, data: C.somarDias_(hoje, -1), hora: '10:00', tipo: 'conciliacao', resultado: 'acordo', valor: '2.000,00', pct: '30', parcelas: '1', primeiro: hoje, lancar: true, empresa: 'EMPRESA INVENTADA LTDA' }, admin);
+  const hon = C.tabela_('Honorarios').linhas.find(x => x.id === r.honorario_id);
+  assert(/\[pagador:EMPRESA INVENTADA LTDA\]/.test(hon.observacoes), 'acordo guarda quem vai pagar');
+  const pr2 = tp.linhas.find(p => p.numero && p.cliente_id && p.cliente_id !== pr.cliente_id);
+  C.audienciaResultado_({ lembrete: 'E:teste850b', numero: pr2.numero, data: C.somarDias_(hoje, -1), hora: '11:00', tipo: 'conciliacao', resultado: 'acordo', valor: '2.000,00', pct: '30', parcelas: '1', primeiro: hoje, lancar: true, empresa: 'OUTRA FIRMA FICTICIA SA' }, admin);
+  const k = { clientes: C.tabela_('Clientes').linhas, tabParc: C.tabela_('Parcelas'), apelidos: {}, pagasPeloPix: {}, tol: 10, categorias: {} };
+  const linha = { situacao: 'a conferir', cliente_id: '', parcela_id: '', motivo: '', sugestao: '', recibo: '', categoria: '' };
+  C.classificarPix_(linha, { valor: 2000, pagador: 'EMPRESA INVENTADA LTDA' }, new Date(), k);
+  const p1 = C.tabela_('Parcelas').linhas.find(p => p.id === linha.parcela_id);
+  assert(linha.situacao === 'baixado' && p1 && p1.honorario_id === r.honorario_id, 'dois acordos de mesmo valor: o PIX vai para o da empresa que pagou');
+}
+console.log("fim 850");

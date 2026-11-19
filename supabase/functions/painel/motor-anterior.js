@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.49.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.49.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.49.3 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.49.3';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.49.1';
+var VERSAO = '8.49.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2769,7 +2769,7 @@ function baixarVencidos844_() {
     var p = procs[z.processo_id] || {};
     if (p.andamentos && p.andamentos.charAt(0) === '[') { try { JSON.parse(p.andamentos).forEach(function (m) { movs.push({ d: String(m.d || '').slice(0, 10), n: String(m.n || '') }); }); } catch (e) { /* segue */ } }
     var depois = movs.filter(function (m) { return m.d && m.d >= aviso && m.d <= hoje; });
-    var junt = depois.filter(function (m) { return RE_JUNTADA_.test(m.n); }).sort(function (a, b) { return a.d < b.d ? 1 : -1; })[0]; // a mais recente
+    var junt = depois.filter(function (m) { return m.d > aviso && RE_JUNTADA_.test(m.n); }).sort(function (a, b) { return a.d < b.d ? 1 : -1; })[0]; // a mais recente
     var fim = movs.filter(function (m) { return m.d && m.d >= somarDias_(aviso, -5) && RE_ENCERROU_.test(m.n); })[0];
     // 8.48: acordo/suspensão que depois foi revogada (ex.: "Revogada a suspensão", "Encerrada a suspensão") não encerra o prazo
     if (fim && movs.some(function (m) { return m.d && m.d >= fim.d && RE_RETOMOU_.test(m.n); })) fim = null;
@@ -2806,8 +2806,9 @@ function baixarVencidos844_() {
 /** 8.48, UMA vez (Config FIX_REABRIR_848): reabre os prazos que o robô (ou a baixa em lote) tirou da lista cedo demais — data do painel há menos
  *  de 10 dias úteis, sem petição juntada depois do aviso e sem acordo/extinção que continue valendo. Ficam com a marca, para não saírem de novo
  *  sozinhos; a equipe confere no PJe/eproc e marca Feito (ou usa "📌 Data do PJe/eproc"). */
-function reabrirVencidosCedo848_() {
-  if (config_('FIX_REABRIR_848')) return 0;
+function reabrirVencidosCedo848_(chave) {
+  chave = typeof chave === 'string' ? chave : 'FIX_REABRIR_848';
+  if (config_(chave)) return 0;
   var hoje = hojeSP_(), tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes'), porNum = {}, porId = {}, agora = new Date().toISOString(), n = 0, lista = [];
   tabI.linhas.forEach(function (i) { porId[i.id] = i; (porNum[i.numero] = porNum[i.numero] || []).push(i); });
   tabZ.linhas.forEach(function (z) {
@@ -2817,14 +2818,14 @@ function reabrirVencidosCedo848_() {
     if (!tipo) return;
     var aviso = String((porId[z.intimacao_id] || {}).recebido_em || '').slice(0, 10) || somarDias_(z.ciencia, -3);
     var movs = (porNum[z.numero] || []).map(function (i) { return { d: String(i.recebido_em || '').slice(0, 10), n: String(i.movimento || '') }; });
-    if (movs.some(function (m) { return m.d >= aviso && RE_JUNTADA_.test(m.n); })) return; // já houve petição depois do aviso
+    if (movs.some(function (m) { return m.d > aviso && RE_JUNTADA_.test(m.n); })) return; // já houve petição DEPOIS do dia do aviso (a do mesmo dia é da outra parte)
     if (tipo === 'fim') { var f = movs.filter(function (m) { return m.d >= somarDias_(aviso, -5) && RE_ENCERROU_.test(m.n); })[0]; if (f && !movs.some(function (m) { return m.d >= f.d && RE_RETOMOU_.test(m.n); })) return; }
     atualizarLinha_(tabZ, z, { situacao: z.conferido_por ? 'conferido' : 'calculado', cumprido_por: '', cumprido_em: '', etapa: 'afazer', ok_por: '', ok_em: '',
       observacoes: ob + ' | 8.48: reaberto em ' + dataBR_(hoje) + ' — tinha saído da lista antes do fim do prazo no PJe/eproc; confira a data no sistema do tribunal', atualizado_em: agora, atualizado_por: 'robô' });
     intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (/^robô/.test(i.terminada_por || '')) atualizarLinha_(tabI, i, { terminada_por: '', terminada_em: '', ok_por: '', ok_em: '' }); });
     n++; lista.push(z.numero + ' (' + dataBR_(z.fatal) + ')');
   });
-  setConfig_('FIX_REABRIR_848', agora + ' · ' + n + ' prazo(s) reaberto(s): ' + lista.join(', ').slice(0, 1500), 'Prazos retirados cedo demais e reabertos (8.48, uma vez)');
+  setConfig_(chave, agora + ' · ' + n + ' prazo(s) reaberto(s): ' + lista.join(', ').slice(0, 1500), 'Prazos retirados cedo demais e reabertos (8.48, uma vez)');
   if (n) registrar_('robô', 'prazos reabertos', n + ' prazo(s) tinham saído da lista antes do fim do prazo no tribunal e voltaram: ' + lista.join(', ').slice(0, 400));
   return n;
 }
@@ -3399,7 +3400,7 @@ function registrarIntimacao_(ctx, d) {
   // Confirmação de uma intimação já lançada como tácita: antecipa a ciência.
   var aberto = ctx.prazos.linhas.filter(function (z) {
     return z.numero === d.numero && z.origem === 'robô' && z.situacao !== 'conferido' && !/^ato:/.test(z.observacoes || '') &&
-      SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.ciencia && Math.abs(diffDias_(z.ciencia, d.ciencia)) <= 12;
+      SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.ciencia && Math.abs(diffDias_(z.ciencia, d.ciencia)) <= 12 && !outraPublicacao_(ctx, z, d);
   })[0];
   var sug = sugerirPrazo_([d.movimento, d.texto].join(' '), proc, proc.tribunal, d.segundoGrau);
   if (sug.semPrazo) return { nova: true, prazo: marcado }; // 8.43: aviso de distribuição não abre prazo
@@ -3435,6 +3436,47 @@ function registrarIntimacao_(ctx, d) {
   inserirLinha_(ctx.prazos, prazo);
   atualizarLinha_(ctx.intim, intim, { prazo_id: prazo.id });
   return { nova: true, prazo: true };
+}
+
+/** 8.49.2 (achado no print do PJe da usuária, processo com dois expedientes: 06/11 "comprovar o pagamento" e 10/11 "ciência da petição"):
+ *  duas PUBLICAÇÕES do DJEN com textos diferentes são dois atos — cada uma tem o seu prazo. Antes a 2ª era juntada ao prazo da 1ª e o prazo
+ *  do PJe (23/11) nunca existiu no painel. Continua juntando: aviso do PJe/eproc + a publicação dele no DJEN (o mesmo ato). */
+function outraPublicacao_(ctx, z, d) {
+  if (d.fonte !== 'DJEN' || String(d.texto || '').length < 200) return false;
+  var i = ctx.intim.linhas.filter(function (x) { return x.id === z.intimacao_id; })[0];
+  if (!i) i = ctx.intim.linhas.filter(function (x) { return x.prazo_id === z.id && x.fonte === 'DJEN'; })[0];
+  if (!i || i.fonte !== 'DJEN' || String(i.texto || '').length < 200) return false;
+  var ato = function (t) { var f = fraseIntimado_(normalizar_(semEntidades_(String(t || '')))); return (f || normalizar_(String(t || '')).slice(-400)).replace(/\s+/g, ' ').slice(0, 300); };
+  return ato(i.texto) !== ato(d.texto);
+}
+
+/** 8.49.2, UMA vez (Config FIX_PUBLIC_849): publicações do DJEN dos últimos 45 dias que foram juntadas ao prazo de OUTRA publicação (ato
+ *  diferente) ganham o próprio prazo, contado da publicação delas. Nada é apagado. */
+function separarPublicacoes849_() {
+  if (config_('FIX_PUBLIC_849')) return 0;
+  var ctx = { intim: tabela_('Intimacoes'), prazos: tabela_('Prazos'), procs: tabela_('Processos'), feriados: mapaFeriados_() };
+  var desde = somarDias_(hojeSP_(), -45), agora = new Date().toISOString(), n = 0, lista = [], zs = {}, pid = {};
+  ctx.prazos.linhas.forEach(function (z) { zs[z.id] = z; });
+  ctx.procs.linhas.forEach(function (p) { pid[p.id] = p; if (p.numero) pid[p.numero] = p; });
+  ctx.intim.linhas.forEach(function (i) {
+    if (i.fonte !== 'DJEN' || String(i.recebido_em || '') < desde || String(i.texto || '').length < 200 || !i.prazo_id) return;
+    var z = zs[i.prazo_id]; if (!z || z.intimacao_id === i.id || /^ato:/.test(z.observacoes || '')) return;
+    if (!outraPublicacao_(ctx, z, { fonte: 'DJEN', texto: i.texto })) return;
+    var proc = pid[i.processo_id] || pid[i.numero] || {}, trib = proc.tribunal || tribunalDoNumero_(i.numero);
+    var disp = String(i.recebido_em).slice(0, 10), pub = proximoUtil_(disp, trib, ctx.feriados, true);
+    var sug = sugerirPrazo_([i.movimento, i.texto].join(' '), proc, trib, false);
+    if (sug.semPrazo) return;
+    var nz = { id: novoId_('Z'), processo_id: proc.id || '', numero: i.numero, intimacao_id: i.id, descricao: sug.descricao, dias: sug.dias ? String(sug.dias) : '',
+      contagem: sug.contagem, ciencia: pub, ciencia_tipo: 'publicação no DJEN em ' + dataBR_(pub) + ' (disponibilizada ' + dataBR_(disp) + ')', fatal: '',
+      situacao: 'calculado', conferido_por: '', conferido_em: '', origem: 'robô', criado_em: agora, atualizado_em: agora, atualizado_por: 'robô',
+      observacoes: 'DJEN: ' + i.movimento + ' | 8.49.2: prazo próprio desta publicação (antes estava junto do prazo de outra publicação do mesmo processo)' };
+    nz.fatal = calcularFatal_(nz.ciencia, nz.dias, nz.contagem, trib, ctx.feriados);
+    inserirLinha_(ctx.prazos, nz); atualizarLinha_(ctx.intim, i, { prazo_id: nz.id, terminada_por: '', terminada_em: '', ok_por: '', ok_em: '' });
+    n++; lista.push(i.numero + ' (' + (nz.fatal ? dataBR_(nz.fatal) : '—') + ')');
+  });
+  setConfig_('FIX_PUBLIC_849', agora + ' · ' + n + ' prazo(s) criado(s): ' + lista.join(', ').slice(0, 1500), 'Publicações do DJEN que estavam juntas a outro prazo (8.49.2, uma vez)');
+  if (n) registrar_('robô', 'prazos separados', n + ' publicação(ões) do DJEN ganharam prazo próprio: ' + lista.join(', ').slice(0, 400));
+  return n;
 }
 
 function diffDias_(a, b) {
@@ -5302,13 +5344,33 @@ function parteDoEscritorio_(texto) {
   }
   return null;
 }
+/** 8.49.2: e-mail do eproc "Peticionamento Eletrônico - Envio de Processo Finalizado" (o escritório protocolou): "Número do Processo: N",
+ *  "Processo Originário: M", "Nome da(s) Parte(s): FULANO - *AUTOR* X BELTRANO - *RÉU*". O cliente é quem vem ANTES do "X" (polo ativo:
+ *  quem o escritório pôs na ação). Quando a parte é o próprio escritório (cobrança de honorários), não decide. */
+function parteDoPeticionamento_(texto, numero) {
+  var t = String(texto || '').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ');
+  if (!/Nome da\(s\) Parte\(s\)/i.test(t) || !/JULIAN MARCELINO/i.test(t)) return null;
+  // o mesmo e-mail pode trazer vários protocolos: pega o bloco deste número (ou do processo originário)
+  var blocos = t.split(/(?=N[úu]mero do Processo:)/i), bloco = blocos.filter(function (b) { return b.indexOf(numero) >= 0; })[0];
+  if (!bloco) return null;
+  var m = /Nome da\(s\) Parte\(s\):\s*([\s\S]*?)(?:\n\s*\n\s*[ÓO]rg[ãa]o Julgador|[ÓO]rg[ãa]o Julgador|$)/i.exec(bloco);
+  if (!m) return null;
+  var ativo = m[1].split(/\n\s*X\s*\n/)[0].split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  var l0 = ativo[0] || '', mm = /^(.+?)\s*-\s*\*([^*]+)\*/.exec(l0);
+  if (!mm) return null;
+  var nome = mm[1].replace(/\s+\d{11}$/, '').trim(), papel = normalizar_(mm[2]).trim();
+  if (nome.length < 4 || /ARAUJO SOCIEDADE|ADVOCACIA|MINIST[EÉ]RIO P[UÚ]BLICO|JULIAN MARCELINO/i.test(nome)) return null;
+  return { nome: nome.toUpperCase(), papel: papel, polo: POLO_PAPEL[papel] || 'ativo' };
+}
 function identificarPartes_() {
   var props = PropertiesService.getScriptProperties(), tentadas = {};
   try { tentadas = JSON.parse(props.getProperty('PARTES_TENTADAS') || '{}'); } catch (e) { tentadas = {}; }
   // 8.48: a leitura do e-mail [PUSH] do PJe foi corrigida → tenta de novo, uma vez, todos os processos sem cliente
   if (!config_('FIX_PARTES_848')) { tentadas = {}; setConfig_('FIX_PARTES_848', new Date().toISOString(), 'Processos sem cliente: nova tentativa com o e-mail do PJe (8.48, uma vez)'); }
+  // 8.49.2: e-mail "Peticionamento Eletrônico" do eproc (partes da ação que o escritório protocolou) e processos em SIGILO → tenta todos de novo
+  if (!config_('FIX_PARTES_849')) { tentadas = {}; setConfig_('FIX_PARTES_849', new Date().toISOString(), 'Processos sem cliente: nova tentativa com o e-mail do peticionamento do eproc (8.49.2, uma vez)'); }
   var tabP = tabela_('Processos'), tabC = tabela_('Clientes'), hoje = hojeSP_(), limite = somarDias_(hoje, -20);
-  var alvos = tabP.linhas.filter(function (p) { return p.numero && !p.cliente_id && p.status !== 'arquivado' && !/SIGILO|segredo/i.test(p.cliente_nome || '') && !(tentadas[p.numero] && tentadas[p.numero] > limite); }).slice(0, 12);
+  var alvos = tabP.linhas.filter(function (p) { return p.numero && !p.cliente_id && p.status !== 'arquivado' && !(tentadas[p.numero] && tentadas[p.numero] > limite); }).slice(0, 25);
   if (!alvos.length) return 0;
   var porNome = {}; tabC.linhas.forEach(function (c) { var k = nomeComparavel_(c.nome); if (k) (porNome[k] = porNome[k] || []).push(c); });
   var intims = {}; tabela_('Intimacoes').linhas.forEach(function (i) { if (i.numero && i.texto && /JULIAN MARCELINO/i.test(i.texto)) (intims[i.numero] = intims[i.numero] || []).push(i.texto); });
@@ -5317,11 +5379,13 @@ function identificarPartes_() {
     if (Date.now() - t0 > 60000) return;
     tentadas[p.numero] = hoje;
     var achou = null;
-    (intims[p.numero] || []).some(function (tx) { achou = parteDoEscritorio_(tx); return !!achou; });
+    // 8.49.3: o tribunal já deu o nome E o papel de quem o escritório representa (acusado, executado, autor…) → é o cliente
+    if (p.polo && p.cliente_nome && !/a identificar|SIGILO|segredo/i.test(p.cliente_nome) && p.cliente_nome.length >= 5) achou = { nome: String(p.cliente_nome).toUpperCase().trim(), polo: p.polo };
+    if (!achou) (intims[p.numero] || []).some(function (tx) { achou = parteDoEscritorio_(tx); return !!achou; });
     if (!achou) {
       try {
         GmailApp.search('"' + p.numero + '" from:jus.br in:anywhere -in:trash', 0, 6).some(function (th) {
-          return th.getMessages().slice(0, 3).some(function (ms) { achou = parteDoEscritorio_(ms.getPlainBody() || ms.getBody()); return !!achou; });
+          return th.getMessages().slice(0, 4).some(function (ms) { var corpo = ms.getPlainBody() || ms.getBody(); achou = parteDoPeticionamento_(corpo, p.numero) || parteDoEscritorio_(corpo); return !!achou; });
         });
       } catch (eG) { if (/muitas vezes|too many/i.test(String(eG))) return; }
     }
@@ -6871,7 +6935,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }

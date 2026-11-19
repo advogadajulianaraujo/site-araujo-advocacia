@@ -1829,3 +1829,17 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   últimos 45 dias. (3) Processos sem cliente: `parteDoPeticionamento_` lê o e-mail do eproc "Peticionamento Eletrônico - Envio de Processo
   Finalizado" ("Nome da(s) Parte(s): FULANO - *AUTOR* X …": cliente = polo ativo; processo originário também; o escritório como parte não
   decide); `identificarPartes_` agora tenta também os em SIGILO, 25 por rodada, e começa tudo de novo uma vez (Config FIX_PARTES_849). 8.49.3: processo que já tem o nome E o papel (polo) de quem o escritório representa vira cadastro direto.
+
+## 8.50.0 Intimações só do escritório + acordo com a empresa que paga (pedidos da usuária, 19/11/2026)
+
+- "Nas intimações eu só quero o que está no PJe": o DJEN publica UMA intimação para cada parte. `outraParteDjen_(texto, proc)` lê o destinatário
+  ("Destinatário: …" / "Intimado(s) / Citado(s) - …") e o cabeçalho ("RECLAMANTE: … RECLAMADO: …", rótulos em `POLO_A_`/`POLO_B_`): cliente num
+  polo e destinatário no outro → é da outra parte. Cliente desconhecido/sigilo, destinatário com o nome do cliente ou fora do cabeçalho → não decide
+  (o prazo continua). `registrarIntimacao_`: publicação da outra parte entra em "Todas" com terminada_por "robô (para a outra parte: …)" e NÃO abre
+  prazo nem se junta a outro. `outraParte850_` (uma vez, Config FIX_OUTRA_850): fecha as antigas; prazo aberto só delas → cancelado "sem prazo: a
+  publicação era para a outra parte … Se for nosso, reabra"; prazo que também é do cliente fica, ligado à publicação do cliente. Nos dados de 19/11:
+  12 dos 40 prazos abertos do DJEN eram de publicações para a outra parte.
+- Tela Intimações: aba "Prazos" (sem "Audiências e perícias novas" e sem os lembretes "ato:"); audiências e perícias só na tela Audiências (link no rodapé).
+- Audiências › "O que aconteceu?" › Fechou acordo: continua na tela Audiências (não abre mais o honorário); os honorários entram sozinhos em
+  Cobranças. Campo "Quem vai pagar (empresa)" (padrão: parte contrária do processo) → ficha (acordo.empresa) e marca `[pagador:NOME]` no honorário;
+  `pixDeAcordo_` põe primeiro o acordo cuja empresa bate com quem mandou o PIX (desempata dois acordos de mesmo valor).

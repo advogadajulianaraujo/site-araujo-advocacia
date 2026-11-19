@@ -3854,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.49.3';
+  const VERSAO_PAINEL = '8.50.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4251,7 +4251,8 @@
       return h('button', { type: 'button', class: 'ix-num ' + (n ? cor : 'zero') + (ver === k ? ' ativo' : ''), 'aria-pressed': String(ver === k), onclick: () => ir({ ver: ver === k ? '' : k }) }, h('b', {}, String(n)), h('span', {}, rot));
     }));
     const nConf = prazos.filter(precisaConferir).length;
-    const ABAS_IX = [['prazos', 'Prazos e audiências', prazos.filter(z => !z.fatal || z.fatal <= em7).length + atos.length], ['conferir', 'Conferir no tribunal', nConf],
+    // 8.50 (pedido da usuária: "nas intimações só quero o que está no PJe"): só os prazos das intimações; audiências e perícias ficam na tela Audiências
+    const ABAS_IX = [['prazos', 'Prazos', prazos.filter(z => !z.fatal || z.fatal <= em7).length], ['conferir', 'Conferir no tribunal', nConf],
       ['execucao', 'Em execução e aprovação', prazos.filter(z => z.situacao === 'conferido').length]];
     const barra = h('div', { class: 'ix-barra' },
       h('div', { class: 'ix-abas', role: 'tablist' }, ABAS_IX.map(([k, rot, n]) => h('button', { type: 'button', role: 'tab', class: 'ix-aba' + (parte === k && !ver ? ' ativa' : ''), 'aria-selected': String(parte === k && !ver), onclick: () => ir({ parte: k === 'prazos' ? '' : k, ver: '' }) }, rot, h('span', { class: 'ix-n' + (k === 'conferir' && n ? ' alerta' : '') }, String(n))))),
@@ -4266,20 +4267,18 @@
         lista.length ? h('div', { class: 'ix-lista' }, lista.map(linhaPrazoIx)) : h('p', { class: 'ini-vazio' }, 'Nada nesta lista.'));
     } else if (parte === 'prazos') {
       // audiências e perícias: só as que estão por vir (as que já aconteceram saem sozinhas); em destaque as marcadas nos últimos 7 dias
-      const novos = atos.filter(z => z.fatal >= hoje && z.criado_em && Date.now() - Date.parse(z.criado_em) < 7 * 864e5).sort(porData);
       const atrasados = prazos.filter(z => z.fatal && z.fatal < hoje && !docPendente(z)).sort(porData);
       const semana = prazos.filter(z => z.fatal && z.fatal >= hoje && z.fatal <= em7).sort((a, b) => porData(a, b) || docPendente(a) - docPendente(b));
       const dias = [...new Set(semana.map(z => z.fatal))];
       const semData = prazos.filter(z => !z.fatal);
       const depois = prazos.filter(z => z.fatal > em7).sort(porData);
       corpo.push(
-        grupoIx('Audiências e perícias novas', novos, linhaAtoNovo, 'marcadas nos últimos 7 dias — avisar o cliente', 'ix-g-atos'),
         grupoIx('Atrasados', atrasados, linhaPrazoIx, 'o robô retira sozinho o que foi feito ou era só ciência; estes precisam de alguém', 'ix-g-venc'),
         ...dias.map(d => grupoIx(tituloDia(d, hoje), semana.filter(z => z.fatal === d), linhaPrazoIx, '', d === hoje ? 'ix-g-hoje' : null)),
         dias.length || atrasados.length ? null : h('p', { class: 'ini-vazio' }, '✓ Nenhum prazo nos próximos 7 dias.'),
         grupoIx('Sem data', semData, linhaPrazoIx),
         depois.length ? h('details', { class: 'ix-depois' }, h('summary', {}, `Depois desta semana (${depois.length})`), h('div', { class: 'ix-lista' }, depois.map(linhaPrazoIx))) : null,
-        h('p', { class: 'ix-rodape' }, h('a', { href: '#/audiencias' }, 'Ver todas as audiências e perícias →')));
+        h('p', { class: 'ix-rodape' }, atos.length ? `Audiências e perícias marcadas (${atos.length}) ficam em ` : 'Audiências e perícias ficam em ', h('a', { href: '#/audiencias' }, 'Audiências →')));
     } else if (parte === 'conferir') {
       const doc = prazos.filter(docPendente).sort(porData);
       const div = prazos.filter(z => !docPendente(z) && divergente(z)).sort(porData);
@@ -4744,8 +4743,9 @@
       try {
         const r = await api('audiencias.resultado', Object.assign({ lembrete: a.lembrete, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo }, dados));
         caixa.close();
-        avisar(r.honorario_id ? `Acordo anotado e honorários de ${realBR(r.honorarios)} lançados no Financeiro.` : 'Anotado.');
-        if (r.honorario_id) location.hash = '#/honorario/' + r.honorario_id; else rota();
+        // 8.50 (pedido da usuária): continua na mesma tela; os honorários já entram sozinhos em Cobranças
+        avisar(r.honorario_id ? `Acordo anotado. Honorários de ${realBR(r.honorarios)} lançados em Cobranças.` : 'Anotado.');
+        rota();
       } catch (e) { avisar(e.message, true); bt.disabled = false; bt.textContent = 'Salvar'; }
     };
     const telaAcordo = () => {
@@ -4756,6 +4756,7 @@
       const prim = h('input', { type: 'date', value: isoSoma(hojeISO(), 30), 'aria-label': 'Data do 1º pagamento' });
       const lancar = h('input', { type: 'checkbox', checked: true });
       const obs = h('textarea', { rows: 2, placeholder: 'Observação (ex.: depósito na conta do escritório; multa de 50% se atrasar)' });
+      const empresa = h('input', { type: 'text', value: c.empresa || '', placeholder: 'Opcional — sem preencher, vale a parte contrária do processo', 'aria-label': 'Quem vai pagar o acordo' });
       const previa = h('p', { class: 'aud-previa' });
       const conta = () => {
         const v = numMoeda(vAc.value), p = +pct.value || 0, n = Math.max(1, parseInt(nParc.value, 10) || 1), hon = Math.round(v * p) / 100;
@@ -4765,7 +4766,7 @@
       const bt = h('button', { type: 'button', class: 'btn' }, 'Salvar');
       bt.addEventListener('click', () => {
         if (!numMoeda(vAc.value)) return avisar('Informe o valor do acordo.', true);
-        enviar({ resultado: 'acordo', valor: vAc.value, pct: pct.value, parcelas: nParc.value, primeiro: prim.value, lancar: lancar.checked, obs: obs.value }, bt);
+        enviar({ resultado: 'acordo', valor: vAc.value, pct: pct.value, parcelas: nParc.value, primeiro: prim.value, lancar: lancar.checked, obs: obs.value, empresa: empresa.value.trim() }, bt);
       });
       corpo.replaceChildren(h('h3', {}, '🤝 Fechou acordo'),
         h('div', { class: 'aud-grade' },
@@ -4773,7 +4774,8 @@
           h('label', { class: 'aud-campo' }, h('span', {}, 'Em quantas parcelas'), nParc),
           h('label', { class: 'aud-campo' }, h('span', {}, 'Data do 1º pagamento'), prim),
           h('label', { class: 'aud-campo' }, h('span', {}, a.pct_exito ? 'Honorários (%) — do contrato do cliente' : 'Honorários (%) — sem contrato de êxito no painel: 30%'), pct)),
-        h('label', { class: 'aud-ok' }, lancar, ' Lançar os honorários no Financeiro (parcelas nas mesmas datas do acordo)'),
+        h('label', { class: 'aud-campo' }, h('span', {}, 'Quem vai pagar (empresa) — o robô reconhece o PIX dela e desconta os honorários'), empresa),
+        h('label', { class: 'aud-ok' }, lancar, ' Lançar os honorários em Cobranças (parcelas nas mesmas datas do acordo)'),
         obs, previa,
         h('div', { class: 'acoes' }, bt, botao('← Voltar', escolher, 'sec')));
       conta(); vAc.focus();
