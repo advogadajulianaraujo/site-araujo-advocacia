@@ -84,13 +84,15 @@ projeto.files[0].source = fonteAtual; implantada = 41; P.setProperty('SUPABASE_G
 P.setProperty('SUPABASE_URL', 'https://abcdefgh.supabase.co');
 github['supabase/esquema.sql'] = '-- esquema'; github['supabase/leitura-rapida.sql'] = '-- leitura';
 ['index.ts', 'servidor.js', 'motor.js'].forEach(f => { github['supabase/functions/painel/' + f] = '// ' + f; });
-C.sbEdgePing_ = () => ({ ok: true, versao: '99.0.0' });
+// 8.36.2: a função começa na versão ANTIGA (senão a atualização pula o Supabase); depois de publicada responde a nova
+let pings = 0; C.sbEdgePing_ = () => ({ ok: true, versao: pings++ === 0 ? '98.0.0' : '99.0.0' });
 chamadas = []; r = C.autoAtualizar_(true);
 const ordem = chamadas.filter(x => /^supabase:|apps:put\/content/.test(x));
 assert(r.atualizado && r.supabase.feito && ordem[0].includes('database/query') && ordem[2].includes('functions/deploy') && /apps:put\/content/.test(ordem[3]),
   'com a chave de publicação: banco (2 arquivos) → função do Supabase → código do Google, nessa ordem');
 // Supabase recusou: o Google não é atualizado (as versões ficam combinando)
 projeto.files[0].source = fonteAtual; implantada = 41; P.deleteProperty('AUTO_FALHOU');
+pings = 0; C.sbEdgePing_ = () => ({ ok: true, versao: '98.0.0' }); // função ainda antiga: precisa publicar (e a chave venceu)
 const f2 = C.UrlFetchApp.fetch; C.UrlFetchApp.fetch = (url, op) => url.startsWith('https://api.supabase.com/') ? { getResponseCode: () => 401, getContentText: () => '{}' } : f2(url, op);
 r = C.autoAtualizar_(true);
 assert(/chave de publicação do Supabase venceu/.test(r.erro || '') && projeto.files[0].source === fonteAtual, 'chave do Supabase vencida: não instala pela metade e diz o que fazer');

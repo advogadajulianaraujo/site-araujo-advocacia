@@ -33,3 +33,8 @@ create or replace function vault.create_secret(s text, n text default null, d te
 create or replace function vault.update_secret(i uuid, s text) returns void language sql as $$ update vault.secrets set secret = s where id = i $$;
 create or replace view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
 ```
+
+8.51.2 — teste de destruição (todas as rotas × 4 perfis × 7 tipos de dado absurdo; permissão, código malicioso, pedido gigante, banco fora):
+```bash
+node .github/motor/teste/caos.js
+```
