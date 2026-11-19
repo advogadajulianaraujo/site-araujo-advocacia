@@ -1915,3 +1915,23 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   números — qual tem WhatsApp?" (`escolherNumeroWhats`; o último escolhido fica lembrado neste computador, localStorage `whats_num_<números>`,
   e vem primeiro). Vale para TODOS os botões de WhatsApp (ficha, CRM, cobranças, audiências, Edifício Future — future.js usa a mesma função).
   Servidor (`telWhatsServidor_`, avisos automáticos de audiência): mesma leitura, usa o primeiro CELULAR. Em 19/11: 520 cadastros com 2 números.
+
+## 8.53.0 Chat estilo WhatsApp, direto no banco (pedido da usuária, 19/11/2026: "não deixe travar; mandar áudio, anexo, tipo o WhatsApp")
+
+- Antes cada mensagem passava pela função "painel" (às vezes pelo Google): 0,4 s em média, picos de 4–6 s. Agora o navegador fala DIRETO com
+  funções do banco (leitura-rapida.sql 8.53, chave pública + código da sessão do banco, mesmas travas do painel_chat_ping): `painel_chat_listar`
+  (salas, não lidas, últimas 200 mensagens, resposta citada `resp`, `vistos` = até onde cada um leu), `painel_chat_enviar` (id gerado no navegador
+  'M'+12 hex = mandar de novo não duplica; mesmo texto em 2 min não duplica; 30/min; só pessoa ativa nas conversas a dois; anexo só se o arquivo
+  JÁ está no Storage), `painel_chat_lido`, `painel_chat_apagar` (só quem escreveu). Toda mudança marca painel_estado 'mudou:chat'/'mudou:chat_lidos'
+  (a cópia banco → planilha leva junto). Sem o banco (sessão caiu, fora do ar) → o caminho antigo (`chat.*` do Apps Script, que aceita `id` e `resposta`).
+- Arquivos (áudio, foto, PDF/documento até 25 MB) no Storage do Supabase, cesto PRIVADO "chat": função `chat` (supabase/functions/chat/index.ts;
+  publicar `FUNCAO=chat node .github/motor/publicar-edge.mjs`) dá o link de ENVIO de uso único (nome novo escolhido pelo banco em
+  `painel_chat_arquivo_`) e links de BAIXA de 1 h só para arquivos de mensagens que a pessoa pode ver (não apagadas). O navegador sobe direto ao
+  Storage com a % (`chatSubir`, XHR). Colunas novas em Chat: tipo (audio|imagem|arquivo), arquivo, arquivo_nome, arquivo_tam, arquivo_tipo,
+  duracao, resposta. CSP do painel: img-src/media-src com https://*.supabase.co e blob:.
+- Janela (`montarChatFlutuante`): 📎 anexar (também colar imagem e arrastar arquivos), 🎤 gravar áudio (aparece com a caixa vazia; até 5 min,
+  32 kbps; 🗑 cancela), player com velocidade 1x/1,5x/2x, foto em miniatura (clique abre), PDF em cartão, ↩ responder (citação clicável),
+  ⧉ copiar, 🗑 apagar, ✓/✓✓ (azul = lido; na "Equipe toda" o título diz quem viu). A lista é atualizada POR PEÇAS (só o que mudou): o áudio que
+  está tocando não para quando chega mensagem. Uma leitura por vez (`st.carregando`). Envio que falhou fica com "Tentar de novo".
+- Teste: SQL (invasão, sala alheia, pessoa inativa, arquivo inexistente/de outro escritório, apagar alheio, anon sem acesso às internas) e
+  navegador (texto 0,17 s, PDF, foto, áudio gravado e tocando, resposta, 0 pedidos ao Google). etapaChat.mjs continua passando.

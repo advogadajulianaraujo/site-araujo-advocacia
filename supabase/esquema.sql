@@ -1570,6 +1570,13 @@ create table if not exists chat (
   "texto" text,
   "em" text,
   "apagado" text,
+  "tipo" text,
+  "arquivo" text,
+  "arquivo_nome" text,
+  "arquivo_tam" text,
+  "arquivo_tipo" text,
+  "duracao" text,
+  "resposta" text,
   primary key (escritorio_id, "id")
 );
 alter table chat add column if not exists "id" text;
@@ -1578,6 +1585,13 @@ alter table chat add column if not exists "de" text;
 alter table chat add column if not exists "texto" text;
 alter table chat add column if not exists "em" text;
 alter table chat add column if not exists "apagado" text;
+alter table chat add column if not exists "tipo" text;
+alter table chat add column if not exists "arquivo" text;
+alter table chat add column if not exists "arquivo_nome" text;
+alter table chat add column if not exists "arquivo_tam" text;
+alter table chat add column if not exists "arquivo_tipo" text;
+alter table chat add column if not exists "duracao" text;
+alter table chat add column if not exists "resposta" text;
 alter table chat enable row level security;
 drop policy if exists "chat: só o próprio escritório" on chat;
 create policy "chat: só o próprio escritório" on chat for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);

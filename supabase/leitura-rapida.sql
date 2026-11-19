@@ -589,3 +589,218 @@ end $$;
 alter role service_role set statement_timeout = '30s';
 notify pgrst, 'reload config';
 
+
+-- 8.53: CHAT DIRETO NO BANCO (pedido da usuária: "no chat, não deixe travar; mandar áudio e anexo, tipo o WhatsApp").
+-- Antes cada mensagem passava pela função "painel" (e às vezes pelo Google): 0,4 s em média, picos de 4–6 s. Agora o navegador fala
+-- direto com estas funções (chave pública + código da sessão do banco, as mesmas travas do painel_chat_ping). Os arquivos (áudio, foto,
+-- documento) ficam no Storage do Supabase, cesto PRIVADO "chat"; a função "chat" só assina o envio/baixa depois de conferir aqui.
+-- Toda mudança marca painel_estado 'mudou:chat' / 'mudou:chat_lidos' → a cópia banco → planilha (reserva) leva junto.
+create or replace function painel_chat_sessao_(p_token text) returns painel_sessoes
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype;
+begin
+  if p_token is null or length(p_token) < 40 then raise exception 'sessão do banco inválida' using errcode = '28000'; end if;
+  select * into s from painel_sessoes where token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex');
+  if not found or s.expira_em < now() or s.ultimo_uso < now() - interval '6 hours' then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  if not exists (select 1 from usuarios x where x.escritorio_id = s.escritorio_id and x.id = s.usuario_id and x.ativo = 'sim' and x.perfil = s.perfil
+                   and coalesce(nullif(x.sessao_versao, ''), '0') = s.versao) then raise exception 'sessão do banco expirada' using errcode = '28000'; end if;
+  if s.ultimo_uso < now() - interval '1 minute' then perform painel_tocar_sessao_(s.token_hash); end if;
+  return s;
+end $$;
+revoke all on function painel_chat_sessao_(text) from public, anon, authenticated;
+
+create or replace function painel_chat_sala_ok_(p_sala text, p_eu text) returns boolean language sql immutable as $$
+  select p_sala = 'geral' or (p_sala ~ '^dm:[^|]+\|[^|]+$' and split_part(substr(p_sala, 4), '|', 1) <> split_part(p_sala, '|', 2)
+         and p_eu in (split_part(substr(p_sala, 4), '|', 1), split_part(p_sala, '|', 2)));
+$$;
+
+create or replace function painel_chat_previa_(m chat) returns text language sql immutable as $$
+  select case coalesce(m.tipo, '')
+    when 'audio' then '🎤 Áudio' || coalesce(' (' || nullif(m.duracao, '') || ')', '')
+    when 'imagem' then '📷 ' || coalesce(nullif(left(m.texto, 80), ''), 'Foto')
+    when 'arquivo' then '📎 ' || coalesce(nullif(m.arquivo_nome, ''), 'Arquivo') || coalesce(' — ' || nullif(left(m.texto, 60), ''), '')
+    else left(coalesce(m.texto, ''), 90) end;
+$$;
+
+create or replace function painel_chat_marcar_lido_(p_esc uuid, p_eu text, p_sala text, p_em text) returns void
+language plpgsql security definer set search_path = public as $$
+declare agora text := to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'); base integer;
+begin
+  update chat_lidos set em = p_em, _sinc = agora where escritorio_id = p_esc and id = p_eu || '|' || p_sala and coalesce(em, '') < p_em;
+  if not found and not exists (select 1 from chat_lidos where escritorio_id = p_esc and id = p_eu || '|' || p_sala) then
+    perform pg_advisory_xact_lock(hashtext('chat_lidos:' || p_esc::text));
+    select coalesce(max(_n), 1) into base from chat_lidos where escritorio_id = p_esc;
+    insert into chat_lidos (escritorio_id, _n, _sinc, id, usuario, sala, em) values (p_esc, base + 1, agora, p_eu || '|' || p_sala, p_eu, p_sala, p_em)
+      on conflict (escritorio_id, id) do update set em = greatest(chat_lidos.em, excluded.em), _sinc = excluded._sinc;
+  end if;
+  insert into painel_estado (escritorio_id, chave, valor, em) values (p_esc, 'mudou:chat_lidos', agora, now())
+    on conflict (escritorio_id, chave) do update set valor = excluded.valor, em = now();
+end $$;
+revoke all on function painel_chat_marcar_lido_(uuid, text, text, text) from public, anon, authenticated;
+
+create or replace function painel_chat_listar(p_token text, p_sala text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; eu text; v_sala text; r jsonb;
+begin
+  s := painel_chat_sessao_(p_token); eu := s.usuario;
+  v_sala := case when painel_chat_sala_ok_(coalesce(p_sala, ''), eu) then p_sala else 'geral' end;
+  with nomes as (select usuario, coalesce(nullif(nome, ''), usuario) nome from usuarios where escritorio_id = s.escritorio_id),
+  pessoas as (select usuario, coalesce(nullif(nome, ''), usuario) nome, perfil from usuarios
+               where escritorio_id = s.escritorio_id and ativo = 'sim' and usuario <> eu),
+  salas0 as (select 'geral'::text sala, 'Equipe toda'::text nome, 'geral'::text tipo, null::text usuario, null::text perfil
+             union all
+             select 'dm:' || least(eu collate "C", p.usuario collate "C") || '|' || greatest(eu collate "C", p.usuario collate "C"), p.nome, 'dm', p.usuario, p.perfil from pessoas p),
+  lidos as (select l.sala, coalesce(l.em, '') em from chat_lidos l where l.escritorio_id = s.escritorio_id and l.usuario = eu),
+  ult as (select distinct on (c.sala) c.sala, c.de, painel_chat_previa_(c) texto, c.em from chat c
+           where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and c.sala in (select x.sala from salas0 x)
+           order by c.sala, c.em desc),
+  nl as (select c.sala, count(*) n from chat c left join lidos l on l.sala = c.sala
+          where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and c.de <> eu and c.sala in (select x.sala from salas0 x)
+            and c.em > coalesce(l.em, '') group by c.sala),
+  sl as (select x.*, u.de u_de, u.texto u_texto, u.em u_em, coalesce(nl.n, 0) naolidas from salas0 x left join ult u on u.sala = x.sala left join nl on nl.sala = x.sala),
+  msgs as (select * from (select c.* from chat c where c.escritorio_id = s.escritorio_id and c.sala = v_sala and coalesce(c.apagado, '') <> 'sim'
+           order by c.em desc limit 200) z order by z.em)
+  select jsonb_build_object(
+    'eu', eu, 'sala', v_sala, 'direto', true,
+    'lidoAte', coalesce((select em from lidos where lidos.sala = v_sala), ''),
+    'salas', coalesce((select jsonb_agg(jsonb_build_object('sala', sl.sala, 'nome', sl.nome, 'tipo', sl.tipo, 'usuario', sl.usuario, 'perfil', sl.perfil, 'naoLidas', sl.naolidas,
+                'ultima', case when sl.u_em is null then null else jsonb_build_object('de', sl.u_de, 'nome', coalesce((select n.nome from nomes n where n.usuario = sl.u_de), sl.u_de), 'texto', sl.u_texto, 'em', sl.u_em) end)
+              order by (sl.tipo <> 'geral'), coalesce(sl.u_em, '') desc, sl.nome) from sl), '[]'::jsonb),
+    'mensagens', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'de', m.de, 'nome', coalesce((select n.nome from nomes n where n.usuario = m.de), m.de),
+                'texto', coalesce(m.texto, ''), 'em', m.em, 'meu', m.de = eu, 'tipo', coalesce(m.tipo, ''), 'arquivo', coalesce(m.arquivo, ''),
+                'arquivo_nome', coalesce(m.arquivo_nome, ''), 'arquivo_tam', coalesce(m.arquivo_tam, ''), 'arquivo_tipo', coalesce(m.arquivo_tipo, ''),
+                'duracao', coalesce(m.duracao, ''), 'resposta', coalesce(m.resposta, ''),
+                'resp', (select jsonb_build_object('id', q.id, 'nome', coalesce((select n.nome from nomes n where n.usuario = q.de), q.de),
+                           'texto', case when coalesce(q.apagado, '') = 'sim' then 'mensagem apagada' else painel_chat_previa_(q) end)
+                         from chat q where q.escritorio_id = s.escritorio_id and q.id = m.resposta and coalesce(m.resposta, '') <> '' limit 1))
+              order by m.em) from msgs m), '[]'::jsonb),
+    'vistos', coalesce((select jsonb_agg(jsonb_build_object('usuario', l.usuario, 'nome', coalesce((select n.nome from nomes n where n.usuario = l.usuario), l.usuario), 'em', l.em))
+              from chat_lidos l where l.escritorio_id = s.escritorio_id and l.sala = v_sala and l.usuario <> eu
+                and (v_sala <> 'geral' or l.usuario in (select p.usuario from pessoas p))), '[]'::jsonb)
+  ) into r;
+  return r;
+end $$;
+revoke all on function painel_chat_listar(text, text) from public, authenticated;
+grant execute on function painel_chat_listar(text, text) to anon, service_role;
+
+create or replace function painel_chat_enviar(p_token text, p_sala text, p_texto text, p_id text default null, p_tipo text default '',
+  p_arquivo jsonb default null, p_resposta text default '') returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; eu text; outro text; v_id text; agora text := to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+  v_texto text := btrim(replace(coalesce(p_texto, ''), E'\r', ''), E' \n\t'); v_tipo text := coalesce(p_tipo, ''); arq text := ''; base integer; x chat%rowtype;
+begin
+  s := painel_chat_sessao_(p_token); eu := s.usuario;
+  if not painel_chat_sala_ok_(coalesce(p_sala, ''), eu) then raise exception 'Conversa não encontrada.'; end if;
+  if v_tipo not in ('', 'audio', 'imagem', 'arquivo') then raise exception 'Tipo de mensagem inválido.'; end if;
+  if length(v_texto) > 4000 then raise exception 'Mensagem grande demais (até 4.000 letras).'; end if;
+  if v_tipo <> '' then
+    arq := coalesce(p_arquivo ->> 'path', '');
+    if arq !~ ('^' || s.escritorio_id::text || '/[0-9]{4}-[0-9]{2}/[0-9a-f-]{36}$') then raise exception 'Arquivo inválido.'; end if;
+    if not exists (select 1 from storage.objects o where o.bucket_id = 'chat' and o.name = arq) then raise exception 'O arquivo não chegou ao servidor. Tente de novo.'; end if;
+  elsif v_texto = '' then raise exception 'Escreva a mensagem.'; end if;
+  if p_sala <> 'geral' then
+    outro := case when split_part(substr(p_sala, 4), '|', 1) = eu then split_part(p_sala, '|', 2) else split_part(substr(p_sala, 4), '|', 1) end;
+    if not exists (select 1 from usuarios u where u.escritorio_id = s.escritorio_id and u.usuario = outro and u.ativo = 'sim') then raise exception 'Essa pessoa não está mais na equipe.'; end if;
+  end if;
+  v_id := case when coalesce(p_id, '') ~ '^M[0-9a-f]{12}$' then p_id else 'M' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12) end;
+  perform pg_advisory_xact_lock(hashtext('chat:' || s.escritorio_id::text));
+  select * into x from chat c where c.escritorio_id = s.escritorio_id and c.id = v_id;
+  if found then return jsonb_build_object('ok', true, 'id', x.id, 'em', x.em, 'repetida', true); end if; -- o navegador mandou de novo (internet caiu)
+  if v_tipo = '' then
+    select * into x from chat c where c.escritorio_id = s.escritorio_id and c.de = eu and c.sala = p_sala and c.texto = v_texto and coalesce(c.apagado, '') <> 'sim'
+       and c.em > to_char((clock_timestamp() - interval '2 minutes') at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') limit 1;
+    if found then return jsonb_build_object('ok', true, 'id', x.id, 'em', x.em, 'repetida', true); end if;
+  end if;
+  if (select count(*) from chat c where c.escritorio_id = s.escritorio_id and c.de = eu
+        and c.em > to_char((clock_timestamp() - interval '1 minute') at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) >= 30 then
+    raise exception 'Muitas mensagens em pouco tempo. Espere um minuto.';
+  end if;
+  select coalesce(max(_n), 1) into base from chat c where c.escritorio_id = s.escritorio_id;
+  insert into chat (escritorio_id, _n, _sinc, id, sala, de, texto, em, apagado, tipo, arquivo, arquivo_nome, arquivo_tam, arquivo_tipo, duracao, resposta)
+  values (s.escritorio_id, base + 1, agora, v_id, p_sala, eu, v_texto, agora, '', v_tipo, arq,
+          left(coalesce(p_arquivo ->> 'nome', ''), 160), left(coalesce(p_arquivo ->> 'tam', ''), 20), left(coalesce(p_arquivo ->> 'mime', ''), 80),
+          left(coalesce(p_arquivo ->> 'duracao', ''), 10), case when coalesce(p_resposta, '') ~ '^M[0-9a-f]{12}$' then p_resposta else '' end);
+  insert into painel_estado (escritorio_id, chave, valor, em) values (s.escritorio_id, 'mudou:chat', agora, now())
+    on conflict (escritorio_id, chave) do update set valor = excluded.valor, em = now();
+  perform painel_chat_marcar_lido_(s.escritorio_id, eu, p_sala, agora);
+  return jsonb_build_object('ok', true, 'id', v_id, 'em', agora);
+end $$;
+revoke all on function painel_chat_enviar(text, text, text, text, text, jsonb, text) from public, authenticated;
+grant execute on function painel_chat_enviar(text, text, text, text, text, jsonb, text) to anon, service_role;
+
+create or replace function painel_chat_lido(p_token text, p_sala text, p_em text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype;
+begin
+  s := painel_chat_sessao_(p_token);
+  if not painel_chat_sala_ok_(coalesce(p_sala, ''), s.usuario) then raise exception 'Conversa não encontrada.'; end if;
+  perform painel_chat_marcar_lido_(s.escritorio_id, s.usuario, p_sala,
+    case when coalesce(p_em, '') ~ '^\d{4}-\d{2}-\d{2}T' then p_em else to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end);
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function painel_chat_lido(text, text, text) from public, authenticated;
+grant execute on function painel_chat_lido(text, text, text) to anon, service_role;
+
+create or replace function painel_chat_apagar(p_token text, p_id text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; x chat%rowtype; agora text := to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+begin
+  s := painel_chat_sessao_(p_token);
+  select * into x from chat c where c.escritorio_id = s.escritorio_id and c.id = p_id;
+  if not found or coalesce(x.apagado, '') = 'sim' or not painel_chat_sala_ok_(x.sala, s.usuario) then raise exception 'Mensagem não encontrada.'; end if;
+  if x.de <> s.usuario then raise exception 'Só quem escreveu pode apagar a mensagem.'; end if;
+  update chat set apagado = 'sim', texto = '', _sinc = agora where escritorio_id = s.escritorio_id and id = p_id;
+  insert into painel_estado (escritorio_id, chave, valor, em) values (s.escritorio_id, 'mudou:chat', agora, now())
+    on conflict (escritorio_id, chave) do update set valor = excluded.valor, em = now();
+  return jsonb_build_object('ok', true, 'arquivo', coalesce(x.arquivo, ''));
+end $$;
+revoke all on function painel_chat_apagar(text, text) from public, authenticated;
+grant execute on function painel_chat_apagar(text, text) to anon, service_role;
+
+-- Só para a função "chat" (chave secreta): confere antes de assinar o envio (nome novo do arquivo) ou a baixa (só arquivos de mensagens
+-- que a pessoa pode ver e que não foram apagadas).
+create or replace function painel_chat_arquivo_(p_token text, p_acao text, p_sala text, p_paths jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype;
+begin
+  s := painel_chat_sessao_(p_token);
+  if p_acao = 'enviar' then
+    if not painel_chat_sala_ok_(coalesce(p_sala, ''), s.usuario) then raise exception 'Conversa não encontrada.'; end if;
+    return jsonb_build_object('path', s.escritorio_id::text || '/' || to_char(now() at time zone 'America/Sao_Paulo', 'YYYY-MM') || '/' || gen_random_uuid()::text);
+  end if;
+  return jsonb_build_object('paths', coalesce((select jsonb_agg(distinct c.arquivo) from chat c
+    where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and coalesce(c.arquivo, '') <> ''
+      and c.arquivo in (select jsonb_array_elements_text(coalesce(p_paths, '[]'::jsonb))) and painel_chat_sala_ok_(c.sala, s.usuario)), '[]'::jsonb));
+end $$;
+revoke all on function painel_chat_arquivo_(text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function painel_chat_arquivo_(text, text, text, jsonb) to service_role;
+
+-- prévia da última mensagem no aviso do canto (áudio/foto/arquivo não têm texto)
+create or replace function painel_chat_ping(p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s painel_sessoes%rowtype; r jsonb; ult chat%rowtype; n integer;
+begin
+  s := painel_chat_sessao_(p_token);
+  select count(*) into n from chat c
+   left join chat_lidos l on l.escritorio_id = c.escritorio_id and l.id = s.usuario || '|' || c.sala
+   where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and c.de <> s.usuario
+     and painel_chat_sala_ok_(c.sala, s.usuario) and c.em > coalesce(l.em, '');
+  select c.* into ult from chat c
+   where c.escritorio_id = s.escritorio_id and coalesce(c.apagado, '') <> 'sim' and painel_chat_sala_ok_(c.sala, s.usuario)
+   order by c.em desc limit 1;
+  r := jsonb_build_object('naoLidas', n);
+  if ult.em is not null then r := r || jsonb_build_object('ultima', jsonb_build_object('sala', ult.sala, 'de', ult.de, 'texto', painel_chat_previa_(ult), 'em', ult.em)); end if;
+  return r;
+end $$;
+revoke all on function painel_chat_ping(text) from public, authenticated;
+grant execute on function painel_chat_ping(text) to anon, service_role;
+
+-- cesto PRIVADO dos arquivos do chat (até 25 MB cada); ninguém lê direto: só pelo link assinado (1 h) que a função "chat" entrega
+do $$ begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit) values ('chat', 'chat', false, 26214400)
+      on conflict (id) do update set public = false, file_size_limit = 26214400;
+  end if;
+end $$;
+create index if not exists chat_sala_em_idx on chat (escritorio_id, sala, em);
+notify pgrst, 'reload schema';

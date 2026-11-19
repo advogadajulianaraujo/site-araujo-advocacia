@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.52.5 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.52.5';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.53.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.53.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.52.5';
+var VERSAO = '8.53.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -137,7 +137,7 @@ var ESQUEMA = {
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
   Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
-  Chat: ['id', 'sala', 'de', 'texto', 'em', 'apagado'], // 8.39: chat da equipe (sala "geral" ou "dm:<usuário>|<usuário>")
+  Chat: ['id', 'sala', 'de', 'texto', 'em', 'apagado', 'tipo', 'arquivo', 'arquivo_nome', 'arquivo_tam', 'arquivo_tipo', 'duracao', 'resposta'], // 8.53: áudio/anexo (Storage 'chat') e resposta // 8.39: chat da equipe (sala "geral" ou "dm:<usuário>|<usuário>")
   ChatLidos: ['id', 'usuario', 'sala', 'em'],          // até onde cada pessoa leu cada sala (id = usuário|sala)
   AgendaEventos: ['id', 'mes', 'agenda', 'ev_id', 'titulo', 'local', 'descricao', 'dia_todo', 'inicio', 'fim', 'dia'], // 8.35: cópia do Google Agenda
   Mensagens: ['id', 'conversa_id', 'quando', 'direcao', 'tipo', 'texto', 'wa_id', 'autor'],
@@ -11154,11 +11154,14 @@ function chatListar_(d, u) {
   tabela_('Chat').linhas.forEach(function (m) {
     if (m.apagado === 'sim' || !salas[m.sala]) return;
     var s3 = salas[m.sala], em = String(m.em || '');
-    if (!s3.ultima || em > s3.ultima.em) s3.ultima = { de: m.de, nome: nomes[m.de] || m.de, texto: String(m.texto || '').slice(0, 90), em: em };
+    if (!s3.ultima || em > s3.ultima.em) s3.ultima = { de: m.de, nome: nomes[m.de] || m.de, texto: m.tipo === 'audio' ? '🎤 Áudio' : m.tipo === 'imagem' ? '📷 Foto' : m.tipo === 'arquivo' ? '📎 ' + (m.arquivo_nome || 'Arquivo') : String(m.texto || '').slice(0, 90), em: em };
     if (m.de !== u.usuario && em > (lidos[m.sala] || '')) s3.naoLidas++;
-    if (m.sala === sala) lista.push({ id: m.id, de: m.de, nome: nomes[m.de] || m.de, texto: String(m.texto || ''), em: em, meu: m.de === u.usuario });
+    if (m.sala === sala) lista.push({ id: m.id, de: m.de, nome: nomes[m.de] || m.de, texto: String(m.texto || ''), em: em, meu: m.de === u.usuario,
+      tipo: m.tipo || '', arquivo: m.arquivo || '', arquivo_nome: m.arquivo_nome || '', arquivo_tam: m.arquivo_tam || '', arquivo_tipo: m.arquivo_tipo || '', duracao: m.duracao || '', resposta: m.resposta || '' });
   });
   lista.sort(function (a, b) { return a.em < b.em ? -1 : a.em > b.em ? 1 : 0; });
+  var porId = {}; lista.forEach(function (x) { porId[x.id] = x; });
+  lista.forEach(function (x) { var q = x.resposta && porId[x.resposta]; if (q) x.resp = { id: q.id, nome: q.nome, texto: q.tipo ? (q.tipo === 'audio' ? '🎤 Áudio' : q.tipo === 'imagem' ? '📷 Foto' : '📎 ' + q.arquivo_nome) : q.texto.slice(0, 120) }; });
   var ordem = Object.keys(salas).map(function (k) { return salas[k]; }).sort(function (a, b) {
     if (a.tipo !== b.tipo) return a.tipo === 'geral' ? -1 : 1;
     var ea = a.ultima ? a.ultima.em : '', eb = b.ultima ? b.ultima.em : '';
@@ -11182,8 +11185,12 @@ function chatEnviar_(d, u) {
     var igual = minhas.filter(function (x) { return x.sala === sala && x.texto === texto && x.apagado !== 'sim'; })[0];
     if (igual) return { ok: true, id: igual.id, em: igual.em, repetida: true };
     if (minhas.filter(function (x) { return agoraMs - Date.parse(x.em || 0) < 60000; }).length >= 20) throw falha_('Muitas mensagens em pouco tempo. Espere um minuto.');
-    var em = new Date().toISOString(), id = 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
-    inserirLinha_(tab, { id: id, sala: sala, de: u.usuario, texto: texto, em: em, apagado: '' });
+    // 8.53: o código vem do navegador (mandou de novo depois de a internet cair → não grava duas vezes) e pode citar outra mensagem
+    var idPedido = /^M[0-9a-f]{12}$/.test(String(d.id || '')) ? String(d.id) : '';
+    var ja = idPedido && tab.linhas.filter(function (x) { return x.id === idPedido; })[0];
+    if (ja) return { ok: true, id: ja.id, em: ja.em, repetida: true };
+    var em = new Date().toISOString(), id = idPedido || 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    inserirLinha_(tab, { id: id, sala: sala, de: u.usuario, texto: texto, em: em, apagado: '', tipo: '', resposta: /^M[0-9a-f]{12}$/.test(String(d.resposta || '')) ? String(d.resposta) : '' });
     chatMarcarLido_(sala, u, em);
     return { ok: true, id: id, em: em };
   });

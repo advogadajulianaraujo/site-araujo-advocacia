@@ -937,10 +937,16 @@
     const btMin = h('button', { type: 'button', class: 'chatf-bt', title: 'Minimizar', 'aria-label': 'Minimizar o chat', onclick: () => modo('fechado') }, '—');
     const listaEl = h('nav', { class: 'chat-salas', 'aria-label': 'Conversas' });
     const msgsEl = h('div', { class: 'chat-msgs', 'aria-live': 'polite' });
-    const ta = h('textarea', { rows: 1, placeholder: 'Escreva… (Enter envia)', 'aria-label': 'Mensagem', maxlength: 4000 });
-    const enviarBt = h('button', { type: 'submit', class: 'chatf-enviar', 'aria-label': 'Enviar' }, '➤');
-    const form = h('form', { class: 'chat-form' }, ta, enviarBt);
-    const conversa = h('div', { class: 'chatf-conversa' }, msgsEl, form);
+    const ta = h('textarea', { rows: 1, placeholder: 'Mensagem', 'aria-label': 'Mensagem', maxlength: 4000 });
+    // 8.53 (pedido da usuária: "mandar áudio, mandar anexo, tipo o WhatsApp"): 📎 anexar · 🎤 gravar áudio (aparece com a caixa vazia) · ➤ enviar
+    const enviarBt = h('button', { type: 'submit', class: 'chatf-enviar', 'aria-label': 'Enviar', title: 'Enviar (Enter)' }, '➤');
+    const micBt = h('button', { type: 'button', class: 'chatf-enviar chatf-mic', 'aria-label': 'Gravar áudio', title: 'Gravar áudio' }, '🎤');
+    const arqIn = h('input', { type: 'file', multiple: true, hidden: true, 'aria-label': 'Escolher arquivos' });
+    const clipBt = h('button', { type: 'button', class: 'chatf-clip', 'aria-label': 'Anexar arquivo ou foto', title: 'Anexar foto, PDF ou documento (até 25 MB) — dá também para colar ou arrastar' }, '📎');
+    const respEl = h('div', { class: 'chat-resp-barra', hidden: true });
+    const gravEl = h('div', { class: 'chat-grav', hidden: true });
+    const form = h('form', { class: 'chat-form' }, clipBt, arqIn, ta, micBt, enviarBt);
+    const conversa = h('div', { class: 'chatf-conversa' }, msgsEl, respEl, gravEl, form);
     const janela = h('section', { class: 'chatf-janela', role: 'dialog', 'aria-label': 'Chat da equipe' },
       h('header', { class: 'chatf-topo', title: 'Arraste por aqui para mudar o chat de lugar' }, voltar, tit, btTam, btMin), h('div', { class: 'chatf-corpo' }, listaEl, conversa));
     const raiz = h('div', { class: 'chatf', id: 'chatf' }, janela, bolha);
@@ -1013,71 +1019,272 @@
       return d.toDateString() === hj.toDateString() ? 'Hoje' : d.toDateString() === ont.toDateString() ? 'Ontem' : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
     const hora = iso => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const comLinks = t => { const out = []; String(t).split(/(https?:\/\/[^\s]+)/g).forEach((p, i) => out.push(i % 2 ? h('a', { href: p, target: '_blank', rel: 'noopener' }, p) : p)); return out; };
-    // 8.48 (pedido da usuária: "quando aperto numa conversa e depois em outra, trava"): a resposta ATRASADA da conversa anterior
-    // não volta mais para ela (antes `st.sala = r.sala` puxava de volta) e cada conversa já vista abre NA HORA com o que estava
-    // na tela (st.cache), conferindo por trás.
-    st.cache = {}; st.seq = 0;
+    // 8.48: a resposta ATRASADA da conversa anterior não volta para ela; cada conversa já vista abre NA HORA (st.cache) e confere por trás.
+    // 8.53 (pedido da usuária: "não deixe travar"): tudo DIRETO no banco (painel_chat_* no Supabase, ~0,1 s); sem o banco, o caminho antigo.
+    // A lista de mensagens é atualizada por PEÇAS (só o que mudou): um áudio tocando não para quando chega mensagem nova.
+    st.cache = {}; st.seq = 0; st.links = {}; st.resp = null; st.carregando = false; st.denovo = false;
+    const PB = () => window.PAINEL_BANCO;
+    const novoId = () => { const b = new Uint8Array(6); crypto.getRandomValues(b); return 'M' + Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); };
+    const tamTxt = n => { n = +n || 0; return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; };
+    const durTxt = seg => { seg = Math.max(0, Math.round(seg || 0)); return Math.floor(seg / 60) + ':' + String(seg % 60).padStart(2, '0'); };
+    async function lerSala(sala) {
+      let r = null;
+      try { r = PB() && PB().chatRpc ? await PB().chatRpc('painel_chat_listar', { p_sala: sala }, 9000) : null; }
+      catch (e) { throw e; }
+      if (r && !r.semBanco) return r;
+      return apiFresco('chat.listar', { sala });
+    }
+    async function rpcOu(nome, args, acao, dados) {
+      const r = PB() && PB().chatRpc ? await PB().chatRpc(nome, args, 12000) : { semBanco: true };
+      if (r && !r.semBanco) return r;
+      if (!acao) throw new Error('Sem conexão com o banco agora: tente de novo em instantes.');
+      return api(acao, dados);
+    }
     async function carregar() {
       if (!sessao || st.modo === 'fechado') return;
+      if (st.carregando) { st.denovo = true; return; } // 8.53: uma leitura por vez (com a internet lenta, os pedidos não se empilham)
+      st.carregando = true;
       const salaPedida = st.sala, n = ++st.seq;
       const guardado = st.cache[salaPedida];
       if (guardado) desenhar(guardado);
-      else if (raiz.dataset.vista !== 'lista' && !st.desenho.startsWith(salaPedida)) { st.desenho = ''; msgsEl.replaceChildren(h('p', { class: 'chat-vazio' }, 'Abrindo a conversa…')); }
+      else if (raiz.dataset.vista !== 'lista' && st.salaDesenhada !== salaPedida) { limparMsgs(); msgsEl.append(h('p', { class: 'chat-vazio' }, 'Abrindo a conversa…')); }
       let r;
-      try { r = await apiFresco('chat.listar', { sala: salaPedida }); }
-      catch (e) { if (n === st.seq && !guardado) msgsEl.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
+      try { r = await lerSala(salaPedida); }
+      catch (e) { if (n === st.seq && !guardado) { limparMsgs(); msgsEl.append(h('p', { class: 'erro' }, e.message)); } return; }
+      finally { st.carregando = false; if (st.denovo) { st.denovo = false; setTimeout(carregar, 50); } }
       st.cache[r.sala || salaPedida] = r;
-      if (n !== st.seq || st.sala !== salaPedida) return; // já trocou de conversa: esta resposta só fica guardada
-      if (r.sala && r.sala !== salaPedida) st.sala = r.sala; // conversa que não existe mais → a do servidor (geral)
+      if (n !== st.seq || st.sala !== salaPedida) return;
+      if (r.sala && r.sala !== salaPedida) st.sala = r.sala;
       desenhar(r);
+    }
+    const pecas = new Map(); // chave → elemento já desenhado (mensagens e separadores de dia)
+    function limparMsgs() { pecas.clear(); msgsEl.replaceChildren(); st.salaDesenhada = ''; }
+    /** link assinado (1 h) dos arquivos — pedidos juntos, guardados por 50 min */
+    async function linksDe(paths) {
+      const falta = paths.filter(p => p && !(st.links[p] && st.links[p].ate > Date.now()));
+      if (falta.length && PB() && PB().chatArquivo) {
+        try { const j = await PB().chatArquivo({ acao: 'baixar', paths: falta }); Object.entries(j.links || {}).forEach(([k, v]) => { st.links[k] = { url: v, ate: Date.now() + 50 * 60000 }; }); }
+        catch (e) { /* tenta na próxima */ }
+      }
+      const o = {}; paths.forEach(p => { if (st.links[p]) o[p] = st.links[p].url; }); return o;
+    }
+    function playerAudio(m) {
+      const au = new Audio(); au.preload = 'none';
+      const bt = h('button', { type: 'button', class: 'chat-play', 'aria-label': 'Ouvir o áudio' }, '▶');
+      const barra = h('input', { type: 'range', min: 0, max: 1000, value: 0, class: 'chat-barra', 'aria-label': 'Posição do áudio' });
+      const tempo = h('span', { class: 'chat-au-t' }, m.duracao || '0:00');
+      const vel = h('button', { type: 'button', class: 'chat-vel', title: 'Velocidade' }, '1x');
+      let carregou = false;
+      async function preparar() {
+        if (carregou) return true;
+        const l = await linksDe([m.arquivo]); if (!l[m.arquivo]) { avisar('Não consegui abrir o áudio agora. Tente de novo.', true); return false; }
+        au.src = l[m.arquivo]; carregou = true; return true;
+      }
+      bt.addEventListener('click', async () => {
+        if (!au.paused) { au.pause(); return; }
+        document.querySelectorAll('.chat-msg audio, .chatf audio').forEach(x => x !== au && x.pause && x.pause());
+        bt.textContent = '…'; if (!(await preparar())) { bt.textContent = '▶'; return; }
+        try { await au.play(); } catch (e) { bt.textContent = '▶'; avisar('Não consegui tocar o áudio: ' + e.message, true); }
+      });
+      au.addEventListener('play', () => { bt.textContent = '❚❚'; });
+      au.addEventListener('pause', () => { bt.textContent = '▶'; });
+      au.addEventListener('ended', () => { bt.textContent = '▶'; barra.value = 0; tempo.textContent = m.duracao || durTxt(au.duration); });
+      au.addEventListener('timeupdate', () => { if (au.duration && isFinite(au.duration)) { barra.value = Math.round(au.currentTime * 1000 / au.duration); tempo.textContent = durTxt(au.currentTime); } });
+      barra.addEventListener('input', async () => { if (!(await preparar())) return; if (au.duration && isFinite(au.duration)) au.currentTime = au.duration * barra.value / 1000; });
+      vel.addEventListener('click', () => { const v = au.playbackRate === 1 ? 1.5 : au.playbackRate === 1.5 ? 2 : 1; au.playbackRate = v; vel.textContent = String(v).replace('.', ',') + 'x'; });
+      const el = h('div', { class: 'chat-audio' }, bt, barra, tempo, vel); el.append(au); au.hidden = true;
+      return el;
+    }
+    function conteudo(m) {
+      const partes = [];
+      if (m.tipo === 'audio') partes.push(playerAudio(m));
+      else if (m.tipo === 'imagem') {
+        const img = h('img', { class: 'chat-img', alt: m.arquivo_nome || 'Foto', loading: 'lazy' });
+        const caixa = h('button', { type: 'button', class: 'chat-img-bt', title: 'Abrir a foto' }, img);
+        caixa.addEventListener('click', async () => { const l = await linksDe([m.arquivo]); if (l[m.arquivo]) window.open(l[m.arquivo], '_blank', 'noopener'); });
+        linksDe([m.arquivo]).then(l => { if (l[m.arquivo]) img.src = l[m.arquivo]; else caixa.replaceChildren(h('span', { class: 'peq' }, '📷 foto (toque para abrir)')); });
+        partes.push(caixa);
+      } else if (m.tipo === 'arquivo') {
+        const ext = (String(m.arquivo_nome).split('.').pop() || '').toUpperCase().slice(0, 4);
+        const card = h('button', { type: 'button', class: 'chat-arq', title: 'Abrir / baixar' },
+          h('span', { class: 'chat-arq-ic' }, ext === 'PDF' ? 'PDF' : ext || 'ARQ'),
+          h('span', { class: 'chat-arq-txt' }, h('b', {}, m.arquivo_nome || 'Arquivo'), h('small', {}, (m.arquivo_tam ? tamTxt(m.arquivo_tam) + ' · ' : '') + 'abrir')));
+        card.addEventListener('click', async () => { const l = await linksDe([m.arquivo]); if (l[m.arquivo]) window.open(l[m.arquivo], '_blank', 'noopener'); else avisar('Não consegui abrir o arquivo agora. Tente de novo.', true); });
+        partes.push(card);
+      }
+      if (m.texto) partes.push(h('span', { class: 'chat-txt' }, ...comLinks(m.texto)));
+      return partes;
+    }
+    function ticks(m, r) {
+      if (!m.meu || !r.vistos) return null;
+      const outros = (r.vistos || []).filter(v => v.em >= m.em);
+      const atual = (r.salas || []).find(x => x.sala === st.sala) || {};
+      const todos = atual.tipo === 'dm' ? outros.length >= 1 : outros.length && outros.length >= (r.salas || []).filter(x => x.tipo === 'dm').length;
+      return h('span', { class: 'chat-tick' + (todos ? ' lido' : ''), title: outros.length ? 'Visto por: ' + outros.map(v => primeiroNome(v.nome)).join(', ') : 'Enviada' }, outros.length ? '✓✓' : '✓');
+    }
+    function responder(m) {
+      st.resp = { id: m.id, nome: m.meu ? 'você' : primeiroNome(m.nome), texto: m.tipo === 'audio' ? '🎤 Áudio' : m.tipo === 'imagem' ? '📷 Foto' + (m.texto ? ' — ' + m.texto : '') : m.tipo === 'arquivo' ? '📎 ' + m.arquivo_nome : m.texto };
+      respEl.replaceChildren(h('div', { class: 'chat-cit' }, h('b', {}, 'Respondendo a ' + st.resp.nome), h('span', {}, String(st.resp.texto).slice(0, 120))),
+        h('button', { type: 'button', class: 'chatf-bt', 'aria-label': 'Cancelar a resposta', onclick: () => { st.resp = null; respEl.hidden = true; } }, '✕'));
+      respEl.hidden = false; ta.focus();
+    }
+    function elMsg(m, r, comNome) {
+      const atual = (r.salas || []).find(x => x.sala === st.sala) || {};
+      const acoes = h('span', { class: 'chat-acoes' },
+        h('button', { type: 'button', title: 'Responder', 'aria-label': 'Responder', onclick: () => responder(m) }, '↩'),
+        m.texto ? h('button', { type: 'button', title: 'Copiar o texto', 'aria-label': 'Copiar', onclick: () => copiar(m.texto, 'Texto copiado.') }, '⧉') : null,
+        m.meu ? h('button', { type: 'button', title: 'Apagar para todos', 'aria-label': 'Apagar', onclick: async () => {
+          if (!confirm('Apagar esta mensagem para todos?')) return;
+          try { await rpcOu('painel_chat_apagar', { p_id: m.id }, 'chat.apagar', { id: m.id }); delete st.cache[st.sala]; carregar(); } catch (e) { avisar(e.message, true); } } }, '🗑') : null);
+      const cit = m.resp ? h('button', { type: 'button', class: 'chat-cit', title: 'Ir para a mensagem', onclick: () => { const alvo = pecas.get('m:' + m.resp.id); if (alvo) { alvo.scrollIntoView({ block: 'center' }); alvo.classList.add('piscou'); setTimeout(() => alvo.classList.remove('piscou'), 1200); } } },
+        h('b', {}, m.resp.nome ? primeiroNome(m.resp.nome) : ''), h('span', {}, String(m.resp.texto || '').slice(0, 120))) : null;
+      const pe = h('span', { class: 'chat-hora' }, hora(m.em), ticks(m, r));
+      const el = h('div', { class: 'chat-msg' + (m.meu ? ' meu' : '') + (m.tipo ? ' com-' + m.tipo : '') },
+        !m.meu && atual.tipo === 'geral' && comNome ? h('b', { class: 'chat-de' }, primeiroNome(m.nome)) : null, cit, ...conteudo(m), pe, acoes);
+      el._pe = pe; el._m = m;
+      return el;
     }
     function desenhar(r) {
       st.dados = r;
       const verConversa = raiz.dataset.vista !== 'lista';
       chatBadge((r.salas || []).reduce((a, x) => a + (verConversa && x.sala === st.sala ? 0 : x.naoLidas || 0), 0));
       listaEl.replaceChildren(...(r.salas || []).map(x => h('button', { type: 'button', class: 'chat-sala' + (x.sala === st.sala && st.modo === 'grande' ? ' atual' : '') + (x.naoLidas && !(verConversa && x.sala === st.sala) ? ' nova' : ''),
-        onclick: () => { if (st.sala === x.sala && raiz.dataset.vista !== 'lista') return; st.sala = x.sala; vista('conversa'); setTimeout(() => ta.focus(), 30); } },
+        onclick: () => { if (st.sala === x.sala && raiz.dataset.vista !== 'lista') return; st.sala = x.sala; st.resp = null; respEl.hidden = true; vista('conversa'); setTimeout(() => ta.focus(), 30); } },
         h('span', { class: 'chat-av' + (x.tipo === 'geral' ? ' geral' : '') }, x.tipo === 'geral' ? '👥' : String(x.nome).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase()),
         h('span', { class: 'chat-sala-txt' }, h('b', {}, x.nome), h('small', {}, x.ultima ? (x.ultima.de === eu ? 'Você: ' : x.tipo === 'geral' ? primeiroNome(x.ultima.nome) + ': ' : '') + x.ultima.texto : x.tipo === 'geral' ? 'recados para todos' : 'sem mensagens')),
         x.naoLidas && !(verConversa && x.sala === st.sala) ? h('span', { class: 'chat-n' }, String(x.naoLidas)) : null)));
       desenharTitulo();
       const atual = (r.salas || []).find(x => x.sala === st.sala) || {};
-      const assinatura = st.sala + JSON.stringify((r.mensagens || []).map(m => m.id + m.texto.length));
-      if (assinatura !== st.desenho) {
-        const novaSala = !st.desenho.startsWith(st.sala);
-        st.desenho = assinatura;
-        const perto = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
-        const itens = []; let ultDia = '', ultDe = '';
-        (r.mensagens || []).forEach(m => {
-          const dd = dia(m.em); if (dd !== ultDia) { itens.push(h('div', { class: 'chat-dia' }, dd)); ultDia = dd; ultDe = ''; }
-          itens.push(h('div', { class: 'chat-msg' + (m.meu ? ' meu' : '') },
-            !m.meu && atual.tipo === 'geral' && m.de !== ultDe ? h('b', { class: 'chat-de' }, primeiroNome(m.nome)) : null,
-            h('span', { class: 'chat-txt' }, ...comLinks(m.texto)),
-            h('span', { class: 'chat-hora' }, hora(m.em),
-              m.meu ? h('button', { type: 'button', class: 'chat-apagar', title: 'Apagar esta mensagem', onclick: async () => { if (!confirm('Apagar esta mensagem para todos?')) return; try { await api('chat.apagar', { id: m.id }); st.desenho = ''; carregar(); } catch (e) { avisar(e.message, true); } } }, 'apagar') : null)));
-          ultDe = m.de;
-        });
-        if (!itens.length) itens.push(h('p', { class: 'chat-vazio' }, atual.tipo === 'geral' ? 'Nenhuma mensagem ainda. Escreva um recado para a equipe toda.' : 'Nenhuma mensagem ainda com ' + (atual.nome || 'esta pessoa') + '.'));
-        msgsEl.replaceChildren(...itens);
-        if (perto || novaSala) msgsEl.scrollTop = msgsEl.scrollHeight;
-      }
+      if (st.salaDesenhada !== st.sala) limparMsgs();
+      const novaSala = !st.salaDesenhada; st.salaDesenhada = st.sala;
+      const perto = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+      // peças desejadas, na ordem
+      const quero = []; let ultDia = '', ultDe = '';
+      (r.mensagens || []).forEach(m => {
+        const dd = dia(m.em); if (dd !== ultDia) { quero.push(['d:' + dd, () => h('div', { class: 'chat-dia' }, dd)]); ultDia = dd; ultDe = ''; }
+        const comNome = m.de !== ultDe; ultDe = m.de;
+        const assin = [m.id, m.texto.length, m.tipo, m.arquivo, comNome ? 1 : 0, atual.tipo].join('|');
+        quero.push(['m:' + m.id, () => elMsg(m, r, comNome), assin, m]);
+      });
+      if (!quero.length) { limparMsgs(); st.salaDesenhada = st.sala; msgsEl.append(h('p', { class: 'chat-vazio' }, atual.tipo === 'geral' ? 'Nenhuma mensagem ainda. Escreva um recado, mande um áudio 🎤 ou um arquivo 📎 para a equipe toda.' : 'Nenhuma mensagem ainda com ' + (atual.nome || 'esta pessoa') + '.')); return; }
+      msgsEl.querySelectorAll(':scope > .chat-vazio, :scope > .erro').forEach(x => x.remove());
+      const manter = new Set(quero.map(q => q[0]));
+      [...pecas.keys()].forEach(k => { if (!manter.has(k)) { const el = pecas.get(k); if (el && el.parentNode) el.remove(); pecas.delete(k); } });
+      let ref = msgsEl.firstChild;
+      while (ref && ref.classList && ref.classList.contains('enviando')) ref = ref.nextSibling;
+      quero.forEach(([k, criar, assin, m]) => {
+        let el = pecas.get(k);
+        if (el && assin && el._assin !== assin) { const novo = criar(); novo._assin = assin; el.replaceWith(novo); el = novo; pecas.set(k, el); }
+        if (!el) { el = criar(); if (assin) el._assin = assin; pecas.set(k, el); }
+        else if (m && el._pe) { const t = ticks(m, r); const velho = el._pe.querySelector('.chat-tick'); if (velho && t) velho.replaceWith(t); }
+        if (el !== ref) msgsEl.insertBefore(el, ref || null); else ref = ref.nextSibling;
+        if (el === ref) ref = ref.nextSibling;
+        ref = el.nextSibling;
+      });
+      msgsEl.querySelectorAll(':scope > .enviando').forEach(x => msgsEl.append(x)); // as que estão subindo ficam no fim
+      if (perto || novaSala) msgsEl.scrollTop = msgsEl.scrollHeight;
       const ult = (r.mensagens || []).slice(-1)[0];
-      if (ult && atual.naoLidas && verConversa && !document.hidden && st.lidoEm !== st.sala + ult.em) { st.lidoEm = st.sala + ult.em; api('chat.lido', { sala: st.sala, em: ult.em }).catch(() => { st.lidoEm = ''; }); }
+      if (ult && atual.naoLidas && verConversa && !document.hidden && st.lidoEm !== st.sala + ult.em) {
+        st.lidoEm = st.sala + ult.em;
+        rpcOu('painel_chat_lido', { p_sala: st.sala, p_em: ult.em }, 'chat.lido', { sala: st.sala, em: ult.em }).catch(() => { st.lidoEm = ''; });
+      }
+    }
+    function provisoria(conteudoEls, rotulo) {
+      const status = h('span', { class: 'chat-hora' }, rotulo || 'enviando…');
+      const el = h('div', { class: 'chat-msg meu enviando' }, ...conteudoEls, status);
+      msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(el); msgsEl.scrollTop = msgsEl.scrollHeight;
+      el._status = status; return el;
     }
     let enviando = false; // 8.42: Enter duas vezes / clique duplo não manda duas vezes
     async function enviar() {
       const texto = ta.value.trim(); if (!texto || enviando) return;
       if (texto.length > 4000) { avisar('Mensagem grande demais (até 4.000 letras).', true); return; }
       enviando = true; enviarBt.disabled = true;
-      const prov = h('div', { class: 'chat-msg meu enviando' }, h('span', { class: 'chat-txt' }, ...comLinks(texto)), h('span', { class: 'chat-hora' }, 'enviando…'));
-      msgsEl.querySelector('.chat-vazio')?.remove(); msgsEl.append(prov); msgsEl.scrollTop = msgsEl.scrollHeight; ta.value = ''; ta.style.height = '';
-      try { await api('chat.enviar', { sala: st.sala, texto }); await carregar(); }
-      catch (e) { prov.remove(); if (!ta.value.trim()) ta.value = texto; avisar('A mensagem NÃO foi enviada: ' + e.message + ' — o texto voltou para a caixa.', true); }
+      const id = novoId(), resp = st.resp, sala = st.sala;
+      const prov = provisoria([resp ? h('span', { class: 'chat-cit' }, h('b', {}, resp.nome), h('span', {}, String(resp.texto).slice(0, 80))) : null, h('span', { class: 'chat-txt' }, ...comLinks(texto))]);
+      ta.value = ''; ta.style.height = ''; st.resp = null; respEl.hidden = true; trocarBotoes();
+      try {
+        await rpcOu('painel_chat_enviar', { p_sala: sala, p_texto: texto, p_id: id, p_tipo: '', p_arquivo: null, p_resposta: resp ? resp.id : '' }, 'chat.enviar', { sala, texto, id, resposta: resp ? resp.id : '' });
+        prov.remove(); delete st.cache[sala]; await carregar();
+      } catch (e) { prov.remove(); if (!ta.value.trim()) ta.value = texto; trocarBotoes(); avisar('A mensagem NÃO foi enviada: ' + e.message + ' — o texto voltou para a caixa.', true); }
       finally { enviando = false; enviarBt.disabled = false; ta.focus(); }
     }
+    /** foto, documento ou áudio: 1) link de envio  2) sobe direto ao Storage (com %)  3) grava a mensagem */
+    async function enviarArquivo(blob, nome, opc) {
+      opc = opc || {};
+      if (!PB() || !PB().chatArquivo) { avisar('Para mandar arquivos o painel precisa da conexão com o banco. Recarregue a página (F5).', true); return; }
+      if (blob.size > 25 * 1048576) { avisar('"' + nome + '" passa de 25 MB. Mande um arquivo menor (ou o link do Drive).', true); return; }
+      if (!blob.size) { avisar('"' + nome + '" está vazio.', true); return; }
+      const tipo = opc.tipo || (/^image\//.test(blob.type) ? 'imagem' : /^audio\//.test(blob.type) ? 'audio' : 'arquivo');
+      const sala = st.sala, resp = st.resp, legenda = opc.legenda || '';
+      st.resp = null; respEl.hidden = true;
+      const prov = provisoria([h('span', { class: 'chat-txt' }, (tipo === 'audio' ? '🎤 Áudio ' + (opc.duracao || '') : (tipo === 'imagem' ? '📷 ' : '📎 ') + nome) + (legenda ? ' — ' + legenda : ''))], 'preparando…');
+      try {
+        const j = await PB().chatArquivo({ acao: 'enviar', sala });
+        prov._status.textContent = 'enviando 0%';
+        await PB().chatSubir(j.url, blob, pct => { prov._status.textContent = 'enviando ' + pct + '%'; });
+        prov._status.textContent = 'quase…';
+        await rpcOu('painel_chat_enviar', { p_sala: sala, p_texto: legenda, p_id: novoId(), p_tipo: tipo,
+          p_arquivo: { path: j.path, nome: String(nome).slice(0, 160), tam: String(blob.size), mime: blob.type || '', duracao: opc.duracao || '' }, p_resposta: resp ? resp.id : '' });
+        prov.remove(); delete st.cache[sala]; await carregar();
+      } catch (e) {
+        prov._status.textContent = 'não enviado'; prov.classList.add('falhou');
+        prov.append(h('button', { type: 'button', class: 'btn mini sec', onclick: () => { prov.remove(); enviarArquivo(blob, nome, opc); } }, 'Tentar de novo'),
+          h('button', { type: 'button', class: 'btn mini sec', onclick: () => prov.remove() }, 'Descartar'));
+        avisar('"' + nome + '" NÃO foi enviado: ' + e.message, true);
+      }
+    }
+    function enviarArquivos(lista) {
+      const arr = Array.from(lista || []).slice(0, 10); if (!arr.length) return;
+      const legenda = ta.value.trim(); if (legenda) { ta.value = ''; ta.style.height = ''; trocarBotoes(); }
+      arr.forEach((f, i) => enviarArquivo(f, f.name || ('foto-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png'), { legenda: i === 0 ? legenda : '' }));
+    }
+    clipBt.addEventListener('click', () => arqIn.click());
+    arqIn.addEventListener('change', () => { enviarArquivos(arqIn.files); arqIn.value = ''; });
+    ta.addEventListener('paste', ev => { const fs = Array.from((ev.clipboardData && ev.clipboardData.files) || []); if (fs.length) { ev.preventDefault(); enviarArquivos(fs); } });
+    conversa.addEventListener('dragover', ev => { if (ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files')) { ev.preventDefault(); conversa.classList.add('soltar'); } });
+    conversa.addEventListener('dragleave', ev => { if (!conversa.contains(ev.relatedTarget)) conversa.classList.remove('soltar'); });
+    conversa.addEventListener('drop', ev => { conversa.classList.remove('soltar'); if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { ev.preventDefault(); enviarArquivos(ev.dataTransfer.files); } });
+    // ---- gravar áudio (até 5 min; o som fica só no Storage do escritório) ----
+    let grav = null;
+    function trocarBotoes() { const vazio = !ta.value.trim(); micBt.hidden = !vazio; enviarBt.hidden = vazio; }
+    async function gravar() {
+      if (grav) return;
+      if (!navigator.mediaDevices || !window.MediaRecorder) { avisar('Este navegador não grava áudio. Use o Chrome atualizado.', true); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+      catch (e) { avisar('O microfone não foi liberado. Clique no cadeado ao lado do endereço do site e permita o microfone.', true); return; }
+      const tipos = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'];
+      const mime = tipos.find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+      let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined); } catch (e) { mr = new MediaRecorder(stream); }
+      const pedacos = [], ini = Date.now();
+      grav = { mr, stream, ini, cancelado: false };
+      mr.addEventListener('dataavailable', ev => { if (ev.data && ev.data.size) pedacos.push(ev.data); });
+      mr.addEventListener('stop', () => {
+        stream.getTracks().forEach(t => t.stop());
+        const g = grav; grav = null; clearInterval(g.relogio); gravEl.hidden = true; form.hidden = false; ta.focus();
+        if (g.cancelado) return;
+        const seg = (Date.now() - g.ini) / 1000;
+        if (seg < 1) { avisar('Áudio curto demais: segure um pouco mais.', true); return; }
+        const tipo = (mr.mimeType || mime || 'audio/webm').split(';')[0];
+        const blob = new Blob(pedacos, { type: tipo });
+        const ext = /mp4/.test(tipo) ? 'm4a' : /ogg/.test(tipo) ? 'ogg' : 'webm';
+        enviarArquivo(blob, 'audio-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.' + ext, { tipo: 'audio', duracao: durTxt(seg) });
+      });
+      mr.start(1000);
+      const tempo = h('span', { class: 'chat-grav-t' }, '0:00');
+      gravEl.replaceChildren(
+        h('button', { type: 'button', class: 'chatf-bt chat-grav-x', title: 'Cancelar o áudio', 'aria-label': 'Cancelar o áudio', onclick: () => { if (grav) { grav.cancelado = true; grav.mr.stop(); } } }, '🗑'),
+        h('span', { class: 'chat-grav-bola', 'aria-hidden': 'true' }), tempo, h('span', { class: 'chat-grav-txt' }, 'gravando…'),
+        h('button', { type: 'button', class: 'chatf-enviar', title: 'Enviar o áudio', 'aria-label': 'Enviar o áudio', onclick: () => { if (grav) grav.mr.stop(); } }, '➤'));
+      gravEl.hidden = false; form.hidden = true;
+      grav.relogio = setInterval(() => { const seg = (Date.now() - ini) / 1000; tempo.textContent = durTxt(seg); if (seg >= 300 && grav) grav.mr.stop(); }, 250);
+    }
+    micBt.addEventListener('click', gravar);
     form.addEventListener('submit', ev => { ev.preventDefault(); enviar(); });
-    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } if (ev.key === 'Escape') modo('fechado'); });
-    ta.addEventListener('input', () => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 110) + 'px'; });
+    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); } if (ev.key === 'Escape') { if (st.resp) { st.resp = null; respEl.hidden = true; } else modo('fechado'); } });
+    ta.addEventListener('input', () => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 110) + 'px'; trocarBotoes(); });
+    trocarBotoes();
     aplicar();
     if (st.modo !== 'fechado') carregar();
   }
@@ -3921,7 +4128,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.5';
+  const VERSAO_PAINEL = '8.53.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

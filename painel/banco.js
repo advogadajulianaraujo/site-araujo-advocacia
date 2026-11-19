@@ -555,7 +555,52 @@
       return r.ok ? await r.json() : null;
     } catch (e) { return null; } finally { clearTimeout(timer); }
   }
+  /** 8.53: chat DIRETO no banco (sem a função "painel" nem o Google). {semBanco:true} = sem sessão do banco agora (o painel usa o caminho
+   *  antigo); erro de regra ("Conversa não encontrada.") = exceção com a mensagem. */
+  function chatSessao() { return S && S.token && S.url && !(S.expira && Date.parse(S.expira) < Date.now()) ? S : null; }
+  async function chatRpc(nome, args, ms) {
+    if (!chatSessao()) { try { await iniciar(); } catch (e) { /* segue */ } }
+    const s = chatSessao(); if (!s) return { semBanco: true };
+    const cab = { apikey: s.chave, 'Content-Type': 'application/json' }; if (/^eyJ/.test(s.chave)) cab.Authorization = 'Bearer ' + s.chave;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms || 10000);
+    let r;
+    try { r = await fetch(s.url + '/rest/v1/rpc/' + nome, { method: 'POST', headers: cab, body: JSON.stringify(Object.assign({ p_token: s.token }, args || {})), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal }); }
+    catch (e) { return { semBanco: true, motivo: ctl.signal.aborted ? 'demorou' : 'sem internet' }; }
+    finally { clearTimeout(timer); }
+    const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { /* não é JSON */ }
+    if (r.ok) return j;
+    if (r.status === 401 || r.status === 403 || (j && j.code === '28000') || r.status >= 500 || r.status === 404) return { semBanco: true, motivo: (j && j.message) || ('erro ' + r.status) };
+    throw new Error((j && (j.message || j.hint)) || ('erro ' + r.status));
+  }
+  /** Arquivos do chat: pede à função "chat" o link de envio (acao enviar) ou os links de baixa (acao baixar, paths). */
+  async function chatArquivo(corpo) {
+    if (!chatSessao()) { try { await iniciar(); } catch (e) { /* segue */ } }
+    const s = chatSessao(); if (!s) throw new Error('Sem conexão com o banco agora: tente de novo em instantes.');
+    const cab = { apikey: s.chave, 'Content-Type': 'application/json' };
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetch(s.url + '/functions/v1/chat', { method: 'POST', headers: cab, body: JSON.stringify(Object.assign({}, corpo, { token: s.token })), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.erro || ('erro ' + r.status));
+      return j;
+    } catch (e) { throw new Error(ctl.signal.aborted ? 'O servidor de arquivos demorou: tente de novo.' : e.message); }
+    finally { clearTimeout(timer); }
+  }
+  /** Envia o arquivo direto ao Storage pelo link assinado (com a % do envio). */
+  function chatSubir(url, blob, aoAndar) {
+    const s = chatSessao();
+    return new Promise((ok, falha) => {
+      const x = new XMLHttpRequest();
+      x.open('PUT', url); if (s) x.setRequestHeader('apikey', s.chave);
+      x.setRequestHeader('Content-Type', blob.type || 'application/octet-stream'); x.setRequestHeader('x-upsert', 'false');
+      x.upload.onprogress = ev => { if (ev.lengthComputable && aoAndar) aoAndar(Math.round(ev.loaded * 100 / ev.total)); };
+      x.onload = () => x.status >= 200 && x.status < 300 ? ok() : falha(new Error('O arquivo não foi enviado (erro ' + x.status + ').'));
+      x.onerror = () => falha(new Error('A internet caiu durante o envio do arquivo.'));
+      x.ontimeout = () => falha(new Error('O envio do arquivo demorou demais.'));
+      x.timeout = 300000; x.send(blob);
+    });
+  }
   /** Depois de qualquer gravação: a próxima leitura busca o que mudou (incremental, rápido). */
   function envelhecer() { cache.forEach(c => { if (c) c.em = 0; }); }
-  window.PAINEL_BANCO = { chatPing, envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
+  window.PAINEL_BANCO = { chatPing, chatRpc, chatArquivo, chatSubir, envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
 })();
