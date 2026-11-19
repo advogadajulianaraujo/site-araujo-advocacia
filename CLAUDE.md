@@ -1976,3 +1976,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   - Robô do blog: em 16/11 não publicou nada (44 candidatas) porque a IA respondeu a escolha como objeto ({"escolhidas":[…]}) e o robô entendeu
     lista vazia. Agora aceita objeto/lista/números e, se a IA não escolher nenhuma, segue com as candidatas na ordem. Workflow "Publicar a função do
     Supabase" falhava em todo push por falta do segredo: agora só avisa e sai sem erro (a função é publicada pela atualização automática).
+  - 19/11 (rodado à mão para recuperar a semana): a IA AINDA não escolheu nenhuma notícia e entrou "Justiça do Trabalho é premiada pelo CNJ por
+    uso de linguagem simples" (institucional) → ocultada (`"oculto": true`). O robô agora: ignora as partes de "pensamento" da resposta
+    (`textoDe` filtra `thought`), registra a resposta crua quando a IA não escolhe nada, e o plano B (`reserva`) tira as institucionais
+    (`INSTITUCIONAL`) e alterna as áreas da vez.

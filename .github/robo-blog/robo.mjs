@@ -65,7 +65,7 @@ async function gemini(corpo, lista) {
   }
   throw new Error('Gemini não respondeu. ' + erros.join(' | '));
 }
-const textoDe = r => ((r.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
+const textoDe = r => ((r.candidates || [])[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join(''); // 19/11: sem o "pensamento" dos modelos novos
 function jsonDe(t) {
   const m = /```(?:json)?\s*([\s\S]*?)```/.exec(t); const s = (m ? m[1] : t).trim();
   const i = Math.min(...['[', '{'].map(c => (s.indexOf(c) < 0 ? Infinity : s.indexOf(c))));
@@ -216,13 +216,23 @@ ${cands.map((c, i) => `${i}. [${c.tribunal}] ${c.titulo}`).join('\n')}`;
     const out = [];
     for (const x of Array.isArray(l) ? l : []) { const n = typeof x === 'number' ? x : +(x && (x.n ?? x.numero ?? x.indice)); const c = cands[n]; if (c && !out.includes(c)) out.push({ ...c, area: AREAS[x && x.area] ? x.area : (c.area || 'trabalhista') }); }
     log('escolhidas pela IA:', out.length);
-    if (!out.length) { log('a IA não escolheu nenhuma: segue com as candidatas na ordem'); return cands.map(c => ({ ...c, area: c.area || 'trabalhista' })); }
+    if (!out.length) { log('a IA não escolheu nenhuma (resposta: ' + String(textoDe(r) || '').slice(0, 300).replace(/\s+/g, ' ') + ')'); return reserva(cands); }
     // intercala as áreas (uma de cada, na ordem da vez), para não sair três textos da mesma área
     const porArea = {}; out.forEach(c => { (porArea[c.area] = porArea[c.area] || []).push(c); });
     const ordem = AREAS_DA_VEZ.concat(Object.keys(porArea).filter(a => !AREAS_DA_VEZ.includes(a))), mix = [];
     while (mix.length < out.length) ordem.forEach(a => { const c = (porArea[a] || []).shift(); if (c) mix.push(c); });
     return mix;
-  } catch (e) { log('escolha:', e.message); return cands.map(c => ({ ...c, area: 'trabalhista' })); }
+  } catch (e) { log('escolha:', e.message); return reserva(cands); }
+}
+/* Plano B sem a IA (19/11/2026: entrou "Justiça do Trabalho é premiada pelo CNJ…"): tira o que é institucional e alterna as áreas. */
+const INSTITUCIONAL = /premia|pr[eê]mio|homenage|posse|empossad|sess[aã]o solene|semin[aá]rio|congresso|curso|palestra|evento|campanha|inaugura|eleit|elei[cç][aã]o|nomead|visita|reuni[aã]o|lan[cç]a|anivers[aá]rio|corregedoria|estat[ií]stica|balan[cç]o|metas?\b|ranking|selo|linguagem simples|conciliação.*semana|semana nacional/i;
+function reserva(cands) {
+  const boas = cands.filter(c => !INSTITUCIONAL.test(c.titulo || ''));
+  const porArea = {}; boas.forEach(c => { const a = c.area || 'trabalhista'; (porArea[a] = porArea[a] || []).push({ ...c, area: a }); });
+  const ordem = AREAS_DA_VEZ.concat(Object.keys(porArea).filter(a => !AREAS_DA_VEZ.includes(a))), mix = [];
+  while (mix.length < boas.length) ordem.forEach(a => { const c = (porArea[a] || []).shift(); if (c) mix.push(c); });
+  log('plano B: ' + mix.length + ' candidata(s) sem as institucionais');
+  return mix;
 }
 
 /* Lê a notícia inteira: direto do site; se o site recusar, pelo Google. Confere que é a notícia certa. */
