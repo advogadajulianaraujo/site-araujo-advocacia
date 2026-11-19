@@ -1,5 +1,5 @@
 {
- "versao": "8.51.3",
+ "versao": "8.52.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -81,7 +81,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 19
+   "funcoes": 24
   },
   "processos.listar": {
    "tabelas": [
@@ -468,5 +468,5 @@
    "funcoes": 38
   }
  },
- "funcoes": 151
+ "funcoes": 156
 }

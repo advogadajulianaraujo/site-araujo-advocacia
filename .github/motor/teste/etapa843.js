@@ -272,3 +272,15 @@ console.log("fim 851");
   C.UrlFetchApp.fetch = f0;
 }
 console.log("fim 851b");
+// 8.52: qualificação para copiar (só o que existe) + modelo do Drive sem RG não fica com "[RG]"
+{
+  const q1 = C.qualificacaoTexto_({ nome: 'Fulano Fictício Silva', sexo: 'M', estado_civil: 'Solteiro(a)', profissao: 'Mecânico', cpf_cnpj: '000.000.000-00', rg: '1234567', endereco: 'Marginal BR 101, Km 275, s/n - Alto Arroio', cidade: 'Tubarão', uf: 'SC', cep: '88780000' });
+  assert(q1 === 'FULANO FICTÍCIO SILVA, brasileiro, solteiro, mecânico, inscrito no CPF de n° 000.000.000-00, portador do RG de n° 1234567, residente e domiciliado na Marginal BR 101, Km 275, s/n - Alto Arroio, Tubarão/SC, CEP 88780-000', 'qualificação completa: ' + q1);
+  const q2 = C.qualificacaoTexto_({ nome: 'Maria Inventada', sexo: 'F', cpf_cnpj: '111.111.111-11', cidade: 'Tubarão', uf: 'SC' });
+  assert(q2 === 'MARIA INVENTADA, brasileira, inscrita no CPF de n° 111.111.111-11, residente e domiciliada em Tubarão/SC' && !/COMPLETAR|RG/.test(q2), 'sem RG/estado civil/profissão: só o que tem (' + q2 + ')');
+  // a mesma expressão usada no Google Docs (replaceText) tira "portador do RG nº [RG]" do modelo do Drive
+  const re1 = new RegExp(',?\\s*(portador|portadora|portador\\(a\\))?[^,\\[]{0,45}RG[^,\\[]{0,25}\\[RG[^\\]]*\\]', 'g');
+  const t = 'FULANO, brasileiro, solteiro, portador do RG nº [RG], inscrito no CPF nº 000'.replace(re1, '');
+  assert(t === 'FULANO, brasileiro, solteiro, inscrito no CPF nº 000', 'modelo do Drive sem RG: ' + t);
+}
+console.log("fim 852");

@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.51.3 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.52.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.51.3';
+var MOTOR_VERSAO = '8.52.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.51.3';
+var VERSAO = '8.52.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -233,6 +233,7 @@ function obterCliente_(d, u) {
   if (u && PERFIS[u.perfil] && PERFIS[u.perfil].usuarios) try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
   var j = jornadasClientes_()[c.id] || 'sem';
   // 8.28: os andamentos do DataJud não vão na ficha (a tela do processo busca pela rota processos.andamentos)
+  cli.qualificacao = qualificacaoTexto_(c);
   return { cliente: cli, processos: procs.map(function (p) { var x = limpar_(p); delete x.andamentos; return x; }), parcelas: parcelasAbertasCliente_(c.id), lead: lead, jornada: j, jornada_nome: JORNADA[j] };
 }
 
@@ -1624,6 +1625,72 @@ var TIPOS_ACAO = {
 /**
  * Poderes gerais da procuração conforme a área: na esfera criminal, com base no CPP (sem os poderes de transigir/confessar
  * do art. 105 do CPC); nas demais, o foro em geral do art. 105 do CPC com o âmbito de atuação da área.
+ */
+function qualificacaoTexto_(c) {
+  if (!c || !c.nome) return '';
+  var g = generoCliente_(c), x = function (m, f) { return g === 'F' ? f : g === 'M' ? m : m + '(' + f.slice(-1) + ')'; };
+  var cep = String(c.cep || '').replace(/\D/g, ''); cep = cep.length === 8 ? cep.slice(0, 5) + '-' + cep.slice(5) : String(c.cep || '').trim();
+  var local = [String(c.endereco || '').trim().replace(/[\s,]+$/, ''), c.cidade && c.uf ? c.cidade + '/' + c.uf : (c.cidade || ''), cep ? 'CEP ' + cep : ''].filter(Boolean).join(', ');
+  var p = [String(c.nome).trim().toUpperCase()];
+  if (c.tipo === 'PJ') {
+    p.push('pessoa jurídica de direito privado');
+    if (c.cpf_cnpj) p.push('inscrita no CNPJ de n° ' + String(c.cpf_cnpj).trim());
+    if (local) p.push('com sede ' + comPreposicao_(local));
+    if (c.representante) p.push('neste ato representada por ' + String(c.representante).trim());
+  } else {
+    p.push(x('brasileiro', 'brasileira'));
+    if (c.estado_civil) p.push(estadoCivilGenero_(c.estado_civil, g).toLowerCase());
+    if (c.profissao) p.push(String(c.profissao).trim().toLowerCase());
+    if (c.cpf_cnpj) p.push(x('inscrito', 'inscrita') + ' no CPF de n° ' + String(c.cpf_cnpj).trim());
+    if (c.rg) p.push(x('portador', 'portadora') + ' do RG de n° ' + String(c.rg).trim());
+    if (local) p.push('residente e ' + x('domiciliado', 'domiciliada') + ' ' + comPreposicao_(local));
+  }
+  return p.join(', ');
+}
+function comPreposicao_(end) {
+  var t = String(end || '').trim();
+  if (/^(rua|r\.|avenida|av\.?|travessa|tv\.|rodovia|rod\.|estrada|servid[aã]o|alameda|pra[cç]a|linha|vila|localidade|comunidade|marginal|via)\b/i.test(t)) return 'na ' + t;
+  if (/^(loteamento|beco|largo|s[ií]tio|condom[ií]nio|conjunto|bairro|residencial|parque|jardim|caminho)\b/i.test(t)) return 'no ' + t;
+  return 'em ' + t;
+}
+
+/** "casado(a)" → "casado"/"casada" conforme o gênero; sem gênero fica como está. */
+function estadoCivilGenero_(ec, g) {
+  var t = String(ec || '').trim();
+  if (/^uni[aã]o est[aá]vel$/i.test(t)) return 'convivente em união estável';
+  if (!g) return t;
+  return t.replace(/(\w+)o\(a\)/gi, function (m, raiz) { return raiz + (g === 'F' ? 'a' : 'o'); });
+}
+
+function generoCliente_(c) {
+  if (!c) return '';
+  if (c.tipo === 'PJ') return 'F';
+  var gi = normalizar_(c.genero || '');
+  if (/^f/.test(gi)) return 'F';
+  if (/^m/.test(gi)) return 'M';
+  return generoPeloNome_(c.nome);
+}
+
+function generoPeloNome_(nome) {
+  var n = normalizar_(String(nome || '').trim().split(/\s+/)[0] || '');
+  if (!n) return '';
+  var fem = ['raquel', 'isabel', 'beatriz', 'ester', 'esther', 'rute', 'ruth', 'carmen', 'lourdes', 'ines', 'miriam', 'mirian', 'ingrid', 'liz', 'luz',
+    'nicole', 'kelly', 'keli', 'shirley', 'sueli', 'suely', 'luci', 'lucy', 'deise', 'joice', 'joyce', 'edite', 'ivete', 'marlene', 'darlene', 'rose',
+    'rosane', 'irene', 'alice', 'denise', 'elaine', 'solange', 'ivone', 'yasmin', 'jasmin', 'evelin', 'evelyn', 'thais', 'tais', 'lais', 'maite', 'sarah',
+    'ana', 'mel', 'cleo', 'nely', 'neli', 'arlete', 'leonor', 'dulce', 'clarice', 'heloise', 'louise', 'monique', 'janete', 'ires', 'aimee', 'gleice', 'graziele'];
+  var masc = ['luca', 'nikita', 'joshua', 'jonatha', 'josue', 'jose', 'henrique', 'jorge', 'felipe', 'filipe', 'andre', 'alexandre', 'guilherme', 'vicente',
+    'cleberson', 'davi', 'levi', 'luis', 'luiz', 'cristian', 'christian', 'jean', 'jhonatan', 'william', 'wesley', 'noe', 'moises', 'elias', 'matias', 'lucas', 'thomas', 'tomas',
+    'nicolas', 'jonas', 'douglas', 'marcos', 'mateus', 'matheus', 'carlos', 'juliano', 'adriano', 'reinaldo', 'gilmar', 'ademir', 'valmir', 'jaime', 'iure', 'dante', 'cesar'];
+  if (fem.indexOf(n) >= 0) return 'F';
+  if (masc.indexOf(n) >= 0) return 'M';
+  if (/(a|ane|ene|ele|elle|ine|ise|iane|ete|ely|eli)$/.test(n)) return 'F';
+  if (/(o|son|el|or|ir|er|ar|ur|os|us|is|an|on|im|um|iz|ael|uel|ilo|ton|ius|ard|ino|io|eu|au)$/.test(n)) return 'M';
+  return '';
+}
+
+/**
+ * Escolhe as palavras pelo gênero: {{c:o|a}} do cliente, {{adv:o|a}} do(a) advogado(a), {{sub:o|a}} de quem substabelece.
+ * Sem gênero conhecido sai "o(a)". Um terceiro valor ({{c:ele|ela|ele(a)}}) define o texto quando não se sabe.
  */
 function reaisTxt_(v) {
   var n = dinheiro_(v);

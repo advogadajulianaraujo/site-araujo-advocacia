@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.51.3';
+var VERSAO = '8.52.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -977,6 +977,7 @@ function obterCliente_(d, u) {
   if (u && PERFIS[u.perfil] && PERFIS[u.perfil].usuarios) try { var l = tabela_('Leads').linhas.filter(function (x) { return x.cliente_id === c.id; }).pop(); if (l) lead = { id: l.id, etapa: l.etapa, canal: l.canal, proposta_url: l.proposta_url, criado_em: l.criado_em }; } catch (e) { /* aba nova */ }
   var j = jornadasClientes_()[c.id] || 'sem';
   // 8.28: os andamentos do DataJud não vão na ficha (a tela do processo busca pela rota processos.andamentos)
+  cli.qualificacao = qualificacaoTexto_(c);
   return { cliente: cli, processos: procs.map(function (p) { var x = limpar_(p); delete x.andamentos; return x; }), parcelas: parcelasAbertasCliente_(c.id), lead: lead, jornada: j, jornada_nome: JORNADA[j] };
 }
 
@@ -8768,6 +8769,11 @@ function preencherColchetes_(corpo, x) {
     primeira(par, '[QUALIFICAÇÃO COMPLETA]', x.qualificacaoBasica);
     todas(par, '[NACIONALIDADE]', x.nacionalidade || 'brasileiro(a)'); todas(par, '[ESTADO CIVIL]', x.estadoCivil); todas(par, '[PROFISSÃO]', x.profissao);
     todas(par, '[CPF]', x.cpf); todas(par, '[RG/ÓRGÃO EXPEDIDOR]', x.rg); todas(par, '[RG]', x.rg);
+    // 8.52 (pedido da usuária: "quando não tiver RG, não coloque COMPLETAR; sempre use as informações que tem"): o que falta no cadastro sai
+    if (!x.rg) { var tr = par.editAsText(); tr.replaceText(',?\\s*(portador|portadora|portador\\(a\\))?[^,\\[]{0,45}RG[^,\\[]{0,25}\\[RG[^\\]]*\\]', ''); tr.replaceText(',?\\s*\\[RG[^\\]]*\\]', ''); }
+    if (!x.estadoCivil) par.editAsText().replaceText(',?\\s*\\[ESTADO CIVIL\\]', '');
+    if (!x.profissao) par.editAsText().replaceText(',?\\s*\\[PROFISSÃO\\]', '');
+    if (!x.email) par.editAsText().replaceText(',?\\s*(e-mail|email)?:?\\s*\\[E-MAIL\\]', '');
     primeira(par, 'CPF nº [NÚMERO]', x.cpf ? 'CPF nº ' + x.cpf : '');
     primeira(par, '[E-MAIL]', x.email); primeira(par, '[ENDEREÇO COMPLETO]', x.endereco);
     todas(par, '[LOGRADOURO, NÚMERO, COMPLEMENTO, BAIRRO, CIDADE/UF E CEP]', x.endereco);
@@ -9059,6 +9065,30 @@ function enderecoCompleto_(c) {
   return [c.endereco, c.cidade && c.uf ? c.cidade + '/' + c.uf : c.cidade, c.cep ? 'CEP ' + c.cep : ''].filter(String).join(', ');
 }
 
+/** 8.52 (pedido da usuária: botão "Qualificação" na ficha): o parágrafo pronto para colar em petição/contrato, no formato do escritório
+ *  ("NOME, brasileiro, solteiro, mecânico, inscrito no CPF de n° …, portador do RG de n° …, residente e domiciliado na …, Cidade/UF, CEP …").
+ *  Usa SÓ o que está no cadastro: o que falta simplesmente não aparece (nunca "[COMPLETAR]"). */
+function qualificacaoTexto_(c) {
+  if (!c || !c.nome) return '';
+  var g = generoCliente_(c), x = function (m, f) { return g === 'F' ? f : g === 'M' ? m : m + '(' + f.slice(-1) + ')'; };
+  var cep = String(c.cep || '').replace(/\D/g, ''); cep = cep.length === 8 ? cep.slice(0, 5) + '-' + cep.slice(5) : String(c.cep || '').trim();
+  var local = [String(c.endereco || '').trim().replace(/[\s,]+$/, ''), c.cidade && c.uf ? c.cidade + '/' + c.uf : (c.cidade || ''), cep ? 'CEP ' + cep : ''].filter(Boolean).join(', ');
+  var p = [String(c.nome).trim().toUpperCase()];
+  if (c.tipo === 'PJ') {
+    p.push('pessoa jurídica de direito privado');
+    if (c.cpf_cnpj) p.push('inscrita no CNPJ de n° ' + String(c.cpf_cnpj).trim());
+    if (local) p.push('com sede ' + comPreposicao_(local));
+    if (c.representante) p.push('neste ato representada por ' + String(c.representante).trim());
+  } else {
+    p.push(x('brasileiro', 'brasileira'));
+    if (c.estado_civil) p.push(estadoCivilGenero_(c.estado_civil, g).toLowerCase());
+    if (c.profissao) p.push(String(c.profissao).trim().toLowerCase());
+    if (c.cpf_cnpj) p.push(x('inscrito', 'inscrita') + ' no CPF de n° ' + String(c.cpf_cnpj).trim());
+    if (c.rg) p.push(x('portador', 'portadora') + ' do RG de n° ' + String(c.rg).trim());
+    if (local) p.push('residente e ' + x('domiciliado', 'domiciliada') + ' ' + comPreposicao_(local));
+  }
+  return p.join(', ');
+}
 function qualificacao_(c, semEndereco, semContato) {
   var partes = [];
   var end = enderecoCompleto_(c);

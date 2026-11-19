@@ -1892,3 +1892,13 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.51.3: em 19/11 o robô respondeu "SEM_CONTA" (o token não mostrou a conta do WhatsApp Business pelo debug_token). `whatsWaba_` agora tenta 4
   caminhos (debug_token, /me/businesses, /me/whatsapp_business_accounts e confere o número) e grava o motivo exato em WHATS_MODELO_AVISO_ST
   (mostrado em Chatbot › ⚙); "SEM_CONTA"/"ERRO" conferem de novo em 1 h. Campo reserva "ID da conta do WhatsApp Business" no ⚙ (Config WHATS_WABA_ID).
+
+## 8.52.0 Botão "Qualificação" e documentos só com o que existe (pedidos da usuária, 19/11/2026)
+
+- Ficha do cliente: botão pequeno "📋 Qualificação" no topo (ao lado de Gerar documentos) copia o parágrafo pronto (`qualificacaoTexto_` →
+  clientes.obter `cliente.qualificacao`): "NOME, brasileiro(a), estado civil, profissão, inscrito(a) no CPF de n° …, portador(a) do RG de n° …,
+  residente e domiciliado(a) na …, Cidade/UF, CEP …" (PJ: CNPJ, sede e representante). Gênero pelo cadastro/nome; só o que existe aparece.
+- "Quando não tiver RG, não coloque COMPLETAR; sempre use as informações que tem": os modelos do painel já omitiam (`qualificacao_`); nos modelos
+  do Drive (`preencherColchetes_`) RG, estado civil, profissão e e-mail que faltam SAEM do texto junto com "portador do RG nº", a vírgula etc. (antes
+  ficava "[RG]"). A prévia do gerador diz "O documento sai só com o que está no cadastro".
+- `copiar(txt, ok)` em painel.js (faltava: o "Copiar o texto" do "✨ Avisar o cliente" também quebrava).

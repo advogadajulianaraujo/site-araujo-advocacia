@@ -46,6 +46,11 @@
   }
 
   let avisoTimer;
+  /** 8.52: copia um texto e avisa (com reserva para navegador sem permissão de área de transferência). */
+  async function copiar(txt, ok) {
+    try { await navigator.clipboard.writeText(String(txt || '')); avisar(ok || 'Copiado.'); }
+    catch (e) { try { const t = document.createElement('textarea'); t.value = String(txt || ''); document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); avisar(ok || 'Copiado.'); } catch (e2) { avisar('Não consegui copiar: selecione o texto e use Ctrl+C.', true); } }
+  }
   function avisar(msg, ruim) {
     const el = document.getElementById('aviso');
     el.textContent = msg;
@@ -1926,7 +1931,7 @@
       const faltam = itens.filter(x => !String(x[1] || '').trim()).map(x => x[0]);
       previa.replaceChildren(h('div', { class: 'previa-cab' }, h('strong', {}, 'Vai no documento: '), c.nome),
         h('div', { class: 'previa-itens' }, itens.map(([r, v]) => h('span', { class: v ? 'ok' : 'falta' }, r + ': ' + (v || 'FALTA')))),
-        faltam.length ? h('div', { class: 'previa-falta' }, `Falta ${faltam.join(', ')}. O documento sai com "[COMPLETAR]" nesses pontos — `, h('a', { href: '#/cliente/' + c.id }, 'completar o cadastro')) : h('div', { class: 'peq' }, '✓ Cadastro completo para a procuração e o contrato.'));
+        faltam.length ? h('div', { class: 'previa-falta' }, `Falta ${faltam.join(', ')}. O documento sai só com o que está no cadastro (sem esses dados) — `, h('a', { href: '#/cliente/' + c.id }, 'completar o cadastro')) : h('div', { class: 'peq' }, '✓ Cadastro completo para a procuração e o contrato.'));
     };
     if (opc.cliente) blocoCliente = h('div', { class: 'largo' }, idCliente, previa);
     else {
@@ -2613,6 +2618,8 @@
         h('div', { class: 'fg-acoes' },
           tel ? h('a', { class: 'btn wa', href: 'https://wa.me/' + tel, target: '_blank', rel: 'noopener' }, 'WhatsApp') : null,
           h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'),
+          // 8.52: copia a qualificação pronta (só com o que está no cadastro)
+          c.qualificacao ? h('button', { type: 'button', class: 'btn mini sec', title: c.qualificacao, onclick: () => copiar(c.qualificacao, 'Qualificação copiada: é só colar.') }, '📋 Qualificação') : null,
           h('button', { type: 'button', class: 'btn sec', onclick: () => abrirAba('cadastro') }, '✎ Editar'), mais)),
       // abas: Visão geral · Processos · Cobranças · Anotações · Documentos · Cadastro
       fichaEmAbas(c.id, [
@@ -3854,7 +3861,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.51.3';
+  const VERSAO_PAINEL = '8.52.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
