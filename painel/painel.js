@@ -2556,7 +2556,10 @@
     const visaoGeral = () => {
       const card = (tit, link, ...corpo) => h('section', { class: 'fg-card' }, h('header', {}, h('h2', {}, tit), link || null), ...corpo);
       const dado = (rot, val) => val ? [h('dt', {}, rot), h('dd', {}, val)] : [];
-      const dados = card('Dados do cliente', h('button', { type: 'button', class: 'link fg-link', onclick: () => abrirAba('cadastro') }, '✎ editar'),
+      // 8.52.3 (pedido da usuária): botão pequeno "📋 qualificação" no quadro Dados do cliente (copia o parágrafo pronto)
+      const dados = card('Dados do cliente', h('span', { class: 'fg-links' },
+          c.qualificacao ? h('button', { type: 'button', class: 'link fg-link', title: c.qualificacao, onclick: () => copiar(c.qualificacao, 'Qualificação copiada: é só colar.') }, '📋 qualificação') : null,
+          h('button', { type: 'button', class: 'link fg-link', onclick: () => abrirAba('cadastro') }, '✎ editar')),
         h('dl', { class: 'fg-dados' },
           ...dado(pf ? 'CPF' : 'CNPJ', c.cpf_cnpj), ...dado('RG', pf ? c.rg : ''), ...dado('Nascimento', c.nascimento ? dataBR(c.nascimento) + (idade ? ` (${idade} anos)` : '') : ''),
           ...dado('Estado civil', pf ? c.estado_civil : ''), ...dado('Profissão', pf ? c.profissao : ''), ...dado('Representante', pf ? '' : c.representante),
@@ -3860,7 +3863,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.2';
+  const VERSAO_PAINEL = '8.52.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

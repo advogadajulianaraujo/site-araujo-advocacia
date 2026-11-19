@@ -3204,3 +3204,6 @@ body.sem-sessao .chatf{display:none}
 .ixd-chip b { font-size: 12px; }
 .ixd-chip.zero { opacity: .55; }
 .ixd-chip.ativo { background: #171513; color: #fff; border-color: #171513; }
+
+/* 8.52.3: dois links pequenos no cabeçalho do quadro Dados do cliente */
+.fg-links { display: inline-flex; gap: 12px; align-items: baseline; }

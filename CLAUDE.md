@@ -1906,3 +1906,4 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.52.2 (pedido da usuária: "por que fala em atendimento se já foi assinado"): etapa do cliente (`JORNADA`): "Em atendimento · …" SÓ antes do
   contrato assinado (em conversa, cadastro enviado/preenchido, consulta feita, procuração e contrato enviados); assinou → "Contrato assinado ·
   petição inicial"; processo com número → "Processo em andamento". Extensão 1.3.1 (etiqueta "Contrato assinado").
+- 8.52.3 (pedido da usuária): "📋 qualificação" também no quadro "Dados do cliente" (Visão geral da ficha), ao lado de "✎ editar".
