@@ -1853,3 +1853,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - 8.50.2: intimação cujo destinatário é a própria Dra. ou o escritório (ação de cobrança de honorários) nunca é "da outra parte"; audiências são marcadas de TODOS os processos e de qualquer parte (a detecção roda antes da regra da outra parte).
 - Audiências: quadro "Audiências de hoje" no canto de cima à direita (`quadroDoDia`): hora, cliente, Conciliação/Instrução/Perícia juntas, online/
   presencial; sem audiência hoje mostra o próximo dia com audiência.
+- 8.50.3 (caso da Gislaine, 19/11: "a pauta de hoje foi remarcada e não foi colocado aqui"): o aviso do PJe de 31/10 dizia "instrução … CANCELADA
+  (19/11/2026 14:00)" e "instrução … designada (15/03/2027 13:30)". A de 15/03 estava na agenda (como conciliação), mas o robô do "próximo ato"
+  (8.48) criou outra em 19/11 a partir do campo velho do processo ("Audiência 19/11"). Correções: `atosDoProximoAto_` não cria ato quando o processo
+  já tem ato do mesmo tipo marcado pela publicação em outra data (e atualiza o próximo ato) nem quando o aviso diz "cancelada" naquela data
+  (`atoCanceladoNoAviso_`, `RE_ATO_CANC_`/`RE_ATO_DESIG_`; "redesignada (data)" traz a data NOVA = designação). `atosCancelados_` (robôs do
+  escritório): ato futuro que o aviso do PJe dá como cancelado sai da agenda (`cancelarEventoAto_`: Google, Eventos "apagado (…)", lembrete "ato:"
+  cancelado, tarefa do horário cancelada) e o próximo ato do processo é refeito; uma vez (Config FIX_PROXATO_850) confere os 36 atos que vieram
+  do próximo ato em 18/11 (relendo os e-mails [PUSH]). `tiposDoPush850_` (aos poucos, Config FIX_TIPO_850): audiência futura marcada como
+  conciliação/"a conferir" vira INSTRUÇÃO quando o aviso do PJe diz "Audiência de instrução … designada (mesma data)".
+- 8.50.3 Intimações › "Prazos do dia" (pedido da usuária: "apenas as intimações do dia, com a data certa, e assim vai indo; amanhã é feriado"):
+  UM dia por vez (‹ dia anterior · dia · próximo ›, "Hoje", escolher a data, botões dos próximos 6 dias úteis com a quantidade). Hoje mostra
+  também os atrasados ainda abertos e os sem data. Feriado (`feriadoDoDia`: fixos, Páscoa, recesso) e fim de semana dizem "não vence nenhum
+  prazo". Nenhuma audiência/perícia nesta tela (ficam em Audiências).

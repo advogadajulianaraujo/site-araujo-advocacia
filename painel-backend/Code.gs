@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.50.2';
+var VERSAO = '8.50.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3499,6 +3499,102 @@ function periciasTrocadas850_() {
   setConfig_('FIX_PERICIA_850', new Date().toISOString() + ' · ' + n + ' perícia(s) trocada(s) retirada(s): ' + lista.join(', '), 'Perícias lidas no lugar de audiências (8.50, uma vez)');
   return n;
 }
+/** 8.50.3: o aviso do PJe diz que o ato desta data foi CANCELADO ("cancelada (dd/mm/aaaa") e nenhum aviso (o mesmo ou posterior) o marcou nesta data?
+ *  "redesignada (data)" traz a data NOVA — é designação, não cancelamento. */
+var RE_ATO_CANC_ = /(audi[eê]ncia|per[ií]cia)[^\n]{0,120}?\b(cancelad[ao]|retirad[ao] de pauta)\s*\((\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}:\d{2})?/i;
+var RE_ATO_DESIG_ = /(audi[eê]ncia|per[ií]cia)[^\n]{0,120}?\bdesignad[ao]\s*\((\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}:\d{2})?/i;
+function atoCanceladoNoAviso_(numero, data, movs) {
+  movs = movs || tabela_('Intimacoes').linhas.filter(function (i) { return i.numero === numero; }).map(function (i) { return { t: i.movimento || '', em: String(i.recebido_em || '') }; });
+  var canc = '', desig = '';
+  movs.forEach(function (m) {
+    var c = RE_ATO_CANC_.exec(m.t), g = RE_ATO_DESIG_.exec(m.t);
+    if (c && c[5] + '-' + c[4] + '-' + c[3] === data && m.em > canc) canc = m.em;
+    if (g && g[4] + '-' + g[3] + '-' + g[2] === data && /^(?!.*cancel)/i.test(m.t) && m.em > desig) desig = m.em;
+  });
+  return !!canc && !(desig && desig >= canc); // designado de novo nesta data no mesmo aviso ou depois → continua
+}
+/** Tira o ato da agenda (Google + Eventos), cancela o lembrete "ato:" e a tarefa de conferir o horário. Nada é apagado da planilha. */
+function cancelarEventoAto_(e, motivo) {
+  var tabE = tabela_('Eventos');
+  try { var cal = CalendarApp.getCalendarById(agendas_()[e.agenda || (/per[ií]cia/.test(e.tipo || '') ? 'PERÍCIAS' : 'AUDIÊNCIA CONCILIAÇÃO')]), ce = cal && e.evento_id && cal.getEventById(String(e.evento_id)); if (ce) { mudouAgenda_(); ce.deleteEvent(); } } catch (err) { /* segue */ }
+  atualizarLinha_(tabE, e, { evento_id: 'apagado (' + String(motivo).slice(0, 80) + ')' });
+  var agora = new Date().toISOString(), tabZ = tabela_('Prazos'), tabT = tabela_('Tarefas');
+  tabZ.linhas.filter(function (z) { return z.id === e.prazo_id && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; }).forEach(function (z) {
+    atualizarLinha_(tabZ, z, { situacao: 'cancelado', atualizado_em: agora, atualizado_por: 'robô', observacoes: (z.observacoes || '') + ' | ' + motivo + ' (robô, ' + dataBR_(hojeSP_()) + ')' }); });
+  var marca = '[horaato:' + e.numero + ':' + e.data + ']';
+  tabT.linhas.filter(function (t) { return (t.descricao || '').indexOf(marca) >= 0 && !t.concluida_em && t.situacao !== 'cancelada'; }).forEach(function (t) {
+    atualizarLinha_(tabT, t, { situacao: 'cancelada', atualizado_em: agora, atualizado_por: 'robô', historico: ((t.historico || '') + '\n' + motivo).trim() }); });
+}
+/** 8.50.3 (toda rodada dos robôs do escritório): ato que o aviso do PJe dá como cancelado/redesignado sai da agenda. E, uma vez
+ *  (Config FIX_PROXATO_850), os atos que o robô tirou do "próximo ato" em 18/11 são conferidos nos e-mails [PUSH] do PJe: cancelado →
+ *  sai; o processo tem outro ato do mesmo tipo marcado pela publicação → sai (o anotado estava velho). */
+function atosCancelados_() {
+  var tabE = tabela_('Eventos'), hoje = hojeSP_(), n = 0, lista = [];
+  var desde = new Date(Date.now() - 45 * 86400000).toISOString(), porNum = {};
+  tabela_('Intimacoes').linhas.forEach(function (i) { if (String(i.recebido_em || '') >= desde && /^PJe/.test(i.fonte || '') && RE_ATO_CANC_.test(i.movimento || '')) porNum[i.numero] = 1; });
+  var uma = !config_('FIX_PROXATO_850'), tabZ = tabela_('Prazos'), doProx = {};
+  if (uma) tabZ.linhas.forEach(function (z) { if (/próximo ato anotado no processo/.test(z.observacoes || '')) doProx[z.id] = 1; });
+  tabE.linhas.slice().forEach(function (e) {
+    if (!e.data || e.data < hoje || /apagado/.test(e.evento_id || '')) return;
+    var per = /per[ií]cia/.test(e.tipo || ''), motivo = '';
+    if (porNum[e.numero] && atoCanceladoNoAviso_(e.numero, e.data)) motivo = 'o aviso do PJe diz que este ato foi cancelado';
+    if (!motivo && uma && doProx[e.prazo_id]) {
+      var outro = tabE.linhas.filter(function (x) { return x !== e && x.numero === e.numero && x.data >= hoje && x.data !== e.data && !/apagado/.test(x.evento_id || '') && /per[ií]cia/.test(x.tipo || '') === per && !doProx[x.prazo_id]; })[0];
+      if (outro) motivo = 'o próximo ato anotado estava velho: a publicação marcou para ' + dataBR_(outro.data);
+      else {
+        try {
+          var movs = [];
+          GmailApp.search('"' + e.numero + '" subject:PUSH newer_than:200d', 0, 30).forEach(function (th) { th.getMessages().forEach(function (m) {
+            eventosPush_(m.getPlainBody() || '', m.getSubject(), m.getDate(), m.getId()).forEach(function (it) { movs.push({ t: it.movimento, em: m.getDate().toISOString() }); }); }); });
+          if (atoCanceladoNoAviso_(e.numero, e.data, movs)) motivo = 'o aviso do PJe diz que este ato foi cancelado';
+        } catch (eG) { /* cota do Gmail: fica para a conferência da equipe */ }
+      }
+    }
+    if (!motivo) return;
+    cancelarEventoAto_(e, motivo); n++; lista.push(e.numero + ' ' + dataBR_(e.data));
+    var p = tabela_('Processos').linhas.filter(function (x) { return x.numero === e.numero; })[0];
+    var prox = tabE.linhas.filter(function (x) { return x.numero === e.numero && x.data >= hoje && !/apagado/.test(x.evento_id || ''); }).sort(function (a, b) { return a.data < b.data ? -1 : 1; })[0];
+    if (p && p.proximo_ato_data === e.data) atualizarLinha_(tabela_('Processos'), p, prox ? { proximo_ato: prox.tipo.charAt(0).toUpperCase() + prox.tipo.slice(1) + (prox.hora ? ' ' + prox.hora : ''), proximo_ato_data: prox.data } : { proximo_ato: '', proximo_ato_data: '' });
+  });
+  if (uma) setConfig_('FIX_PROXATO_850', new Date().toISOString() + ' · ' + n + ' ato(s) cancelado(s)/velho(s) tirado(s) da agenda: ' + lista.join(', '), 'Audiências do próximo ato conferidas no PJe (8.50.3, uma vez)');
+  if (n) registrar_('robô', 'agenda', n + ' audiência(s)/perícia(s) cancelada(s) ou remarcada(s) tirada(s) da agenda: ' + lista.join(', ').slice(0, 400));
+  return n;
+}
+/** 8.50.3, aos poucos (Config FIX_TIPO_850 quando terminar; Properties TIPO850_FEITOS): audiência futura marcada pelo robô como conciliação
+ *  ou "tipo a conferir" é conferida no e-mail [PUSH] do PJe; se o aviso diz "Audiência de INSTRUÇÃO … designada (mesma data)", o evento
+ *  passa para a agenda AUDIÊNCIA INSTRUÇÃO (caso da Gislaine, 15/03/2027). Até 25 processos por rodada. */
+function tiposDoPush850_() {
+  if (config_('FIX_TIPO_850')) return 0;
+  var props = PropertiesService.getScriptProperties(), feitos = {};
+  try { feitos = JSON.parse(props.getProperty('TIPO850_FEITOS') || '{}'); } catch (e) { feitos = {}; }
+  var tabE = tabela_('Eventos'), hoje = hojeSP_(), ctx = { clientes: tabela_('Clientes') }, procs = tabela_('Processos').linhas, n = 0, lidos = 0, mudou = [];
+  var alvo = tabE.linhas.filter(function (e) { return e.data >= hoje && !/apagado/.test(e.evento_id || '') && !/instru|per[ií]cia/.test(e.tipo || '') && /^\d{7}-\d{2}\.\d{4}\.5\./.test(e.numero || ''); });
+  var nums = {}; alvo.forEach(function (e) { if (!feitos[e.numero]) nums[e.numero] = 1; });
+  Object.keys(nums).slice(0, 25).forEach(function (num) {
+    lidos++; feitos[num] = 1;
+    var movs = [];
+    try {
+      GmailApp.search('"' + num + '" subject:PUSH newer_than:200d', 0, 30).forEach(function (th) { th.getMessages().forEach(function (m) {
+        eventosPush_(m.getPlainBody() || '', m.getSubject(), m.getDate(), m.getId()).forEach(function (it) { movs.push(it.movimento); }); }); });
+    } catch (eG) { delete feitos[num]; return; }
+    alvo.filter(function (e) { return e.numero === num; }).forEach(function (e) {
+      var d = e.data.split('-').reverse().join('/');
+      var instr = movs.some(function (t) { return /audi[eê]ncia de instru|audi[eê]ncia una/i.test(t) && new RegExp('designad[ao]\\s*\\(' + d.replace(/\//g, '\\/')).test(t); });
+      if (!instr) return;
+      var p = procs.filter(function (x) { return x.numero === num; })[0] || {};
+      try { var cal = CalendarApp.getCalendarById(agendas_()[e.agenda || 'AUDIÊNCIA CONCILIAÇÃO']), ce = cal && e.evento_id && cal.getEventById(String(e.evento_id)); if (ce) ce.deleteEvent(); } catch (err) { /* segue */ }
+      var id = criarEventoAto_('AUDIÊNCIA INSTRUÇÃO', tituloAto_(ctx, 'audiência de instrução', num, p), e.data, e.hora, 'Tipo corrigido pelo aviso do PJe (era ' + e.tipo + ').');
+      atualizarLinha_(tabE, e, { tipo: 'audiência de instrução', agenda: 'AUDIÊNCIA INSTRUÇÃO', evento_id: id });
+      var tabZ = tabela_('Prazos'); tabZ.linhas.filter(function (z) { return z.id === e.prazo_id; }).forEach(function (z) { atualizarLinha_(tabZ, z, { observacoes: String(z.observacoes || '').replace(/^ato:[^|]*/, 'ato:audiência de instrução ') }); });
+      if (p.id && p.proximo_ato_data === e.data) atualizarLinha_(tabela_('Processos'), p, { proximo_ato: 'Audiência de instrução' + (e.hora ? ' ' + e.hora : '') });
+      n++; mudou.push(num + ' ' + dataBR_(e.data));
+    });
+  });
+  props.setProperty('TIPO850_FEITOS', JSON.stringify(feitos));
+  if (!Object.keys(nums).filter(function (x) { return !feitos[x]; }).length) setConfig_('FIX_TIPO_850', new Date().toISOString() + ' · conferido', 'Tipo das audiências conferido no PJe (8.50.3, uma vez)');
+  if (n) { registrar_('robô', 'agenda', n + ' audiência(s) passaram para INSTRUÇÃO pelo aviso do PJe: ' + mudou.join(', ').slice(0, 400)); mudouAgenda_(); }
+  return n;
+}
 /** 8.50: a publicação do DJEN é para a OUTRA parte? Devolve o nome do destinatário (ou '' quando é do nosso cliente ou não dá para saber).
  *  Só decide quando o nome do cliente do processo está no cabeçalho ("RECLAMANTE: … RECLAMADO: …") num polo e o destinatário no outro.
  *  Cliente desconhecido, sigilo, destinatário sem nome ou nome do cliente no destinatário → '' (o prazo continua). */
@@ -5579,6 +5675,11 @@ function atosDoProximoAto_(limite, soNumero) {
     var t = normalizar_(p.proximo_ato || ''); if (!RE_ATO_PROX.test(t) || /sessao de julgamento/.test(t)) return;
     var per = /pericia/.test(t), data = p.proximo_ato_data;
     if (atoJaMarcado_(ctx, p.numero, data, per)) return;
+    // 8.50.3 (caso da Gislaine: "Audiência 19/11" anotado no processo, mas a de 19/11 foi CANCELADA e remarcada para 15/03/2027):
+    // o processo já tem ato do mesmo tipo marcado pela publicação em outra data → o próximo ato anotado está velho; fica o da publicação
+    var outro = ctx.eventos.linhas.filter(function (e) { return e.numero === p.numero && e.data >= hoje && e.data !== data && !/apagado/.test(e.evento_id || '') && /per[ií]cia/.test(e.tipo || '') === per; })[0];
+    if (outro) { atualizarLinha_(ctx.procs, p, { proximo_ato: outro.tipo.charAt(0).toUpperCase() + outro.tipo.slice(1) + (outro.hora ? ' ' + outro.hora : ''), proximo_ato_data: outro.data }); return; }
+    if (atoCanceladoNoAviso_(p.numero, data)) return;
     var mh = /(\d{1,2})\s*(?:h|:)\s*(\d{2})?/.exec(String(p.proximo_ato || '').replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, ' '));
     var hora = mh && +mh[1] >= 6 && +mh[1] <= 20 ? ('0' + mh[1]).slice(-2) + ':' + (mh[2] || '00') : '';
     var tipo = per ? 'perícia' : /instru|\buna\b/.test(t) ? 'audiência de instrução' : /concilia|mediac|cejusc|inicial/.test(t) ? 'audiência de conciliação' : 'audiência (tipo a conferir no processo)';
@@ -7053,7 +7154,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['cancelados850', atosCancelados_], ['tipos850', tiposDoPush850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }

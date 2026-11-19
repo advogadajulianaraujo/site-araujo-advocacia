@@ -178,3 +178,12 @@ console.log("fim 850");
   });
 }
 console.log("fim 850b");
+// 8.50.3 (caso da Gislaine): aviso do PJe "instrução cancelada (19/11)" + "instrução designada (15/03/2027)" → 19/11 é cancelado, 15/03 fica
+{
+  const corpo = 'Número do Processo: 0001047-51.2025.5.12.0041\nEventos:\n| 29/10/2026 12:50 | Audiência de instrução (rito sumaríssimo) por videoconferência designada (15/03/2027 13:30 2ª VARA DO TRABALHO DE TUBARÃO) |\n| 29/10/2026 12:50 | Audiência inicial (rito sumaríssimo) por videoconferência cancelada (15/03/2027 13:30 2ª VARA) |\n| 29/10/2026 12:50 | Audiência de instrução (rito sumaríssimo) por videoconferência cancelada (19/11/2026 14:00 2ª VARA DO TRABALHO DE TUBARÃO) |\n';
+  const its = C.eventosPush_(corpo, '[TRT12] [PUSH] Processo 0001047-51.2025.5.12.0041', new Date('2026-10-31T16:01:00Z'), 'g1');
+  const movs = its.map(i => ({ t: i.movimento, em: '2026-10-31T16:01:00.000Z' }));
+  assert(C.atoCanceladoNoAviso_('0001047-51.2025.5.12.0041', '2026-11-19', movs), 'audiência de 19/11 cancelada no aviso do PJe');
+  assert(!C.atoCanceladoNoAviso_('0001047-51.2025.5.12.0041', '2027-03-15', movs), 'a de 15/03/2027 (designada) continua — mesmo com a inicial cancelada na mesma data');
+}
+console.log("fim 850c");

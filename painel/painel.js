@@ -3854,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.50.2';
+  const VERSAO_PAINEL = '8.50.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4187,6 +4187,21 @@
      audiências/perícias só as NOVAS (as que já aconteceram saem sozinhas pelo robô), "Conferir no tribunal" só com o que precisa de alguém
      (ato não identificado ou leitura divergente) e filtro por tribunal. Prazo calculado pelo robô não conta como pendência. */
   const ehAto = z => /^ato:/.test(z.observacoes || '');
+  /** 8.50.3: feriado nacional/forense do dia (fixos + móveis pela Páscoa) — para a tela de Intimações dizer que não vence nada. */
+  function feriadoDoDia(d) {
+    const [y] = d.split('-').map(Number), md = d.slice(5);
+    const FIX = { '01-01': 'Confraternização Universal', '04-21': 'Tiradentes', '05-01': 'Dia do Trabalho', '09-07': 'Independência', '10-12': 'Nossa Senhora Aparecida',
+      '11-02': 'Finados', '11-15': 'Proclamação da República', '11-20': 'Consciência Negra', '12-08': 'Dia da Justiça', '12-25': 'Natal' };
+    if (FIX[md]) return FIX[md];
+    if (md >= '12-20' || md <= '01-20') return 'recesso forense (20/12 a 20/01)';
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, dd = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
+      hh = (19 * a + b - dd - g + 15) % 30, i2 = Math.floor(c / 4), k2 = c % 4, l = (32 + 2 * e + 2 * i2 - hh - k2) % 7, m = Math.floor((a + 11 * hh + 22 * l) / 451),
+      mes = Math.floor((hh + l - 7 * m + 114) / 31), diaP = ((hh + l - 7 * m + 114) % 31) + 1;
+    const pascoa = `${y}-${String(mes).padStart(2, '0')}-${String(diaP).padStart(2, '0')}`;
+    const MOV = { [-48]: 'Carnaval', [-47]: 'Carnaval', [-3]: 'Quinta-feira Santa', [-2]: 'Sexta-feira Santa', 60: 'Corpus Christi' };
+    for (const off in MOV) if (isoSoma(pascoa, +off) === d) return MOV[off];
+    return '';
+  }
   function tituloDia(d, hoje) {
     const dt = new Date(d + 'T12:00:00'), dif = Math.round((Date.parse(d) - Date.parse(hoje)) / 864e5);
     const sem = dt.toLocaleDateString('pt-BR', { weekday: 'long' }), dm = dt.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
@@ -4252,7 +4267,7 @@
     }));
     const nConf = prazos.filter(precisaConferir).length;
     // 8.50 (pedido da usuária: "nas intimações só quero o que está no PJe"): só os prazos das intimações; audiências e perícias ficam na tela Audiências
-    const ABAS_IX = [['prazos', 'Prazos', prazos.filter(z => !z.fatal || z.fatal <= em7).length], ['conferir', 'Conferir no tribunal', nConf],
+    const ABAS_IX = [['prazos', 'Prazos do dia', prazos.filter(z => !z.fatal || z.fatal <= hoje).length], ['conferir', 'Conferir no tribunal', nConf],
       ['execucao', 'Em execução e aprovação', prazos.filter(z => z.situacao === 'conferido').length]];
     const barra = h('div', { class: 'ix-barra' },
       h('div', { class: 'ix-abas', role: 'tablist' }, ABAS_IX.map(([k, rot, n]) => h('button', { type: 'button', role: 'tab', class: 'ix-aba' + (parte === k && !ver ? ' ativa' : ''), 'aria-selected': String(parte === k && !ver), onclick: () => ir({ parte: k === 'prazos' ? '' : k, ver: '' }) }, rot, h('span', { class: 'ix-n' + (k === 'conferir' && n ? ' alerta' : '') }, String(n))))),
@@ -4266,19 +4281,31 @@
       corpo.push(h('p', { class: 'ix-filtro' }, 'Mostrando ', h('b', {}, n[2]), ` (${lista.length}). `, botao('Limpar', () => ir({ ver: '' }), 'mini sec')),
         lista.length ? h('div', { class: 'ix-lista' }, lista.map(linhaPrazoIx)) : h('p', { class: 'ini-vazio' }, 'Nada nesta lista.'));
     } else if (parte === 'prazos') {
-      // audiências e perícias: só as que estão por vir (as que já aconteceram saem sozinhas); em destaque as marcadas nos últimos 7 dias
-      const atrasados = prazos.filter(z => z.fatal && z.fatal < hoje && !docPendente(z)).sort(porData);
-      const semana = prazos.filter(z => z.fatal && z.fatal >= hoje && z.fatal <= em7).sort((a, b) => porData(a, b) || docPendente(a) - docPendente(b));
-      const dias = [...new Set(semana.map(z => z.fatal))];
-      const semData = prazos.filter(z => !z.fatal);
-      const depois = prazos.filter(z => z.fatal > em7).sort(porData);
-      corpo.push(
-        grupoIx('Atrasados', atrasados, linhaPrazoIx, 'o robô retira sozinho o que foi feito ou era só ciência; estes precisam de alguém', 'ix-g-venc'),
-        ...dias.map(d => grupoIx(tituloDia(d, hoje), semana.filter(z => z.fatal === d), linhaPrazoIx, '', d === hoje ? 'ix-g-hoje' : null)),
-        dias.length || atrasados.length ? null : h('p', { class: 'ini-vazio' }, '✓ Nenhum prazo nos próximos 7 dias.'),
-        grupoIx('Sem data', semData, linhaPrazoIx),
-        depois.length ? h('details', { class: 'ix-depois' }, h('summary', {}, `Depois desta semana (${depois.length})`), h('div', { class: 'ix-lista' }, depois.map(linhaPrazoIx))) : null,
-        h('p', { class: 'ix-rodape' }, atos.length ? `Audiências e perícias marcadas (${atos.length}) ficam em ` : 'Audiências e perícias ficam em ', h('a', { href: '#/audiencias' }, 'Audiências →')));
+      // 8.50.3 (pedido da usuária: "apenas as intimações do dia, com a data certa, e assim vai indo; amanhã é feriado: nenhum prazo;
+      // não quero audiências aqui"): UM dia por vez — ‹ dia anterior · dia · próximo dia ›; feriado e fim de semana dizem que não vence nada.
+      const dia = /^\d{4}-\d{2}-\d{2}$/.test(params.get('dia') || '') ? params.get('dia') : hoje;
+      const fer = feriadoDoDia(dia), semana = [0, 6].includes(new Date(dia + 'T12:00:00').getDay());
+      const doDia = prazos.filter(z => z.fatal === dia).sort((a, b) => docPendente(a) - docPendente(b) || String(a.cliente || '').localeCompare(String(b.cliente || '')));
+      const atrasados = dia === hoje ? prazos.filter(z => z.fatal && z.fatal < hoje && !docPendente(z)).sort(porData) : [];
+      const semData = dia === hoje ? prazos.filter(z => !z.fatal) : [];
+      const ir2 = d => ir({ dia: d === hoje ? '' : d });
+      const proximos = [];
+      for (let d = isoSoma(hoje, 1), n = 0; n < 6; d = isoSoma(d, 1)) { if ([0, 6].includes(new Date(d + 'T12:00:00').getDay()) || feriadoDoDia(d)) continue; proximos.push(d); n++; }
+      const nav = h('div', { class: 'ixd-nav' },
+        h('button', { type: 'button', class: 'btn mini sec', 'aria-label': 'Dia anterior', onclick: () => ir2(isoSoma(dia, -1)) }, '‹'),
+        h('div', { class: 'ixd-dia' }, h('b', {}, tituloDia(dia, hoje)), fer ? h('span', { class: 'ixd-fer' }, 'Feriado: ' + fer) : semana ? h('span', { class: 'ixd-fer' }, 'Fim de semana') : null),
+        h('button', { type: 'button', class: 'btn mini sec', 'aria-label': 'Próximo dia', onclick: () => ir2(isoSoma(dia, 1)) }, '›'),
+        dia !== hoje ? h('button', { type: 'button', class: 'btn mini', onclick: () => ir2(hoje) }, 'Hoje') : null,
+        h('input', { type: 'date', class: 'ixd-data', value: dia, 'aria-label': 'Ir para o dia', onchange: e => { if (e.target.value) ir2(e.target.value); } }),
+        h('span', { class: 'ixd-prox' }, proximos.map(d => { const n = prazos.filter(z => z.fatal === d).length;
+          return h('button', { type: 'button', class: 'ixd-chip' + (d === dia ? ' ativo' : '') + (n ? '' : ' zero'), onclick: () => ir2(d) },
+            new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' }).replace('.', ''), h('b', {}, String(n))); })));
+      corpo.push(nav,
+        grupoIx('Atrasados — ainda abertos', atrasados, linhaPrazoIx, 'o robô retira sozinho o que foi feito ou era só ciência; estes precisam de alguém', 'ix-g-venc'),
+        doDia.length ? grupoIx(dia === hoje ? 'Vencem hoje' : 'Vencem neste dia', doDia, linhaPrazoIx, '', dia === hoje ? 'ix-g-hoje' : null)
+          : h('p', { class: 'ini-vazio' }, fer || semana ? `✓ ${fer ? 'Feriado (' + fer + ')' : 'Fim de semana'}: não vence nenhum prazo.` : '✓ Nenhum prazo vence neste dia.'),
+        grupoIx('Sem data — conferir', semData, linhaPrazoIx),
+        h('p', { class: 'ix-rodape' }, 'Audiências e perícias ficam em ', h('a', { href: '#/audiencias' }, 'Audiências →')));
     } else if (parte === 'conferir') {
       const doc = prazos.filter(docPendente).sort(porData);
       const div = prazos.filter(z => !docPendente(z) && divergente(z)).sort(porData);

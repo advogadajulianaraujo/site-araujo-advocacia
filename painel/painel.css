@@ -3192,3 +3192,15 @@ body.sem-sessao .chatf{display:none}
 .carteira-topo.aud-topo .carteira-tit { flex: 1 1 320px; min-width: 0; }
 .carteira-topo.aud-topo .aud-topo-dir { flex: 0 0 auto; margin-left: auto; }
 @media (max-width: 900px) { .carteira-topo.aud-topo .aud-topo-dir { flex: 1 1 100%; margin-left: 0; } }
+
+/* 8.50.3: Intimações um dia por vez */
+.ixd-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; padding: 10px 12px; background: #fff; border: 1px solid #E2DDD4; border-radius: 12px; }
+.ixd-dia { display: flex; flex-direction: column; min-width: 220px; }
+.ixd-dia b { font-size: 15px; text-transform: none; }
+.ixd-fer { font-size: 12px; color: #9A6B10; font-weight: 600; }
+.ixd-data { width: 140px; }
+.ixd-prox { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.ixd-chip { border: 1px solid #E2DDD4; background: #FAF8F4; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.ixd-chip b { font-size: 12px; }
+.ixd-chip.zero { opacity: .55; }
+.ixd-chip.ativo { background: #171513; color: #fff; border-color: #171513; }
