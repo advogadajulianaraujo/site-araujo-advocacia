@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.53.0';
+var VERSAO = '8.53.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4547,7 +4547,7 @@ function listarIntimacoes_(d) {
   tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && t.situacao !== 'cancelada') respIntim[m[1]] = t.responsavel; });
   var lista = tabela_('Intimacoes').linhas;
   if (d.abertas) lista = lista.filter(function (i) {
-    if (i.terminada_por) return false;
+    if (i.terminada_por || movimentoPuro_(i)) return false; // 8.53: movimentação sem prazo não é intimação para fazer
     var z = prazos[i.prazo_id];
     return !(z && (z.situacao === 'cumprido' || z.situacao === 'cancelado'));
   });
@@ -10739,16 +10739,24 @@ function mudarFaseProcesso_(d, u) {
  * 8.5.0: intimação que não pede nada (só movimentação, sem prazo) ou cujo prazo já foi cumprido/baixado sai da lista "abertas".
  * Nada é apagado: continua em "Todas" e na ficha do processo. Fica marcada como vista pelo robô (não vai para "Aguardando o seu OK").
  */
+/** 8.53 (pedido da usuária: "nas intimações eu só quero intimações"): aviso que é só MOVIMENTAÇÃO do processo (documento sigiloso, juntada,
+ *  disponibilizado/publicado no diário, decorrido prazo, mandado, download, conclusão, remessa…) e não abriu prazo não é intimação para fazer:
+ *  sai da lista NA HORA (antes ficava 7 dias). Audiência/perícia nunca entra aqui (a agenda lê o texto à parte). */
+var RE_MOV_PURO_ = /documento sigiloso|juntad[ao]|disponibilizad|publicad[oa](\(a\))? o\(a\) intima|publica[cç][aã]o|decorrid[oa] (o )?prazo|decurso|mandado|dispon[ií]vel para download|conclus[oa]|remetid|remessa|recebid[oa]s? os autos|arquivad|desarquiv|redistribu|certid[aã]o|transitad|tr[aâ]nsito em julgado|baixa definitiva|retificad|alterad[ao] o (tipo|assunto|valor)|habilita[cç][aã]o|substabelec|guia|custas|dep[oó]sito|alvar[aá] (expedido|assinado)|devolvid[oa]s? (os autos|o mandado)/i;
+function movimentoPuro_(i) {
+  var t = String(i.movimento || '') + ' ' + String(i.evento || '');
+  return !i.prazo_id && RE_MOV_PURO_.test(t) && !/audi[eê]ncia|per[ií]cia|intima[cç][aã]o (expedida|eletr[oô]nica)|expedid[oa]\(a\) intima|cita[cç][aã]o/i.test(t);
+}
 function arquivarMovimentos_(tabI, tabZ, aplicar) {
   var prazos = {}, comTarefa = {}, n = { movimento: 0, prazoBaixado: 0 };
   tabZ.linhas.forEach(function (z) { prazos[z.id] = z; });
   tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) comTarefa[m[1]] = 1; });
-  var limite = new Date(Date.now() - 7 * 86400000).toISOString(), agora = new Date().toISOString();
+  var limite = new Date(Date.now() - 2 * 86400000).toISOString(), agora = new Date().toISOString(); // 8.53: 7 → 2 dias (e movimentação pura na hora)
   tabI.linhas.forEach(function (i) {
     if (i.terminada_por || comTarefa[i.id]) return;
     var z = prazos[i.prazo_id], motivo = '';
     if (z && (z.situacao === 'cumprido' || z.situacao === 'cancelado')) motivo = 'prazoBaixado';
-    else if (!i.prazo_id && (i.recebido_em || '') < limite) motivo = 'movimento';
+    else if (!i.prazo_id && (movimentoPuro_(i) || (i.recebido_em || '') < limite)) motivo = 'movimento';
     if (!motivo) return;
     n[motivo]++;
     if (aplicar) atualizarLinha_(tabI, i, { terminada_por: motivo === 'movimento' ? 'robô (só movimentação)' : 'robô (prazo baixado)', terminada_em: agora, ok_por: 'robô', ok_em: agora });

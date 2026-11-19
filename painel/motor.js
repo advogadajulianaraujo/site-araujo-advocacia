@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.1 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.53.0';
+var MOTOR_VERSAO = '8.53.1';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.53.0';
+var VERSAO = '8.53.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -658,7 +658,7 @@ function listarIntimacoes_(d) {
   tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[intim:([^\]]+)\]/.exec(t.descricao || ''); if (m && t.situacao !== 'cancelada') respIntim[m[1]] = t.responsavel; });
   var lista = tabela_('Intimacoes').linhas;
   if (d.abertas) lista = lista.filter(function (i) {
-    if (i.terminada_por) return false;
+    if (i.terminada_por || movimentoPuro_(i)) return false; // 8.53: movimentação sem prazo não é intimação para fazer
     var z = prazos[i.prazo_id];
     return !(z && (z.situacao === 'cumprido' || z.situacao === 'cancelado'));
   });
@@ -1940,6 +1940,11 @@ function meuPainel_(d, u) {
 }
 
 /** "Eu faço": a pessoa pega o prazo, a intimação ou a petição inicial; aparece nas Tarefas dela. */
+var RE_MOV_PURO_ = /documento sigiloso|juntad[ao]|disponibilizad|publicad[oa](\(a\))? o\(a\) intima|publica[cç][aã]o|decorrid[oa] (o )?prazo|decurso|mandado|dispon[ií]vel para download|conclus[oa]|remetid|remessa|recebid[oa]s? os autos|arquivad|desarquiv|redistribu|certid[aã]o|transitad|tr[aâ]nsito em julgado|baixa definitiva|retificad|alterad[ao] o (tipo|assunto|valor)|habilita[cç][aã]o|substabelec|guia|custas|dep[oó]sito|alvar[aá] (expedido|assinado)|devolvid[oa]s? (os autos|o mandado)/i;
+function movimentoPuro_(i) {
+  var t = String(i.movimento || '') + ' ' + String(i.evento || '');
+  return !i.prazo_id && RE_MOV_PURO_.test(t) && !/audi[eê]ncia|per[ií]cia|intima[cç][aã]o (expedida|eletr[oô]nica)|expedid[oa]\(a\) intima|cita[cç][aã]o/i.test(t);
+}
 function roboExtrasAtualizar_() {
   var g = { tempoRobo: (function () { try { return tempoRoboHoje_(); } catch (e) { return null; } })(), alertas: (function () { try { return vigiaRobo_(false); } catch (e) { return []; } })(),
     ia: (function () { try { return !!chaveIA_(); } catch (e) { return false; } })() };

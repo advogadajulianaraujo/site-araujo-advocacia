@@ -1,5 +1,5 @@
 {
- "versao": "8.53.0",
+ "versao": "8.53.1",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -116,7 +116,7 @@
     "Usuarios"
    ],
    "servicos": [],
-   "funcoes": 10
+   "funcoes": 12
   },
   "tarefas.listar": {
    "tabelas": [
@@ -468,5 +468,5 @@
    "funcoes": 38
   }
  },
- "funcoes": 156
+ "funcoes": 158
 }

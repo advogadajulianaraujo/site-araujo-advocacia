@@ -1935,3 +1935,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   está tocando não para quando chega mensagem. Uma leitura por vez (`st.carregando`). Envio que falhou fica com "Tentar de novo".
 - Teste: SQL (invasão, sala alheia, pessoa inativa, arquivo inexistente/de outro escritório, apagar alheio, anon sem acesso às internas) e
   navegador (texto 0,17 s, PDF, foto, áudio gravado e tocando, resposta, 0 pedidos ao Google). etapaChat.mjs continua passando.
+- 8.53.1 (pedido da usuária: "tem muita intimação que está meio fora do ar"): em 19/11 havia 892 "intimações" abertas de novembro — 634 sem
+  prazo eram só avisos de MOVIMENTAÇÃO do PJe/eproc (documento sigiloso, juntada, disponibilizado/publicado, decorrido prazo, mandado, download…)
+  e o robô só os tirava depois de 7 dias. `movimentoPuro_` (`RE_MOV_PURO_`, nunca audiência/perícia/intimação expedida/citação): movimentação sem
+  prazo sai NA HORA (`arquivarMovimentos_`, terminada_por "robô (só movimentação)") e nem aparece em `intimacoes.listar` abertas; o resto sem prazo
+  sai em 2 dias (antes 7). Simulação nos dados reais: 634 → 81 na hora. O robô da "petição juntada" e a agenda continuam lendo TODOS os avisos.
+- Conexão direta com PJe/eproc (pergunta da usuária): desde 16/05/2025 a intimação do advogado particular é a PUBLICAÇÃO no DJEN e o prazo conta
+  dela (art. 224 CPC; o PJe só repete essa conta). O DJEN já é lido pelo painel aberto/extensão. O webservice MNI do PJe/eproc exige login/
+  certificado do advogado guardado no sistema e ABRIR o teor da comunicação por ele registra a CIÊNCIA — não usar.
