@@ -1866,3 +1866,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   UM dia por vez (‹ dia anterior · dia · próximo ›, "Hoje", escolher a data, botões dos próximos 6 dias úteis com a quantidade). Hoje mostra
   também os atrasados ainda abertos e os sem data. Feriado (`feriadoDoDia`: fixos, Páscoa, recesso) e fim de semana dizem "não vence nenhum
   prazo". Nenhuma audiência/perícia nesta tela (ficam em Audiências).
+
+## 8.51.0 Avisos de audiência pelo WhatsApp oficial sem clique (pedido da usuária, 19/11/2026)
+
+- O WhatsApp só deixa a empresa começar a conversa com MODELO aprovado pelo Meta: `whatsModeloAviso_` cria sozinho o modelo
+  "aviso_audiencia_araujo" (Utilidade, pt_BR; `CORPO_MODELO_AVISO_` com {{1}} nome, {{2}} o ato, {{3}} quando, {{4}} onde/o que levar) na conta
+  achada pelo token (`whatsWaba_`: debug_token → Config WHATS_WABA_ID) e confere a aprovação de 3 em 3 h (Config WHATS_MODELO_AVISO_ST).
+- `avisosAutomaticos_` (logo depois de `lembrarAudiencias_`, em toda rodada do robô): com o modelo APPROVED, as tarefas de aviso 1 SEMANA, VÉSPERA
+  e NO DIA saem sozinhas (8h–19h; a do dia desde 7h30; "audiência nova" continua com a secretaria) para o telefone do cadastro
+  (`telWhatsServidor_`: 55 + DDD + número; dois números → o primeiro). Enviou → ficha aviso_*_em/por "robô (WhatsApp automático)", tarefa fecha
+  (`[whatsauto:enviado]`), mensagem registrada na conversa do Chatbot. Sem telefone ou o Meta recusou → tarefa fica para a secretaria
+  (`[whatsauto:falhou]` + motivo no histórico). Config WHATS_AVISO_AUTO = nao desliga (Chatbot do WhatsApp › ⚙ Ligar / configurar).
+- Resposta do cliente até 3 dias (`respostaAvisoAto_`, Properties AVISO_WA_<8 dígitos>): "ok/confirmo/vou…" → agradece e anota "Cliente confirmou
+  pelo WhatsApp" nas observações da ficha da audiência; outra coisa → vai para a equipe (robô pausa).

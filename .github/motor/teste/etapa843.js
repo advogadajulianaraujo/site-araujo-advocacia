@@ -187,3 +187,38 @@ console.log("fim 850b");
   assert(!C.atoCanceladoNoAviso_('0001047-51.2025.5.12.0041', '2027-03-15', movs), 'a de 15/03/2027 (designada) continua — mesmo com a inicial cancelada na mesma data');
 }
 console.log("fim 850c");
+// 8.51: aviso de audiência pelo WhatsApp oficial sem clique (Meta simulado; nenhuma mensagem real)
+{
+  const enviados = [], f0 = C.UrlFetchApp.fetch;
+  C.UrlFetchApp.fetch = (url, op) => {
+    if (!/graph\.facebook\.com/.test(url)) return f0(url, op);
+    const resp = (code, o) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(o) });
+    if (/debug_token/.test(url)) return resp(200, { data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['999'] }] } });
+    if (/message_templates/.test(url)) return resp(200, { data: [{ name: 'aviso_audiencia_araujo', status: 'APPROVED' }] });
+    if (/\/messages$/.test(url)) { const b = JSON.parse(op.payload); enviados.push(b); return resp(200, { messages: [{ id: 'wamid.T' + enviados.length }] }); }
+    return resp(404, {});
+  };
+  C.PropertiesService.getScriptProperties().setProperty('WHATS_TOKEN', 'EAA' + 'x'.repeat(60)); C.setConfig_('WHATS_PHONE_ID', '123456789012', '');
+  const hoje = C.hojeSP_(), amanha = C.somarDias_(hoje, 1), tabT = C.tabela_('Tarefas');
+  const cli = C.tabela_('Clientes').linhas.find(c => c.id); C.atualizarLinha_(C.tabela_('Clientes'), cli, { telefone: '(48) 99999-1234' });
+  const pr = C.tabela_('Processos').linhas.find(p => p.cliente_id === cli.id && p.numero) || C.tabela_('Processos').linhas.find(p => p.numero);
+  const base = { etapa: 'afazer', situacao: 'ativa', criado_em: new Date().toISOString(), responsavel: 'maria', processo_id: pr.id, numero: pr.numero, cliente_id: cli.id };
+  C.inserirLinha_(tabT, Object.assign({ id: 'T851a', titulo: 'VÉSPERA', descricao: 'x\n[ato:instrucao|' + amanha + '|14:30|Sala 1]\n[lembrete:K851|vespera]\n[avisovespera]' }, base));
+  C.inserirLinha_(tabT, Object.assign({ id: 'T851b', titulo: 'NOVA', descricao: 'x\n[ato:instrucao|' + amanha + '|14:30|]\n[lembrete:K851|nova]\n[avisonova]' }, base));
+  const cli2 = C.tabela_('Clientes').linhas.find(c => c.id !== cli.id); C.atualizarLinha_(C.tabela_('Clientes'), cli2, { telefone: '' });
+  C.inserirLinha_(tabT, Object.assign({}, base, { id: 'T851c', titulo: 'DIA', cliente_id: cli2.id, descricao: 'x\n[ato:conciliacao|' + hoje + '|16:00|]\n[lembrete:K852|dia]\n[avisodia]' }));
+  const n = C.avisosAutomaticos_({ agora: new Date(hoje + 'T13:00:00-03:00') });
+  const ta = C.tabela_('Tarefas').linhas.find(t => t.id === 'T851a'), tb = C.tabela_('Tarefas').linhas.find(t => t.id === 'T851b'), tc = C.tabela_('Tarefas').linhas.find(t => t.id === 'T851c');
+  const e1 = enviados[0] || {};
+  assert(n === 1 && enviados.length === 1 && e1.to === '5548999991234' && e1.type === 'template' && e1.template.name === 'aviso_audiencia_araujo', 'aviso da véspera saiu sozinho pelo modelo aprovado, para 55+DDD+número');
+  const ps = e1.template.components[0].parameters.map(x => x.text);
+  assert(/amanhã/.test(ps[2]) && /14:30/.test(ps[2]) && /audiência de instrução/.test(ps[1]) && /testemunhas/.test(ps[3]), 'mensagem: ' + ps.join(' | '));
+  assert(ta.concluida_em && /whatsauto:enviado/.test(ta.descricao) && !tb.concluida_em && /whatsauto:falhou/.test(tc.descricao) && !tc.concluida_em, 'tarefa da véspera fecha; "audiência nova" continua com a secretaria; sem telefone fica para a secretaria');
+  assert(C.avisosAutomaticos_({ agora: new Date(hoje + 'T13:05:00-03:00') }) === 0 && enviados.length === 1, 'não manda duas vezes');
+  assert(C.avisosAutomaticos_({ agora: new Date(hoje + 'T21:00:00-03:00') }) === 0, 'fora do horário (21h) não manda');
+  const conv = C.conversaDoTelefone_('5548999991234', '');
+  const r1 = C.respostaAvisoAto_(conv, 'Ok, confirmo!');
+  assert(r1 && /obrigada/i.test(r1.resposta || ''), 'cliente responde "Ok, confirmo" → agradece');
+  C.UrlFetchApp.fetch = f0;
+}
+console.log("fim 851");

@@ -1121,6 +1121,14 @@
         h('textarea', { id: 'f-pix', name: 'pix_txt', rows: 3, placeholder: 'Ex.: PIX (CNPJ): … — ARAÚJO ADVOCACIA — Banco …, agência …, conta …' }, c.pix_txt || ''),
         h('p', { class: 'peq' }, 'Fica guardado só na planilha do painel.')),
       h('label', { class: 'largo g-opcao' }, h('input', { type: 'checkbox', name: 'ligado', checked: c.ligado }), ' Robô respondendo sozinho (desligado, ele só guarda as mensagens para a equipe responder por aqui)'),
+      // 8.51: avisos de audiência sem clique
+      h('label', { class: 'largo g-opcao' }, h('input', { type: 'checkbox', name: 'aviso_auto', checked: c.avisoAuto !== false }), ' Mandar sozinho os avisos de audiência ao cliente (1 semana antes, véspera e no dia)'),
+      h('p', { class: 'largo peq ' + (/^APPROVED/.test(c.modeloAviso || '') ? 'ok' : 'alerta') },
+        /^APPROVED/.test(c.modeloAviso || '') ? '✓ Modelo do aviso aprovado pelo Meta: os avisos saem sozinhos (das 8h às 19h; o do dia a partir das 7h30). Sem telefone válido, a tarefa fica para a secretaria.'
+          : /^PENDING/.test(c.modeloAviso || '') ? '⏳ O painel já mandou o modelo do aviso para o Meta aprovar (costuma levar de minutos a 1 dia). Enquanto isso, a secretaria avisa pelo botão.'
+          : /^REJECTED/.test(c.modeloAviso || '') ? 'O Meta recusou o modelo do aviso: ' + c.modeloAviso + '. Os avisos continuam pelo botão da secretaria.'
+          : 'Modelo do aviso no Meta: ' + (c.modeloAviso ? c.modeloAviso.replace(/ · .*$/, '') : 'ainda não conferido') + '. O robô cria e confere sozinho.',
+        ' ', h('button', { type: 'button', class: 'btn mini sec', onclick: async ev => { ev.target.disabled = true; try { const r = await api('whats.config', { modelo_conferir: true }); avisar('Situação do modelo: ' + String(r.modeloAviso || '—').replace(/ · .*$/, '')); } catch (e) { avisar(e.message, true); } ev.target.disabled = false; } }, 'Conferir agora')),
       c.iaLigada ? null : h('p', { class: 'largo nota alerta' }, 'A IA (chave do Gemini) não está cadastrada: o robô só consegue passar as mensagens para a equipe. Cadastre em Gerenciar acessos › IA.'),
       h('div', { class: 'largo g-acoes' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'),
         h('button', { type: 'button', class: 'btn sec', onclick: async () => { const n = prompt('Mandar uma mensagem de teste para qual número? (com 55 e DDD, ex.: 5548999998888)'); if (!n) return; try { await api('whats.config', { testar: n }); avisar('Mensagem de teste enviada.'); } catch (e) { avisar(e.message, true); } } }, 'Mandar um teste'),
@@ -1132,7 +1140,7 @@
       c.erro ? h('p', { class: 'peq largo erro' }, 'Último problema: ' + c.erro) : null, h('p', { class: 'erro largo' }));
     const d = dialogo('wz-config', form);
     K().aoEnviar(form, async f => {
-      const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on', valor: f.get('valor') || '300', pix_txt: f.get('pix_txt') || '' };
+      const dados = { phone_id: f.get('phone_id') || '', resp: f.get('resp') || '', ligado: f.get('ligado') === 'on', aviso_auto: f.get('aviso_auto') === 'on', valor: f.get('valor') || '300', pix_txt: f.get('pix_txt') || '' };
       if (f.get('token')) dados.token = f.get('token');
       if (f.get('app_secret')) dados.app_secret = f.get('app_secret');
       await api('whats.config', dados); d.close(); avisar('WhatsApp salvo.'); location.reload();
