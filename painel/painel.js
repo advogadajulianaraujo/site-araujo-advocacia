@@ -47,6 +47,33 @@
 
   let avisoTimer;
   /** 8.52: copia um texto e avisa (com reserva para navegador sem permissão de área de transferência). */
+  /** 8.52.4: qualificação montada no próprio navegador (igual à do servidor) — o botão aparece mesmo com o servidor numa versão anterior. */
+  function qualificacaoCliente(c) {
+    if (!c || !c.nome) return '';
+    if (c.qualificacao) return c.qualificacao;
+    const sx = String(c.sexo || '').toUpperCase().charAt(0);
+    const g = sx === 'F' || sx === 'M' ? sx : (/a$/i.test(String(c.nome).trim().split(/\s+/)[0]) && !/^(luca|joshua|nikita)$/i.test(String(c.nome).trim().split(/\s+/)[0]) ? 'F' : 'M');
+    const x = (m, f) => g === 'F' ? f : m;
+    const prep = t => /^(rua|r\.|avenida|av\.?|travessa|tv\.|rodovia|rod\.|estrada|servid[aã]o|alameda|pra[cç]a|linha|vila|localidade|comunidade|marginal|via)\b/i.test(t) ? 'na ' + t
+      : /^(loteamento|beco|largo|s[ií]tio|condom[ií]nio|conjunto|bairro|residencial|parque|jardim|caminho)\b/i.test(t) ? 'no ' + t : 'em ' + t;
+    let cep = String(c.cep || '').replace(/\D/g, ''); cep = cep.length === 8 ? cep.slice(0, 5) + '-' + cep.slice(5) : String(c.cep || '').trim();
+    const local = [String(c.endereco || '').trim().replace(/[\s,]+$/, ''), c.cidade && c.uf ? c.cidade + '/' + c.uf : (c.cidade || ''), cep ? 'CEP ' + cep : ''].filter(Boolean).join(', ');
+    const p = [String(c.nome).trim().toUpperCase()];
+    if (c.tipo === 'PJ') {
+      p.push('pessoa jurídica de direito privado');
+      if (c.cpf_cnpj) p.push('inscrita no CNPJ de n° ' + String(c.cpf_cnpj).trim());
+      if (local) p.push('com sede ' + prep(local));
+      if (c.representante) p.push('neste ato representada por ' + String(c.representante).trim());
+    } else {
+      p.push(x('brasileiro', 'brasileira'));
+      if (c.estado_civil) { const ec = String(c.estado_civil).trim(); p.push(/^uni[aã]o est[aá]vel$/i.test(ec) ? 'convivente em união estável' : ec.replace(/(\w+)o\(a\)/gi, (m, r) => r + (g === 'F' ? 'a' : 'o')).toLowerCase()); }
+      if (c.profissao) p.push(String(c.profissao).trim().toLowerCase());
+      if (c.cpf_cnpj) p.push(x('inscrito', 'inscrita') + ' no CPF de n° ' + String(c.cpf_cnpj).trim());
+      if (c.rg) p.push(x('portador', 'portadora') + ' do RG de n° ' + String(c.rg).trim());
+      if (local) p.push('residente e ' + x('domiciliado', 'domiciliada') + ' ' + prep(local));
+    }
+    return p.join(', ');
+  }
   async function copiar(txt, ok) {
     try { await navigator.clipboard.writeText(String(txt || '')); avisar(ok || 'Copiado.'); }
     catch (e) { try { const t = document.createElement('textarea'); t.value = String(txt || ''); document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); avisar(ok || 'Copiado.'); } catch (e2) { avisar('Não consegui copiar: selecione o texto e use Ctrl+C.', true); } }
@@ -2558,7 +2585,7 @@
       const dado = (rot, val) => val ? [h('dt', {}, rot), h('dd', {}, val)] : [];
       // 8.52.3 (pedido da usuária): botão pequeno "📋 qualificação" no quadro Dados do cliente (copia o parágrafo pronto)
       const dados = card('Dados do cliente', h('span', { class: 'fg-links' },
-          c.qualificacao ? h('button', { type: 'button', class: 'link fg-link', title: c.qualificacao, onclick: () => copiar(c.qualificacao, 'Qualificação copiada: é só colar.') }, '📋 qualificação') : null,
+          h('button', { type: 'button', class: 'link fg-link', title: qualificacaoCliente(c), onclick: () => copiar(qualificacaoCliente(c), 'Qualificação copiada: é só colar.') }, '📋 qualificação'),
           h('button', { type: 'button', class: 'link fg-link', onclick: () => abrirAba('cadastro') }, '✎ editar')),
         h('dl', { class: 'fg-dados' },
           ...dado(pf ? 'CPF' : 'CNPJ', c.cpf_cnpj), ...dado('RG', pf ? c.rg : ''), ...dado('Nascimento', c.nascimento ? dataBR(c.nascimento) + (idade ? ` (${idade} anos)` : '') : ''),
@@ -2622,7 +2649,7 @@
           tel ? h('a', { class: 'btn wa', href: 'https://wa.me/' + tel, target: '_blank', rel: 'noopener' }, 'WhatsApp') : null,
           h('a', { class: 'btn', href: '#/modelos?cliente=' + encodeURIComponent(c.id) }, 'Gerar documentos'),
           // 8.52: copia a qualificação pronta (só com o que está no cadastro)
-          c.qualificacao ? h('button', { type: 'button', class: 'btn mini sec', title: c.qualificacao, onclick: () => copiar(c.qualificacao, 'Qualificação copiada: é só colar.') }, '📋 Qualificação') : null,
+          h('button', { type: 'button', class: 'btn mini sec', title: qualificacaoCliente(c), onclick: () => copiar(qualificacaoCliente(c), 'Qualificação copiada: é só colar.') }, '📋 Qualificação'),
           h('button', { type: 'button', class: 'btn sec', onclick: () => abrirAba('cadastro') }, '✎ Editar'), mais)),
       // abas: Visão geral · Processos · Cobranças · Anotações · Documentos · Cadastro
       fichaEmAbas(c.id, [
@@ -3863,7 +3890,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.3';
+  const VERSAO_PAINEL = '8.52.4';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
