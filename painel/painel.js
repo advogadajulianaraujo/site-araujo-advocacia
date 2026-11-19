@@ -3706,11 +3706,10 @@
       }
       const ICO = { prazo: '⏱', intimacao: '📨', inicial: '⚖' }, NOME = { prazo: 'Prazo', intimacao: 'Intimação', inicial: 'Petição inicial' };
       // 8.11 (pedido da usuária): uma linha só, com um botão pequeno de OK; a lista inteira só abre no "ver a lista"
-      let aberta = !!opc.inicio; try { if (!opc.inicio) aberta = localStorage.getItem('aguarda_aberta') === '1'; } catch (e) { /* segue fechada */ }
+      let aberta = false; // 8.52.1 (pedido da usuária): a lista abre SEMPRE escondida (Início e Intimações); só mostra ao apertar "ver a lista"
       const lista = h('ul', { class: 'aguarda-lista', hidden: !aberta });
       const verBt = h('button', { type: 'button', class: 'btn mini sec', 'aria-expanded': String(aberta), onclick: () => {
         aberta = !aberta; lista.hidden = !aberta; verBt.textContent = aberta ? 'esconder a lista' : 'ver a lista'; verBt.setAttribute('aria-expanded', String(aberta));
-        try { localStorage.setItem('aguarda_aberta', aberta ? '1' : '0'); } catch (e) { /* ok */ }
       } }, aberta ? 'esconder a lista' : 'ver a lista');
       const PLURAL = { prazo: ['prazo', 'prazos'], intimacao: ['intimação', 'intimações'], inicial: ['petição inicial', 'petições iniciais'] };
       const porTipo = ['prazo', 'intimacao', 'inicial'].map(t => [t, itens.filter(x => x.tipo === t).length]).filter(x => x[1]).map(([t, n]) => `${n} ${PLURAL[t][n === 1 ? 0 : 1]}`).join(' · ');
@@ -3861,7 +3860,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.0';
+  const VERSAO_PAINEL = '8.52.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
