@@ -1889,3 +1889,6 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   depois do horário → não manda; falha passageira do Meta (503/timeout) → tenta na próxima rodada (não vira tarefa); recusa definitiva → secretaria;
   mensagem já saiu e algo depois falhou → tarefa fecha (a secretaria não manda de novo). Cliente empresa (LTDA, CNPJ…) → nome inteiro. Resposta com
   "não", "?", imprevisto, remarcar, presencial, escritório, link… → equipe (não é confirmação).
+- 8.51.3: em 19/11 o robô respondeu "SEM_CONTA" (o token não mostrou a conta do WhatsApp Business pelo debug_token). `whatsWaba_` agora tenta 4
+  caminhos (debug_token, /me/businesses, /me/whatsapp_business_accounts e confere o número) e grava o motivo exato em WHATS_MODELO_AVISO_ST
+  (mostrado em Chatbot › ⚙); "SEM_CONTA"/"ERRO" conferem de novo em 1 h. Campo reserva "ID da conta do WhatsApp Business" no ⚙ (Config WHATS_WABA_ID).

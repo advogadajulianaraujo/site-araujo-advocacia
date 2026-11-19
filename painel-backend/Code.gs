@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.51.2';
+var VERSAO = '8.51.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3571,24 +3571,33 @@ function atosCancelados_() {
 var WHATS_MODELO_AVISO = 'aviso_audiencia_araujo';
 function whatsWaba_() {
   var w = config_('WHATS_WABA_ID'); if (w) return w;
-  var t = whatsToken_(); if (!t) return '';
-  try {
-    var r = UrlFetchApp.fetch(WHATS_API + 'debug_token?input_token=' + encodeURIComponent(t) + '&access_token=' + encodeURIComponent(t), { muteHttpExceptions: true });
-    var j = JSON.parse(r.getContentText() || '{}'), esc = ((j.data || {}).granular_scopes || []);
-    var g = esc.filter(function (x) { return x.scope === 'whatsapp_business_management' || x.scope === 'whatsapp_business_messaging'; }).map(function (x) { return (x.target_ids || [])[0]; }).filter(Boolean)[0];
-    if (g) { setConfig_('WHATS_WABA_ID', String(g), 'Conta do WhatsApp Business (WABA) — achada pelo token'); return String(g); }
-  } catch (e) { /* segue */ }
+  var t = whatsToken_(); if (!t) { WABA_MOTIVO = 'token do Meta não cadastrado'; return ''; }
+  var pega = function (url) { try { var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + t } }); var j = JSON.parse(r.getContentText() || '{}'); if (j.error) WABA_MOTIVO = (j.error.message || '').slice(0, 160); return j; } catch (e) { WABA_MOTIVO = String(e.message || e).slice(0, 160); return {}; } };
+  var salva = function (g) { setConfig_('WHATS_WABA_ID', String(g), 'Conta do WhatsApp Business (WABA) — achada pelo token'); return String(g); };
+  // 8.51.3: quatro caminhos, do mais comum ao menos (token de usuário do sistema, token de app, token de usuário)
+  var j = pega(WHATS_API + 'debug_token?input_token=' + encodeURIComponent(t) + '&access_token=' + encodeURIComponent(t));
+  var g = (((j.data || {}).granular_scopes) || []).filter(function (x) { return /whatsapp_business_(management|messaging)/.test(x.scope); }).map(function (x) { return (x.target_ids || [])[0]; }).filter(Boolean)[0];
+  if (g) return salva(g);
+  j = pega(WHATS_API + whatsVersao_() + '/me/businesses?fields=owned_whatsapp_business_accounts{id},client_whatsapp_business_accounts{id}');
+  (j.data || []).some(function (b) { var l = ((b.owned_whatsapp_business_accounts || {}).data || []).concat((b.client_whatsapp_business_accounts || {}).data || []); if (l[0]) g = l[0].id; return !!g; });
+  if (g) return salva(g);
+  j = pega(WHATS_API + whatsVersao_() + '/me/whatsapp_business_accounts?fields=id');
+  g = ((j.data || [])[0] || {}).id; if (g) return salva(g);
+  // o número do WhatsApp responde? (diz se o token e o Phone number ID valem)
+  var n = pega(WHATS_API + whatsVersao_() + '/' + config_('WHATS_PHONE_ID') + '?fields=id,display_phone_number,verified_name');
+  WABA_MOTIVO = (n.id ? 'o token vale para o número ' + (n.display_phone_number || '') + ', mas não mostra a conta do WhatsApp Business' : 'o token ou o Phone number ID não valem: ' + (WABA_MOTIVO || 'sem resposta do Meta')) + ' — cole o "ID da conta do WhatsApp Business" (Meta › WhatsApp › Configuração da API) em Chatbot › ⚙ Ligar / configurar';
   return '';
 }
+var WABA_MOTIVO = '';
 var CORPO_MODELO_AVISO_ = 'Olá, {{1}}! Aqui é do escritório Araújo Advocacia. Lembrete: a sua {{2}} será {{3}}. {{4}} Por favor, responda esta mensagem confirmando que recebeu.';
 /** Status do modelo no Meta (APPROVED / PENDING / REJECTED / sem modelo); cria se não existir. Guarda em Config WHATS_MODELO_AVISO_ST. */
 function whatsModeloAviso_(forcar) {
   var props = PropertiesService.getScriptProperties(), ult = +(props.getProperty('WHATS_MODELO_CONF') || 0), st = config_('WHATS_MODELO_AVISO_ST') || '';
   if (!forcar && /^APPROVED/.test(st) && Date.now() - ult < 12 * 3600000) return 'APPROVED';
-  if (!forcar && Date.now() - ult < 3 * 3600000) return st.split(' ')[0];
+  if (!forcar && Date.now() - ult < (/^(SEM_CONTA|ERRO)/.test(st) ? 3600000 : 3 * 3600000)) return st.split(' ')[0];
   props.setProperty('WHATS_MODELO_CONF', String(Date.now()));
   var waba = whatsWaba_(), t = whatsToken_();
-  if (!waba || !t) { setConfig_('WHATS_MODELO_AVISO_ST', 'SEM_CONTA ' + new Date().toISOString(), 'Modelo do aviso de audiência no Meta'); return 'SEM_CONTA'; }
+  if (!waba || !t) { setConfig_('WHATS_MODELO_AVISO_ST', 'SEM_CONTA ' + (WABA_MOTIVO || 'conta do WhatsApp Business não encontrada').slice(0, 260) + ' · ' + new Date().toISOString(), 'Modelo do aviso de audiência no Meta'); return 'SEM_CONTA'; }
   var h = { Authorization: 'Bearer ' + t };
   var r = UrlFetchApp.fetch(WHATS_API + whatsVersao_() + '/' + waba + '/message_templates?name=' + WHATS_MODELO_AVISO + '&fields=name,status,language,rejected_reason', { muteHttpExceptions: true, headers: h });
   var j = {}; try { j = JSON.parse(r.getContentText() || '{}'); } catch (e) { j = {}; }
@@ -15851,6 +15860,7 @@ function whatsConfig_(d, u) {
   if (d.pix_txt !== undefined) setConfig_('WHATS_PIX_TXT', String(d.pix_txt).slice(0, 400), 'Dados do Pix que o robô manda (consulta e checagem)');
   if (d.valor !== undefined) { var vv = +String(d.valor).replace(/\D/g, ''); if (!vv) throw falha_('Informe o valor da consulta (só números).'); setConfig_('WHATS_VALOR', String(vv), 'Valor da consulta (R$)'); }
   if (d.ligado !== undefined) setConfig_('WHATS_BOT', d.ligado ? 'sim' : 'nao', 'Robô do WhatsApp respondendo sozinho?');
+  if (d.waba_id !== undefined) { var wb = String(d.waba_id || '').replace(/\D/g, ''); if (wb && wb.length < 8) throw falha_('O "ID da conta do WhatsApp Business" é um número comprido (Meta › WhatsApp › Configuração da API).'); setConfig_('WHATS_WABA_ID', wb, 'Conta do WhatsApp Business (WABA)'); if (wb) d.modelo_conferir = true; }
   if (d.aviso_auto !== undefined) setConfig_('WHATS_AVISO_AUTO', d.aviso_auto ? 'sim' : 'nao', 'Avisos de audiência pelo WhatsApp oficial sem clique (8.51)');
   if (d.modelo_conferir) { try { whatsModeloAviso_(true); } catch (eM) { /* status fica com o erro */ } }
   if (d.app_secret !== undefined) {
@@ -15864,7 +15874,7 @@ function whatsConfig_(d, u) {
   var r = { ponte: ponteSb, temSecret: !!props.getProperty('WHATS_APP_SECRET'), verifyToken: props.getProperty('WHATS_VERIFY') || '',
     urlRetorno: sbConf_().url ? sbConf_().url + '/functions/v1/whatsapp' : '', temToken: !!whatsToken_(), phone_id: config_('WHATS_PHONE_ID') || '', ligado: config_('WHATS_BOT') === 'sim', resp: config_('WHATS_RESP') || '',
     pix_txt: pixTexto_(), valor: valorConsulta_(), chavePonte: props.getProperty('WHATS_PONTE_CHAVE'), urlPainel: (function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } })(), ultima: config_('WHATS_ULTIMA') || '', erro: config_('WHATS_ERRO') || '', iaLigada: !!chaveIA_(),
-    avisoAuto: config_('WHATS_AVISO_AUTO') !== 'nao', modeloAviso: config_('WHATS_MODELO_AVISO_ST') || '' };
+    avisoAuto: config_('WHATS_AVISO_AUTO') !== 'nao', modeloAviso: config_('WHATS_MODELO_AVISO_ST') || '', waba: config_('WHATS_WABA_ID') || '' };
   if (d.testar) {
     var tel = String(d.testar).replace(/\D/g, ''); if (tel.length < 12) throw falha_('Informe o seu número com DDI e DDD (ex.: 5548999998888).');
     whatsEnviar_(tel, 'Teste do painel Araújo Advocacia: o WhatsApp está ligado. ✓'); r.teste = true; setConfig_('WHATS_ERRO', '', 'Último problema ao mandar mensagem pelo WhatsApp'); r.erro = '';
