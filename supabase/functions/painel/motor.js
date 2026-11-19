@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.50.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.50.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.50.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.50.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.50.0';
+var VERSAO = '8.50.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3485,6 +3485,67 @@ function separarPublicacoes849_() {
   return n;
 }
 
+/** 8.50 (pedido da usuária: "19 audiências que não foi conferido… entre no processo e veja a data e o horário sozinho"): para cada
+ *  tarefa "abrir o processo e lançar na agenda" aberta, relê os e-mails [PUSH] do PJe do processo (agora com a data do ato entre
+ *  parênteses) e marca o ato na agenda (marcarAto_: Google Agenda, Eventos, os 4 avisos). A tarefa fecha quando o ato do mesmo tipo
+ *  já está na agenda. A intimação/prazo do aviso continua aberta (para ver se há algo a fazer). Até 12 processos por rodada. */
+function atosSemDataPeloPush_(limite) {
+  var tabT = tabela_('Tarefas'), abertas = tabT.linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; });
+  if (!abertas.length) return 0;
+  var ctx = { prazos: tabela_('Prazos'), procs: tabela_('Processos'), clientes: tabela_('Clientes'), eventos: tabela_('Eventos'), tarefas: tabT, intim: tabela_('Intimacoes'), feriados: mapaFeriados_() };
+  var feitos = 0, lidos = 0, props = PropertiesService.getScriptProperties(), tent = {};
+  try { tent = JSON.parse(props.getProperty('ATOSD_TENTADOS') || '{}'); } catch (e) { tent = {}; }
+  var agora = Date.now(), hoje = hojeSP_();
+  var noAgenda = function (t) {
+    var peri = /\[atosd:pericia\]/.test(t.descricao || '') || /^Perícia/.test(t.titulo || '');
+    var desde = String(t.criado_em || '').slice(0, 10);
+    return ctx.eventos.linhas.filter(function (e) { return e.numero === t.numero && e.data && e.data >= desde && e.data >= hoje && /per[ií]cia/.test(e.tipo || '') === peri && !/apagado/.test(e.evento_id || ''); })[0];
+  };
+  abertas.forEach(function (t) {
+    var ev = noAgenda(t);
+    if (!ev && lidos < (limite || 12) && !(tent[t.numero] && agora - tent[t.numero] < 6 * 3600000)) {
+      lidos++; tent[t.numero] = agora;
+      try {
+        var proc = ctx.procs.linhas.filter(function (x) { return x.numero === t.numero; })[0];
+        if (!proc) return;
+        GmailApp.search('"' + t.numero + '" subject:PUSH newer_than:200d', 0, 30).forEach(function (th) {
+          th.getMessages().forEach(function (m) {
+            eventosPush_(m.getPlainBody() || '', m.getSubject(), m.getDate(), m.getId()).forEach(function (it) {
+              if (!/\(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(it.movimento) || !/designad/i.test(it.movimento)) return;
+              detectarAudienciaPericia_(ctx, it, proc, null, true);
+            });
+          });
+        });
+      } catch (e) { /* cota do Gmail: tenta na próxima rodada */ }
+      ev = noAgenda(t);
+    }
+    if (ev) {
+      atualizarLinha_(tabT, t, { etapa: 'concluido', concluida_por: 'robô', concluida_em: new Date().toISOString(), ok_por: 'robô', ok_em: new Date().toISOString(),
+        historico: ((t.historico || '') + '\n' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' robô: data lida no aviso do PJe — ' + dataBR_(ev.data) + (ev.hora ? ' às ' + ev.hora : '') + ', lançada na agenda').trim(),
+        atualizado_em: new Date().toISOString(), atualizado_por: 'robô' });
+      feitos++;
+    }
+  });
+  props.setProperty('ATOSD_TENTADOS', JSON.stringify(tent));
+  if (feitos) registrar_('robô', 'agenda', feitos + ' audiência(s)/perícia(s) sem data: data achada e lançada na agenda');
+  return feitos;
+}
+
+/** 8.50, UMA vez (Config FIX_PERICIA_850): perícia lançada pelo robô no MESMO dia e hora de uma audiência do mesmo processo foi lida errado
+ *  (a data da audiência veio solta no aviso do PJe): o evento da perícia sai da agenda; fica a audiência. */
+function periciasTrocadas850_() {
+  if (config_('FIX_PERICIA_850')) return 0;
+  var tab = tabela_('Eventos'), n = 0, lista = [];
+  tab.linhas.forEach(function (e) {
+    if (!/per[ií]cia/.test(e.tipo || '') || !e.data || !e.hora || /apagado/.test(e.evento_id || '')) return;
+    var aud = tab.linhas.some(function (x) { return x !== e && x.numero === e.numero && x.data === e.data && x.hora === e.hora && !/per[ií]cia/.test(x.tipo || '') && !/apagado/.test(x.evento_id || ''); });
+    if (!aud) return;
+    try { var cal = CalendarApp.getCalendarById(agendas_()[e.agenda || 'PERÍCIAS']), ce = cal && e.evento_id && cal.getEventById(String(e.evento_id)); if (ce) { mudouAgenda_(); ce.deleteEvent(); } } catch (err) { /* segue */ }
+    atualizarLinha_(tab, e, { evento_id: 'apagado (era a audiência do mesmo dia e hora)' }); n++; lista.push(e.numero + ' ' + dataBR_(e.data));
+  });
+  setConfig_('FIX_PERICIA_850', new Date().toISOString() + ' · ' + n + ' perícia(s) trocada(s) retirada(s): ' + lista.join(', '), 'Perícias lidas no lugar de audiências (8.50, uma vez)');
+  return n;
+}
 /** 8.50: a publicação do DJEN é para a OUTRA parte? Devolve o nome do destinatário (ou '' quando é do nosso cliente ou não dá para saber).
  *  Só decide quando o nome do cliente do processo está no cabeçalho ("RECLAMANTE: … RECLAMADO: …") num polo e o destinatário no outro.
  *  Cliente desconhecido, sigilo, destinatário sem nome ou nome do cliente no destinatário → '' (o prazo continua). */
@@ -3760,7 +3821,17 @@ function nomesDoCliente_(bloco) {
 function publicacaoEstimadaPje_(data, tribunal) { try { return proximoUtil_(data, tribunal, mapaFeriados_(), true); } catch (e) { return somarDias_(data, 1); } }
 /** Aviso "push" do PJe (TRT): uma tabela de eventos de um processo. */
 function lerAvisoPje_(msg) {
-  var corpo = (msg.getPlainBody() || '').replace(/\*/g, '');
+  return eventosPush_(msg.getPlainBody() || '', msg.getSubject(), msg.getDate(), msg.getId());
+}
+/** 8.50: a data do ato vem entre parênteses e o texto do e-mail quebra a linha antes dela ("designada\n(29/06/2027 15:20 Sala …)"):
+ *  junta de volta antes de separar os eventos — antes a data virava um evento solto ("Sala Principal - VARA…)") e a audiência ficava sem data. */
+function juntarDataDoAto_(corpo) {
+  return String(corpo || '').replace(/\s*\n\s*\(\s*(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2})/g, ' ($1').replace(/\(\s*\n\s*(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2})/g, '($1')
+    .replace(/(\(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}[^)\n]*)\n\s*([^\n)]*\))/g, '$1 $2');
+}
+function eventosPush_(corpoBruto, assunto, quando, msgId) {
+  var msg = { getSubject: function () { return assunto; }, getDate: function () { return quando; }, getId: function () { return msgId; } };
+  var corpo = juntarDataDoAto_(String(corpoBruto || '').replace(/\*/g, ''));
   var mN = RE_CNJ.exec(msg.getSubject()) || RE_CNJ.exec(corpo);
   if (!mN) return [];
   var numero = mN[1];
@@ -7027,7 +7098,7 @@ function nomeClienteDe_(ctx, p) {
 
 function robosEscritorio_(ctx) {
   var r = {}, erros = [];
-  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
+  [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
     return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }

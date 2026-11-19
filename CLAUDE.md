@@ -1843,3 +1843,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Audiências › "O que aconteceu?" › Fechou acordo: continua na tela Audiências (não abre mais o honorário); os honorários entram sozinhos em
   Cobranças. Campo "Quem vai pagar (empresa)" (padrão: parte contrária do processo) → ficha (acordo.empresa) e marca `[pagador:NOME]` no honorário;
   `pixDeAcordo_` põe primeiro o acordo cuja empresa bate com quem mandou o PIX (desempata dois acordos de mesmo valor).
+- 8.50.1 (pedido da usuária: "19 audiências que não foi conferido… veja a data e o horário sozinho"): ACHADO — o e-mail [PUSH] do PJe traz a data
+  do ato entre parênteses ("…designada (29/06/2027 15:20 Sala Principal - VARA…)"), mas o texto do e-mail quebra a linha antes dela e o robô lia a
+  data como outro evento ("Sala Principal - VARA…)"): a audiência ficava "sem data". `eventosPush_` (o antigo lerAvisoPje_) junta a linha antes
+  (`juntarDataDoAto_`). `atosSemDataPeloPush_` (robôs do escritório, 12 por rodada; Properties ATOSD_TENTADOS, 6 h) relê os e-mails [PUSH] de cada
+  tarefa "abrir o processo e lançar na agenda" e marca o ato (agenda + 4 avisos); a tarefa fecha sozinha quando o ato do mesmo tipo está na agenda.
+  A intimação/prazo do aviso continua aberta. `periciasTrocadas850_` (uma vez, Config FIX_PERICIA_850): perícia do robô no mesmo dia/hora de uma
+  audiência do mesmo processo sai da agenda (caso 0000909: a instrução virou "perícia"). Sem data em nenhum lugar (segredo, eproc, sigiloso) a tarefa fica.
+- Audiências: quadro "Audiências de hoje" no canto de cima à direita (`quadroDoDia`): hora, cliente, Conciliação/Instrução/Perícia juntas, online/
+  presencial; sem audiência hoje mostra o próximo dia com audiência.

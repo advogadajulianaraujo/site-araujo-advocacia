@@ -163,3 +163,17 @@ console.log("fim 849");
   assert(linha.situacao === 'baixado' && p1 && p1.honorario_id === r.honorario_id, 'dois acordos de mesmo valor: o PIX vai para o da empresa que pagou');
 }
 console.log("fim 850");
+// 8.50: e-mail [PUSH] do PJe com a data do ato na linha de baixo → a audiência é lida com data e hora (não vira um "evento" solto)
+{
+  const corpos = [
+    'Número do Processo: 0000792-53.2026.5.12.0043\nAutor: FULANA FICTICIA\nAdvogados do Autor: JULIAN MARCELINO ARAUJO, OAB: 54832\nEventos:\nData Evento\n22/10/2026 11:53 Audiência de instrução por videoconferência designada\n(29/06/2027 15:20 Sala Principal - VARA DO TRABALHO DE IMBITUBA)\n22/10/2026 11:12 Juntada a petição de Manifestação\n',
+    'Número do Processo: 0000792-53.2026.5.12.0043\nEventos:\n22/10/2026 11:53 | Audiência de instrução por videoconferência designada (\n29/06/2027 15:20 Sala Principal - VARA DO\nTRABALHO DE IMBITUBA) |\n22/10/2026 11:12 | Juntada a petição de Manifestação |\n'];
+  corpos.forEach((c, k) => {
+    const its = C.eventosPush_(c, '[TRT12] [PUSH] Atualizações do Processo 0000792-53.2026.5.12.0043', new Date('2026-10-23T11:38:14Z'), 'm' + k);
+    const aud = its.find(i => /designada/.test(i.movimento));
+    assert(its.length === 2 && aud && /29\/06\/2027 15:20/.test(aud.movimento), 'PUSH formato ' + (k + 1) + ': 2 eventos, a data fica junto da audiência (' + its.map(i => i.movimento.slice(0, 40)).join(' | ') + ')');
+    const ato = C.acharAto_(aud.movimento);
+    assert(ato && !ato.semData && ato.data === '2027-06-29' && ato.hora === '15:20' && !ato.ehPericia, 'audiência de instrução 29/06/2027 15:20 lida (' + JSON.stringify(ato) + ')');
+  });
+}
+console.log("fim 850b");

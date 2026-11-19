@@ -3854,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.50.0';
+  const VERSAO_PAINEL = '8.50.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4822,7 +4822,23 @@
     const topo = h('header', { class: 'carteira-topo' },
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Escritório'), h('h1', {}, 'Audiências'),
         h('p', {}, 'Combine com o cliente antes; no dia, anote o que aconteceu. Se fechar acordo, os honorários vão para o Financeiro sozinhos.')),
-      h('div', { class: 'carteira-acoes' }, botao('Ver na agenda', () => { location.hash = '#/agenda?visao=semana'; }, 'sec')));
+      h('div', { class: 'carteira-acoes aud-topo-dir' }, quadroDoDia(), botao('Ver na agenda', () => { location.hash = '#/agenda?visao=semana'; }, 'sec')));
+    // 8.50 (pedido da usuária): no canto de cima, a tabela das audiências do DIA — conciliação e instrução juntas (perícias também, marcadas)
+    function quadroDoDia() {
+      const amanha = isoSoma(hoje, 1), ord = (x, y) => (x.hora || '99') < (y.hora || '99') ? -1 : 1;
+      let dia = hoje, l = lista.filter(a => a.data === hoje).sort(ord);
+      if (!l.length) { const fut = lista.filter(a => a.data > hoje).sort((x, y) => (x.data + (x.hora || '')) < (y.data + (y.hora || '')) ? -1 : 1); if (fut.length) { dia = fut[0].data; l = fut.filter(a => a.data === dia).sort(ord); } }
+      const rotulo = dia === hoje ? 'Hoje' : dia === amanha ? 'Amanhã' : 'Próximo dia';
+      const tipoC = a => a.tipo === 'pericia' ? ['Perícia', 'pericia'] : a.tipo === 'instrucao' ? ['Instrução', 'instrucao'] : ['Conciliação', 'conciliacao'];
+      return h('aside', { class: 'aud-hoje', 'aria-label': 'Audiências do dia' },
+        h('div', { class: 'aud-hoje-tit' }, h('b', {}, dia === hoje ? 'Audiências de hoje' : 'Nenhuma hoje · ' + rotulo), h('span', {}, dataBR(dia) + (l.length ? ` · ${l.length}` : ''))),
+        l.length ? h('table', { class: 'aud-hoje-tab' }, h('tbody', {}, l.map(a => { const [t, c] = tipoC(a);
+          return h('tr', {}, h('td', { class: 'aud-hoje-hora' }, a.hora || '—'),
+            h('td', {}, a.processo_id ? h('a', { href: '#/processo/' + a.processo_id }, a.cliente || a.numero) : (a.cliente || a.numero)),
+            h('td', {}, h('span', { class: 'aud-l-tipo aud-t-' + c }, t)),
+            h('td', { class: 'peq' }, a.modo === 'online' ? 'online' : a.modo === 'presencial' ? 'presencial' : ''));
+        }))) : h('p', { class: 'peq' }, 'Nenhuma audiência marcada.'));
+    }
     const aba = (k, rot, l) => { const p = nPend(l); return h('a', { class: 'aud-aba' + (ver === k ? ' ativa' : ''), href: '#/audiencias' + (k === 'conciliacao' ? '' : '?ver=' + k), role: 'tab', 'aria-selected': String(ver === k) },
       rot, h('span', { class: 'ix-n' }, String(l.length)), p ? h('span', { class: 'aud-aba-falta' }, p + ' pendente' + (p > 1 ? 's' : '')) : null); };
     const abas = h('div', { class: 'aud-abas', role: 'tablist' }, aba('conciliacao', '🤝 Conciliação', conc), aba('instrucao', '⚖ Instrução', inst),
