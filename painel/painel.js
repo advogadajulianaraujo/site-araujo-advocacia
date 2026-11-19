@@ -4170,7 +4170,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.53.2';
+  const VERSAO_PAINEL = '8.53.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4200,6 +4200,9 @@
         div ? h('span', { class: 'tag urgente mini-tag', title: z.resumo_ia }, '⚠ IA leu outro prazo') : null,
         z.fatal_texto ? h('span', { class: 'tag mini-tag ' + (z.fatal_texto >= hojeISO() ? 'ok' : 'urgente'), title: `O texto do ato fala em ${z.dias_texto} dias: pela conta do painel com esse número, a data final seria ${dataBR(z.fatal_texto)}. Confira no tribunal; até lá vale a data mais curta.` },
           (z.fatal_texto >= hojeISO() ? '✓ pelo texto: ' : 'pelo texto: ') + dataBR(z.fatal_texto).slice(0, 5)) : null,
+        // 8.53.3: o DJEN publicou este ato antes da ciência do eproc → pela publicação o prazo vence antes (na dúvida, a mais curta)
+        z.fatal_djen ? h('span', { class: 'tag mini-tag ' + (z.fatal_djen >= hojeISO() ? 'atencao' : 'urgente'), title: `O DJEN publicou este ato em ${dataBR(z.djen_pub)}. Contando da publicação, o prazo vence em ${dataBR(z.fatal_djen)} — antes da data do eproc (${dataBR(z.fatal)}). Na dúvida, faça até a data mais curta.` },
+          '⚠ pelo DJEN: ' + dataBR(z.fatal_djen).slice(0, 5)) : null,
         z.ciencia ? h('span', { class: 'oqf-meta' }, 'ciência ' + dataBR(z.ciencia).slice(0, 5)) : null,
         z.responsavel ? h('span', { class: 'oqf-quem', title: 'Quem cuida: ' + z.responsavel }, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), primeiroNome(z.responsavel)) : h('span', { class: 'oqf-meta sem' }, 'sem responsável')),
       o.ia ? h('div', { class: 'oqf-ia' + (/⚠/.test(z.resumo_ia || '') ? ' alerta' : ''), title: z.resumo_ia }, 'IA: ' + o.ia) : null);
@@ -4357,7 +4360,9 @@
     }
     const tr = robo && robo.tempoRobo;
     if (tr && sessao.usuario.pode.usuarios) status.append(h('div', { class: 'peq' + (tr.min >= 70 ? ' erro' : '') }, h('strong', {}, 'Tempo de robô hoje: '),
-      `${tr.min} de 90 min do Google`, tr.ontem != null ? ` · ontem: ${tr.ontem} min` : '', tr.min >= 70 ? ' · perto do limite: o Google para os robôs ao chegar em 90' : ''));
+      `${tr.min} de 90 min do Google`, tr.ontem != null ? ` · ontem: ${tr.ontem} min` : '', tr.min >= 70 ? ' · perto do limite: o Google para os robôs ao chegar em 90' : '',
+      // 8.53.3: quanto cada robô gastou (para saber o que espaçar)
+      tr.por && Object.keys(tr.por).length ? h('div', {}, 'Por robô: ' + Object.entries(tr.por).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${String(v).replace('.', ',')} min`).join(' · ')) : null));
     if (robo && robo.agenda) status.append(h('div', { class: 'peq' }, h('strong', {}, 'Google Agenda: '), robo.agenda.replace(/^(\S+)/, iso => quando(iso)), ' · prazos fatais na agenda "PRAZOS FATAIS" do celular'));
     const iaPassageiro = /\b(503|429|500)\b|high demand|overloaded|try again later/i.test(ia.erro || '');
     if (ia.ligada || ia.erro) status.append(h('div', { class: 'peq' + (ia.erro && !iaPassageiro ? ' erro' : '') }, h('strong', {}, 'Resumo por IA: '),
@@ -4467,7 +4472,10 @@
         h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'), ' via ', fonte,
           z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias && !d.interna ? ' · ' + textoDias(z) : '', ident ? ' · ' + ident : '',
           d.interna ? ' · data interna, não é data fatal' : '', z.gmail ? ' · ' : '', seloGmail(z.gmail)),
-        pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null),
+        pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null,
+        // 8.53.3: o DJEN publicou este ato antes da ciência do eproc
+        z.fatal_djen ? h('div', { class: 'ix-pend ix-djen', title: `Contando da publicação no DJEN (${dataBR(z.djen_pub)}), vence em ${dataBR(z.fatal_djen)} — antes da data do eproc. Na dúvida, faça até a data mais curta.` },
+          `⚠ Pelo DJEN (publicado ${dataBR(z.djen_pub).slice(0, 5)}) vence em ${dataBR(z.fatal_djen)} — faça até essa data`) : null),
       h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ' + e[0] }, e[1]),
         h('div', { class: 'ix-resp' }, z.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), ' ', primeiroNome(z.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
       h('div', { class: 'ix-acoes', onclick: ev => ev.stopPropagation() }, botoesPrazo(z)));

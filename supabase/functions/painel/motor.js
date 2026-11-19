@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.53.2 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.53.2';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.53.3 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.53.3';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.53.2';
+var VERSAO = '8.53.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3215,17 +3215,19 @@ function rodarRoboGatilho() {
   importarGEASeguro_(false);
   if (Date.now() - t0 > 90 * 1000) { try { sbEnviarSujas_(); } catch (eB) { /* pendente */ } return; } // a importação demorou; o robô lê os avisos na próxima rodada
   rodarRobo_('robô (6 em 6 h)');
+  var t1 = Date.now();
   try { sbEnviarSujas_(); } catch (eB0) { /* fica pendente */ }
   // processos ainda sem área: classifica pelos avisos do Gmail no tempo que sobrar
-  var resta = 300000 - (Date.now() - t0);
+  var resta = 210000 - (Date.now() - t0);
   if (resta > 60000) { try { classificarAreas_(Math.min(resta - 30000, 120000)); } catch (e) { /* tenta na próxima */ } }
-  resta = 300000 - (Date.now() - t0);
+  resta = 210000 - (Date.now() - t0);
   if (resta > 60000) { try { importarHistoricoGmail_(resta - 30000); } catch (e) { /* tenta na próxima */ } }
-  resta = 300000 - (Date.now() - t0);
+  resta = 210000 - (Date.now() - t0);
   if (resta > 45000) { try { resumirIntimacoes_(Math.min(resta - 30000, 90000), 30); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
-  resta = 300000 - (Date.now() - t0);
+  resta = 210000 - (Date.now() - t0);
   if (resta > 40000) { try { resumirProvisoriosIA_(Math.min(resta - 25000, 60000), 10); } catch (e) { setConfig_('IA_ERRO', String(e.message || e), 'Último problema do resumo por IA'); } }
   try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
+  contarTempoRobo_(Date.now() - t1, 'extras do robô de 6 em 6 h');
 }
 function rodarRoboMenu() { aviso_(rodarRobo_('menu').resumo); }
 
@@ -3268,7 +3270,7 @@ function rodarRobo_(quem) {
     return { resumo: resumo, intimacoes: novas, prazos: prazosNovos, erros: erros };
   } finally {
     if (!solta) { TRAVA_NIVEL_ = 0; lock.releaseLock(); }
-    contarTempoRobo_(Date.now() - t0Robo);
+    contarTempoRobo_(Date.now() - t0Robo, quem || 'robô');
   }
 }
 
@@ -4433,9 +4435,29 @@ function inicioAcoes_(d, u) {
   return { itens: itens.slice(0, 40), total: itens.length, intimSemResp: semResp, intimSemRespRecentes: semRespRecentes };
 }
 
+/** 8.53.3 (pedido da usuária: "arrumar a IA"): o aviso "⚠ ATENÇÃO: o texto fala em N dias" só vale se (1) N está ESCRITO no texto do ato
+ *  (a IA chegou a citar "15 dias (art. 6º do CPC)" num texto que só dizia "no prazo estabelecido") e (2) N ainda é diferente do prazo ATUAL
+ *  (o prazo foi corrigido para 10 dias e o aviso "o painel calculou 5" ficava lá). Sem o texto inteiro à mão, confere só o (2). */
+var EXTENSO_DIAS_ = { 2: 'dois', 3: 'tr[eê]s', 5: 'cinco', 8: 'oito', 10: 'dez', 15: 'quinze', 20: 'vinte', 30: 'trinta', 48: 'quarenta e oito', 60: 'sessenta' };
+function prazoNoTexto_(texto, n) {
+  var t = String(texto || '');
+  if (new RegExp('(^|[^0-9])0?' + n + '\\s*(\\([^)]{0,25}\\)\\s*)?(dias|horas)', 'i').test(t)) return true;
+  return !!EXTENSO_DIAS_[n] && new RegExp('\\b' + EXTENSO_DIAS_[n] + '\\)?\\s*(dias|horas)', 'i').test(t);
+}
+function resumoIaLimpo_(resumo, z, texto) {
+  var r = String(resumo || ''); if (!r) return r;
+  var m = /⚠ ATENÇÃO: o texto fala em (\d+) dias e o painel calculou (\d+)[^·]*/.exec(r);
+  var cit = /Prazo citado no texto: (\d+) dias?( \([^)]*\))?/.exec(r);
+  var n = m ? +m[1] : cit ? +cit[1] : 0;
+  var inventado = n && texto && String(texto).length < 1490 && !/pela publica[cç][aã]o/i.test(r) && !prazoNoTexto_(texto, n);
+  if (m && (inventado || (z && +z.dias === n))) r = r.replace(m[0], '').replace(/\s*·\s*$/, '').replace(/·\s*·/g, '·');
+  if (cit && inventado) r = r.replace(cit[0], 'Prazo: o texto não diz o número de dias').replace(/·\s*·/g, '·');
+  return r.trim();
+}
 function prazoPublico_(z, procs, nomes) {
   var p = procs[z.processo_id] || {};
   var x = limpar_(z);
+  x.resumo_ia = resumoIaLimpo_(z.resumo_ia, z, ((prazoPublico_.intims || {})[z.intimacao_id] || {}).texto); // 8.53.3
   x.cliente = nomes[p.cliente_id] || p.cliente_nome || '';
   x.cliente_id = p.cliente_id || '';
   x.telefone = (prazoPublico_.tel || {})[p.cliente_id] || '';
@@ -4445,12 +4467,25 @@ function prazoPublico_(z, procs, nomes) {
   x.fila = filaPrazo_(z);
   x.avisar_cliente = avisoClienteDe_(z, (prazoPublico_.intims || {})[z.intimacao_id]);
   x.gmail = ((prazoPublico_.intims || {})[z.intimacao_id] || {}).gmail || ''; // 8.48: o aviso do tribunal foi aberto/apagado no Gmail?
-  x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(z.resumo_ia || '');
+  x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(x.resumo_ia || '');
   // 8.37.3 (pedido da usuária: "quero que sempre veja se está no prazo"): se a IA leu outro nº de dias no texto do ato, mostra a data
   // final POR ESSE TEXTO ao lado da do painel (a do painel continua valendo: na dúvida, a mais curta). Só informa; nunca muda o prazo.
   if (x.divergencia && z.ciencia) {
-    var mT = /Prazo citado no texto:\s*(\d{1,3})\s*dias?/i.exec(z.resumo_ia || '');
+    var mT = /Prazo citado no texto:\s*(\d{1,3})\s*dias?/i.exec(x.resumo_ia || '');
     if (mT && +mT[1] !== +z.dias) { try { x.fatal_texto = calcularFatal_(z.ciencia, mT[1], /corrid/i.test(z.resumo_ia) ? 'corridos' : (z.contagem || 'uteis'), x.tribunal); x.dias_texto = +mT[1]; } catch (eT) { /* só informa */ } }
+  }
+  // 8.53.3: prazo contado pela intimação do EPROC (tácita/confirmada) e o DJEN publicou o mesmo ato antes → mostra a data pela publicação.
+  // Na dúvida vale a mais curta (regra do escritório); a data do painel continua a do eproc (pedido da usuária na 8.19) até ela decidir.
+  if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.dias && /tácita|confirmada/i.test(z.ciencia_tipo || '') && (prazoPublico_.djen || {})[z.numero]) {
+    var mE = /\((\d{2})\/(\d{2})\/(\d{4})\)/.exec(z.ciencia_tipo || ''), exped = mE ? mE[3] + '-' + mE[2] + '-' + mE[1] : (/confirmada/i.test(z.ciencia_tipo || '') ? z.ciencia : '');
+    var disp = exped && prazoPublico_.djen[z.numero].filter(function (dd) { var k = diffDias_(dd, exped); return k >= -2 && k <= 4; }).sort()[0];
+    if (disp) {
+      try {
+        if (!prazoPublico_.feriados) prazoPublico_.feriados = mapaFeriados_();
+        var pub = proximoUtil_(disp, x.tribunal, prazoPublico_.feriados, true), fd = calcularFatal_(pub, z.dias, z.contagem, x.tribunal, prazoPublico_.feriados);
+        if (fd && z.fatal && fd < z.fatal) { x.fatal_djen = fd; x.djen_pub = pub; }
+      } catch (eD) { /* só informa */ }
+    }
   }
   return x;
 }
@@ -4459,7 +4494,7 @@ function prazoPublico_(z, procs, nomes) {
 function filaPrazo_(z) {
   if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return '';
   if (z.situacao === 'conferido') return 'confirmado';
-  if (z.situacao === 'a definir' || /PROVISÓRIO/i.test(z.descricao || '') || /⚠ ATENÇÃO/.test(z.resumo_ia || '')) return 'conferir';
+  if (z.situacao === 'a definir' || /PROVISÓRIO/i.test(z.descricao || '') || /⚠ ATENÇÃO/.test(resumoIaLimpo_(z.resumo_ia, z) || '')) return 'conferir';
   return 'calculado';
 }
 
@@ -4471,6 +4506,9 @@ function listarPrazos_(d) {
   prazoPublico_.tel = tel;
   var intims = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { intims[i.id] = { movimento: i.movimento, texto: String(i.texto || '').slice(0, 1500), gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '' }; }); } catch (e) { /* segue */ }
   prazoPublico_.intims = intims;
+  // 8.53.3: publicações do DJEN por processo (para mostrar, nos prazos contados pelo eproc, a data pela publicação — que costuma ser ~10 dias antes)
+  var djenPorNum = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { if (i.fonte === 'DJEN' && i.numero) (djenPorNum[i.numero] = djenPorNum[i.numero] || []).push(String(i.recebido_em || '').slice(0, 10)); }); } catch (e) { /* segue */ }
+  prazoPublico_.djen = djenPorNum; prazoPublico_.feriados = null;
   var limiteFechados = somarDias_(hojeSP_(), -30);
   return tabela_('Prazos').linhas
     .filter(function (z) {
@@ -10977,8 +11015,9 @@ function aquecerGatilho() {
   var agora = new Date(), hora = +Utilities.formatDate(agora, TZ, 'H'), dsem = +Utilities.formatDate(agora, TZ, 'u'); // 1 = segunda … 7 = domingo
   var util = (dsem <= 5 && hora >= 7 && hora < 19) || (dsem === 6 && hora >= 8 && hora < 13);
   if (!util) return;
-  var t0 = Date.now();
-  try { autoAtualizar_(false); } catch (eU) { /* segue */ }
+  var t0 = Date.now(), PQ = PropertiesService.getScriptProperties();
+  // 8.53.3: conferir a versão nova no GitHub (baixa o programa inteiro) só de 30 em 30 min; antes era a cada 10 min
+  if (Date.now() - (+(PQ.getProperty('AUTO_CONFERIDO_EM') || 0)) >= 29 * 60000) { PQ.setProperty('AUTO_CONFERIDO_EM', String(Date.now())); try { autoAtualizar_(false); } catch (eU) { /* segue */ } }
   try { sbVersaoGoogle_(); } catch (eV) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   // 8.36.3: com o motor do Supabase ligado a memória do Google não é usada (comMemoria_ só roda a conta): aquecer era trabalho jogado fora
@@ -10993,25 +11032,31 @@ function aquecerGatilho() {
     P.setProperty('AQUECER_PESADO_EM', String(Date.now()));
     try { roboExtrasAtualizar_(); } catch (eX2) { /* segue */ }
   }
-  try { vencidosRapido_(); } catch (eVc) { /* o robô de hora em hora tenta de novo */ }
-  try { atosDoProximoAtoRapido_(); } catch (eAp) { /* o robô de hora em hora tenta de novo */ } // 8.48: audiência que está só no próximo ato → agenda
+  if (Date.now() - (+(PQ.getProperty('AQUECER_LEVE_EM') || 0)) >= 19 * 60000) { // 8.53.3: de 20 em 20 min (antes 10)
+    PQ.setProperty('AQUECER_LEVE_EM', String(Date.now()));
+    try { vencidosRapido_(); } catch (eVc) { /* o robô de hora em hora tenta de novo */ }
+    try { atosDoProximoAtoRapido_(); } catch (eAp) { /* o robô de hora em hora tenta de novo */ } // 8.48: audiência que está só no próximo ato → agenda
+  }
   try { copiarSeHora_(); } catch (e) { /* segue */ }
-  contarTempoRobo_(Date.now() - t0);
+  contarTempoRobo_(Date.now() - t0, 'aquecedor (10 min)');
 }
 
 /* 8.12: conta quanto tempo os robôs usaram hoje. Conta gratuita do Google: 90 min por dia de gatilhos; passou disso, o Google
    para os robôs até o dia seguinte sem avisar. O vigia e o cartão do robô mostram quando passar de 70 min. */
-function contarTempoRobo_(ms) {
+function contarTempoRobo_(ms, nome) {
   try {
     var pr = PropertiesService.getScriptProperties(), hoje = hojeSP_(), j = {};
     try { j = JSON.parse(pr.getProperty('TEMPO_ROBO') || '{}'); } catch (e) { j = {}; }
-    if (j.dia !== hoje) j = { dia: hoje, ms: 0, n: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null };
+    if (j.dia !== hoje) j = { dia: hoje, ms: 0, n: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null, porOntem: j.por || null };
     j.ms += Math.max(0, ms || 0); j.n++;
+    // 8.53.3: quanto cada robô gastou hoje (o Google para TODOS em 90 min/dia) — aparece no cartão do robô
+    j.por = j.por || {}; var k = nome || 'outro'; j.por[k] = (j.por[k] || 0) + Math.max(0, ms || 0);
     pr.setProperty('TEMPO_ROBO', JSON.stringify(j));
   } catch (e) { /* nunca derruba o robô */ }
 }
 function tempoRoboHoje_() {
-  try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
+  try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); var porMin = function (o) { var r = {}; Object.keys(o || {}).forEach(function (k) { r[k] = Math.round(o[k] / 6000) / 10; }); return r; };
+    return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem, por: porMin(j.por), porOntem: porMin(j.porOntem) } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
   catch (e) { return { min: 0, vezes: 0 }; }
 }
 
@@ -12041,7 +12086,7 @@ function resumirIntimacoes_(limiteMs, max) {
     var cota = false;
     for (var k = 0; k < lote.length; k++) {
       try {
-        var res = lerRespostaGemini_(resps[k], prazos[lote[k].prazo_id]);
+        var res = resumoIaLimpo_(lerRespostaGemini_(resps[k], prazos[lote[k].prazo_id]), prazos[lote[k].prazo_id], lote[k].texto); // 8.53.3: número que não está no texto sai
         var dados = IA_ULTIMO_OBJ ? JSON.stringify(IA_ULTIMO_OBJ).slice(0, 4000) : '';
         atualizarLinha_(tabI, lote[k], { resumo_ia: res, ia_dados: dados, ia_erro: '', ia_proxima: '' });
         // 8.42: alerta no chat da equipe quando a leitura achou algo que exige providência (o alerta da Central continua até tratar)
@@ -12187,13 +12232,16 @@ function guardarAndamentos_(tab, p, r) {
  */
 function atualizarAndamentos_(limiteMs, maximo) {
   var t0 = Date.now(), tab = tabela_('Processos'), agora = Date.now();
+  // 8.53.3: o CNJ só libera poucas consultas por rodada → primeiro os processos que tiveram intimação nos últimos 15 dias (os que mudaram)
+  var recentes = {}, limR = new Date(agora - 15 * 86400000).toISOString();
+  try { tabela_('Intimacoes').linhas.forEach(function (i) { if (i.numero && String(i.recebido_em || '') >= limR) recentes[i.numero] = 1; }); } catch (eR) { /* segue */ }
   var fila = tab.linhas.filter(function (p) {
     if (!aliasDatajud_(p.numero)) return false;
     var ult = p.datajud_em ? Date.parse(p.datajud_em) : 0;
     if (p.status === 'arquivado') return agora - ult > 15 * 86400000;
     return agora - ult > 20 * 3600000;
   }).sort(function (a, b) {
-    return (a.status === 'arquivado') - (b.status === 'arquivado') || ((a.datajud_em || '') < (b.datajud_em || '') ? -1 : 1);
+    return (a.status === 'arquivado') - (b.status === 'arquivado') || (!recentes[a.numero]) - (!recentes[b.numero]) || ((a.datajud_em || '') < (b.datajud_em || '') ? -1 : 1);
   }).slice(0, maximo || 400);
   if (!fila.length) { // fila vazia: tudo em dia; apaga o problema antigo
     setConfig_('DATAJUD_ULTIMA', new Date().toISOString() + ' · em dia (todos os processos consultados nas últimas 20 h)', 'Última leitura do DataJud');
@@ -12222,7 +12270,7 @@ function atualizarAndamentos_(limiteMs, maximo) {
       catch (e) { erro = String(e.message || e); }
     }
     if (limitados.length) {
-      Utilities.sleep(8000); pausa = Math.min(pausa * 2, 6000);
+      Utilities.sleep(3000); pausa = Math.min(pausa * 2, 6000); // 8.53.3: 3 s (antes 8): esperar também conta no limite diário do Google
       var de2 = limitados.map(function (p) { return UrlFetchApp.fetch(pedidoDatajud_(p.numero, chave).url, pedidoDatajud_(p.numero, chave)); });
       var aindaLimitado = false;
       de2.forEach(function (resp, n) {
@@ -12245,9 +12293,10 @@ function atualizarAndamentos_(limiteMs, maximo) {
 
 function andamentosGatilho() {
   var t0 = Date.now();
-  try { atualizarAndamentos_(270000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
+  // 8.53.3: 150 s (antes 270) — o CNJ limita a chave pública de todo o país; esperar por ele gastava o tempo de robô do dia
+  try { atualizarAndamentos_(150000, 300); } catch (e) { setConfig_('DATAJUD_ERRO', String(e.message || e), 'Último problema do DataJud'); }
   try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
-  contarTempoRobo_(Date.now() - t0);
+  contarTempoRobo_(Date.now() - t0, 'andamentos (DataJud)');
 }
 
 /** Andamentos de um processo (e, se pedido, consulta o DataJud agora). */
@@ -12475,6 +12524,7 @@ function marketingResumo_(d) {
 /** De hora em hora: lê os avisos novos do Gmail (e o DJEN, se o navegador não leu), recalcula prazos e confere se algo está parado. */
 function roboRapidoGatilho() {
   try { rodarRobo_('robô (de hora em hora)'); } catch (e) { setConfig_('ROBO_ULTIMO_RESULTADO', 'Erro no robô de hora em hora: ' + (e.message || e), 'Resultado da última execução'); }
+  var t1 = Date.now(); // 8.53.3: o resto do robô de hora em hora também conta (antes não aparecia no tempo do dia)
   try { sbEnviarSujas_(); } catch (eB) { /* fica pendente */ }
   try { sbVersaoGoogle_(); } catch (eV) { /* segue */ }
   if (!sbEdge_()) { try { aquecerMemoria_(); } catch (eQ) { /* segue */ } } // 8.36.3: com o motor do Supabase não serve para nada
@@ -12486,7 +12536,9 @@ function roboRapidoGatilho() {
   try { roboExtrasAtualizar_(); } catch (eX) { /* segue */ }
   try { sbAutoEntrar_(); } catch (eE) { /* segue */ }
   try { sbEnviarSujas_(); } catch (eB2) { /* fica pendente */ }
-  try { autoAtualizar_(false); } catch (eU) { /* tenta na próxima */ }
+  var PQ = PropertiesService.getScriptProperties();
+  if (Date.now() - (+(PQ.getProperty('AUTO_CONFERIDO_EM') || 0)) >= 29 * 60000) { PQ.setProperty('AUTO_CONFERIDO_EM', String(Date.now())); try { autoAtualizar_(false); } catch (eU) { /* tenta na próxima */ } }
+  contarTempoRobo_(Date.now() - t1, 'extras do robô de hora em hora');
 }
 
 /** Problemas que podem fazer perder prazo. Com avisar = true, manda e-mail para a administração (no máximo 1 a cada 12 h). */

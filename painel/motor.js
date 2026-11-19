@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.2 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.53.3 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.53.2';
+var MOTOR_VERSAO = '8.53.3';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.53.2';
+var VERSAO = '8.53.3';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -595,9 +595,29 @@ function inicioAcoes_(d, u) {
   return { itens: itens.slice(0, 40), total: itens.length, intimSemResp: semResp, intimSemRespRecentes: semRespRecentes };
 }
 
+/** 8.53.3 (pedido da usuária: "arrumar a IA"): o aviso "⚠ ATENÇÃO: o texto fala em N dias" só vale se (1) N está ESCRITO no texto do ato
+ *  (a IA chegou a citar "15 dias (art. 6º do CPC)" num texto que só dizia "no prazo estabelecido") e (2) N ainda é diferente do prazo ATUAL
+ *  (o prazo foi corrigido para 10 dias e o aviso "o painel calculou 5" ficava lá). Sem o texto inteiro à mão, confere só o (2). */
+var EXTENSO_DIAS_ = { 2: 'dois', 3: 'tr[eê]s', 5: 'cinco', 8: 'oito', 10: 'dez', 15: 'quinze', 20: 'vinte', 30: 'trinta', 48: 'quarenta e oito', 60: 'sessenta' };
+function prazoNoTexto_(texto, n) {
+  var t = String(texto || '');
+  if (new RegExp('(^|[^0-9])0?' + n + '\\s*(\\([^)]{0,25}\\)\\s*)?(dias|horas)', 'i').test(t)) return true;
+  return !!EXTENSO_DIAS_[n] && new RegExp('\\b' + EXTENSO_DIAS_[n] + '\\)?\\s*(dias|horas)', 'i').test(t);
+}
+function resumoIaLimpo_(resumo, z, texto) {
+  var r = String(resumo || ''); if (!r) return r;
+  var m = /⚠ ATENÇÃO: o texto fala em (\d+) dias e o painel calculou (\d+)[^·]*/.exec(r);
+  var cit = /Prazo citado no texto: (\d+) dias?( \([^)]*\))?/.exec(r);
+  var n = m ? +m[1] : cit ? +cit[1] : 0;
+  var inventado = n && texto && String(texto).length < 1490 && !/pela publica[cç][aã]o/i.test(r) && !prazoNoTexto_(texto, n);
+  if (m && (inventado || (z && +z.dias === n))) r = r.replace(m[0], '').replace(/\s*·\s*$/, '').replace(/·\s*·/g, '·');
+  if (cit && inventado) r = r.replace(cit[0], 'Prazo: o texto não diz o número de dias').replace(/·\s*·/g, '·');
+  return r.trim();
+}
 function prazoPublico_(z, procs, nomes) {
   var p = procs[z.processo_id] || {};
   var x = limpar_(z);
+  x.resumo_ia = resumoIaLimpo_(z.resumo_ia, z, ((prazoPublico_.intims || {})[z.intimacao_id] || {}).texto); // 8.53.3
   x.cliente = nomes[p.cliente_id] || p.cliente_nome || '';
   x.cliente_id = p.cliente_id || '';
   x.telefone = (prazoPublico_.tel || {})[p.cliente_id] || '';
@@ -607,12 +627,25 @@ function prazoPublico_(z, procs, nomes) {
   x.fila = filaPrazo_(z);
   x.avisar_cliente = avisoClienteDe_(z, (prazoPublico_.intims || {})[z.intimacao_id]);
   x.gmail = ((prazoPublico_.intims || {})[z.intimacao_id] || {}).gmail || ''; // 8.48: o aviso do tribunal foi aberto/apagado no Gmail?
-  x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(z.resumo_ia || '');
+  x.divergencia = SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.situacao !== 'conferido' && /⚠ ATENÇÃO/.test(x.resumo_ia || '');
   // 8.37.3 (pedido da usuária: "quero que sempre veja se está no prazo"): se a IA leu outro nº de dias no texto do ato, mostra a data
   // final POR ESSE TEXTO ao lado da do painel (a do painel continua valendo: na dúvida, a mais curta). Só informa; nunca muda o prazo.
   if (x.divergencia && z.ciencia) {
-    var mT = /Prazo citado no texto:\s*(\d{1,3})\s*dias?/i.exec(z.resumo_ia || '');
+    var mT = /Prazo citado no texto:\s*(\d{1,3})\s*dias?/i.exec(x.resumo_ia || '');
     if (mT && +mT[1] !== +z.dias) { try { x.fatal_texto = calcularFatal_(z.ciencia, mT[1], /corrid/i.test(z.resumo_ia) ? 'corridos' : (z.contagem || 'uteis'), x.tribunal); x.dias_texto = +mT[1]; } catch (eT) { /* só informa */ } }
+  }
+  // 8.53.3: prazo contado pela intimação do EPROC (tácita/confirmada) e o DJEN publicou o mesmo ato antes → mostra a data pela publicação.
+  // Na dúvida vale a mais curta (regra do escritório); a data do painel continua a do eproc (pedido da usuária na 8.19) até ela decidir.
+  if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.dias && /tácita|confirmada/i.test(z.ciencia_tipo || '') && (prazoPublico_.djen || {})[z.numero]) {
+    var mE = /\((\d{2})\/(\d{2})\/(\d{4})\)/.exec(z.ciencia_tipo || ''), exped = mE ? mE[3] + '-' + mE[2] + '-' + mE[1] : (/confirmada/i.test(z.ciencia_tipo || '') ? z.ciencia : '');
+    var disp = exped && prazoPublico_.djen[z.numero].filter(function (dd) { var k = diffDias_(dd, exped); return k >= -2 && k <= 4; }).sort()[0];
+    if (disp) {
+      try {
+        if (!prazoPublico_.feriados) prazoPublico_.feriados = mapaFeriados_();
+        var pub = proximoUtil_(disp, x.tribunal, prazoPublico_.feriados, true), fd = calcularFatal_(pub, z.dias, z.contagem, x.tribunal, prazoPublico_.feriados);
+        if (fd && z.fatal && fd < z.fatal) { x.fatal_djen = fd; x.djen_pub = pub; }
+      } catch (eD) { /* só informa */ }
+    }
   }
   return x;
 }
@@ -621,7 +654,7 @@ function prazoPublico_(z, procs, nomes) {
 function filaPrazo_(z) {
   if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0) return '';
   if (z.situacao === 'conferido') return 'confirmado';
-  if (z.situacao === 'a definir' || /PROVISÓRIO/i.test(z.descricao || '') || /⚠ ATENÇÃO/.test(z.resumo_ia || '')) return 'conferir';
+  if (z.situacao === 'a definir' || /PROVISÓRIO/i.test(z.descricao || '') || /⚠ ATENÇÃO/.test(resumoIaLimpo_(z.resumo_ia, z) || '')) return 'conferir';
   return 'calculado';
 }
 
@@ -633,6 +666,9 @@ function listarPrazos_(d) {
   prazoPublico_.tel = tel;
   var intims = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { intims[i.id] = { movimento: i.movimento, texto: String(i.texto || '').slice(0, 1500), gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '' }; }); } catch (e) { /* segue */ }
   prazoPublico_.intims = intims;
+  // 8.53.3: publicações do DJEN por processo (para mostrar, nos prazos contados pelo eproc, a data pela publicação — que costuma ser ~10 dias antes)
+  var djenPorNum = {}; try { tabela_('Intimacoes').linhas.forEach(function (i) { if (i.fonte === 'DJEN' && i.numero) (djenPorNum[i.numero] = djenPorNum[i.numero] || []).push(String(i.recebido_em || '').slice(0, 10)); }); } catch (e) { /* segue */ }
+  prazoPublico_.djen = djenPorNum; prazoPublico_.feriados = null;
   var limiteFechados = somarDias_(hojeSP_(), -30);
   return tabela_('Prazos').linhas
     .filter(function (z) {
@@ -1972,7 +2008,8 @@ function roboExtrasAtualizar_() {
   return g;
 }
 function tempoRoboHoje_() {
-  try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
+  try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); var porMin = function (o) { var r = {}; Object.keys(o || {}).forEach(function (k) { r[k] = Math.round(o[k] / 6000) / 10; }); return r; };
+    return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem, por: porMin(j.por), porOntem: porMin(j.porOntem) } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
   catch (e) { return { min: 0, vezes: 0 }; }
 }
 

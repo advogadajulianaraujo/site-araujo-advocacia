@@ -1956,3 +1956,23 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   - Bairro: coluna própria `bairro` em Clientes (ESQUEMA, CAMPOS_CLIENTE, esquema.sql; ALTER já rodado no Supabase). O formulário mostra o campo
     preenchido (o endereço aparece sem o bairro no fim: `semBairroNoFim`) e o bairro continua no fim do `endereco` (procurações e contratos não
     mudam). A ficha mostra "Bairro" (ou "falta — o PJe pede"). /cadastro/ do site e o robô do WhatsApp também gravam a coluna.
+- 8.53.3 (pedido da usuária: "arrumar intimações e DJEN para ficar eficiente antes de vender; arrumar a IA; robôs do site"):
+  - DJEN × eproc: em 19/11, em 41 dos 66 prazos contados pela ciência do eproc (tácita/confirmada) o DJEN publicou o MESMO ato ~10 dias antes
+    (ex.: ciência eproc 29/11, DJEN 19/11) → pela publicação o prazo vence 5 a 11 dias ANTES. A data do painel continua a do eproc (decisão da
+    usuária na 8.19) até ela decidir; `prazoPublico_` devolve `fatal_djen`/`djen_pub` (DJEN do mesmo número de −2 a +4 dias da expedição;
+    publicação = próximo dia útil) e a linha mostra "⚠ Pelo DJEN (publicado dd/mm) vence em dd/mm — faça até essa data" (`.ix-djen`; etiqueta
+    também em `celulaOQueFazer`). PERGUNTA EM ABERTO para a usuária: passar a usar a data do DJEN (mais curta) como a data do prazo?
+  - IA (`resumoIaLimpo_`, `prazoNoTexto_`): o aviso "⚠ ATENÇÃO: o texto fala em N dias" só fica se N está ESCRITO no texto (número ou extenso
+    junto de "dias") e ainda difere do prazo ATUAL. Aplicado ao gravar (resumirIntimacoes_) e ao mostrar (prazoPublico_, filaPrazo_). Nos dados
+    de 19/11: 11 avisos → 4 (6 velhos de prazos já corrigidos; 1 "8 dias" que não estava no texto). Sem o texto inteiro (outra publicação, texto
+    cortado em 1.490+) confere só se ainda difere.
+  - Tempo de robô (o Google para TODOS em 90 min/dia; em 19/11 já eram 110): `contarTempoRobo_(ms, nome)` guarda quanto cada robô gastou
+    (Properties TEMPO_ROBO.por; `tempoRoboHoje_` devolve `por`/`porOntem`; cartão "Por robô: …"); os extras do robô de hora em hora e do de 6 em 6 h
+    agora entram na conta. Cortes: conferir versão nova no GitHub de 30 em 30 min (AUTO_CONFERIDO_EM; antes a cada 10 min e de hora em hora),
+    vencidos/atos no aquecedor de 20 em 20 min (AQUECER_LEVE_EM), DataJud 150 s por rodada (antes 270) e espera de 3 s no 429 (antes 8), tarefas
+    pesadas do robô de 6 em 6 h com 210 s (antes 300).
+  - DataJud: o CNJ limita a chave pública do país inteiro (429/timeout também saindo do Supabase — testado com função temporária, já apagada).
+    Fila agora começa pelos processos com intimação nos últimos 15 dias (os que mudaram).
+  - Robô do blog: em 16/11 não publicou nada (44 candidatas) porque a IA respondeu a escolha como objeto ({"escolhidas":[…]}) e o robô entendeu
+    lista vazia. Agora aceita objeto/lista/números e, se a IA não escolher nenhuma, segue com as candidatas na ordem. Workflow "Publicar a função do
+    Supabase" falhava em todo push por falta do segredo: agora só avisa e sai sem erro (a função é publicada pela atualização automática).

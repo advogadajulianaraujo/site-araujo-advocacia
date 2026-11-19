@@ -210,9 +210,13 @@ Responda JSON: [{"n": número da lista, "area": "${Object.keys(AREAS).join('|')}
 ${cands.map((c, i) => `${i}. [${c.tribunal}] ${c.titulo}`).join('\n')}`;
   try {
     const r = await gemini({ contents: [{ role: 'user', parts: [{ text: pedido }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }, MODELOS_LEITURA);
-    const l = jsonDe(textoDe(r));
+    let l = jsonDe(textoDe(r));
+    // 19/11/2026: em 16/11 a IA respondeu {"escolhidas":[…]} (objeto, não lista) e o robô entendeu "nenhuma" — 0 textos na semana.
+    if (l && !Array.isArray(l) && typeof l === 'object') l = Object.values(l).find(Array.isArray) || [];
     const out = [];
-    for (const x of Array.isArray(l) ? l : []) { const c = cands[+x.n]; if (c && !out.includes(c)) out.push({ ...c, area: AREAS[x.area] ? x.area : 'trabalhista' }); }
+    for (const x of Array.isArray(l) ? l : []) { const n = typeof x === 'number' ? x : +(x && (x.n ?? x.numero ?? x.indice)); const c = cands[n]; if (c && !out.includes(c)) out.push({ ...c, area: AREAS[x && x.area] ? x.area : (c.area || 'trabalhista') }); }
+    log('escolhidas pela IA:', out.length);
+    if (!out.length) { log('a IA não escolheu nenhuma: segue com as candidatas na ordem'); return cands.map(c => ({ ...c, area: c.area || 'trabalhista' })); }
     // intercala as áreas (uma de cada, na ordem da vez), para não sair três textos da mesma área
     const porArea = {}; out.forEach(c => { (porArea[c.area] = porArea[c.area] || []).push(c); });
     const ordem = AREAS_DA_VEZ.concat(Object.keys(porArea).filter(a => !AREAS_DA_VEZ.includes(a))), mix = [];

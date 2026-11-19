@@ -3289,3 +3289,4 @@ body.sem-sessao .chatf{display:none}
 .td-add{grid-template-columns:minmax(220px,1fr) auto auto auto auto}
 .td-add .btn{white-space:nowrap}
 @media (max-width:900px){.td-add{grid-template-columns:1fr 1fr}.td-add input{grid-column:1/-1}.td-add .btn{grid-column:1/-1}}
+.ix-djen{color:#8a3b00;font-weight:600}

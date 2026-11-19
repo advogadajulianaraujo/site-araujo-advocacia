@@ -1,5 +1,5 @@
 {
- "versao": "8.53.2",
+ "versao": "8.53.3",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -50,7 +50,7 @@
     "Session",
     "Utilities"
    ],
-   "funcoes": 40
+   "funcoes": 44
   },
   "clientes.listar": {
    "tabelas": [
@@ -104,7 +104,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 28
+   "funcoes": 32
   },
   "intimacoes.listar": {
    "tabelas": [
@@ -179,7 +179,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 56
+   "funcoes": 59
   },
   "audiencias.listar": {
    "tabelas": [
@@ -410,7 +410,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 39
+   "funcoes": 42
   },
   "inicio.extras": {
    "tabelas": [
@@ -468,5 +468,5 @@
    "funcoes": 40
   }
  },
- "funcoes": 160
+ "funcoes": 163
 }

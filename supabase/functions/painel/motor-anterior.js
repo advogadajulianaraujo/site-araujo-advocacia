@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.53.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.53.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.53.2 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.53.2';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.53.1';
+var VERSAO = '8.53.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -107,7 +107,7 @@ var ESQUEMA = {
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
-    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id'],
+    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id', 'bairro'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
@@ -147,7 +147,7 @@ var ESQUEMA = {
   Advogados: ['id', 'nome', 'oab', 'uf', 'tratamento', 'email', 'telefone', 'ativo', 'padrao', 'criado_em'],
   Tarefas: ['id', 'titulo', 'descricao', 'responsavel', 'processo_id', 'numero', 'cliente_id', 'vence_em', 'etapa', 'peso', 'situacao',
     'concluida_por', 'concluida_em', 'historico', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por',
-    'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em'],
+    'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em', 'categoria'], // 8.53: tipo da tarefa (como no ADVBOX)
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
   Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
   SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
@@ -981,7 +981,7 @@ function trocarSenha_(d, u) {
 /* Clientes                                                            */
 /* ------------------------------------------------------------------ */
 
-var CAMPOS_CLIENTE = ['tipo_acao', 'resumo_caso', 'providencias', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
+var CAMPOS_CLIENTE = ['bairro', 'tipo_acao', 'resumo_caso', 'providencias', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
   'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'observacoes', 'situacao', 'genero', 'como_conheceu'];
 
 function listarClientes_(d) {
@@ -1209,7 +1209,7 @@ function criarFicha_(pasta, c) {
   corpo.appendParagraph('Ficha do cliente').setHeading(DocumentApp.ParagraphHeading.HEADING1);
   var rotulos = [['Nome', c.nome], ['Tipo', c.tipo === 'PJ' ? 'Pessoa jurídica' : 'Pessoa física'], ['CPF/CNPJ', c.cpf_cnpj],
     ['RG', c.rg], ['Nascimento', c.nascimento], ['Estado civil', c.estado_civil], ['Profissão', c.profissao],
-    ['Representante legal', c.representante], ['Endereço', [c.endereco, c.cidade, c.uf, c.cep].filter(String).join(' · ')],
+    ['Representante legal', c.representante], ['Endereço', [c.endereco, c.cidade, c.uf, c.cep].filter(String).join(' · ')], ['Bairro', c.bairro],
     ['Telefone', c.telefone], ['E-mail', c.email], ['Área', c.area], ['Origem', c.origem], ['Observações', c.observacoes]];
   rotulos.forEach(function (r) { if (r[1]) corpo.appendParagraph(r[0] + ': ' + r[1]); });
   corpo.appendParagraph('Gerada pelo painel em ' + Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm') + '. Os dados oficiais ficam no painel.');
@@ -10099,7 +10099,7 @@ function itemPrazo_(z, procs, nomesCli, hoje) {
   var entregue = diaSP_(z.cumprido_em);
   return { tipo: 'prazo', id: z.id, titulo: z.descricao || 'Prazo', numero: z.numero, processo_id: z.processo_id,
     cliente: nomesCli[p.cliente_id] || p.cliente_nome || '', cliente_id: p.cliente_id || '', responsavel: z.responsavel || '',
-    vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''),
+    vence_em: z.fatal || '', etapa: etapa, peso: PESO_PRAZO, provisorio: /PROVISÓRIO/i.test(z.descricao || ''), categoria: /^ato:/.test(z.observacoes || '') ? 'audiencia' : 'prazo',
     atrasada: !fim && !!z.fatal && z.fatal < hoje, concluida_em: z.cumprido_em || '', concluida_por: z.cumprido_por || '',
     no_prazo: fim ? (!z.fatal || !entregue || entregue <= z.fatal) : null, situacao_prazo: z.situacao, resumo_ia: z.resumo_ia || '' };
 }
@@ -10112,7 +10112,7 @@ function itemTarefa_(t, nomesCli, hoje, telCli) {
     etapa: t.etapa || 'afazer', peso: parseInt(t.peso, 10) || 1, atrasada: !fim && !!t.vence_em && t.vence_em < hoje,
     concluida_em: t.concluida_em || '', concluida_por: t.concluida_por || '', criado_por: t.criado_por || '',
     no_prazo: fim ? (!t.vence_em || !entregue || entregue <= t.vence_em) : null, historico: t.historico || '',
-    prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '',
+    prioridade: t.prioridade || 'normal', checklist: lerChecklist_(t.checklist), repetir: t.repetir || '', ok_por: t.ok_por || '', categoria: categoriaTarefa_(t),
     inicial: /\[inicial:/.test(t.descricao || ''), ato: atoDaTarefa_(t.descricao), telefone: (telCli || {})[t.cliente_id] || '',
     wa: ((/\[wa:([a-z]+)\]/.exec(t.descricao || '') || [])[1]) || (/\[inicial:/.test(t.descricao || '') ? 'inicial' : /\[protocolo:/.test(t.descricao || '') ? 'protocolo' : '') };
 }
@@ -10126,6 +10126,25 @@ function lerChecklist_(txt) {
   try { var a = JSON.parse(txt || '[]'); return Array.isArray(a) ? a.slice(0, 30).map(function (x) { return { t: String(x.t || '').slice(0, 140), ok: !!x.ok }; }) : []; } catch (e) { return []; }
 }
 var PRIORIDADES = ['baixa', 'normal', 'alta', 'urgente'];
+/** 8.53 (pedido da usuária: "copiar as tarefas do ADVBOX; às vezes é falar com cliente, protocolo, procuração, petição, extrajudicial"):
+ *  TIPO de cada tarefa (coluna `categoria`). As tarefas que o robô cria ganham o tipo sozinhas pelas marcas/título (`categoriaTarefa_`). */
+var CATEGORIAS_TAREFA = ['cliente', 'peticao', 'protocolo', 'documentos', 'audiencia', 'prazo', 'extrajudicial', 'financeiro', 'administrativo', 'outro'];
+function categoriaTarefa_(t) {
+  if (CATEGORIAS_TAREFA.indexOf(t.categoria) >= 0) return t.categoria;
+  var d = String(t.descricao || ''), x = String(t.titulo || '') + ' ' + d;
+  if (/\[inicial:/.test(d)) return 'peticao';
+  if (/^\s*protocol|\bprotocolar\b/i.test(String(t.titulo || ''))) return 'protocolo';
+  if (/\[(lembrete|retomar|avaliacao|protocolo|wa):/.test(d) || /\b(avisar|ligar|whats|falar com|retornar|cliente: |lembrar o cliente|pedir avalia)/i.test(x)) return 'cliente';
+  if (/\[(ato|agenda|horaato):/.test(d) || /audi[eê]ncia|per[ií]cia|testemunha/i.test(x)) return 'audiencia';
+  if (/\[intim:/.test(d) || /intima[cç][aã]o|prazo/i.test(x)) return 'prazo';
+  if (/\[(assinatura|assinar):/.test(d) || /procura[cç][aã]o|contrato|assinatura|documento|cadastro/i.test(x)) return 'documentos';
+  if (/\[(valor|repasse|pix):/.test(d) || /alvar[aá]|rpv|precat|levantar|repassar|honor[aá]rio|cobran|pagamento|boleto/i.test(x)) return 'financeiro';
+  if (/\[parado:/.test(d) || /peti[cç][aã]o|recurso|contesta|r[eé]plica|manifesta|impulso|embargos|c[aá]lculos?\b|quesitos/i.test(x)) return 'peticao';
+  if (/protocol/i.test(x)) return 'protocolo';
+  if (/extrajudicial|notifica[cç][aã]o|cart[oó]rio|inss|requerimento administrativo|acordo extra|negocia/i.test(x)) return 'extrajudicial';
+  if (/\[google:|instagram|perfil do google|blog|sistema|planilha/i.test(x)) return 'administrativo';
+  return 'outro';
+}
 
 /** Pontos e entregas por pessoa (tarefas e prazos concluídos no período). */
 function pontosPorPessoa_(itens, desde, nomesU) {
@@ -10228,7 +10247,10 @@ function salvarTarefa_(d, u) {
       processo_id: proc ? proc.id : '', numero: proc ? proc.numero : '', cliente_id: cliId,
       prioridade: PRIORIDADES.indexOf(t.prioridade) >= 0 ? t.prioridade : 'normal',
       repetir: ['semanal', 'mensal'].indexOf(t.repetir) >= 0 ? t.repetir : '',
+      categoria: CATEGORIAS_TAREFA.indexOf(t.categoria) >= 0 ? t.categoria : '',
       atualizado_em: agora, atualizado_por: u.usuario };
+    // 8.53 (pedido da usuária: "deixar bem designadas todas as tarefas"): tarefa nova sem responsável fica com quem criou
+    if (!t.id && !dados.responsavel) dados.responsavel = u.usuario;
     if (t.checklist !== undefined) {
       var itensC = (Array.isArray(t.checklist) ? t.checklist : String(t.checklist || '').split('\n').map(function (l) { return { t: l }; }))
         .map(function (x) { return { t: String(x.t || '').replace(/^\s*(\[[ x]\]|[-*•])\s*/i, '').trim().slice(0, 140), ok: !!x.ok }; }).filter(function (x) { return x.t; }).slice(0, 30);
@@ -10242,7 +10264,7 @@ function salvarTarefa_(d, u) {
       else {
         dados.historico = historicoMais_(l.historico, u, 'editou');
         // marcas internas (ligação com audiência, intimação, petição inicial, repetição) nunca se perdem ao editar
-        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa|google):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
+        var marcas = (String(l.descricao || '').match(/\[(inicial|rep|intim|ato|lembrete|agenda|valor|parado|retomar|assinar|avaliacao|wa|google|assinatura|protocolo|repasse|horaato|atosd|fluxo|whatsauto):[^\]]*\]/g) || []).filter(function (m) { return dados.descricao.indexOf(m) < 0; });
         if (marcas.length) dados.descricao = (dados.descricao + '\n' + marcas.join('\n')).slice(0, 2400);
       }
       atualizarLinha_(tab, l, dados);
@@ -15516,7 +15538,7 @@ function whatsSalvarCliente_(conv, cad) {
   var tel = String(conv.telefone || '').replace(/\D/g, ''); if (tel.length > 11 && tel.indexOf('55') === 0) tel = tel.slice(2);
   var fone = tel.length >= 10 ? '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4) : '';
   var dados = { tipo: 'PF', nome: nomeProprio_(cad.nome), cpf_cnpj: cad.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'), rg: cad.rg || '', nascimento: cad.nascimento, estado_civil: cad.estado_civil,
-    profissao: cad.profissao, cep: cad.cep.replace(/(\d{5})(\d{3})/, '$1-$2'), endereco: cad.rua + ', nº ' + cad.numero + (cad.complemento ? ', ' + cad.complemento : '') + (cad.bairro ? ', ' + cad.bairro : ''),
+    profissao: cad.profissao, cep: cad.cep.replace(/(\d{5})(\d{3})/, '$1-$2'), endereco: cad.rua + ', nº ' + cad.numero + (cad.complemento ? ', ' + cad.complemento : '') + (cad.bairro ? ', ' + cad.bairro : ''), bairro: cad.bairro || '',
     cidade: cad.cidade, uf: cad.uf || 'SC', telefone: fone, email: cad.email || '', genero: /^(feminino|masculino)$/.test(cad.genero || '') ? cad.genero : '' };
   var agora = new Date().toISOString(), carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm'), dd = {}; try { dd = JSON.parse(conv.dados || '{}') || {}; } catch (e) { dd = {}; }
   return comTrava_(function () {
@@ -16105,6 +16127,7 @@ function cadastroEnviar_(d) {
   if (!x.aceite) falta.push('a autorização de uso dos dados (LGPD)');
   if (falta.length) throw falha_('Confira: ' + falta.join(', ') + '.');
   var endereco = limpa(x.rua) + ', nº ' + limpa(x.numero, 20) + (limpa(x.complemento, 60) ? ', ' + limpa(x.complemento, 60) : '') + ', ' + limpa(x.bairro);
+  var bairroCad = limpa(x.bairro); // 8.53: também na coluna própria
   var fone = '(' + tel.slice(0, 2) + ') ' + tel.slice(2, tel.length - 4) + '-' + tel.slice(-4);
   var cpfFmt = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'), cepFmt = String(x.cep).replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2');
   var agora = new Date().toISOString(), carimbo = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
@@ -16112,7 +16135,7 @@ function cadastroEnviar_(d) {
     var tc = tabela_('Clientes');
     var c = (l.cliente_id && tc.linhas.filter(function (r) { return r.id === l.cliente_id; })[0]) || tc.linhas.filter(function (r) { return String(r.cpf_cnpj || '').replace(/\D/g, '') === cpf; })[0];
     var dados = { tipo: 'PF', nome: nomeProprio_(nome), cpf_cnpj: cpfFmt, rg: limpa(x.rg, 30), nascimento: nasc, estado_civil: x.estado_civil, profissao: limpa(x.profissao, 80),
-      cep: cepFmt, endereco: endereco, cidade: limpa(x.cidade, 80), uf: String(x.uf).toUpperCase(), telefone: fone, email: limpa(x.email, 120), genero: /^(feminino|masculino)$/.test(x.genero) ? x.genero : '' };
+      cep: cepFmt, endereco: endereco, bairro: bairroCad, cidade: limpa(x.cidade, 80), uf: String(x.uf).toUpperCase(), telefone: fone, email: limpa(x.email, 120), genero: /^(feminino|masculino)$/.test(x.genero) ? x.genero : '' };
     var novo = !c;
     if (c) { // já tinha cadastro: completa e atualiza o que veio (o cliente acabou de conferir os próprios dados)
       var m = { atualizado_em: agora, atualizado_por: 'cadastro online' };
