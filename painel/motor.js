@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.52.1 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.52.2 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.52.1';
+var MOTOR_VERSAO = '8.52.2';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.52.1';
+var VERSAO = '8.52.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2203,8 +2203,8 @@ function podeFuture_(u) {
   return u.perfil === 'administrador'; // pedido do Luiz: todos os administradores veem
 }
 
-var JORNADA = { contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Consulta feita',
-  proposta: 'Procuração e contrato enviados', inicial: 'Em atendimento · petição inicial', andamento: 'Em atendimento · processo em andamento',
+var JORNADA = { contato: 'Em atendimento · em conversa', cadastro: 'Em atendimento · cadastro enviado', cliente: 'Em atendimento · cadastro preenchido', atendido: 'Em atendimento · consulta feita',
+  proposta: 'Em atendimento · procuração e contrato enviados', inicial: 'Contrato assinado · petição inicial', andamento: 'Processo em andamento',
   encerrado: 'Caso encerrado', perdido: 'Não fechou', sem: 'Sem caso aberto' };
 function jornadasClientes_() {
   var procs = {}, ass = {}, leads = {}, r = {};

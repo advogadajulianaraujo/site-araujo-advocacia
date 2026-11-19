@@ -1903,3 +1903,6 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ficava "[RG]"). A prévia do gerador diz "O documento sai só com o que está no cadastro".
 - `copiar(txt, ok)` em painel.js (faltava: o "Copiar o texto" do "✨ Avisar o cliente" também quebrava).
 - 8.52.1 (pedido da usuária): "Aguardando o seu OK" abre SEMPRE com a lista escondida (Início e Intimações; não lembra mais `aguarda_aberta`); só mostra ao apertar "ver a lista".
+- 8.52.2 (pedido da usuária: "por que fala em atendimento se já foi assinado"): etapa do cliente (`JORNADA`): "Em atendimento · …" SÓ antes do
+  contrato assinado (em conversa, cadastro enviado/preenchido, consulta feita, procuração e contrato enviados); assinou → "Contrato assinado ·
+  petição inicial"; processo com número → "Processo em andamento". Extensão 1.3.1 (etiqueta "Contrato assinado").

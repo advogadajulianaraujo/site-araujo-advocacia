@@ -1686,9 +1686,9 @@
   }
 
   /** 8.15: etapa de cada cliente (calculada no servidor: funil, assinatura e processos; muda sozinha). */
-  const JORNADA = [['contato', 'Em conversa', '#5b6ee1'], ['cadastro', 'Cadastro enviado', '#7a4fc0'], ['cliente', 'Cadastro preenchido', '#a04fb0'],
-    ['atendido', 'Consulta feita', '#1d8a8a'], ['proposta', 'Procuração e contrato enviados', '#c98a12'], ['inicial', 'Em atendimento · petição inicial', '#1f8a4c'],
-    ['andamento', 'Em atendimento · processo em andamento', '#17693a'], ['encerrado', 'Caso encerrado', '#6f6f76'], ['perdido', 'Não fechou', '#9aa0aa'], ['sem', 'Sem caso aberto', '#b9b4aa']];
+  const JORNADA = [['contato', 'Em atendimento · em conversa', '#5b6ee1'], ['cadastro', 'Em atendimento · cadastro enviado', '#7a4fc0'], ['cliente', 'Em atendimento · cadastro preenchido', '#a04fb0'],
+    ['atendido', 'Em atendimento · consulta feita', '#1d8a8a'], ['proposta', 'Em atendimento · procuração e contrato enviados', '#c98a12'], ['inicial', 'Contrato assinado · petição inicial', '#1f8a4c'],
+    ['andamento', 'Processo em andamento', '#17693a'], ['encerrado', 'Caso encerrado', '#6f6f76'], ['perdido', 'Não fechou', '#9aa0aa'], ['sem', 'Sem caso aberto', '#b9b4aa']];
   const NOME_JORNADA = Object.fromEntries(JORNADA.map(j => [j[0], j[1]])), COR_JORNADA = Object.fromEntries(JORNADA.map(j => [j[0], j[2]]));
   function seloJornada(j, mini) {
     if (!j) return null;
@@ -3860,7 +3860,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.1';
+  const VERSAO_PAINEL = '8.52.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

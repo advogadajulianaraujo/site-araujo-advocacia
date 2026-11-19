@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Araújo Advocacia — Assistente do WhatsApp",
   "short_name": "Assistente Araújo",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Mostra ao lado de cada conversa do WhatsApp Web quem é a pessoa no painel do escritório (cliente, etapa do funil, processos) e ajuda a seguir o atendimento. Também lê o DJEN (diário eletrônico) de 2 em 2 horas com o Chrome aberto.",
   "icons": {
     "16": "icones/a16.png",

@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.52.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.52.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.52.2 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.52.2';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.52.1';
+var VERSAO = '8.52.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -14227,8 +14227,9 @@ var ETAPAS_CRM = [['novo', 'Novo contato'], ['contato', 'Em conversa'], ['cadast
 
 /** 8.15 (pedido da usuária: "qualifique todos os clientes"): em que ponto CADA cliente está, inclusive os antigos. Calculado na hora
  *  com o funil, a assinatura e os processos, então muda sozinho em tudo: assinou → "Em atendimento". */
-var JORNADA = { contato: 'Em conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro preenchido', atendido: 'Consulta feita',
-  proposta: 'Procuração e contrato enviados', inicial: 'Em atendimento · petição inicial', andamento: 'Em atendimento · processo em andamento',
+// 8.52.2 (pedido da usuária): "Em atendimento" só ANTES do contrato assinado; assinou = "Contrato assinado · petição inicial"; com número = "Processo em andamento"
+var JORNADA = { contato: 'Em atendimento · em conversa', cadastro: 'Em atendimento · cadastro enviado', cliente: 'Em atendimento · cadastro preenchido', atendido: 'Em atendimento · consulta feita',
+  proposta: 'Em atendimento · procuração e contrato enviados', inicial: 'Contrato assinado · petição inicial', andamento: 'Processo em andamento',
   encerrado: 'Caso encerrado', perdido: 'Não fechou', sem: 'Sem caso aberto' };
 function jornadasClientes_() {
   var procs = {}, ass = {}, leads = {}, r = {};

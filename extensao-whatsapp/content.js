@@ -15,7 +15,7 @@
   const CURTO = { novo: 'Novo', contato: 'Conversa', cadastro: 'Cadastro enviado', cliente: 'Cadastro ok', atendido: 'Atendimento', proposta: 'Procuração/contrato', ganho: 'Contratou', perdido: 'Não fechou', cliente_antigo: 'Cliente' };
   // 8.15: etapa dos clientes (todos, inclusive os antigos)
   Object.assign(CORES, { j_contato: '#5b6ee1', j_cadastro: '#7a4fc0', j_cliente: '#a04fb0', j_atendido: '#1d8a8a', j_proposta: '#c98a12', j_inicial: '#1f8a4c', j_andamento: '#17693a', j_encerrado: '#6f6f76', j_perdido: '#9aa0aa', j_sem: '#8d8a83' });
-  Object.assign(CURTO, { atendido: 'Consulta feita', j_contato: 'Conversa', j_cadastro: 'Cadastro enviado', j_cliente: 'Cadastro ok', j_atendido: 'Consulta feita', j_proposta: 'Procuração/contrato', j_inicial: 'Em atendimento', j_andamento: 'Processo em andamento', j_encerrado: 'Encerrado', j_perdido: 'Não fechou', j_sem: 'Cliente' });
+  Object.assign(CURTO, { atendido: 'Consulta feita', j_contato: 'Conversa', j_cadastro: 'Cadastro enviado', j_cliente: 'Cadastro ok', j_atendido: 'Consulta feita', j_proposta: 'Procuração/contrato', j_inicial: 'Contrato assinado', j_andamento: 'Processo em andamento', j_encerrado: 'Encerrado', j_perdido: 'Não fechou', j_sem: 'Cliente' });
   const ORDEM = ['novo', 'contato', 'cadastro', 'cliente', 'atendido', 'proposta', 'ganho'];
   let conf = { auto: true, etiquetas: true, aberto: true, escrever: true }, pareado = false, usuario = '';
 
