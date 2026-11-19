@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.50.1';
+var VERSAO = '8.50.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3527,6 +3527,8 @@ function outraParteDjen_(texto, proc) {
   var m2 = /Intimado\(s\)\s*\/\s*Citado\(s\)\s*-\s*([^\n]+)/i.exec(t);
   if (m2) dests.push(m2[1]);
   var dest = dests.join(' - ').trim();
+  // a própria Dra./o escritório como parte (ex.: ação de cobrança de honorários): é nosso, sempre
+  if (/JULIAN\s+MARCELINO|ARA[UÚ]JO\s+(SOCIEDADE|ADVOCACIA|ADVOGADOS)/i.test(dest)) return '';
   if (!dest || nomeBateTexto_(cli, dest)) return '';
   // cabeçalho: do início até "INTIMAÇÃO"/"Destinatário" — dividido nos rótulos dos polos
   var cab = t.slice(0, 1500), fim = cab.search(/\bINTIMA[CÇ][AÃ]O\b|Destinat[aá]rio/i);

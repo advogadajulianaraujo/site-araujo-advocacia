@@ -3854,7 +3854,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.50.1';
+  const VERSAO_PAINEL = '8.50.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4819,7 +4819,7 @@
     const nAvisar = lista.filter(a => a.devido && a.data >= hoje).length;
     const filtrada = ver === 'todas' ? lista : ver === 'instrucao' ? inst : ver === 'pericia' ? peri : ver === 'avisar' ? lista.filter(a => a.devido && a.data >= hoje) : conc;
     const nPend = l => l.filter(a => pendenteRes(a) || (a.data >= hoje && (ehConc(a) ? !(a.acordo.pedir && a.acordo.autorizou) : a.tipo === 'instrucao' && resumoTestemunhas(a)[0] === 'falta'))).length;
-    const topo = h('header', { class: 'carteira-topo' },
+    const topo = h('header', { class: 'carteira-topo aud-topo' },
       h('div', { class: 'carteira-tit' }, h('span', { class: 'carteira-kicker' }, 'Escritório'), h('h1', {}, 'Audiências'),
         h('p', {}, 'Combine com o cliente antes; no dia, anote o que aconteceu. Se fechar acordo, os honorários vão para o Financeiro sozinhos.')),
       h('div', { class: 'carteira-acoes aud-topo-dir' }, quadroDoDia(), botao('Ver na agenda', () => { location.hash = '#/agenda?visao=semana'; }, 'sec')));

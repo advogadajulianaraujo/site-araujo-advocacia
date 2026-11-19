@@ -3187,3 +3187,8 @@ body.sem-sessao .chatf{display:none}
 .aud-hoje-tab a { color: inherit; text-decoration: none; font-weight: 500; }
 .aud-hoje-tab a:hover { text-decoration: underline; }
 @media (max-width: 900px) { .aud-topo-dir { align-items: stretch; } .aud-hoje { min-width: 0; max-width: none; } }
+
+.carteira-topo.aud-topo { display: flex !important; flex-direction: row !important; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.carteira-topo.aud-topo .carteira-tit { flex: 1 1 320px; min-width: 0; }
+.carteira-topo.aud-topo .aud-topo-dir { flex: 0 0 auto; margin-left: auto; }
+@media (max-width: 900px) { .carteira-topo.aud-topo .aud-topo-dir { flex: 1 1 100%; margin-left: 0; } }

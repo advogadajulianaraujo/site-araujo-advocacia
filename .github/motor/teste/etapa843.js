@@ -137,6 +137,7 @@ console.log("fim 849");
   assert(/EMPRESA INVENTADA/.test(C.outraParteDjen_(cab + 'Destinatário: EMPRESA INVENTADA LTDA Fica V. Sa. intimado(a) para apresentar contrarrazões.', proc)), 'DJEN para a empresa (outra parte) é reconhecido');
   assert(!C.outraParteDjen_(cab + 'Destinatário: MARIA FICTICIA DA SILVA Fica V. Sa. intimado(a) para ciência.', proc), 'DJEN para a nossa cliente fica');
   assert(!C.outraParteDjen_(cab + 'Destinatário: EMPRESA INVENTADA LTDA Fica intimado.', { cliente_nome: 'a identificar' }), 'cliente desconhecido: não decide (o prazo continua)');
+  assert(!C.outraParteDjen_('AUTOR: JULIAN MARCELINO ARAUJO RÉU: MARIA FICTICIA DA SILVA INTIMAÇÃO Destinatário: JULIAN MARCELINO ARAUJO Fica intimada para a audiência.', proc), 'ação de cobrança de honorários: intimação para a Dra. é sempre nossa');
   assert(!C.outraParteDjen_(cab + 'Fica V. Sa. intimado(a) para ciência. Intimado(s) / Citado(s) - OUTRA PESSOA QUALQUER', proc), 'destinatário fora do cabeçalho: não decide');
   const recl = 'RECLAMANTE: JOAO INVENTADO PEREIRA RECLAMADO: COMERCIO FICTICIO LTDA INTIMAÇÃO Fica V. Sa. intimado(a) para ciência da sentença. Intimado(s) / Citado(s) - JOAO INVENTADO PEREIRA';
   assert(/JOAO/.test(C.outraParteDjen_(recl, { cliente_nome: 'COMERCIO FICTICIO LTDA' })), 'escritório do lado da empresa: intimação do reclamante é da outra parte');
