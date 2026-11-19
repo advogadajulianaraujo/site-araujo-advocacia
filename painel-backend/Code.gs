@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.52.4';
+var VERSAO = '8.52.5';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3625,11 +3625,25 @@ function whatsEnviarModelo_(para, params) {
 }
 /** Telefone do cliente no formato do WhatsApp (55 + DDD + número); '' se não der para confiar. Dois números → o primeiro. */
 function telWhatsServidor_(t) {
-  var d = String(t || '').split(/\/|\bou\b|\be\b|,|;/)[0].replace(/\D/g, '');
-  if (d.length > 11 && d.indexOf('55') === 0) d = d.slice(2);
-  if (d.length > 11 && d.charAt(0) === '0') d = d.slice(1);
-  if (d.charAt(0) === '0') d = d.slice(1);
-  return d.length === 10 || d.length === 11 ? '55' + d : '';
+  // 8.52.5: mesma regra do painel (telefonesWhats): vários números → o primeiro CELULAR; celular antigo sem o 9 ganha o 9; sem DDD = 48
+  var achados = [];
+  var um = function (d, intl) {
+    d = d.replace(/^0+/, ''); if (!d) return;
+    if (/^55\d{10,11}$/.test(d)) d = d.slice(2);
+    else if (d.length > 11) {
+      if (intl || (d.length <= 13 && !/^[1-9][1-9]9/.test(d))) { achados.push({ t: d, cel: true }); return; }
+      var n = d.charAt(2) === '9' ? 11 : 10; um(d.slice(0, n)); um(d.slice(n)); return;
+    }
+    if (d.length === 8 || d.length === 9) d = '48' + d;
+    if (d.length === 10 && /[6-9]/.test(d.charAt(2))) d = d.slice(0, 2) + '9' + d.slice(2);
+    if (d.length !== 10 && d.length !== 11) return;
+    achados.push({ t: '55' + d, cel: d.length === 11 && d.charAt(2) === '9' });
+  };
+  String(t || '').split(/\s*(?:[\/;,|\n_]|\s-\s|\bou\b|\be\b|\btamb[eé]m\b)\s*/i).forEach(function (p) {
+    var d = p.replace(/\D/g, ''); if (d.length >= 8) um(d, /^\s*\+(?!55)/.test(p));
+  });
+  var cel = achados.filter(function (x) { return x.cel; })[0] || achados[0];
+  return cel ? cel.t : '';
 }
 /** Monta as 4 partes do modelo: nome, o ato, quando, o que fazer. */
 function paramsAvisoAto_(a, q, nomeCli, ficha) {

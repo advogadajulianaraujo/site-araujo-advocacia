@@ -674,28 +674,59 @@
     document.body.append(caixa); caixa.showModal();
     location.href = urlApp(tel, enc); // se o aplicativo existe, o Chrome entrega a mensagem para ele (na 1ª vez pede "Abrir WhatsApp?")
   }
-  function telefoneWhats(bruto) {
-    // 8.11: cadastro com dois telefones ("48 99999-0000 / 48 3626-0000", "… ou …") → só o primeiro, ANTES de juntar os dígitos
-    const partes = String(bruto || '').split(/\s*(?:[\/;,|]|\bou\b|\be\b)\s*/i).filter(x => x.replace(/\D/g, '').length >= 10);
-    let t = String(partes[0] || bruto || '').replace(/\D/g, '');
-    if (t.startsWith('55') && t.length > 13) t = t.slice(2);
-    if (!t.startsWith('55') || t.length < 12) {
-      t = t.replace(/^0+/, '');
-      if (t.length > 11) t = t.slice(0, t[2] === '9' ? 11 : 10); // dois telefones juntos no cadastro: fica o primeiro
-      if (t.length < 10) return '';
-      t = '55' + t;
-    }
-    return t.length >= 12 && t.length <= 13 ? t : '';
+  /** 8.52.5 (pedido da usuária: "cliente com dois números aparece indisponível"): TODOS os telefones do cadastro, já no formato do WhatsApp
+   *  (55 + DDD + número): separa "… / …", "ou", "e", "-", vírgula; celular antigo sem o 9 ganha o 9; sem DDD = 48 (Tubarão); dois números
+   *  colados = dois; "+351…" ou 12–13 dígitos de fora = número estrangeiro. Celulares primeiro. */
+  function telefonesWhats(bruto) {
+    const achados = [];
+    const um = (t, intl) => {
+      t = t.replace(/^0+/, ''); if (!t) return;
+      if (/^55\d{10,11}$/.test(t)) t = t.slice(2);
+      else if (t.length > 11) {
+        if (intl || (t.length <= 13 && !/^[1-9][1-9]9/.test(t))) { achados.push({ t, cel: true }); return; }
+        const n = t[2] === '9' ? 11 : 10; um(t.slice(0, n)); um(t.slice(n)); return;
+      }
+      if (t.length === 8 || t.length === 9) t = '48' + t;
+      if (t.length === 10 && /[6-9]/.test(t[2])) t = t.slice(0, 2) + '9' + t.slice(2);
+      if (t.length !== 10 && t.length !== 11) return;
+      achados.push({ t: '55' + t, cel: t.length === 11 && t[2] === '9' });
+    };
+    String(bruto || '').split(/\s*(?:[\/;,|\n_]|\s-\s|\bou\b|\be\b|\btamb[eé]m\b)\s*/i)
+      .forEach(p => { const d = p.replace(/\D/g, ''); if (d.length >= 8) um(d, /^\s*\+(?!55)/.test(p)); });
+    const vistos = new Set();
+    return achados.filter(x => !vistos.has(x.t) && vistos.add(x.t)).sort((a, b) => b.cel - a.cel).map(x => x.t).slice(0, 3);
+  }
+  /** Para os links: um número, ou vários separados por "_" (o clique pergunta qual usar). */
+  function telefoneWhats(bruto) { return telefonesWhats(bruto).join('_'); }
+  /** Cliente com mais de um número: pergunta qual (o último usado vem primeiro e fica lembrado neste computador). */
+  function escolherNumeroWhats(lista, seguir) {
+    const chave = 'whats_num_' + lista.slice().sort().join('_');
+    const ult = lerLS(chave, ''); const ord = ult && lista.includes(ult) ? [ult, ...lista.filter(x => x !== ult)] : lista;
+    const fmt = t => { const d = t.startsWith('55') ? t.slice(2) : '+' + t; return t.startsWith('55') ? '(' + d.slice(0, 2) + ') ' + d.slice(2, d.length - 4) + '-' + d.slice(-4) : d; };
+    const caixa = h('dialog', { class: 'dialogo whats-modo' },
+      h('h2', {}, 'Este cliente tem ' + lista.length + ' números'),
+      h('p', { class: 'peq' }, 'Qual tem WhatsApp? Se o WhatsApp disser que o número é inválido, volte e escolha o outro.'),
+      ...ord.map((t, i) => h('button', { type: 'button', class: 'whats-op' + (i === 0 && ult ? ' ativo' : ''), onclick: () => { gravarLS(chave, t); caixa.close(); seguir(t); } },
+        h('strong', {}, fmt(t)), h('span', {}, i === 0 && ult ? 'usado da última vez' : (t.length === 13 || !t.startsWith('55') ? 'celular' : 'fixo')))),
+      h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'btn sec', onclick: () => caixa.close() }, 'Cancelar')));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
   }
   document.addEventListener('click', ev => {
     const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
     if (!a) return;
-    const m = /^https:\/\/(?:wa\.me\/(\d*)|api\.whatsapp\.com\/send\/?|web\.whatsapp\.com\/send\/?)(?:\?(.*))?$/.exec(a.href);
+    const m = /^https:\/\/(?:wa\.me\/([\d_]*)|api\.whatsapp\.com\/send\/?|web\.whatsapp\.com\/send\/?)(?:\?(.*))?$/.exec(a.href);
     if (!m) return;
     const q = new URLSearchParams(m[2] || '');
-    const tel = telefoneWhats(m[1] || q.get('phone') || '');
+    const lista = telefonesWhats(m[1] || q.get('phone') || '');
     const texto = q.get('text') || '';
-    if (!tel) { ev.preventDefault(); avisar('Telefone incompleto ou inválido no cadastro: confira o número (com DDD) e tente de novo.', true); return; }
+    if (!lista.length) { ev.preventDefault(); avisar('Telefone incompleto ou inválido no cadastro: confira o número (com DDD) e tente de novo.', true); return; }
+    if (lista.length > 1) { // 8.52.5: dois números no cadastro → a pessoa escolhe; depois o clique segue com o número escolhido
+      ev.preventDefault();
+      escolherNumeroWhats(lista, t => { const b = h('a', { href: 'https://wa.me/' + t + (texto ? '?text=' + encodeURIComponent(texto) : ''), target: a.target || '_blank', rel: a.rel || 'noopener' });
+        b.hidden = true; document.body.append(b); b.click(); b.remove(); });
+      return;
+    }
+    const tel = lista[0];
     const enc = encodeURIComponent(texto);
     if (celular) { a.href = 'https://wa.me/' + tel + (texto ? '?text=' + enc : ''); return; }
     const modo = modoWhats();
@@ -3890,7 +3921,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.52.4';
+  const VERSAO_PAINEL = '8.52.5';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {

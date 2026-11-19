@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.52.3 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.52.3';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.52.4 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.52.4';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.52.3';
+var VERSAO = '8.52.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },

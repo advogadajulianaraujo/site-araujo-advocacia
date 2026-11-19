@@ -1908,3 +1908,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   petição inicial"; processo com número → "Processo em andamento". Extensão 1.3.1 (etiqueta "Contrato assinado").
 - 8.52.3 (pedido da usuária): "📋 qualificação" também no quadro "Dados do cliente" (Visão geral da ficha), ao lado de "✎ editar".
 - 8.52.4: os dois botões de qualificação aparecem SEMPRE — o texto é montado no navegador (`qualificacaoCliente` em painel.js, mesma regra do `qualificacaoTexto_`) quando o servidor ainda não manda `cliente.qualificacao` (Google numa versão anterior).
+- 8.52.5 (pedido da usuária: "cliente com dois números aparece indisponível no WhatsApp"): o painel usava SEMPRE o primeiro número e, no caso do
+  Diogo Mateus (CRM: "41992588246 / 4899803800"), o primeiro não tinha WhatsApp. `telefonesWhats` (painel.js) lê TODOS os números do cadastro
+  ("/", "ou", "e", " - ", vírgula, dois números colados; celular antigo sem o 9 ganha o 9; sem DDD = 48; "+351…" = estrangeiro; celulares
+  primeiro); `telefoneWhats` devolve os números juntos com "_" e o clique (ouvinte global dos links wa.me) pergunta "Este cliente tem 2
+  números — qual tem WhatsApp?" (`escolherNumeroWhats`; o último escolhido fica lembrado neste computador, localStorage `whats_num_<números>`,
+  e vem primeiro). Vale para TODOS os botões de WhatsApp (ficha, CRM, cobranças, audiências, Edifício Future — future.js usa a mesma função).
+  Servidor (`telWhatsServidor_`, avisos automáticos de audiência): mesma leitura, usa o primeiro CELULAR. Em 19/11: 520 cadastros com 2 números.
