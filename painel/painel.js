@@ -4469,13 +4469,17 @@
       h('div', { class: 'ix-oque' },
         h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : /PROVIS/i.test(o.titulo) ? 'Conferido no tribunal' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo)),
         h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : ''),
-        h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'), ' via ', fonte,
-          z.ciencia ? ' · ciência ' + dataBR(z.ciencia).slice(0, 5) : '', z.dias && !d.interna ? ' · ' + textoDias(z) : '', ident ? ' · ' + ident : '',
+        h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'),
+          z.criado_em ? ' chegou ' + dataBR(String(z.criado_em).slice(0, 10)).slice(0, 5) + ' ·' : '', ' via ', fonte,
+          // 8.54 (pedido da usuária: "quando que entra, quero ver certinho a data"): de qual data o prazo conta
+          z.ciencia ? ' · ' + (/estimad/.test(z.ciencia_tipo || '') ? 'publicação prevista ' : /publica/.test(z.ciencia_tipo || '') ? 'publicado no DJEN ' : /tácita/.test(z.ciencia_tipo || '') ? 'ciência tácita ' : /confirmada/.test(z.ciencia_tipo || '') ? 'ciência confirmada ' : 'ciência ') + dataBR(z.ciencia).slice(0, 5) : '',
+          z.dias && !d.interna ? ' · ' + textoDias(z) : '', ident ? ' · ' + ident : '',
           d.interna ? ' · data interna, não é data fatal' : '', z.gmail ? ' · ' : '', seloGmail(z.gmail)),
         pend.length ? h('div', { class: 'ix-pend' }, 'Falta: ' + pend.join(' · ')) : null,
         // 8.53.3: o DJEN publicou este ato antes da ciência do eproc
         z.fatal_djen ? h('div', { class: 'ix-pend ix-djen', title: `Contando da publicação no DJEN (${dataBR(z.djen_pub)}), vence em ${dataBR(z.fatal_djen)} — antes da data do eproc. Na dúvida, faça até a data mais curta.` },
-          `⚠ Pelo DJEN (publicado ${dataBR(z.djen_pub).slice(0, 5)}) vence em ${dataBR(z.fatal_djen)} — faça até essa data`) : null),
+          z.fatal_djen < hojeISO() ? `⚠ Pelo DJEN (publicado ${dataBR(z.djen_pub).slice(0, 5)}) venceu em ${dataBR(z.fatal_djen)}; o eproc dá até ${dataBR(z.fatal)} — faça HOJE`
+            : `⚠ Pelo DJEN (publicado ${dataBR(z.djen_pub).slice(0, 5)}) vence em ${dataBR(z.fatal_djen)} — faça até essa data`) : null),
       h('div', { class: 'ix-estado' }, h('span', { class: 'ix-chip ' + e[0] }, e[1]),
         h('div', { class: 'ix-resp' }, z.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(z.responsavel)), ' ', primeiroNome(z.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
       h('div', { class: 'ix-acoes', onclick: ev => ev.stopPropagation() }, botoesPrazo(z)));

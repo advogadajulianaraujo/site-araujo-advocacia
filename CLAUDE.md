@@ -1980,3 +1980,32 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
     uso de linguagem simples" (institucional) → ocultada (`"oculto": true`). O robô agora: ignora as partes de "pensamento" da resposta
     (`textoDe` filtra `thought`), registra a resposta crua quando a IA não escolhe nada, e o plano B (`reserva`) tira as institucionais
     (`INSTITUCIONAL`) e alterna as áreas da vez.
+
+## 8.54.0 Intimações com data certa, sem repetido e sem prazo a mais (pedido da usuária, 21/11/2026: "copiar o ADVBOX/Astrea… tudo certinho")
+
+- Como o ADVBOX/Astrea fazem (ajuda pública; os sites deles não abrem desta nuvem): leem o diário (DJEN pela OAB) + o painel do tribunal com
+  login/certificado, NUNCA abrem a intimação, cada intimação vira tarefa com responsável, a IA só sugere o prazo e uma pessoa confirma, a
+  publicação duplicada vira uma só e o prazo conta da DATA DE PUBLICAÇÃO. Fizemos o equivalente sem guardar senha/certificado do tribunal.
+- Achados nos 144 prazos abertos de 21/11 e as regras novas (`revisarPrazos_` categorias novas, rodam em toda rodada dos robôs do escritório
+  'prazos823' e no botão "🔧 Revisar prazos"; `registrarIntimacao_` já não cria os próximos):
+  1. eproc "Confirmada a intimação eletrônica" é avisada para QUALQUER parte (o MP confirma a vista dele em 3 dias): 10 de 10 prazos abertos
+     vindos de confirmação eram falsos. Confirmação sem prazo aberto do mesmo ato e com expedição do eproc nos 20 dias antes
+     (`expedicaoEprocAntes_`) → sem prazo (intimação fica "confirmação da intimação de dd/mm, já tratada"). Categoria `confirmacao`.
+  2. PJe "Expedido(a) intimação/notificação a(o) X" quando o aviso não diz o nosso polo: X empresa × cliente pessoa (ou o contrário) = outra
+     parte; "Mandado de intimação" = oficial de justiça, nunca prazo do advogado (`destinoPjeOutraParte_`, `ehPessoaJuridica_`). Duas pessoas
+     com nomes diferentes: na dúvida fica. Categoria `outraparte`.
+  3. eproc × DJEN: uma data só, a MAIS CURTA. Desde 16/05/2025 (Res. CNJ 569/2024; cartilha do TJSC sobre o eproc) o prazo do advogado conta
+     da publicação no DJEN, que sai ~10 dias antes da ciência tácita do eproc. `djenDoPrazoEproc_` (DJEN disponibilizado de −2 a +4 dias da
+     expedição) → ciência = publicação; anota "o eproc dava dd/mm". Se pela publicação já venceu e pelo eproc não, fica a do eproc com o aviso
+     "⚠ Pelo DJEN venceu em …; o eproc dá até … — faça HOJE" (não vira "vencido" de repente). Categoria `djen`. Substitui a regra da 8.19
+     ("eproc vale mais que o DJEN").
+  4. Lembrete "ato:" cujo evento saiu da agenda (perícia lida no lugar da audiência, ato cancelado) → cancelado. Categoria `atoapagado`.
+  5. Vencidos: o "Decorrido o prazo de <nosso cliente> em dd/mm/aaaa" do PJe (data ≥ a nossa, até 10 dias úteis depois) fecha o prazo na hora,
+     sem esperar a margem; o prazo que o PRÓPRIO robô reabriu na 8.48 (e ninguém mexeu) volta a poder sair (antes ficava vencido para sempre).
+     Reaberto por uma pessoa continua nunca saindo sozinho.
+- NÃO fazer: "sem publicação no DJEN = não é nosso" — testado e descartado: contrarrazões no 2º grau do TJSC (5001200-33) não tinha DJEN e era nosso.
+- DJEN pelo navegador/extensão (`djenImportar_`, `djenHistorico_`) dentro do `comTrava_`: robô gravando → "O sistema está ocupado" → o painel
+  espera e manda de novo sozinho (antes a leitura inteira falhava com "O robô está gravando agora"; em 21/11 a última leitura completa era de 19/11).
+- Linha do prazo em Intimações: "⟳ chegou dd/mm · via DJEN · publicado no DJEN dd/mm (ou ciência tácita/confirmada/publicação prevista) · N dias".
+- Ensaio nos dados reais de 21/11 (sem gravar): 10 confirmações + 1 mandado + 1 perícia repetida saem, 36 prazos do eproc passam para a data da
+  publicação, 5 vencidos fecham (2 pelo "Decorrido o prazo"); abertos sem audiência 144 → 128. Teste: `.github/motor/teste/etapa843.js` ("fim 854").

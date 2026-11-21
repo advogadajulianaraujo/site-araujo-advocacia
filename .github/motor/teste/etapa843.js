@@ -284,3 +284,60 @@ console.log("fim 851b");
   assert(t === 'FULANO, brasileiro, solteiro, inscrito no CPF nº 000', 'modelo do Drive sem RG: ' + t);
 }
 console.log("fim 852");
+// 8.54: data certa, sem repetido, sem prazo a mais (dados inventados)
+{
+  const hoje = C.hojeSP_(), dd = n => C.somarDias_(hoje, n), agora = new Date().toISOString();
+  const tZ = C.tabela_('Prazos'), tI = C.tabela_('Intimacoes'), tP = C.tabela_('Processos'), tE = C.tabela_('Eventos'), tC = C.tabela_('Clientes');
+  // processos e clientes próprios do teste
+  C.inserirLinha_(tC, { id: 'C854a', nome: 'Pessoa Fictícia Alfa', criado_em: agora });
+  C.inserirLinha_(tC, { id: 'C854b', nome: 'Empresa Inventada Ltda', criado_em: agora });
+  const nE = '5009999-11.2026.8.24.0075', nP = '0009999-22.2026.5.12.0041', nQ = '0009998-33.2026.5.12.0041', nD = '5009997-44.2026.8.24.0075';
+  [['P854e', nE, 'C854a', 'TJSC'], ['P854p', nP, 'C854a', 'TRT12'], ['P854q', nQ, 'C854b', 'TRT12'], ['P854d', nD, 'C854a', 'TJSC']].forEach(([id, n, c, t]) => C.inserirLinha_(tP, { id, numero: n, cliente_id: c, tribunal: t, status: 'ativo', criado_em: agora }));
+  // (1) confirmação do eproc de uma intimação já tratada (prazo feito) → sem prazo novo
+  C.inserirLinha_(tI, { id: 'I854e1', chave: 'I854e1', fonte: 'eproc TJSC', recebido_em: dd(-12) + 'T10:00:00Z', numero: nE, movimento: 'Expedida/certificada a intimação eletrônica - Vista ao MP', processo_id: 'P854e', prazo_id: 'Z854e1', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854e1', processo_id: 'P854e', numero: nE, intimacao_id: 'I854e1', descricao: 'Vista ao Ministério Público', dias: '5', contagem: 'uteis', ciencia: dd(-2), fatal: dd(5), situacao: 'cancelado', origem: 'robô', criado_em: agora });
+  C.inserirLinha_(tI, { id: 'I854e2', chave: 'I854e2', fonte: 'eproc TJSC', recebido_em: dd(-9) + 'T10:00:00Z', numero: nE, movimento: 'Confirmada a intimação eletrônica', processo_id: 'P854e', prazo_id: 'Z854e2', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854e2', processo_id: 'P854e', numero: nE, intimacao_id: 'I854e2', descricao: 'PROVISÓRIO: 5 dias (prazo mínimo)', dias: '5', contagem: 'uteis', ciencia: dd(-9), fatal: dd(-2), situacao: 'calculado', origem: 'robô', criado_em: agora, ciencia_tipo: 'confirmada em x' });
+  // (2) PJe: intimação expedida para a outra parte (empresa × nossa cliente pessoa) e mandado do oficial
+  C.inserirLinha_(tI, { id: 'I854p1', chave: 'I854p1', fonte: 'PJe TRT12', recebido_em: dd(-1) + 'T10:00:00Z', numero: nP, movimento: 'Expedido(a) intimação a(o) EMPRESA CONTRÁRIA LTDA — 2ª VARA', processo_id: 'P854p', prazo_id: 'Z854p1', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854p1', processo_id: 'P854p', numero: nP, intimacao_id: 'I854p1', descricao: 'Intimação sem prazo fixado no texto: 5 dias', dias: '5', contagem: 'uteis', ciencia: dd(0), fatal: dd(7), situacao: 'calculado', origem: 'robô', criado_em: agora });
+  C.inserirLinha_(tI, { id: 'I854q1', chave: 'I854q1', fonte: 'PJe TRT12', recebido_em: dd(-1) + 'T10:00:00Z', numero: nQ, movimento: 'Expedido(a) Mandado de Intimação/Notificação a(o) JOÃO FICTÍCIO — 2ª VARA', processo_id: 'P854q', prazo_id: 'Z854q1', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854q1', processo_id: 'P854q', numero: nQ, intimacao_id: 'I854q1', descricao: 'PROVISÓRIO: 5 dias', dias: '5', contagem: 'uteis', ciencia: dd(0), fatal: dd(7), situacao: 'calculado', origem: 'robô', criado_em: agora });
+  // (3) eproc tácita + publicação no DJEN do mesmo ato → vale a publicação (mais curta)
+  const exp = dd(-3);
+  C.inserirLinha_(tI, { id: 'I854d1', chave: 'I854d1', fonte: 'eproc TJSC', recebido_em: exp + 'T10:00:00Z', numero: nD, movimento: 'Expedida/certificada a intimação eletrônica - Despacho', processo_id: 'P854d', prazo_id: 'Z854d1', criado_em: agora });
+  C.inserirLinha_(tI, { id: 'I854d2', chave: 'I854d2', fonte: 'DJEN', recebido_em: exp + 'T12:00:00Z', numero: nD, movimento: 'Intimação', texto: 'Processo sigiloso', processo_id: 'P854d', prazo_id: 'Z854d1', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854d1', processo_id: 'P854d', numero: nD, intimacao_id: 'I854d1', descricao: 'Despacho: 15 dias', dias: '15', contagem: 'uteis', ciencia: C.somarDias_(exp, 10), ciencia_tipo: 'tácita: 10 dias após a expedição (' + C.dataBR_(exp) + ')', fatal: C.calcularFatal_(C.somarDias_(exp, 10), 15, 'uteis', 'TJSC'), situacao: 'calculado', origem: 'robô', criado_em: agora });
+  // (4) lembrete de perícia cujo evento saiu da agenda (era a audiência do mesmo dia e hora)
+  C.inserirLinha_(tZ, { id: 'Z854a1', processo_id: 'P854p', numero: nP, descricao: 'Perícia em 01/01/2027', dias: '', ciencia: dd(-5), fatal: '2027-01-01', situacao: 'calculado', origem: 'robô', observacoes: 'ato: perícia', criado_em: agora });
+  C.inserirLinha_(tE, { chave: 'ato|' + nP + '|perícia|2027-01-01|10:00', tipo: 'perícia', numero: nP, data: '2027-01-01', hora: '10:00', evento_id: 'apagado (era a audiência do mesmo dia e hora)', prazo_id: 'Z854a1', criado_em: agora });
+  const r = C.revisarPrazos_({ aplicar: false }, null);
+  assert(r.confirmacao.some(x => x.id === 'Z854e2') && /confirmação da intimação expedida/.test(r.confirmacao.find(x => x.id === 'Z854e2').motivo), 'confirmação do eproc de intimação já tratada (vista ao MP) não é prazo');
+  assert(r.outraparte.some(x => x.id === 'Z854p1'), 'PJe: intimação para a outra parte (empresa × nossa cliente) não é prazo');
+  assert(r.outraparte.some(x => x.id === 'Z854q1' && /mandado/.test(x.motivo)), 'PJe: mandado do oficial de justiça não é prazo');
+  const dj = r.djen.find(x => x.id === 'Z854d1'), pub = C.proximoUtil_(exp, 'TJSC', C.mapaFeriados_(), true);
+  assert(dj && dj.ciencia_nova === pub && dj.novo === C.calcularFatal_(pub, 15, 'uteis', 'TJSC') && dj.novo < dj.antes, 'eproc + DJEN do mesmo ato: vale a publicação (data mais curta) ' + (dj && dj.novo) + ' < ' + (dj && dj.antes));
+  assert(r.atoapagado.some(x => x.id === 'Z854a1'), 'lembrete de perícia cujo evento saiu da agenda é cancelado');
+  C.revisarPrazos_({ aplicar: true, categorias: ['confirmacao', 'outraparte', 'djen', 'atoapagado'] }, null);
+  const z = id => C.tabela_('Prazos').linhas.find(x => x.id === id);
+  assert(z('Z854e2').situacao === 'cancelado' && z('Z854p1').situacao === 'cancelado' && z('Z854q1').situacao === 'cancelado' && z('Z854a1').situacao === 'cancelado', 'aplicado: os 4 saíram (cancelados com o motivo, nada apagado)');
+  assert(z('Z854d1').ciencia === pub && /publicação no DJEN em/.test(z('Z854d1').ciencia_tipo) && /vale a publicação no DJEN/.test(z('Z854d1').observacoes), 'aplicado: data do eproc trocada pela publicação, anotado');
+  // robô não pega o próximo: confirmação nova do eproc com expedição já tratada não abre prazo; intimação ao outro lado também não
+  const ctx = C.contextoRobo_(), antes = C.tabela_('Prazos').linhas.length;
+  C.registrarIntimacao_(ctx, { fonte: 'eproc TJSC', chave: 'k854c', recebido_em: dd(0) + 'T09:00:00Z', numero: nE, tribunal: 'TJSC', sistema: 'eproc', movimento: 'Confirmada a intimação eletrônica', evento: '9', texto: '', nomes: [], tipo: 'confirmada', ciencia: dd(0), ciencia_tipo: 'confirmada em hoje' });
+  C.registrarIntimacao_(ctx, { fonte: 'PJe TRT12', chave: 'k854p', recebido_em: dd(0) + 'T09:00:00Z', numero: nP, tribunal: 'TRT12', sistema: 'PJe', movimento: 'Expedido(a) intimação a(o) OUTRA EMPRESA S/A — 2ª VARA', evento: '', texto: '', nomes: [], tipo: 'expedida', ciencia: dd(1), ciencia_tipo: 'estimada' });
+  assert(ctx.prazos.linhas.length === antes, 'robô: confirmação de intimação tratada e intimação à outra parte não abrem prazo novo');
+  // (5) vencido reaberto pelo próprio robô (8.48) + "Decorrido o prazo de <cliente>" no PJe → sai (antes ficava para sempre)
+  const fat = dd(-3), cien = C.somarDias_(fat, -7);
+  C.inserirLinha_(tI, { id: 'I854v1', chave: 'I854v1', fonte: 'PJe TRT12', recebido_em: cien + 'T10:00:00Z', numero: nP, movimento: 'Expedido(a) intimação a(o) PESSOA FICTÍCIA ALFA — 2ª VARA', processo_id: 'P854p', prazo_id: 'Z854v1', criado_em: agora });
+  C.inserirLinha_(tI, { id: 'I854v2', chave: 'I854v2', fonte: 'PJe TRT12', recebido_em: dd(-1) + 'T10:00:00Z', numero: nP, movimento: 'Decorrido o prazo de PESSOA FICTÍCIA ALFA em ' + C.dataBR_(C.somarDias_(fat, 1)) + ' — 2ª VARA', processo_id: 'P854p', criado_em: agora });
+  C.inserirLinha_(tZ, { id: 'Z854v1', processo_id: 'P854p', numero: nP, intimacao_id: 'I854v1', descricao: 'Intimação sem prazo fixado no texto: 5 dias', dias: '5', contagem: 'uteis', ciencia: cien, fatal: fat, situacao: 'calculado', origem: 'robô', atualizado_por: 'robô',
+    observacoes: 'vencido sem comprovação: saiu da lista em x; se NÃO foi feito, reabra | 8.48: reaberto em 18/11/2026 — tinha saído da lista antes do fim do prazo no PJe/eproc', criado_em: agora });
+  C.baixarVencidos844_();
+  assert(z('Z854v1').situacao === 'cumprido' && /Decorrido o prazo de PESSOA FICTÍCIA ALFA/.test(z('Z854v1').observacoes), 'vencido reaberto pelo robô + "Decorrido o prazo" do PJe → sai na hora, com o motivo');
+  // reaberto por uma PESSOA continua aberto
+  C.inserirLinha_(tZ, { id: 'Z854v2', processo_id: 'P854p', numero: nP, descricao: 'x', dias: '5', contagem: 'uteis', ciencia: cien, fatal: fat, situacao: 'calculado', origem: 'robô', atualizado_por: 'maria', observacoes: 'vencido sem comprovação: saiu da lista em x | 8.48: reaberto em 18/11/2026', criado_em: agora });
+  C.baixarVencidos844_();
+  assert(z('Z854v2').situacao === 'calculado', 'prazo reaberto por uma pessoa nunca sai sozinho');
+}
+console.log("fim 854");
