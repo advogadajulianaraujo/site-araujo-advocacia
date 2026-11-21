@@ -491,6 +491,12 @@ function memoriaPrazo_(d) {
  * intimação de audiência quando a audiência já está na agenda (fica com o controle de Audiências e os 3 avisos), data diferente do
  * motor novo (recalcula) e vencidos ainda abertos (baixa como feito, com marca — dá para reabrir).
  */
+/* ---------- 8.54 (pedido da usuária, 21/11/2026: "data certa, sem conflito, sem repetido, sem prazo a mais") ----------
+   Achados nos 144 prazos abertos de 21/11: (1) o e-mail do eproc avisa "Confirmada a intimação eletrônica" de QUALQUER parte (o MP confirma a
+   vista dele em 3 dias) e o robô abria um prazo PROVISÓRIO novo para nós — 10 de 10 eram confirmação de intimação já tratada ou do MP;
+   (2) o PJe avisa "Expedido(a) intimação a(o) X" também quando X é a outra parte, e "Mandado de intimação" (oficial de justiça) virava prazo;
+   (3) nos prazos do eproc o DJEN publicou o mesmo ato ~10 dias antes da ciência tácita: duas datas para o mesmo prazo. Desde 16/05/2025
+   (Res. CNJ 569/2024; cartilha do TJSC sobre o eproc) o prazo do advogado conta da PUBLICAÇÃO no DJEN — e na dúvida vale a mais curta. */
 var FASES = { contratado: 'Petição inicial (a ajuizar)', ajuizado: 'Ajuizado (citação)', conciliacao: 'Audiência de conciliação',
   andamento: 'Em andamento (defesa e réplica)', pericia: 'Perícia', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
   acordo: 'Acordo', homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução / cumprimento', extinto: 'Encerrado / arquivado' };
@@ -635,7 +641,7 @@ function prazoPublico_(z, procs, nomes) {
     if (mT && +mT[1] !== +z.dias) { try { x.fatal_texto = calcularFatal_(z.ciencia, mT[1], /corrid/i.test(z.resumo_ia) ? 'corridos' : (z.contagem || 'uteis'), x.tribunal); x.dias_texto = +mT[1]; } catch (eT) { /* só informa */ } }
   }
   // 8.53.3: prazo contado pela intimação do EPROC (tácita/confirmada) e o DJEN publicou o mesmo ato antes → mostra a data pela publicação.
-  // Na dúvida vale a mais curta (regra do escritório); a data do painel continua a do eproc (pedido da usuária na 8.19) até ela decidir.
+  // 8.54: a revisão do robô passa a data do prazo para a publicação (a mais curta); este aviso só aparece até a próxima rodada ou num prazo conferido.
   if (SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && z.dias && /tácita|confirmada/i.test(z.ciencia_tipo || '') && (prazoPublico_.djen || {})[z.numero]) {
     var mE = /\((\d{2})\/(\d{2})\/(\d{4})\)/.exec(z.ciencia_tipo || ''), exped = mE ? mE[3] + '-' + mE[2] + '-' + mE[1] : (/confirmada/i.test(z.ciencia_tipo || '') ? z.ciencia : '');
     var disp = exped && prazoPublico_.djen[z.numero].filter(function (dd) { var k = diffDias_(dd, exped); return k >= -2 && k <= 4; }).sort()[0];
