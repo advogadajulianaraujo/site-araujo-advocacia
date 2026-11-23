@@ -1,5 +1,97 @@
 [
   {
+    "slug": "atualizacao-nas-regras-de-recolhimento-do-fgts-digital-em-processos",
+    "titulo": "Atualização nas regras de recolhimento do FGTS Digital em processos trabalhistas",
+    "resumo": "Confira as novas orientações sobre o recolhimento do FGTS decorrente de decisões e acordos na Justiça do Trabalho, divulgadas pela Nota Orientativa 12/2026.",
+    "area": "trabalhista",
+    "data": "2026-11-23",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Tribunal Superior do Trabalho (TST)",
+      "url": "https://www.tst.jus.br/-/fgts-digital-atualizadas-regras-para-recolhimento-em-processos-trabalhistas",
+      "titulo": "FGTS Digital: atualizadas regras para recolhimento em processos trabalhistas",
+      "data": "2026-11-19",
+      "conferida": "página (lida pelo Google)"
+    },
+    "corpo": [
+      "O Ministério do Trabalho e Emprego, por meio da Secretaria de Inspeção do Trabalho, publicou a Nota Orientativa nº 12/2026. O documento estabelece diretrizes atualizadas sobre a prestação de informações e o recolhimento do Fundo de Garantia do Tempo de Serviço (FGTS) resultante de decisões judiciais e de acordos extrajudiciais trabalhistas, incluindo os homologados em Comissões de Conciliação Prévia (CCP) e Núcleos Intersindicais de Conciliação Prévia (Ninter).",
+      "## O que foi decidido",
+      "A nova publicação substitui a Nota Orientativa nº 08/2025 e detalha como deve ser feita a declaração no eSocial e a emissão das guias de pagamento. A definição do sistema a ser utilizado considera o marco temporal indicado nos campos da sentença ou do acordo:",
+      "- Até 30 de abril de 2026: caso as bases de cálculo do FGTS mensal não tenham sido declaradas anteriormente, o evento S-2500 deve ser preenchido, mas a quitação prossegue via guia SEFIP 660. Para multas rescisórias de contratos encerrados antes de 1º de março de 2024, a cobrança permanece por meio da Guia de Recolhimento Rescisório do FGTS (GRRF).",
+      "- A partir de 1º de maio de 2026: o recolhimento das quantias devidas passa a ocorrer de forma obrigatória no sistema FGTS Digital. A única exceção é aplicada aos débitos anteriores a julho de 1994, que continuam no SEFIP 660, sob a moeda vigente à época.",
+      "## Pagamento direto e proibição",
+      "Um aspecto central destacado na regulamentação é que as quantias devidas ao FGTS não podem ser entregues diretamente ao trabalhador, mesmo que haja previsão específica em acordo formalizado perante a Justiça do Trabalho.",
+      "Conforme estipulado pelo artigo 26-A da Lei nº 8.036/1990 e reforçado pelo Tribunal Superior do Trabalho no Tema 68, a quitação dos valores só se concretiza com o depósito na conta vinculada. A repasse direto mantém o débito ativo perante a fiscalização, expondo o empregador a autuações da Auditoria Fiscal do Trabalho e à incidência de encargos por moratória.",
+      "## Cuidados no eSocial e prevenção de duplicidade",
+      "As declarações transmitidas via evento S-2500 do eSocial possuem efeito legal de confissão de dívida. Antes do preenchimento, o empregador deve conferir se as verbas rescisórias ou de remuneração já foram registradas nos eventos S-1200, S-2299 e S-2399.",
+      "Bases de cálculo a partir de março de 2024 que já constem nesses lançamentos prévios não devem ser repetidas no evento de processo trabalhista, evitando que ocorra a cobrança de tributos e depósitos em duplicidade.",
+      "## Análise individualizada",
+      "A Nota Orientativa nº 12/2026 fornece tabelas instrutivas no portal do FGTS Digital. Como a aplicação das normas depende do momento do encerramento do contrato e da fase em que o processo se encontra, cada situação jurídica exige uma análise individualizada das decisões ou acordos firmados."
+    ]
+  },
+  {
+    "slug": "justica-do-trabalho-mantem-indenizacao-por-discriminacao-racial-em",
+    "titulo": "Justiça do Trabalho mantém indenização por discriminação racial em ambiente de trabalho",
+    "resumo": "O TST manteve a condenação de uma empresa ao pagamento de R$ 50 mil a uma trabalhadora criticada pelo volume de seu cabelo. Entenda os detalhes do caso.",
+    "area": "trabalhista",
+    "data": "2026-11-23",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Tribunal Superior do Trabalho (TST)",
+      "url": "https://www.tst.jus.br/-/salao-de-beleza-indenizara-profissional-negra-por-criticar-mudanca-nos-cabelos",
+      "titulo": "Salão de beleza indenizará profissional negra por criticar mudança nos cabelos",
+      "data": "2026-11-19",
+      "conferida": "página (lida pelo Google)"
+    },
+    "corpo": [
+      "A Sétima Turma do Tribunal Superior do Trabalho (TST) manteve a condenação de um instituto de beleza ao pagamento de R$ 50 mil de indenização por danos morais a uma cabeleireira negra. A decisão ocorreu após a trabalhadora sofrer comentários discriminatórios de sua gerente por causa do uso de um aplique em seu cabelo crespo.",
+      "Segundo a notícia da decisão, a gerente da empresa alegou que o cabelo volumoso e com aplique da profissional não se enquadrava no perfil do estabelecimento. A trabalhadora foi pressionada a retirar o alongamento e a prender o cabelo, além de ser comparada a uma famosa cantora. Após o ocorrido, a funcionária foi alterada de sua posição próxima à recepção para o fundo do salão, o que causou redução em seu faturamento. Na mesma empresa, outras pessoas trabalhavam com cabelos coloridos sem sofrer as mesmas exigências.",
+      "## O que foi decidido pela Justiça",
+      "A condenação inicial foi proferida pela 35ª Vara do Trabalho do Rio de Janeiro e mantida pelo Tribunal Regional do Trabalho da 1ª Região (TRT-1). Ao analisar o recurso no TST, o ministro relator destacou que exigências aparentemente neutras sobre a aparência física dos empregados podem reproduzir estereótipos raciais no ambiente profissional.",
+      "O julgador pontuou que a conduta não foi mera orientação sobre aparência nem exercício legítimo do poder de organização do empregador. Além disso, destacou o Protocolo para Julgamento com Perspectiva Racial do Conselho Nacional de Justiça (CNJ), enfatizando que práticas que desqualificam características da identidade racial geram um ambiente de trabalho hostil e discriminatório. Ficou constatado que não havia problemas de higiene ou segurança no cabelo da trabalhadora.",
+      "## Entendimento sobre discriminação e provas",
+      "Um ponto relevante do processo referiu-se à validade de uma gravação em vídeo feita pela própria trabalhadora durante o diálogo com a gerente. A empresa contestou a utilização da imagem, alegando que a gravação foi realizada sem o consentimento da chefia.",
+      "Contudo, a Justiça do Trabalho confirmou a validade da prova com base no entendimento do Supremo Tribunal Federal (STF). A jurisprudência estabelece que registros feitos por um dos participantes da conversa são válidos, mesmo sem o conhecimento do outro interlocutor, desde que não exista obrigação legal de sigilo.",
+      "## Pontos de atenção",
+      "O caso traz aspectos importantes sobre o combate à discriminação e os limites da atuação patronal no ambiente corporativo. Destacam-se os seguintes pontos:",
+      "- Exigências estéticas que reproduzem estereótipos raciais extrapolam o poder diretivo do empregador;",
+      "- Diferenciação de tratamento entre empregados em relação a normas de aparência pode caracterizar discriminação;",
+      "- Gravações ambientais realizadas por um dos interlocutores são aceitas como prova jurídica válida na ausência de sigilo legal.",
+      "A decisão da Sétima Turma do TST foi tomada de forma unânime. Contudo, cabe ressaltar que o processo ainda pode ser objeto de recurso e que cada caso depende de uma análise individualizada diante de suas particularidades."
+    ]
+  },
+  {
+    "slug": "tst-mantem-condenacao-de-empresa-por-uso-de-apelidos-racistas-no",
+    "titulo": "TST mantém condenação de empresa por uso de apelidos racistas no trabalho",
+    "resumo": "A 7ª Turma do TST manteve indenização de R$ 10 mil por assédio moral e racismo recreativo cometidos por gerente contra funcionário no ambiente de trabalho.",
+    "area": "trabalhista",
+    "data": "2026-11-23",
+    "origem": "robo",
+    "fonte": {
+      "nome": "Notícia oficial — Tribunal Superior do Trabalho (TST)",
+      "url": "https://www.tst.jus.br/-/panificadora-e-condenada-por-nao-coibir-apelidos-racistas-no-trabalho",
+      "titulo": "Panificadora é condenada por não coibir apelidos racistas no trabalho",
+      "data": "2026-11-19",
+      "conferida": "página (lida pelo Google)"
+    },
+    "corpo": [
+      "A 7ª Turma do Tribunal Superior do Trabalho (TST) rejeitou o recurso de duas empresas de um mesmo grupo econômico e manteve a condenação solidária ao pagamento de R$ 10 mil de indenização por danos morais a um ex-empregado. A decisão confirmou o entendimento de que a utilização de apelidos pejorativos de cunho racial no ambiente de trabalho configura racismo recreativo e assédio moral.",
+      "O trabalhador atuava como cilindreiro em uma empresa de panificação localizada em São Paulo. De acordo com a ação trabalhista, o gerente do setor — no qual trabalhavam sete pessoas — frequentemente utilizava os termos \"neguinho\" e \"negão\" para se dirigir ao subordinado diante dos colegas, em tom de deboche e risadas. A conduta continuou mesmo após pedidos explícitos do profissional para ser chamado por seu próprio nome. A prática discriminatória foi confirmada no processo por depoimento testemunhal.",
+      "## Argumentos das partes e decisões anteriores",
+      "Em sua defesa, as empresas alegaram que o ex-funcionário não comprovou ofensa à honra, à imagem ou à dignidade. Sustentaram também que expressões desse tipo nem sempre são utilizadas com a intenção de ofender e que podem fazer parte de formas comuns de tratamento na sociedade.",
+      "Contudo, a condenação ao pagamento de R$ 10 mil por danos morais foi estipulada pela 36ª Vara do Trabalho de São Paulo e mantida pelo Tribunal Regional do Trabalho da 2ª Região (TRT-2). O TRT ressaltou que a atitude do gerente foi racista, prejudicou o ambiente de trabalho e afetou a dignidade do trabalhador, independentemente da intenção do ofensor ou da cor de sua pele.",
+      "## O racismo recreativo e o entendimento do TST",
+      "Ao analisar o caso no TST, o ministro relator explicou que o chamado racismo recreativo ocorre quando o preconceito racial é disfarçado de humor ou brincadeira. Essa conduta utiliza estereótipos para inferiorizar a pessoa e não pode ser tratada como simples manifestação de descontração.",
+      "O julgamento destacou os seguintes pontos centrais:",
+      "- A opressão racial se torna ainda mais grave quando combinada com o abuso de poder hierárquico no ambiente corporativo;",
+      "- O combate à discriminação racial atende a diretrizes de acordos e convenções internacionais de Direitos Humanos, como os da Organização dos Estados Americanos (OEA) e da Organização Internacional do Trabalho (OIT);",
+      "- A atuação judicial deve observar diretrizes institucionais do Conselho Nacional de Justiça (CNJ), a exemplo do Protocolo para Julgamento com Perspectiva Racial.",
+      "## Pontos de atenção",
+      "É importante ressaltar que a análise sobre reparações por danos morais e discriminação depende das particularidades e das provas apresentadas em cada caso concreto.",
+      "Ademais, conforme a estrutura informada na notícia oficial do tribunal, das decisões proferidas pelas Turmas do TST ainda pode caber recurso à Subseção I Especializada em Dissídios Individuais (SDI-1)."
+    ]
+  },
+  {
     "slug": "tst-define-base-de-calculo-do-adicional-por-tempo-de-servico-em-banco",
     "titulo": "TST define base de cálculo do adicional por tempo de serviço em banco público",
     "resumo": "Decisão do TST estabelece que o adicional por tempo de serviço de trabalhadores bancários é calculado apenas sobre salário-padrão e complemento.",
