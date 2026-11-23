@@ -3290,3 +3290,92 @@ body.sem-sessao .chatf{display:none}
 .td-add .btn{white-space:nowrap}
 @media (max-width:900px){.td-add{grid-template-columns:1fr 1fr}.td-add input{grid-column:1/-1}.td-add .btn{grid-column:1/-1}}
 .ix-djen{color:#8a3b00;font-weight:600}
+
+/* ===================== 8.55 — Intimações recebidas (para resolver / resolvidas / descartadas), tela da intimação lado a lado,
+   sugestão do painel e andamentos importantes ===================== */
+.cx-topo{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:12px;margin:6px 0 12px}
+.cx-placar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cx-card{background:#fff;border:1px solid #e4dfd6;border-left:4px solid #d9d3c8;border-radius:10px;padding:10px 12px;text-align:left;cursor:pointer;font:inherit;color:inherit;display:flex;flex-direction:column;gap:1px}
+.cx-card b{font-size:26px;line-height:1.15;font-variant-numeric:tabular-nums}.cx-card span{font-size:12.5px;font-weight:600}.cx-card small{font-size:11.5px;color:#7a7266}
+.cx-card.k-azul{border-left-color:#2f6fd0}.cx-card.k-azul b{color:#24527a}.cx-card.k-verde{border-left-color:#1f8a4c}.cx-card.k-verde b{color:#2e6b3f}
+.cx-card.k-cinza{border-left-color:#9a9286}.cx-card.k-ambar{border-left-color:#c98a12}.cx-card.k-ambar b{color:#9a5b00}.cx-card.zero b{color:#b5ada2}
+.cx-card:hover,.cx-card.ativo{border-color:#c9a46a;box-shadow:0 0 0 1px #c9a46a}
+.cx-semana{background:#fff;border:1px solid #e4dfd6;border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;min-height:112px}
+.cx-sem-tit{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;align-items:center}.cx-leg{color:#7a7266;font-size:11.5px;display:flex;align-items:center;gap:4px}
+.cx-leg i{display:inline-block;width:9px;height:9px;border-radius:2px}.cx-l-r,.cx-sem-b i.r{background:#cfc6b8}.cx-l-t,.cx-sem-b i.t{background:#A9824A}
+.cx-sem-cols{flex:1;display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end;margin-top:6px}
+.cx-sem-c{display:flex;flex-direction:column;align-items:center;gap:3px;height:100%}.cx-sem-c span{font-size:10.5px;color:#7a7266}
+.cx-sem-b{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px;min-height:46px}.cx-sem-b i{display:block;width:38%;border-radius:3px 3px 0 0}
+.cx-filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 8px}.cx-filtros select{width:auto}
+.cx-check{display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer}.cx-check input{width:auto;margin:0}
+.cx-lista,.imp-lista{background:#fff;border:1px solid #e4dfd6;border-radius:10px;overflow:hidden}
+.cx-item{display:grid;grid-template-columns:62px minmax(0,1fr) minmax(170px,240px) auto;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid #eee9e1;cursor:pointer}
+.cx-item:first-child{border-top:0}.cx-item:hover{background:#faf8f4}.cx-item:focus-visible{outline:2px solid #c9a46a;outline-offset:-2px}
+.cx-item.feita{opacity:.78}
+.cx-quando{display:flex;flex-direction:column;align-items:center;text-align:center;line-height:1.2}.cx-quando b{font-size:15px}.cx-quando span{font-size:11px;color:#7a7266}
+.cx-fonte{font-size:10.5px!important;text-transform:uppercase;letter-spacing:.03em;color:#8a7f70!important}
+.cx-oque{min-width:0}.cx-l1{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cx-ato{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:999px;background:#f2eadc;color:#6d5225}
+.cx-txt{font-size:12.5px;color:#5c564d;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:2px}
+.cx-lado{display:flex;flex-direction:column;gap:4px;font-size:12.5px;min-width:0}
+.cx-sug{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;background:#f6f1fb;border:1px solid #e3d8f1;color:#4c2f73;border-radius:8px;padding:3px 8px;font-size:12px}
+.cx-sug-ciencia{background:#f3f2ee;border-color:#e4dfd6;color:#5c564d}.cx-ia{font-size:12px}
+.cx-conf{font-size:11px;font-weight:700;border-radius:999px;padding:0 6px}.cx-c-a{background:#e4f2e8;color:#2e6b3f}.cx-c-m{background:#fbf1d6;color:#8a6100}.cx-c-b{background:#fbe9e7;color:#a3261b}
+.cx-feito{font-size:12px;color:#2e6b3f;font-weight:600}.cx-feito.desc{color:#7a7266}
+.cx-acoes{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.btn.cx-desc{color:#a3261b}
+@media (max-width:900px){.cx-topo{grid-template-columns:1fr}.cx-placar{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cx-item{grid-template-columns:52px minmax(0,1fr)}.cx-lado,.cx-acoes{grid-column:2}.cx-acoes{justify-content:flex-start}}
+
+/* tela da intimação */
+.in-barra{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}.in-barra .in-prox{margin-left:auto}
+.in-menu{position:relative}.in-menu>summary{list-style:none;cursor:pointer}.in-menu>summary::-webkit-details-marker{display:none}
+.in-menu-l{position:absolute;z-index:20;top:calc(100% + 4px);left:0;background:#fff;border:1px solid #e4dfd6;border-radius:10px;box-shadow:0 10px 30px -12px rgba(0,0,0,.25);padding:4px;min-width:250px;display:flex;flex-direction:column}
+.in-menu-l button{background:none;border:0;text-align:left;padding:8px 10px;border-radius:7px;font:inherit;cursor:pointer;color:inherit}.in-menu-l button:hover{background:#f6f1e8}
+.in-grade{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+.in-principal{display:flex;flex-direction:column;gap:12px;min-width:0}
+.in-cab h1{margin:0;font-size:21px}.in-sub{font-size:12.5px;color:#6b645a;display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:3px}
+.in-resumo{background:#f6f1fb;border:1px solid #e3d8f1;border-radius:10px;padding:9px 12px;font-size:13px}.in-resumo.alerta{background:#fbe9e7;border-color:#efc9c4}
+.in-doc{background:#fff;border:1px solid #e4dfd6;border-radius:10px;overflow:hidden}
+.in-doc-cab{display:flex;justify-content:space-between;gap:10px;padding:9px 14px;border-bottom:1px solid #eee9e1;font-size:13px;background:#faf8f4}
+.in-texto{white-space:pre-wrap;padding:14px 16px;font-size:13.5px;line-height:1.6;max-height:48vh;overflow:auto;font-family:Georgia,'Times New Roman',serif}
+.in-texto mark{background:#fbe8b8;padding:0 2px;border-radius:3px}
+.in-lado{display:flex;flex-direction:column;gap:10px;position:sticky;top:12px}
+.in-card{background:#fff;border:1px solid #e4dfd6;border-radius:10px;padding:10px 12px;font-size:13px}
+.in-card h3{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#7a7266}
+.in-dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:8px 0}.in-dl dt{color:#7a7266}.in-dl dd{margin:0;overflow-wrap:anywhere}
+.in-cli{font-weight:600}.in-pend,.in-and{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.in-and li{font-size:12.5px;color:#4a453e}
+.in-pt{font-size:10.5px;text-transform:uppercase;font-weight:700;border-radius:4px;padding:0 5px;background:#eee9e1;color:#5c564d}.in-pt-prazo{background:#fbf1d6;color:#8a6100}.in-pt-ato{background:#e8eef8;color:#1d4f91}
+@media (max-width:1000px){.in-grade{grid-template-columns:1fr}.in-lado{position:static}}
+
+/* sugestão do painel */
+.sg-caixa{background:#fcfaff;border:1px solid #e3d8f1;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.sg-cab{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.sg-cab h3{margin:0;font-size:15px;color:#4c2f73}.sg-fonte{font-size:11.5px;color:#7a7266}
+.sg-prov{margin:0;font-size:13px}
+.sg-prazo{background:#fff;border:1px solid #ebe3f5;border-radius:9px;padding:8px 10px;font-size:13px;display:flex;flex-direction:column;gap:5px}
+.sg-pz-acoes{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#6b645a}
+.cx-votos{display:inline-flex;gap:4px}
+.cx-voto{background:#fff;border:1px solid #e4dfd6;border-radius:7px;padding:2px 7px;cursor:pointer;font-size:13px;line-height:1.4}
+.cx-voto:hover{border-color:#c9a46a}.cx-voto.sim{background:#e4f2e8;border-color:#9fcfae}.cx-voto.nao{background:#fbe9e7;border-color:#efc9c4}
+.sg-sub{font-size:13px}.sg-tarefas{display:flex;flex-direction:column;gap:6px}
+.sg-t{display:grid;grid-template-columns:auto auto minmax(0,1fr) 150px 140px auto auto;gap:6px;align-items:center;background:#fff;border:1px solid #ebe3f5;border-radius:9px;padding:5px 8px}
+.sg-t input[type=checkbox]{width:auto;margin:0}.sg-t .sg-tit{border:0;background:transparent;padding:4px 2px;font:inherit;font-size:13px;min-width:0}
+.sg-t .sg-tit:not([readonly]){border-bottom:1px solid #c9a46a}.sg-t select,.sg-t input[type=date]{font-size:12.5px;padding:4px 6px}
+.sg-fim{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px dashed #e3d8f1;padding-top:8px}
+@media (max-width:760px){.sg-t{grid-template-columns:auto auto minmax(0,1fr) auto auto}.sg-t select,.sg-t input[type=date]{grid-column:3}}
+
+/* andamentos importantes */
+.imp-dia h3{margin:0;padding:8px 12px;font-size:12.5px;background:#faf8f4;border-top:1px solid #eee9e1;color:#6b645a}
+.imp-dia:first-child h3{border-top:0}
+.imp-item{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid #f1ede6;cursor:pointer}
+.imp-item:hover{background:#faf8f4}.imp-item.visto{opacity:.6}
+.imp-rot{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#eee9e1;color:#4a453e;justify-self:start}
+.imp-sentenca,.imp-acordao,.imp-extincao,.imp-transito-em-julgado{background:#fbe9e7;color:#a3261b}
+.imp-valores,.imp-acordo{background:#e4f2e8;color:#2e6b3f}.imp-audiencia,.imp-pericia{background:#e8eef8;color:#1d4f91}
+.imp-citacao,.imp-tutela-liminar,.imp-penhora-bloqueio{background:#fbf1d6;color:#8a6100}
+@media (max-width:760px){.imp-item{grid-template-columns:1fr}}
+.ix-etq{display:inline-block;margin-left:6px;font-size:11px;font-weight:600;padding:0 7px;border-radius:999px;background:#efe7d8;color:#6d5225}
+.notif.urgente{border-left-color:#e0574a}
+.cfg-avisos{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.ini-caixa{display:flex;flex-wrap:wrap;align-items:center;gap:4px;background:#fff;border:1px solid #e4dfd6;border-left:4px solid #c98a12;border-radius:10px;padding:9px 14px;margin:0 0 12px;color:inherit;text-decoration:none;font-size:13.5px}
+.ini-caixa[hidden]{display:none}.ini-caixa:hover{border-color:#c9a46a}.ini-caixa-ico{font-size:16px;margin-right:4px}.ini-caixa span{color:#6b645a}.ini-caixa .ini-caixa-ir{margin-left:auto;color:#7E602F;font-weight:600}

@@ -9,6 +9,7 @@
   "ASSIN_ANTIGAS",
   "AUTO_ATUALIZAR_ERRO",
   "AVISO_NOVA_DESDE",
+  "CAIXA_DESDE",
   "DATAJUD_ERRO",
   "DATAJUD_OK",
   "DATAJUD_ULTIMA",
@@ -466,7 +467,52 @@
     "Utilities"
    ],
    "funcoes": 40
+  },
+  "intimacoes.caixa": {
+   "tabelas": [
+    "Clientes",
+    "Feriados",
+    "IaAprendizado",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 54
+  },
+  "intimacoes.obter": {
+   "tabelas": [
+    "Clientes",
+    "Feriados",
+    "IaAprendizado",
+    "Intimacoes",
+    "Prazos",
+    "Processos",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 49
+  },
+  "andamentos.importantes": {
+   "tabelas": [
+    "Avisos",
+    "Clientes",
+    "Intimacoes",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 19
   }
  },
- "funcoes": 163
+ "funcoes": 188
 }

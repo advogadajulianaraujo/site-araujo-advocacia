@@ -55,7 +55,7 @@ var ROTAS_VALOR_BLOQUEADAS = { 'fin.pixAvulso': 1, 'fin.renegociar': 1, 'fin.hon
 // Ordem das colunas de cada aba. Não mude a ordem depois de ter dados.
 var ESQUEMA = {
   Config: ['chave', 'valor', 'descricao'],
-  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email'],
+  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email', 'avisos'],
   ObsArquivo: ['id', 'cliente_id', 'texto', 'arquivado_em'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
@@ -394,11 +394,14 @@ var ROTAS = {
   'prazos.situacao': { fn: mudarSituacaoPrazo_ },
   'prazos.baixarVencidos': { permissao: 'usuarios', fn: baixarVencidos_ },
   'intimacoes.listar': { fn: listarIntimacoes_ },
-  'intimacoes.caixa': { fn: caixaIntimacoes_ },        // 8.55: caixa de entrada (placar do dia, semana, lista)
-  'intimacoes.obter': { fn: intimacaoObter_ },         // 8.55: tela da intimação lado a lado
-  'intimacoes.tratar': { fn: tratarIntimacao_ },       // 8.55: confirmar sugestão, concluir, descartar, reabrir, histórico, prazo, audiência, tarefa, evento
-  'andamentos.importantes': { fn: andamentosImportantes_ }, // 8.55: andamentos importantes (sentença, alvará, audiência…)
+  // 8.55: intimações recebidas (placar, semana, lista), tela da intimação, resolver/descartar, agenda, andamentos importantes, avisos por pessoa
+  'intimacoes.caixa': { fn: caixaIntimacoes_ },
+  'intimacoes.obter': { fn: intimacaoObter_ },
+  'intimacoes.tratar': { fn: tratarIntimacao_ },
+  'intimacoes.agendar': { fn: agendarIntimacao_ },
+  'andamentos.importantes': { fn: andamentosImportantes_ },
   'andamentos.visto': { fn: andamentoVisto_ },
+  'eu.avisos': { fn: salvarMeusAvisos_ },
   'robo.rodar': { fn: function (d, u) { return rodarRobo_(u.usuario); } },
   'djen.config': { fn: djenConfig_ },
   'djen.importar': { fn: djenImportar_ },
@@ -834,7 +837,7 @@ function usuarioDaSessao_(token) {
 
 function publicoUsuario_(u) {
   var p = PERFIS[u.perfil];
-  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos, ocultarValores: !!p.ocultarValores, future: podeFuture_(u) } };
+  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos, ocultarValores: !!p.ocultarValores, future: podeFuture_(u) }, avisos_off: String(u.avisos || '') };
 }
 
 function criarUsuario_(d) {
@@ -4859,13 +4862,14 @@ function itemCaixa_(i, ctx) {
   var s = sugestaoTratamento_(i, z, p, ctx);
   return { id: i.id, recebido_em: i.recebido_em, fonte: i.fonte, numero: i.numero, tribunal: i.tribunal || p.tribunal || '', movimento: String(i.movimento || '').slice(0, 200),
     texto: String(i.texto || '').slice(0, 280), resumo_ia: String(i.resumo_ia || '').slice(0, 300), processo_id: p.id || '', cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '',
-    responsavel: (z && z.responsavel) || p.responsavel || '', status: statusCaixa_(i, ctx.prazos), tratamento: i.tratamento || '', tratada_por: i.tratada_por || i.terminada_por || '',
+    responsavel: (z && z.responsavel) || p.responsavel || '', responsavel_nome: ctx.nomes[(z && z.responsavel) || p.responsavel] || '', status: statusCaixa_(i, ctx.prazos), tratamento: i.tratamento || '', tratada_por: i.tratada_por || i.terminada_por || '',
     tratada_em: i.tratada_em || i.terminada_em || '', gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '',
     sug: { ato: s.ato, rotulo: s.rotulo, fonte: s.fonte, confianca: s.confianca, outra_parte: s.outra_parte, so_historico: s.so_historico, n_tarefas: s.tarefas.length,
       prazo: s.prazo ? { id: s.prazo.id, fatal: s.prazo.fatal, descricao: String(s.prazo.descricao || '').slice(0, 120), situacao: s.prazo.situacao, fila: s.prazo.fila, ato: s.prazo.ato } : null } };
 }
 function ctxCaixa_() {
-  var ctx = { prazos: {}, procs: {}, procsNum: {}, clis: {} };
+  var ctx = { prazos: {}, procs: {}, procsNum: {}, clis: {}, nomes: {} };
+  usuarios_().forEach(function (q) { ctx.nomes[q.usuario] = q.nome || q.usuario; });
   tabela_('Prazos').linhas.forEach(function (z) { ctx.prazos[z.id] = z; });
   tabela_('Processos').linhas.forEach(function (p) { ctx.procs[p.id] = p; if (p.numero && !ctx.procsNum[p.numero]) ctx.procsNum[p.numero] = p; });
   tabela_('Clientes').linhas.forEach(function (c) { ctx.clis[c.id] = c; });
@@ -4913,7 +4917,10 @@ function intimacaoObter_(d, u) {
   var x = limpar_(i); x.texto = String(i.texto || ''); x.status = statusCaixa_(i, ctx.prazos);
   var pend = [];
   Object.keys(ctx.prazos).forEach(function (k) { var w = ctx.prazos[k]; if (w.numero === i.numero && SITUACOES_ABERTAS.indexOf(w.situacao) >= 0) pend.push({ tipo: /^ato:/.test(w.observacoes || '') ? 'ato' : 'prazo', id: w.id, titulo: w.descricao, data: w.fatal, responsavel: w.responsavel || '' }); });
-  tabela_('Tarefas').linhas.forEach(function (t) { if (t.numero === i.numero && abertaT_(t) && t.situacao !== 'cancelada') pend.push({ tipo: 'tarefa', id: t.id, titulo: t.titulo, data: t.vence_em, responsavel: t.responsavel || '' }); });
+  // título só das tarefas da própria pessoa (ou para a administração): as dos colegas aparecem como "tarefa de Fulano" (o navegador não recebe o título delas)
+  var adm = !!(PERFIS[u.perfil] || {}).usuarios;
+  tabela_('Tarefas').linhas.forEach(function (t) { if (t.processo_id && t.processo_id !== p.id && t.numero !== i.numero) return; if ((t.numero === i.numero || (p.id && t.processo_id === p.id)) && abertaT_(t) && t.situacao !== 'cancelada')
+    pend.push({ tipo: 'tarefa', id: t.id, titulo: adm || t.responsavel === u.usuario || t.criado_por === u.usuario ? t.titulo : 'Tarefa de ' + (t.responsavel || 'alguém da equipe'), data: t.vence_em, responsavel: t.responsavel || '' }); });
   pend.sort(function (a, b) { return (a.data || '9') < (b.data || '9') ? -1 : 1; });
   var movs = [];
   if (p.andamentos && p.andamentos.charAt(0) === '[') { try { JSON.parse(p.andamentos).slice(0, 8).forEach(function (m) { movs.push({ d: String(m.d || m.data || '').slice(0, 10), n: String(m.n || m.nome || '').slice(0, 160), de: 'DataJud' }); }); } catch (e) { /* segue */ } }
@@ -4941,7 +4948,7 @@ function tratarIntimacao_(d, u) {
     var marca = '[prep:' + i.id + ']', criadas = [];
     var novaTarefa = function (t) {
       var r = salvarTarefa_({ tarefa: { titulo: t.titulo, descricao: (t.descricao ? String(t.descricao) + '\n' : '') + 'Da intimação de ' + dataBR_(String(i.recebido_em).slice(0, 10)) + ' (' + String(i.movimento || '').slice(0, 80) + ')\n' + marca,
-        responsavel: t.responsavel || '', vence_em: t.vence_em || '', processo_id: proc.id || '', numero: proc.id ? '' : '', cliente_id: proc.cliente_id || '', prioridade: t.prioridade || 'normal', categoria: t.categoria || '' } }, u);
+        responsavel: t.responsavel || '', vence_em: t.vence_em || '', processo_id: proc.id || '', numero: proc.id ? '' : i.numero, cliente_id: proc.cliente_id || '', prioridade: t.prioridade || 'normal', categoria: t.categoria || '' } }, u);
       criadas.push(r.id); return r.id;
     };
     if (acao === 'reabrir') {
@@ -4989,19 +4996,42 @@ function tratarIntimacao_(d, u) {
       if (nz) atualizarLinha_(tabela_('Prazos'), nz, { intimacao_id: i.id });
       marcarTratada_(tabI, i, u, 'prazo', i.prazo_id ? {} : { prazo_id: r.id }); registrar_(u.usuario, 'intimação tratada', i.numero + ' · prazo'); return { ok: true, prazo_id: r.id };
     }
-    if (acao === 'audiencia') {
-      var a = d.audiencia || {};
-      var ra = marcarAtoPainel_({ tipo: a.tipo, data: a.data, hora: a.hora, intimacao_id: i.id, processo_id: proc.id }, u);
-      marcarTratada_(tabI, i, u, 'audiencia'); registrar_(u.usuario, 'intimação tratada', i.numero + ' · audiência'); return { ok: true, erro_agenda: ra.erro_agenda || '' };
-    }
+    if (acao === 'audiencia' || acao === 'evento') throw falha_('Use intimacoes.agendar.');
     if (acao === 'tarefa') { var idT = novaTarefa(d.tarefa || {}); marcarTratada_(tabI, i, u, 'tarefa'); registrar_(u.usuario, 'intimação tratada', i.numero + ' · tarefa'); return { ok: true, tarefa_id: idT }; }
-    if (acao === 'evento') {
-      var ev = d.evento || {};
-      var re = criarCompromisso_({ agenda: ev.agenda || 'ATENDIMENTOS', titulo: ev.titulo, data: ev.data, inicio: ev.inicio, fim: ev.fim, local: ev.local,
-        descricao: (ev.descricao || '') + '\nProcesso ' + (proc.numero || i.numero) }, u);
-      marcarTratada_(tabI, i, u, 'evento'); registrar_(u.usuario, 'intimação tratada', i.numero + ' · evento'); return { ok: true, evento_id: re.id };
-    }
     throw falha_('Tratamento inválido.');
+  });
+}
+
+/** Rota intimacoes.agendar (separada porque usa o Google Agenda): audiência/perícia ou evento a partir da intimação. */
+function agendarIntimacao_(d, u) {
+  var i = tabela_('Intimacoes').linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!i) throw falha_('Intimação não encontrada.');
+  var proc = tabela_('Processos').linhas.filter(function (p) { return p.id === i.processo_id || (!i.processo_id && p.numero === i.numero); })[0] || {};
+  if (d.acao === 'audiencia') {
+    var a = d.audiencia || {};
+    var ra = marcarAtoPainel_({ tipo: a.tipo, data: a.data, hora: a.hora, intimacao_id: i.id, processo_id: proc.id }, u);
+    comTrava_(function () { var tabI = tabela_('Intimacoes'), x = tabI.linhas.filter(function (y) { return y.id === i.id; })[0]; if (x && !x.tratada_em) marcarTratada_(tabI, x, u, 'audiencia'); });
+    registrar_(u.usuario, 'intimação tratada', i.numero + ' · audiência'); return { ok: true, erro_agenda: ra.erro_agenda || '' };
+  }
+  if (d.acao === 'evento') {
+    var ev = d.evento || {};
+    var re = criarCompromisso_({ agenda: ev.agenda || 'ATENDIMENTOS', titulo: ev.titulo, data: ev.data, inicio: ev.inicio, fim: ev.fim, local: ev.local,
+      descricao: (ev.descricao || '') + '\nProcesso ' + (proc.numero || i.numero) }, u);
+    comTrava_(function () { var tabI = tabela_('Intimacoes'), x = tabI.linhas.filter(function (y) { return y.id === i.id; })[0]; if (x && !x.tratada_em) marcarTratada_(tabI, x, u, 'evento'); });
+    registrar_(u.usuario, 'intimação tratada', i.numero + ' · evento'); return { ok: true, evento_id: re.id };
+  }
+  throw falha_('Tratamento inválido.');
+}
+
+/** 8.55: avisos que a própria pessoa NÃO quer no canto da tela (lista separada por vírgula). */
+function salvarMeusAvisos_(d, u) {
+  var ok = ['intimacao', 'prazo', 'pix', 'importante', 'chat'];
+  var off = [].concat(d.off || []).map(String).filter(function (x) { return ok.indexOf(x) >= 0; }).join(',');
+  return comTrava_(function () {
+    var tab = tabela_('Usuarios'), r = tab.linhas.filter(function (x) { return x.usuario === u.usuario; })[0];
+    if (!r) throw falha_('Usuário não encontrado.');
+    atualizarLinha_(tab, r, { avisos: off });
+    return { ok: true, off: off };
   });
 }
 
@@ -5018,7 +5048,8 @@ function rotuloImportante_(n) {
 }
 /** Rota andamentos.importantes: o que mudou de importante nos processos ativos (DataJud + avisos dos tribunais), sem repetir. */
 function andamentosImportantes_(d, u) {
-  var hoje = hojeSP_(), desde = somarDias_(hoje, -Math.min(+d.dias || 15, 60)), vistos = avisosMapa_(), clis = {}, porNum = {}, itens = {}, n = 0;
+  var hoje = hojeSP_(), desde = somarDias_(hoje, -Math.min(+d.dias || 15, 60)), vistos = avisosMapa_(), clis = {}, porNum = {}, itens = {}, n = 0, nomes = {};
+  usuarios_().forEach(function (q) { nomes[q.usuario] = q.nome || q.usuario; });
   tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
   var procs = tabela_('Processos').linhas.filter(function (p) { return p.numero && p.status !== 'arquivado'; });
   procs.forEach(function (p) { porNum[p.numero] = p; });
@@ -5028,7 +5059,7 @@ function andamentosImportantes_(d, u) {
     var chave = 'imp:' + hashCurto_(p.numero + '|' + dia + '|' + nomeComparavel_(texto).slice(0, 60));
     if (itens[chave]) return;
     var c = clis[p.cliente_id] || {};
-    itens[chave] = { chave: chave, numero: p.numero, processo_id: p.id, cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '', responsavel: p.responsavel || '',
+    itens[chave] = { chave: chave, numero: p.numero, processo_id: p.id, cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '', responsavel: p.responsavel || '', responsavel_nome: nomes[p.responsavel] || '',
       dia: dia, texto: String(texto).slice(0, 200), de: de, rotulo: rotuloImportante_(texto), visto_em: (vistos[chave] || {}).em || '', visto_por: (vistos[chave] || {}).por || '' };
   };
   procs.forEach(function (p) {
@@ -16785,7 +16816,7 @@ function extAnalisar_(d, u) {
 var SB_FORA = { Usuarios: ['hash', 'salt'] }; // nunca saem do Google (até a Etapa B: aí vão, mas painel_ler nunca as entrega)
 var SB_LIGADO_ = null, SB_SUJAS = {}, SB_RPC_ = null;
 // chaves de Config que o navegador pode ler (as que as rotas de leitura usam; .github/motor/gerar.mjs atualiza esta lista)
-var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'AVISO_NOVA_DESDE', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DISTRIBUICAO', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
+var SB_CONFIG_LIVRE = /*SB_CONFIG_LIVRE*/['ACAO_COB_IGNORADOS', 'AGENDAS', 'AGENDA_COPIA', 'AGENDA_SINC', 'ALERTA_ROBO_EM', 'ASSIN_ANTIGAS', 'AUTO_ATUALIZAR_ERRO', 'AVISO_NOVA_DESDE', 'CAIXA_DESDE', 'DATAJUD_ERRO', 'DATAJUD_OK', 'DATAJUD_ULTIMA', 'DISTRIBUICAO', 'DJEN_NAVEGADOR_ERRO', 'DJEN_NAVEGADOR_ULTIMA', 'FUTURE_USUARIOS', 'IA_ERRO', 'IA_LIGADA', 'IA_ULTIMA', 'LINK_AVALIACAO', 'PIX_TOLERANCIA_JUROS', 'PIX_ULTIMA', 'RESP_EPROC', 'RESP_INICIAL', 'RESP_PADRAO', 'RESP_PJE', 'RESP_SECRETARIA', 'RESUMO_EMAIL_DIA', 'ROBO_EXTRAS', 'ROBO_GMAIL_OK', 'ROBO_ULTIMA_EXECUCAO', 'ROBO_ULTIMO_RESULTADO']/*FIM*/;
 // rotas que aceitam a aba Tarefas só com as tarefas da pessoa (perfis que não são da administração)
 var SB_TAREFAS_FILTRADAS_OK = ['tarefas.listar'];
 function sbConf_() {
@@ -17029,7 +17060,7 @@ function sha256Hex_(txt) { return hexDe_(Utilities.computeDigest(Utilities.Diges
 /** O que cada perfil pode ler do banco (o Supabase confere isto em painel_ler; nada além). */
 function sbPermissoes_(u) {
   var p = PERFIS[u.perfil] || {}, adm = !!p.usuarios, g = {};
-  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo', 'AgendaEventos'].forEach(function (a) { g[sbTabela_(a)] = {}; });
+  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo', 'AgendaEventos', 'IaAprendizado'].forEach(function (a) { g[sbTabela_(a)] = {}; });
   g.clientes = { mascarar: ['acesso_hash'] }; // o navegador só sabe SE o cliente tem código do Acompanhe
   g.processos = { mascarar: ['andamentos'] }; // os andamentos (JSON grande do DataJud) ficam no banco; as listas só perguntam se tem
   g.config = { chaves: SB_CONFIG_LIVRE };

@@ -1615,3 +1615,33 @@ alter table chat_lidos add column if not exists "em" text;
 alter table chat_lidos enable row level security;
 drop policy if exists "chat_lidos: só o próprio escritório" on chat_lidos;
 create policy "chat_lidos: só o próprio escritório" on chat_lidos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+-- acrescentado pela versão nova do painel
+alter table usuarios add column if not exists "avisos" text;
+alter table intimacoes add column if not exists "tratada_em" text;
+alter table intimacoes add column if not exists "tratada_por" text;
+alter table intimacoes add column if not exists "tratamento" text;
+alter table prazos add column if not exists "alerta_dias" text;
+alter table prazos add column if not exists "etiqueta" text;
+
+create table if not exists ia_aprendizado (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "chave" text,
+  "ato" text,
+  "titulo" text,
+  "aceitas" text,
+  "rejeitadas" text,
+  "atualizado_em" text,
+  primary key (escritorio_id, _n)
+);
+alter table ia_aprendizado add column if not exists "chave" text;
+alter table ia_aprendizado add column if not exists "ato" text;
+alter table ia_aprendizado add column if not exists "titulo" text;
+alter table ia_aprendizado add column if not exists "aceitas" text;
+alter table ia_aprendizado add column if not exists "rejeitadas" text;
+alter table ia_aprendizado add column if not exists "atualizado_em" text;
+alter table ia_aprendizado enable row level security;
+drop policy if exists "ia_aprendizado: só o próprio escritório" on ia_aprendizado;
+create policy "ia_aprendizado: só o próprio escritório" on ia_aprendizado for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
