@@ -3379,3 +3379,51 @@ body.sem-sessao .chatf{display:none}
 .cfg-avisos{display:flex;flex-direction:column;gap:8px;margin:10px 0}
 .ini-caixa{display:flex;flex-wrap:wrap;align-items:center;gap:4px;background:#fff;border:1px solid #e4dfd6;border-left:4px solid #c98a12;border-radius:10px;padding:9px 14px;margin:0 0 12px;color:inherit;text-decoration:none;font-size:13.5px}
 .ini-caixa[hidden]{display:none}.ini-caixa:hover{border-color:#c9a46a}.ini-caixa-ico{font-size:16px;margin-right:4px}.ini-caixa span{color:#6b645a}.ini-caixa .ini-caixa-ir{margin-left:auto;color:#7E602F;font-weight:600}
+.dlg-largo{max-width:760px;width:94vw}.pje-res{margin:8px 0;font-size:13px}.pje-bl{margin:4px 0}.pje-bl ul{margin:4px 0 4px 18px;padding:0;max-height:180px;overflow:auto}
+.pje-bl.ajust summary{color:#7E602F;font-weight:600}.pje-bl.novo summary{color:#2e6b3f;font-weight:600}
+.fs-mais{border:1px solid #e4dfd6;border-radius:10px;padding:8px 12px;margin:10px 0;background:#fff}.fs-mais>summary{cursor:pointer;font-weight:600;font-size:13.5px}
+.aud-forum{display:inline-flex;gap:6px;flex-wrap:wrap}.aud-forum input{width:auto;min-width:200px}.aud-forum .aud-sala{min-width:90px;width:110px}
+
+/* ===================== 8.55 — INSS (etapas em passos), horas, IA jurídica ===================== */
+.inss-nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 12px}
+.inss-nums .cx-card{cursor:default}
+.inss-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:4px 0 12px}.inss-cab h1{margin:0}
+.inss-etapas{padding:18px 18px 14px}
+.inss-passos{list-style:none;margin:0 0 16px;padding:0;display:flex;gap:0;overflow-x:auto;counter-reset:none}
+.inss-passo{flex:1 1 0;min-width:96px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;position:relative;font-size:12px;color:#7a7266}
+.inss-passo::before{content:'';position:absolute;top:15px;left:-50%;right:50%;height:3px;background:#e4dfd6;z-index:0}
+.inss-passo:first-child::before{display:none}
+.inss-passo.feito::before,.inss-passo.atual::before{background:var(--cor,#A9824A)}
+.inss-bola{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:#fff;border:2px solid #d9d3c8;color:#9a9286}
+.inss-passo.feito .inss-bola{background:var(--cor,#A9824A);border-color:var(--cor,#A9824A);color:#fff}
+.inss-passo.atual .inss-bola{border-color:var(--cor,#A9824A);color:var(--cor,#A9824A);box-shadow:0 0 0 4px color-mix(in srgb,var(--cor,#A9824A) 18%,transparent);background:#fff}
+.inss-passo.atual .inss-pnome{color:#1A1714;font-weight:700}
+.inss-pnome{max-width:120px;line-height:1.25}
+.inss-agora{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;border-top:1px solid #eee9e1;padding-top:12px}
+.inss-agora h2{margin:2px 0 4px;font-size:19px}.inss-agora p{margin:2px 0}
+.inss-agora .nota{margin:6px 0 0}
+.inss-botoes{display:flex;flex-wrap:wrap;gap:6px}
+.inss-card .crm-prox.inss-atraso{color:#a3261b;font-weight:600}
+.inss-dias{font-size:11.5px;color:#7a7266}.inss-dias.parado{color:#9a5b00;font-weight:600}
+.inss-et{display:inline-block;border-left:3px solid var(--cor);padding-left:6px}
+.inss-tar,.inss-hist{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.inss-tar li.feita{color:#7a7266;text-decoration:line-through}
+.inss-hist li{border-left:2px solid #e4dfd6;padding-left:10px}
+.inss-trazer summary{cursor:pointer;font-weight:600}
+.inss-ck{display:flex;margin:4px 0 8px;font-weight:600;color:#1d4f91}
+.crono{display:flex;align-items:center}
+.crono-bt{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #d9d3c8;border-radius:8px;padding:5px 10px;font:600 12.5px var(--sans);cursor:pointer;color:inherit;white-space:nowrap}
+.crono-bt:hover{border-color:#c9a46a}
+.crono-bt.rodando{background:#1C1A17;color:#F4F0E8;border-color:#1C1A17}
+.crono-ponto{width:8px;height:8px;border-radius:50%;background:#e0574a;animation:cronoPisca 1.2s infinite}
+@keyframes cronoPisca{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.crono-ponto{animation:none}}
+.crono-t{font-variant-numeric:tabular-nums}.crono-desc{max-width:180px;overflow:hidden;text-overflow:ellipsis;font-weight:400;opacity:.85}
+.hr-lancar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}.hr-lancar input{width:auto}.hr-lancar .hr-dur{width:80px}
+.hr-item{display:grid;grid-template-columns:80px minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px 12px;border-top:1px solid #f1ede6}
+.hr-item.rodando{background:#fbf6ea}.hr-tempo{font-variant-numeric:tabular-nums}
+.fat-total{font-size:16px;margin:10px 0}
+.jr-lista{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.jr-item{border:1px solid #e4dfd6;border-radius:10px;padding:10px 12px;background:#fff}
+.jr-cab{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}.jr-ementa{font-size:13px;line-height:1.55;margin:6px 0;white-space:pre-wrap}
+@media (max-width:760px){.inss-passo{min-width:78px;font-size:11px}.crono-desc{display:none}}

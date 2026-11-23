@@ -90,7 +90,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -128,7 +128,7 @@
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
-    andamentos: ['andamentos'], advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
+    andamentos: ['andamentos'], explicacoes: ['andamentos'], inss: ['inss', 'tarefas', 'clientes', 'fin', 'processos', 'eu', 'inicio'], horas: ['horas', 'fin'], comissoes: ['comissoes', 'fin'], advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
   };
   function esquecerDepois(acao) {
     // 8.47 (chat "muito travado"): mensagem e "lida" do chat não mudam nada das telas. Antes, cada mensagem (e cada conversa aberta,
@@ -376,7 +376,7 @@
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
-  const EM_LOTE = new Set(['intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+  const EM_LOTE = new Set(['inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
@@ -865,6 +865,7 @@
     abasEl.hidden = false;
     quemEl.hidden = false;
     iniciarNotificacoes();
+    try { montarCronometro(); } catch (e) { /* o cronômetro é opcional */ }
     iniciarChat();
   }
 
@@ -1894,16 +1895,21 @@
             const b = h('button', { type: 'button', class: 'chip-filtro', 'aria-pressed': 'false', onclick: () => { const on = !marcadas.has(ar); on ? marcadas.add(ar) : marcadas.delete(ar); b.classList.toggle('ativo', on); b.setAttribute('aria-pressed', String(on)); } }, '＋ ' + ar);
             return b;
           });
+          // 8.55 (pedido da usuária): previdenciário pode começar pelo INSS (administrativo) — vai para a aba INSS, não para a petição inicial
+          const prev = /previd|inss|benef|aposent|loas|aux[ií]lio/i.test(a.tipo_acao || '');
+          const inssCk = prev ? h('input', { type: 'checkbox', checked: true }) : null;
+          const inssLinha = prev ? h('label', { class: 'cx-check inss-ck' }, inssCk, ' Começa pelo INSS (pedido administrativo) — vai para a aba INSS. Desmarque se for direto à Justiça.') : null;
           const confirmar = botao('Confirmar: assinado', async ev2 => {
             ev2.target.disabled = true;
-            try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado', outras: [...marcadas] });
+            try { const x = await api('documentos.assinatura', { id: a.id, acao: 'assinado', outras: [...marcadas], inss: inssCk && inssCk.checked ? 1 : '' });
               const outras = (x.outras || []).filter(o => !o.ja);
+              if (x.inss_id) { avisar(`${a.cliente}: assinado. O caso foi para a aba INSS (pedido administrativo).`); el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/inss/' + x.inss_id }, 'abrir o pedido no INSS'))); if (depois) depois(); return; }
               avisar(`${a.cliente}: assinado. O caso foi para Processos › Petição inicial.` + (outras.length ? ` Também abri: ${outras.map(o => o.area).join(', ')}.` : '') + (x.lancados ? ` ${x.lancados} honorário(s) lançado(s) no Financeiro.` : ''));
               el.replaceChildren(h('span', {}, '✓ Assinado — ', h('a', { href: '#/processo/' + x.processo_id + '?avisar=1' }, 'abrir a petição inicial e avisar o cliente'),
                 ...(x.outras || []).map(o => h('span', {}, ' · ', h('a', { href: '#/processo/' + o.id }, 'inicial ' + o.area))))); if (depois) depois(); }
             catch (e) { avisar(e.message, true); ev2.target.disabled = false; }
           }, 'mini');
-          const caixa = h('div', { class: 'assin-outras' }, h('div', { class: 'peq' }, 'O cliente também vai ter outra ação? Marque (cada uma ganha a sua petição inicial). Se não, só confirme.'),
+          const caixa = h('div', { class: 'assin-outras' }, inssLinha, h('div', { class: 'peq' }, 'O cliente também vai ter outra ação? Marque (cada uma ganha a sua petição inicial). Se não, só confirme.'),
             h('div', { class: 'chips' }, chips), h('div', {}, confirmar, botao('Cancelar', () => caixa.remove(), 'mini sec')));
           el.querySelector('.assin-outras')?.remove(); el.append(caixa);
         }, 'mini'),
@@ -2560,7 +2566,23 @@
           campo('telefone', 'Telefone / WhatsApp', c.telefone, { tipo: 'tel', max: 30 }),
           campo('email', 'E-mail', c.email, { tipo: 'email', max: 120 }),
           campo('como_conheceu', 'Como nos conheceu?', c.como_conheceu || '', { opcoes: [['', '— perguntar ao cliente —']].concat(CANAIS_CONHECEU.map(x => [x, x])), dica: 'Conta no Marketing: mostra se o anúncio do Google traz cliente.' }),
-          campo('origem', 'Detalhe (quem indicou, qual anúncio…)', c.origem, { max: 120 }))),
+          campo('origem', 'Detalhe (qual anúncio, de onde veio…)', c.origem, { max: 120 }))),
+      // 8.55 (pedido da usuária, comparação com o Astrea): documentos e família, dados bancários/Pix e a indicação com comissão
+      h('details', { class: 'fs-mais', open: !!(c.ctps || c.pis || c.nome_mae || c.nome_pai || c.cnh || c.naturalidade || c.falecido) },
+        h('summary', {}, 'Documentos e família (CTPS, PIS, CNH, pai e mãe, naturalidade)'),
+        h('div', { class: 'campos' },
+          soPF(campo('ctps', 'CTPS (número e série)', c.ctps, { max: 40 })), soPF(campo('pis', 'PIS / NIS / NIT', c.pis, { modo: 'numeric', max: 20 })),
+          soPF(campo('cnh', 'CNH', c.cnh, { max: 20 })), soPF(campo('naturalidade', 'Naturalidade (cidade/UF)', c.naturalidade, { max: 80 })),
+          soPF(campo('nome_mae', 'Nome da mãe', c.nome_mae, { max: 160 })), soPF(campo('nome_pai', 'Nome do pai', c.nome_pai, { max: 160 })),
+          soPF(campo('falecido', 'Falecido(a)?', c.falecido || '', { opcoes: [['', 'Não'], ['sim', 'Sim']] })), soPF(campo('obito_em', 'Data do óbito', c.obito_em, { tipo: 'date' })))),
+      h('details', { class: 'fs-mais', open: !!(c.banco || c.pix) }, h('summary', {}, 'Dados bancários e Pix (para repasses)'),
+        h('div', { class: 'campos' }, campo('banco', 'Banco', c.banco, { max: 60 }), campo('agencia', 'Agência', c.agencia, { max: 20 }), campo('conta', 'Conta (com dígito)', c.conta, { max: 30 }),
+          campo('pix', 'Chave Pix', c.pix, { max: 120 }))),
+      h('details', { class: 'fs-mais', open: !!c.indicado_por }, h('summary', {}, 'Indicação e comissão'),
+        h('div', { class: 'campos' }, campo('indicado_por', 'Quem indicou', c.indicado_por, { max: 120, dica: 'Nome de quem indicou (recebe a comissão)' }),
+          campo('indicacao_pct', 'Comissão (%)', c.indicacao_pct, { modo: 'decimal', max: 6, dica: 'Ex.: 10' }),
+          campo('indicacao_base', 'Sobre o quê', c.indicacao_base || 'exito', { opcoes: [['exito', 'Só quando ganhar (êxito, acordo, alvará, benefício)'], ['todos', 'Sobre todos os honorários recebidos']] }),
+          h('p', { class: 'largo peq' }, 'A comissão nasce sozinha em Cobranças › Comissões de indicação a cada parcela paga depois de hoje; "Paguei" lança no Caixa.'))),
       novo ? null : h('fieldset', {}, h('legend', {}, 'Escritório'),
         h('div', { class: 'campos' },
           campo('tipo_acao', 'Tipo de ação', c.tipo_acao, { max: 200 }),
@@ -2914,7 +2936,7 @@
           ...dado(pf ? 'CPF' : 'CNPJ', c.cpf_cnpj), ...dado('RG', pf ? c.rg : ''), ...dado('Nascimento', c.nascimento ? dataBR(c.nascimento) + (idade ? ` (${idade} anos)` : '') : ''),
           ...dado('Estado civil', pf ? c.estado_civil : ''), ...dado('Profissão', pf ? c.profissao : ''), ...dado('Representante', pf ? '' : c.representante),
           ...dado('Telefone', c.telefone ? [c.telefone, tel ? h('a', { class: 'fg-wa', href: 'https://wa.me/' + tel, target: '_blank', rel: 'noopener' }, 'WhatsApp') : null] : ''),
-          ...dado('E-mail', c.email), ...dado('Endereço', endereco), ...dado('Bairro', c.bairro || h('span', { class: 'peq' }, 'falta — o PJe pede (✎ editar)')), ...dado('Área', c.area), ...dado('Tipo de ação', c.tipo_acao), ...dado('Como chegou', c.origem)),
+          ...dado('E-mail', c.email), ...dado('Endereço', endereco), ...dado('CTPS', pf ? c.ctps : ''), ...dado('PIS/NIS', pf ? c.pis : ''), ...dado('CNH', pf ? c.cnh : ''), ...dado('Naturalidade', pf ? c.naturalidade : ''), ...dado('Mãe', pf ? c.nome_mae : ''), ...dado('Pai', pf ? c.nome_pai : ''), ...dado('Falecido(a)', c.falecido === 'sim' ? 'Sim' + (c.obito_em ? ' — óbito em ' + dataBR(c.obito_em) : '') : ''), ...dado('Banco', [c.banco, c.agencia ? 'ag. ' + c.agencia : '', c.conta ? 'conta ' + c.conta : ''].filter(Boolean).join(' · ')), ...dado('Pix', c.pix), ...dado('Indicado por', c.indicado_por ? c.indicado_por + (c.indicacao_pct ? ' · comissão ' + String(c.indicacao_pct).replace('.', ',') + '%' + (c.indicacao_base === 'todos' ? ' de todos os honorários' : ' do êxito') : '') : ''), ...dado('Bairro', c.bairro || h('span', { class: 'peq' }, 'falta — o PJe pede (✎ editar)')), ...dado('Área', c.area), ...dado('Tipo de ação', c.tipo_acao), ...dado('Como chegou', c.origem)),
         faltam.length ? h('p', { class: 'fg-falta' }, 'Falta: ', h('b', {}, faltam.join(', ')), ' ', h('button', { type: 'button', class: 'link', onclick: () => abrirAba('cadastro') }, 'completar')) : null);
       const hoje = hojeISO();
       const ativos = r.processos.filter(p => p.status !== 'arquivado');
@@ -4499,9 +4521,13 @@
     if (/^ato:/.test(z.observacoes || '')) return { rot: 'Compromisso', cls: 'k-azul' };
     if (docPendente(z)) return { rot: 'Consultar o tribunal até', cls: 'k-ambar', interna: true };
     if (divergente(z)) return { rot: 'Divergência', cls: 'k-vermelho' };
-    if (z.situacao === 'conferido') return { rot: 'Prazo confirmado', cls: 'k-verde' };
+    if (z.situacao === 'conferido') return { rot: /vinculado ao PJe/.test(z.origem || '') ? 'Igual ao PJe' : 'Prazo confirmado', cls: 'k-verde' };
+    // 8.55 (pergunta da usuária: "no PJe está 23/11 e aqui não"): o texto não diz o prazo → o painel usa o MAIS CURTO (5 dias) como segurança;
+    // o expediente do PJe pode ter prazo maior — a lista do PJe deixa igual
+    if (ehSeguranca(z)) return { rot: 'Data de segurança', cls: 'k-ambar' };
     return { rot: 'Prazo calculado', cls: 'k-ambar' };
   }
+  const ehSeguranca = z => z.situacao !== 'conferido' && /sem prazo fixado no texto|prazo m[ií]nimo|art\. 218, § 3º/i.test(z.descricao || '');
   function estadoDoPrazo(z) {
     if (z.situacao === 'cumprido') return z.ok_em ? ['ix-ok', 'Aprovado'] : ['ix-info', 'Feito · aguarda aprovação'];
     if (docPendente(z)) return ['ix-conf', 'Documento pendente'];
@@ -4513,6 +4539,7 @@
     const p = [];
     if (docPendente(z)) p.push('abrir no tribunal e registrar o ato');
     else if (divergente(z)) p.push('escolher a leitura certa');
+    else if (ehSeguranca(z)) p.push('o texto não diz o prazo: no PJe o expediente pode ter prazo maior — traga a lista do PJe ou confirme');
     else if (z.situacao === 'calculado') p.push('confirmar a data');
     if (!z.responsavel) p.push('definir quem cuida');
     if (!z.cliente) p.push('identificar o cliente');
@@ -4732,7 +4759,7 @@
     mostrar(
       h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Intimações'),
         h('p', {}, `${prazos.length} prazo${prazos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : ' · ' + (/^t:/.test(sis) ? nomeTrib(sis.slice(2)) : SISTEMAS.find(x => x[0] === sis)[1])} · `, h('a', { href: '#/prazos?parte=sistema', class: 'ix-sis' }, 'Funcionamento do sistema'))),
-        h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
+        h('div', { class: 'barra' }, botao('📥 Trazer a lista do PJe', () => dialogoListaPje(), 'sec'), botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       avisoFontes(resumo.robo),
       parte === 'caixa' || parte === 'importantes' ? null : numeros, barra, ...corpo.filter(Boolean));
   }
@@ -4969,7 +4996,9 @@
           h('div', { class: 'cx-txt' }, x.texto),
           h('div', { class: 'ix-auto' }, '⟳ ', x.de || '', x.responsavel ? ' · ' + primeiroNome(x.responsavel_nome || x.responsavel) : '',
             x.visto_em ? ' · visto por ' + primeiroNome(x.visto_por || '') + ' em ' + dataBR(String(x.visto_em).slice(0, 10)).slice(0, 5) : '')),
-        h('div', { class: 'cx-acoes', onclick: ev => ev.stopPropagation() }, x.visto_em ? null : botao('✓ Visto', () => marcar([x.chave]), 'mini sec')));
+        h('div', { class: 'cx-acoes', onclick: ev => ev.stopPropagation() },
+          x.cliente_id ? botao(x.explicacao === 'enviada' ? '✓ Cliente avisado' : x.explicacao === 'pendente' ? '✨ Explicação pronta — revisar' : '✨ Explicar ao cliente', () => dialogoExplicar(x, rota), 'mini ' + (x.explicacao === 'pendente' ? '' : 'sec')) : null,
+          x.visto_em ? null : botao('✓ Visto', () => marcar([x.chave]), 'mini sec')));
     };
     const hoje = hojeISO();
     return [h('div', { class: 'cx-filtros' },
@@ -5510,6 +5539,25 @@
       botao('Não mandar', () => mandar('descartar'), 'sec'));
   }
 
+  /* 8.55: a lista de Expedientes do PJe (copiar e colar) deixa as datas do painel iguais às do PJe; prévia antes de aplicar */
+  function dialogoListaPje() {
+    const area = h('textarea', { rows: 9, placeholder: 'No PJe: Painel do advogado › Expedientes. Aperte Ctrl+A e Ctrl+C na página e cole aqui (Ctrl+V).', 'aria-label': 'Lista do PJe' });
+    const res = h('div', { class: 'pje-res' });
+    const mostrarRes = (r, aplicado) => {
+      const bloco = (tit, l, cls) => l.length ? h('details', { class: 'pje-bl ' + (cls || ''), open: l.length <= 12 }, h('summary', {}, tit + ' (' + l.length + ')'), h('ul', {}, l.map(x => h('li', {}, x)))) : null;
+      res.replaceChildren(h('p', {}, h('b', {}, r.linhas + ' processo(s) na lista. '), aplicado ? 'Aplicado.' : 'Prévia — nada foi mudado ainda.'),
+        bloco(aplicado ? 'Ajustados para a data do PJe' : 'Vão ficar com a data do PJe', r.ajustados, 'ajust'), bloco(aplicado ? 'Prazos novos criados' : 'Prazos novos (não estavam no painel)', r.novos, 'novo'),
+        bloco('Já estavam iguais', r.iguais), bloco('Vencidos há mais de 10 dias (não criados)', r.vencidos), bloco('Processo não cadastrado no painel', r.sem_processo));
+    };
+    const caixa = h('dialog', { class: 'dialogo dlg-largo' }, h('h2', {}, '📥 Trazer a lista de expedientes do PJe'),
+      h('p', { class: 'peq' }, 'O PJe mostra o prazo que a vara lançou em cada expediente; o painel, quando o texto não diz o prazo, usa o mais curto (5 dias) por segurança. Colando a lista, cada prazo fica IGUAL ao do PJe (o robô não muda mais) e o que faltar no painel vira prazo novo. Ler a lista não dá ciência de nada no PJe.'),
+      area, res, h('div', { class: 'acoes' },
+        botao('Ver o que muda', async ev => { ev.target.disabled = true; try { mostrarRes(await api('prazos.importarPje', { texto: area.value, ver: 1 }), false); } catch (e) { avisar(e.message, true); } finally { ev.target.disabled = false; } }, 'sec'),
+        botao('✓ Aplicar', async ev => { ev.target.disabled = true; try { const r = await api('prazos.importarPje', { texto: area.value }); mostrarRes(r, true); avisar(`Lista do PJe aplicada: ${r.ajustados.length} ajustado(s), ${r.novos.length} novo(s).`); } catch (e) { avisar(e.message, true); } finally { ev.target.disabled = false; } }),
+        botao('Fechar', () => { caixa.close(); rota(); }, 'sec')));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal(); area.focus();
+  }
+
   async function telaPrazo(id, params) {
     carregando();
     const novo = id === 'novo';
@@ -5773,7 +5821,7 @@
     return h('div', { class: 'aud-avisos' }, avisosDoAto(a).map(q => {
       const feito = a.avisos && a.avisos[q] && a.avisos[q].em ? a.avisos[q] : null;
       const dia = q === 'nova' ? hoje : (a.dias_aviso || {})[q] || a.data;
-      const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
+      const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, forum: a.forum, sala: a.sala, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
       const marcar = () => api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: q, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo })
         .then(() => { a.avisos[q] = { em: new Date().toISOString(), por: sessao.usuario.nome }; if (aoMudar) aoMudar(); }).catch(e => avisar(e.message, true));
       const rot = ROT_AVISO[q];
@@ -5790,7 +5838,7 @@
     return h('div', { class: 'aud-av-lista' }, avisosDoAto(a).map(q => {
       const feito = a.avisos && a.avisos[q] && a.avisos[q].em ? a.avisos[q] : null;
       const dia = q === 'nova' ? (feito ? String(feito.em).slice(0, 10) : hoje) : (a.dias_aviso || {})[q] || a.data;
-      const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
+      const link = whatsAto({ telefone: a.telefone, cliente: a.cliente, numero: a.numero, quando: q, modo: a.modo, link: a.link, forum: a.forum, sala: a.sala, ato: { tipo: a.tipo, data: a.data, hora: a.hora, local: a.local } });
       const marcar = () => api('agenda.avisado', { chave: a.chave, lembrete: a.lembrete, quando: q, numero: a.numero, data: a.data, hora: a.hora, tipo: a.tipo })
         .then(() => { a.avisos = a.avisos || {}; a.avisos[q] = { em: new Date().toISOString(), por: sessao.usuario.nome }; if (aoMudar) aoMudar(); }).catch(e => avisar(e.message, true));
       const devido = !feito && (a.devido === q || dia <= hoje);
@@ -5944,8 +5992,12 @@
       const desenhar = () => {
         const nome1 = nomeProprioJS(String(a.cliente || '').split(' ')[0] || '');
         const modo = a.tipo === 'pericia' ? null : h('select', { 'aria-label': 'Online ou presencial', onchange: ev => { a.modo = ev.target.value; salvarAto(a, { modo: a.modo }, 'Anotado.'); desenhar(); redesenhar(); } },
-          [['', 'Online ou presencial?'], ['presencial', 'Presencial'], ['online', 'Online (vídeo)']].map(([v, t]) => h('option', { value: v, selected: a.modo === v }, t)));
-        const link = a.modo === 'online' ? h('input', { type: 'url', placeholder: 'Link da sala de vídeo', value: a.link || '', onchange: ev => { a.link = ev.target.value; salvarAto(a, { link: a.link }, 'Link guardado.'); } }) : null;
+          [['', 'Como vai ser?'], ['presencial', 'Presencial'], ['online', 'Virtual (vídeo)'], ['hibrido', 'Híbrida (no fórum ou por vídeo)']].map(([v, t]) => h('option', { value: v, selected: a.modo === v }, t)));
+        // 8.55 (pedido da usuária, comparação com o Astrea): link da sala virtual, fórum e sala física
+        const link = a.modo === 'online' || a.modo === 'hibrido' ? h('input', { type: 'url', placeholder: 'Link da sala de vídeo', value: a.link || '', onchange: ev => { a.link = ev.target.value; salvarAto(a, { link: a.link }, 'Link guardado.'); } }) : null;
+        const forum = a.modo === 'presencial' || a.modo === 'hibrido' ? h('span', { class: 'aud-forum' },
+          h('input', { type: 'text', placeholder: 'Fórum / endereço', value: a.forum || '', 'aria-label': 'Fórum', onchange: ev => { a.forum = ev.target.value; salvarAto(a, { forum: a.forum }, 'Fórum guardado.'); } }),
+          h('input', { type: 'text', placeholder: 'Sala', value: a.sala || '', 'aria-label': 'Sala', class: 'aud-sala', onchange: ev => { a.sala = ev.target.value; salvarAto(a, { sala: a.sala }, 'Sala guardada.'); } })) : null;
         const notas = a.obs_cliente ? h('div', { class: 'aud-notas' }, h('b', {}, 'Últimas anotações do cliente'), h('pre', {}, a.obs_cliente)) : null;
         let esp = null;
         if (ehConc(a)) {
@@ -5986,7 +6038,7 @@
           h('div', { class: 'aud-det-cab' }, h('span', { class: 'peq' }, [nomeDia(a.data, true), a.numero, a.local].filter(Boolean).join(' · ')),
             h('span', { class: 'g-acoes' }, ciente, a.processo_id ? h('a', { class: 'btn mini sec', href: '#/processo/' + a.processo_id }, 'Processo') : null)),
           a.data >= hoje ? h('div', {}, h('b', { class: 'aud-det-t' }, 'Avisos ao cliente'), linhasAvisosAto(a, () => { desenhar(); redesenhar(); })) : null,
-          h('div', { class: 'aud-linha' }, modo, link),
+          h('div', { class: 'aud-linha' }, modo, link, forum),
           notas, esp,
           (() => { const t = h('textarea', { rows: 2, placeholder: 'Outras anotações da audiência', onchange: ev => { a.obs = ev.target.value; salvarAto(a, { obs: a.obs }, 'Anotação salva.'); } }); t.value = a.obs || ''; return t; })());
       };
@@ -7167,7 +7219,8 @@
     // 8.51.1: a "sala" do PJe é a sala virtual da vara (não vai para o cliente); audiência = online, salvo se a ficha disser presencial,
     // e o escritório oferece que o cliente participe daqui
     const onde = tipo === 'pericia' ? (ato.local && !/sala|videoconf|virtual/i.test(ato.local) ? ` Local: ${ato.local}.` : '')
-      : modo === 'presencial' ? ` Será PRESENCIAL${ato.local && !/sala|videoconf|virtual/i.test(ato.local) ? ', em ' + ato.local : ', no fórum'}.`
+      : modo === 'presencial' ? ` Será PRESENCIAL, ${x.forum ? 'no ' + x.forum + (x.sala ? ', sala ' + x.sala : '') : ato.local && !/sala|videoconf|virtual/i.test(ato.local) ? 'em ' + ato.local : 'no fórum'}.`
+      : modo === 'hibrido' ? ` Será HÍBRIDA: você pode ir ao fórum${x.forum ? ' (' + x.forum + (x.sala ? ', sala ' + x.sala : '') + ')' : ''} ou participar por vídeo${x.link ? ', neste link: ' + x.link : ' (mandamos o link antes)'}. Se preferir, pode participar aqui do nosso escritório.`
       : ` Será ONLINE (por vídeo)${x.link ? ', neste link: ' + x.link : '; mandamos o link antes'}. Se preferir, você pode participar aqui do nosso escritório: é só nos avisar.`;
     const perguntaModo = !modo && tipo !== 'pericia' ? '\n\nPara participar de casa, você vai precisar de celular ou computador com internet e câmera.' : '';
     const explica = {

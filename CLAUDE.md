@@ -2009,3 +2009,48 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Linha do prazo em Intimações: "⟳ chegou dd/mm · via DJEN · publicado no DJEN dd/mm (ou ciência tácita/confirmada/publicação prevista) · N dias".
 - Ensaio nos dados reais de 21/11 (sem gravar): 10 confirmações + 1 mandado + 1 perícia repetida saem, 36 prazos do eproc passam para a data da
   publicação, 5 vencidos fecham (2 pelo "Decorrido o prazo"); abertos sem audiência 144 → 128. Teste: `.github/motor/teste/etapa843.js` ("fim 854").
+
+## 8.55.0 Intimações recebidas, INSS, comissão, horas, fatura, IA jurídica, lista do PJe (pedidos da usuária, 22–23/11/2026)
+
+- Intimações › aba "Recebidas" (padrão): cada intimação (publicação do DJEN ou aviso de intimação/citação/notificação do PJe/eproc, desde
+  Config CAIXA_DESDE, padrão 16/11/2026) fica "Para resolver" até alguém Resolver (confirmar a sugestão, lançar prazo/audiência/tarefa/evento/
+  histórico) ou Concluir, ou Descartar (motivo; opcional cancelar o prazo do robô). Nomes do escritório: Para resolver / Resolvidas /
+  Descartadas — NUNCA "não tratadas/tratadas" (pedido da usuária). Placar (chegaram hoje, resolvidas hoje, descartadas hoje, para resolver) +
+  gráfico de 7 dias. Colunas Intimacoes.tratada_em/tratada_por/tratamento. Rotas intimacoes.caixa/obter/tratar (+ intimacoes.agendar para
+  audiência/evento, que usa o Google Agenda). Tela #/intimacao/ID: texto com o trecho grifado, processo/cliente/em aberto/andamentos à direita,
+  "✨ O que o painel sugere" (prazo + tarefas de preparação por ato, TAREFAS_ATO ou as da IA, com responsável e data, ✏️ editar, 👎 não sugerir,
+  👍/👎 no prazo; aba IaAprendizado: recusada 2× e mais que aceita = some), "Próxima ›". O robô continua criando o prazo sozinho.
+- Andamentos importantes (aba, `andamentos.importantes`/`visto`): sentença, acórdão, citação, audiência, perícia, alvará, acordo, penhora…
+  (RE_IMPORTANTE_ menos as movimentações comuns) com "✓ Visto" e "✨ Explicar ao cliente" (`ia.explicarAndamento`: 3–5 frases simples, sem
+  prazo/promessa; aba Explicacoes; `explicacoes.enviar` e-mail/WhatsApp/descartar). Robô `explicacoesRobo_`: Config EXPLICAR_AUTO aprovar
+  (padrão: fica para revisar) | auto (manda o e-mail) | nao.
+- Prazo: "Avisar X dias antes" (Prazos.alerta_dias → aviso no canto para o responsável) e etiqueta. Avisos por pessoa (Configurações › Meus
+  avisos; Usuarios.avisos = os desligados; `eu.avisos`): intimação, prazo, PIX, andamento importante, chat. SEM verificação em 2 etapas (decisão).
+- INSS (#/inss, menu Escritório; aba Inss; rotas inss.*): pedidos ADMINISTRATIVOS separados dos judiciais. Etapas INSS_ETAPAS (assinado →
+  documentos → protocolado → análise → exigência / perícia → resultado → aprovado | indeferido → recurso → recurso negado → Justiça; arquivado),
+  só os passos de INSS_PROXIMAS. Cada etapa cria/fecha tarefas `[inss:ID]`; exigência e recurso = 30 dias (Decreto 3.048, art. 305 § 1º) com
+  tarefa urgente 5 úteis antes; perícia → avisos + agenda PERÍCIAS (`inss.agenda`); APROVADO lança o honorário parcelado; Justiça abre a
+  petição inicial previdenciária. "✓ Assinado" previdenciário tem "Começa pelo INSS" (marcado) → cria o pedido em vez da inicial.
+  "Trazer para o INSS" (`inss.trazer`) converte inicial previdenciária sem número. Tela: quadro por etapa e ficha com passos.
+- Comissão de indicação (Clientes.indicado_por/indicacao_pct/indicacao_base exito|todos/indicacao_em; aba Comissoes): parcela paga DEPOIS
+  de cadastrar a indicação → comissão "a pagar" (`registrarPagamento_` + robô `gerarComissoes_`); estorno cancela; Cobranças › Ferramentas ›
+  Comissões de indicação: "Paguei" → despesa "Comissão de indicação" no Caixa (uma por indicador).
+- Ficha do cliente: CTPS, PIS, CNH, mãe, pai, naturalidade, falecido/óbito, banco/agência/conta/Pix. Audiência: Presencial / Virtual / Híbrida
+  + fórum + sala (Audiencias.forum/sala), também nas mensagens ao cliente (manual e automática).
+- Horas (#/horas; aba Horas; horas.*): cronômetro "⏱ Horas" no topo (um por pessoa), lançar à mão ("1h30"), totais. Fatura (Cobranças ›
+  Ferramentas › Fatura do cliente; fin.fatura / fin.fatura.gerar): parcelas a cobrar + horas faturáveis × valor da hora (Config VALOR_HORA) +
+  despesas reembolsáveis → Doc + PDF; marca as horas faturadas.
+- IA jurídica (Documentos › "Jurisprudência e peças (IA)", #/juridico): `ia.jurisprudencia` lê a base OFICIAL do STJ (SCON) e a IA só resume as
+  ementas lidas (trava: citação fora da lista descarta o resumo); sem acesso → links oficiais prontos (STJ, TST, TRT12, TJSC, TNU, STF). NUNCA
+  inventar julgado. `ia.peca`: rascunho (Google Docs, padrão de petição) com o histórico anonimizado + julgados marcados; "[NÃO CONSTA — conferir]".
+- CRM (pedido da usuária: "fazemos o cadastro e não vai para o CRM"): `crmDadosCliente_` (ao salvar e nos robôs) leva ao cartão a área do
+  cadastro, telefone, e-mail, assunto, canal ("Como nos conheceu?", só se o cartão não tem) e quem indicou.
+- Perícia da Joyce (23/11): o aviso do PJe dizia só "perícia designada" (sigiloso) e a tarefa "abrir o processo e lançar na agenda" ficou parada
+  desde 30/10. Agora `cobrarAtosSemData_` (robôs do escritório): tarefa parada vira URGENTE, aparece em VERMELHO no "Precisa de ação agora" de
+  todos (há N dias, com quem) e o robô manda a lista no chat da equipe 1×/dia (Properties ATOS_SEM_DATA_CHAT). Havia 11 nessa situação.
+- Lista de expedientes do PJe (pergunta da usuária: "no PJe é 23/11 e aqui não"): sem prazo no texto o painel usa o mais curto (5 dias, art.
+  218 § 3º) = "Data de segurança"; o PJe mostra o prazo que a vara lançou. "📥 Trazer a lista do PJe" em Intimações (copiar a tela Expedientes e
+  colar; prévia) e a extensão 1.4.0 (pje.js, páginas *.jus.br com "Expedientes") mandam a lista (`prazos.importarPje` / `ext.pjeLista`):
+  prazo do painel fica IGUAL ao PJe (conferido, origem "vinculado ao PJe"), o que faltar vira prazo novo (pela extensão só com as 3 datas).
+  Sem senha e sem abrir expediente (não dá ciência). Diego (0000011-37): ajustado à mão para 24/11 a pedido da usuária.
+- Teste: `.github/motor/teste/etapa855.js` (caixa, sugestão, aprendizado, INSS, comissão, horas/fatura, lista do PJe, CRM, atos sem data, ficha).
