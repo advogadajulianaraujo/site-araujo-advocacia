@@ -176,7 +176,7 @@ assert(um.avisos === 'pix,chat' && C.publicoUsuario_(um).avisos_off === 'pix,cha
 // ---------- audiência/perícia sem data: cobrança ----------
 {
   const tT = C.tabela_('Tarefas'), p = C.tabela_('Processos').linhas.find(x => x.numero);
-  C.inserirLinha_(tT, { id: 'TSD1', titulo: 'Perícia designada — abrir o processo e lançar na agenda (' + p.numero + ')', numero: p.numero, responsavel: 'maria', vence_em: C.somarDias_(hoje, -20), etapa: 'afazer', situacao: 'ativa', prioridade: 'alta', criado_em: C.somarDias_(hoje, -20) + 'T10:00:00Z' });
+  C.inserirLinha_(tT, { id: 'TSD1', titulo: 'Perícia designada — abrir o processo e lançar na agenda (' + p.numero + ')', numero: p.numero, responsavel: 'maria', vence_em: C.somarDias_(hoje, -20), etapa: 'afazer', situacao: 'ativa', prioridade: 'alta', descricao: 'O PJe indica perícia designada, mas sem a data no texto. [agenda:' + p.numero + ':x] [atosd:pericia]', criado_em: C.somarDias_(hoje, -20) + 'T10:00:00Z' });
   C.cobrarAtosSemData_();
   assert(C.tabela_('Tarefas').linhas.find(t => t.id === 'TSD1').prioridade === 'urgente', 'ato sem data parado vira URGENTE');
   const ac = C.inicioAcoes_({}, admin);

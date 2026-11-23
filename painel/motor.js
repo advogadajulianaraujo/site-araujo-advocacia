@@ -1068,10 +1068,12 @@ function faturaPrevia_(d, u) {
 }
 /** Rota fin.fatura.gerar (Google Docs): gera a fatura em Doc + PDF na pasta do cliente e marca as horas como faturadas. */
 function atosSemDataAbertos_() {
+  // pela marca [agenda:nº:ref] da descrição — o título fica escondido no navegador para quem não é da administração
   var hoje = hojeSP_();
-  return tabela_('Tarefas').linhas.filter(function (t) { return abertaT_(t) && t.situacao !== 'cancelada' && /abrir o processo e lançar na agenda/i.test(t.titulo || ''); })
+  return tabela_('Tarefas').linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; })
     .map(function (t) { var dias = Math.max(0, Math.round((Date.parse(hoje) - Date.parse(String(t.criado_em || t.vence_em || hoje).slice(0, 10))) / 864e5));
-      return { id: t.id, titulo: t.titulo, numero: t.numero || ((/\(([\d.\-]{20,25})\)/.exec(t.titulo || '') || [])[1] || ''), responsavel: t.responsavel || '', dias: dias, pericia: /per[ií]cia/i.test(t.titulo || ''), tarefa: t }; });
+      return { id: t.id, numero: t.numero || ((/\[agenda:([^:\]]+)/.exec(t.descricao || '') || [])[1] || ''), responsavel: t.responsavel || '', dias: dias,
+        pericia: /\[atosd:pericia\]|indica per[ií]cia/i.test(t.descricao || ''), tarefa: t }; });
 }
 var RE_IMPORTANTE_ = /senten[çc]|ac[oó]rd[aã]o|julgad[oa]s? (procedente|improcedente)|proced[eê]ncia|improced|homologa|alvar[aá]|\brpv\b|precat[oó]rio|requisi[çc][ãa]o de pagamento|tutela|liminar|audi[eê]ncia[^|]{0,60}designad|per[ií]cia[^|]{0,60}designad|designad[ao][^|]{0,40}(audi[eê]ncia|per[ií]cia)|laudo|tr[aâ]nsito em julgado|penhora|bloqueio|sisbajud|bacenjud|renajud|(?<![a-z])cita[çc][ãa]o|extin[çc][ãa]o|levantamento|dep[oó]sito judicial|deferid|indeferid|acordo/i;
 var RE_NAO_IMPORTANTE_ = /conclus[oa]s|remetid|juntad[ao]s? (a |de |o )|disponibiliz|decorrid|documento sigiloso|expedi[çc][ãa]o de (certid|of[ií]cio)|ato ordinat|mero expediente|recebid[oa]s? os autos|habilita[çc]|documento anexado/i;
