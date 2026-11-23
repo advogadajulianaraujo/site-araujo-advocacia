@@ -116,21 +116,28 @@ function valoresDoPerfil_(acao, res, perfil) {
 }
 var ESQUEMA = {
   Config: ['chave', 'valor', 'descricao'],
-  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email'],
+  // 8.55: pedidos administrativos no INSS, comissões de indicação, explicações ao cliente (IA) e horas trabalhadas
+  Inss: ['id', 'cliente_id', 'cliente_nome', 'beneficio', 'protocolo', 'der', 'nb', 'etapa', 'etapa_em', 'responsavel', 'pericia_data', 'pericia_hora', 'pericia_local', 'exigencia', 'exigencia_prazo',
+    'resultado_em', 'motivo', 'valor_beneficio', 'dib', 'recurso_prazo', 'processo_id', 'honorario_id', 'assinatura_id', 'historico', 'observacoes', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
+  Comissoes: ['id', 'cliente_id', 'cliente_nome', 'indicador', 'parcela_id', 'honorario_id', 'base', 'pct', 'valor', 'situacao', 'gerada_em', 'paga_em', 'paga_por', 'despesa_id', 'observacoes'],
+  Explicacoes: ['id', 'chave', 'cliente_id', 'processo_id', 'numero', 'andamento', 'dia', 'texto', 'situacao', 'criado_em', 'criado_por', 'enviado_em', 'enviado_por', 'canal'],
+  Horas: ['id', 'usuario', 'inicio', 'fim', 'minutos', 'dia', 'cliente_id', 'processo_id', 'numero', 'descricao', 'faturavel', 'valor_hora', 'faturado_em', 'fatura_id', 'criado_em'],
+  Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email', 'avisos'],
   ObsArquivo: ['id', 'cliente_id', 'texto', 'arquivado_em'],
   Clientes: ['id', 'tipo', 'nome', 'cpf_cnpj', 'rg', 'nascimento', 'estado_civil', 'profissao', 'representante',
     'cep', 'endereco', 'cidade', 'uf', 'telefone', 'email', 'origem', 'area', 'pasta_id', 'pasta_url',
     'observacoes', 'situacao', 'criado_em', 'atualizado_em', 'atualizado_por', 'tipo_acao', 'resumo_caso', 'providencias', 'genero',
-    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id', 'bairro'], // 8.53: bairro em coluna própria (PJe pede)
+    'acesso_hash', 'acesso_criado_em', 'como_conheceu', 'asaas_id', 'bairro',
+    'indicado_por', 'indicacao_pct', 'indicacao_base', 'indicacao_em', 'ctps', 'pis', 'cnh', 'nome_pai', 'nome_mae', 'naturalidade', 'banco', 'agencia', 'conta', 'pix', 'falecido', 'obito_em'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
     'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
-    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em'], // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
+    'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em', 'tratada_em', 'tratada_por', 'tratamento'], // 8.55: caixa de entrada (tratar/descartar) // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
   Prazos: ['id', 'processo_id', 'numero', 'intimacao_id', 'descricao', 'dias', 'contagem', 'ciencia', 'ciencia_tipo',
     'fatal', 'situacao', 'conferido_por', 'conferido_em', 'origem', 'observacoes', 'criado_em', 'atualizado_em', 'atualizado_por',
-    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte'],
+    'cumprido_por', 'cumprido_em', 'responsavel', 'etapa', 'resumo_ia', 'ok_por', 'ok_em', 'agenda_id', 'agenda_data', 'conferido_fonte', 'alerta_dias', 'etiqueta'], // 8.55: alerta X dias antes + etiqueta
   Honorarios: ['id', 'cliente_id', 'processo_id', 'tipo', 'descricao', 'valor_total', 'percentual', 'valor_mensal',
     'dia_vencimento', 'inicio', 'situacao', 'observacoes', 'origem', 'criado_em', 'atualizado_em', 'atualizado_por'],
   Parcelas: ['id', 'honorario_id', 'cliente_id', 'numero', 'vencimento', 'valor', 'pago_em', 'valor_pago', 'forma',
@@ -138,7 +145,7 @@ var ESQUEMA = {
   Recebimentos: ['id', 'honorario_id', 'processo_id', 'data', 'valor_bruto', 'percentual', 'honorarios', 'repasse_cliente',
     'repassado_em', 'observacoes', 'criado_em', 'criado_por'],
   Audiencias: ['chave', 'numero', 'data', 'hora', 'tipo', 'modo', 'link', 'testemunhas', 'obs', 'ciente_em', 'ciente_por', 'aviso_semana_em', 'aviso_semana_por',
-    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por', 'acordo', 'preparo'],
+    'aviso_vespera_em', 'aviso_vespera_por', 'aviso_dia_em', 'aviso_dia_por', 'criado_em', 'atualizado_em', 'atualizado_por', 'visto_em', 'aviso_nova_em', 'aviso_nova_por', 'acordo', 'preparo', 'forum', 'sala'],
   Eventos: ['chave', 'tipo', 'numero', 'data', 'hora', 'agenda', 'evento_id', 'prazo_id', 'criado_em', 'avisado_em', 'avisado_por', 'avisado_dia_em', 'avisado_dia_por'],
   Feriados: ['data', 'descricao', 'abrangencia'],
   Log: ['quando', 'usuario', 'acao', 'detalhe'],
@@ -151,6 +158,7 @@ var ESQUEMA = {
   Padroes: ['id', 'grupo', 'titulo', 'texto', 'ordem', 'atualizado_em', 'atualizado_por'],
   Conversas: ['id', 'telefone', 'nome', 'cliente_id', 'lead_id', 'estado', 'ultima_em', 'ultima_msg', 'nao_lidas', 'atendente', 'pausado_ate', 'criado_em', 'resumo', 'dados', 'ultima_cliente_em'],
   Avisos: ['chave', 'tipo', 'ref', 'em', 'por'],
+  IaAprendizado: ['chave', 'ato', 'titulo', 'aceitas', 'rejeitadas', 'atualizado_em'], // 8.55: 👍/👎 nas sugestões de tratamento
   Chat: ['id', 'sala', 'de', 'texto', 'em', 'apagado', 'tipo', 'arquivo', 'arquivo_nome', 'arquivo_tam', 'arquivo_tipo', 'duracao', 'resposta'], // 8.53: áudio/anexo (Storage 'chat') e resposta // 8.39: chat da equipe (sala "geral" ou "dm:<usuário>|<usuário>")
   ChatLidos: ['id', 'usuario', 'sala', 'em'],          // até onde cada pessoa leu cada sala (id = usuário|sala)
   AgendaEventos: ['id', 'mes', 'agenda', 'ev_id', 'titulo', 'local', 'descricao', 'dia_todo', 'inicio', 'fim', 'dia'], // 8.35: cópia do Google Agenda
@@ -190,7 +198,7 @@ function falha_(msg, sessao) {
 
 function publicoUsuario_(u) {
   var p = PERFIS[u.perfil];
-  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos, ocultarValores: !!p.ocultarValores, future: podeFuture_(u) } };
+  return { id: u.id, usuario: u.usuario, nome: u.nome, perfil: u.perfil, perfilNome: p.nome, pode: { financeiro: p.financeiro, usuarios: p.usuarios, conferePrazos: p.conferePrazos, ocultarValores: !!p.ocultarValores, future: podeFuture_(u) }, avisos_off: String(u.avisos || '') };
 }
 
 function listarClientes_(d) {
@@ -539,6 +547,7 @@ function estadoRobo_() {
   return r;
 }
 
+function hashCurto_(t) { var h1 = 5381, h2 = 52711; t = String(t || ''); for (var i = 0; i < t.length; i++) { var c = t.charCodeAt(i); h1 = (h1 * 33) ^ c; h2 = (h2 * 33) ^ c; h1 |= 0; h2 |= 0; } return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36); }
 function diffDias_(a, b) {
   return Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000);
 }
@@ -596,6 +605,11 @@ function inicioAcoes_(d, u) {
     if (!e.hora) itens.push({ tipo: 'semhora', nivel: 'aviso', ordem: 3, titulo: tit + ' — sem horário', sub: sub, quem: quem, quem_us: sec || '', acao: 'Abrir o processo e lançar o horário na agenda', link: '#/audiencias', fatal: e.data });
     if (e.devido) itens.push({ tipo: 'aviso', nivel: e.devido === 'semana' ? 'aviso' : 'risco', ordem: e.devido === 'semana' ? 4 : 1, titulo: tit + ' — falta o aviso ' + NOME_AVISO_ATO[e.devido], sub: sub, quem: quem, quem_us: sec || '', acao: 'Avisar o cliente no WhatsApp (Audiências)', link: '#/audiencias', fatal: e.data });
     if (e.tipo === 'instrucao' && !e.testemunhas.length) itens.push({ tipo: 'testemunhas', nivel: 'aviso', ordem: 4, titulo: tit + ' — testemunhas não anotadas', sub: sub, quem: quem, quem_us: sec || '', acao: 'Perguntar ao cliente e anotar nome, CPF e telefone (Audiências)', link: '#/audiencias', fatal: e.data });
+  });
+  // 8.55 (caso da Joyce): audiência/perícia designada sem data no painel = risco (vermelho), com quem cuida e há quantos dias
+  atosSemDataAbertos_().forEach(function (x) {
+    itens.push({ tipo: 'semdata', nivel: 'risco', ordem: 0, titulo: (x.pericia ? 'Perícia' : 'Audiência') + ' designada SEM DATA no painel' + (x.dias ? ' — há ' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') : ''),
+      sub: x.numero, quem: nomeDe(x.responsavel), quem_us: x.responsavel, acao: 'Abrir no PJe/eproc e lançar a data em Audiências', link: '#/audiencias' });
   });
   itens.sort(function (a, b) { return (a.ordem - b.ordem) || ((a.fatal || '9') < (b.fatal || '9') ? -1 : (a.fatal || '9') > (b.fatal || '9') ? 1 : 0); });
   return { itens: itens.slice(0, 40), total: itens.length, intimSemResp: semResp, intimSemRespRecentes: semRespRecentes };
@@ -721,6 +735,387 @@ function listarIntimacoes_(d) {
     }) };
 }
 
+/* ================================================================== */
+/* 8.55 Caixa de entrada das intimações (pedido da usuária, 22/11/2026: "faça todas essas diferenças do Astrea")      */
+/* Cada intimação que chega fica "não tratada" até alguém TRATAR (prazo, audiência, tarefa, evento, histórico),       */
+/* CONCLUIR (só ciência) ou DESCARTAR. O robô continua criando o prazo sozinho (regra "nunca sem data"); a caixa      */
+/* mostra o que chegou hoje, o que já foi tratado e sugere o prazo + as tarefas de preparação (IA ou modelo por ato). */
+/* 👎 numa sugestão ensina: a tarefa recusada 2 vezes (mais recusada que aceita) para de ser sugerida para aquele ato. */
+/* ================================================================== */
+var CAIXA_DESDE_PADRAO = '2026-11-16'; // a caixa começa uma semana antes de ser ligada (o que veio antes já foi tratado no fluxo antigo)
+function caixaDesde_() { return config_('CAIXA_DESDE') || CAIXA_DESDE_PADRAO; }
+/** Situação da intimação na caixa: nao | tratada | descartada | robo (o robô já resolveu: outra parte, só movimentação, confirmação…). */
+function statusCaixa_(i, prazos) {
+  if (i.tratamento === 'descartada') return 'descartada';
+  if (i.tratada_em) return 'tratada';
+  if (i.terminada_por) return /^robô/.test(i.terminada_por) ? 'robo' : 'tratada';
+  var z = prazos && i.prazo_id ? prazos[i.prazo_id] : null; // o prazo ligado já foi cumprido/cancelado = já foi tratada no fluxo antigo
+  if (z && (z.situacao === 'cumprido' || z.situacao === 'cancelado')) return 'tratada';
+  return 'nao';
+}
+/** Entra na caixa o que é INTIMAÇÃO para o escritório: publicação no DJEN, aviso com prazo, ou expedição/confirmação de intimação, citação ou
+ *  notificação. Movimentação comum (distribuição, juntada, conclusão…) não entra: vai para "Andamentos importantes" quando importa. */
+var RE_INTIM_CAIXA_ = /(expedid|confirmad|certificad)[^|]{0,40}(intima|cita[çc]|notifica)|notifica[çc][ãa]o com documento/i;
+function naCaixa_(i, desde, prazos) {
+  if (String(i.recebido_em || '').slice(0, 10) < desde || statusCaixa_(i, prazos) === 'robo' || movimentoPuro_(i)) return false;
+  return !!i.prazo_id || i.fonte === 'DJEN' || RE_INTIM_CAIXA_.test(i.movimento || '');
+}
+var ROTULO_ATO = { pericia: 'Perícia', laudo: 'Laudo pericial', audiencia: 'Audiência de conciliação', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
+  acordao: 'Acórdão', contrarrazoes: 'Contrarrazões', contestacao: 'Contestação / defesa', replica: 'Réplica', emenda: 'Emenda à inicial', calculos: 'Cálculos',
+  valores: 'Alvará / RPV / precatório', embargos: 'Embargos', acordo: 'Acordo', manifestacao: 'Manifestação', ciencia: 'Só ciência' };
+// quem: resp (quem cuida do prazo) | sec (secretaria). antes: dias úteis antes da data final; 'ja' = no próximo dia útil.
+var TAREFAS_ATO = {
+  pericia: [['Avisar o cliente sobre a perícia (data, local, o que levar)', 'cliente', 'sec', 'ja', 'alta'], ['Analisar o objeto da perícia', 'prazo', 'resp', 4, 'normal'],
+    ['Elaborar os quesitos e indicar assistente técnico', 'peticao', 'resp', 2, 'alta'], ['Protocolar quesitos e assistente técnico', 'protocolo', 'resp', 1, 'alta'],
+    ['Conferir a data da perícia na agenda', 'audiencia', 'sec', 'ja', 'normal']],
+  laudo: [['Mandar o laudo ao cliente (e ao assistente técnico)', 'cliente', 'sec', 'ja', 'normal'], ['Analisar o laudo pericial', 'prazo', 'resp', 3, 'alta'],
+    ['Elaborar a manifestação / impugnação ao laudo', 'peticao', 'resp', 2, 'alta'], ['Protocolar a manifestação sobre o laudo', 'protocolo', 'resp', 1, 'alta']],
+  audiencia: [['Avisar o cliente da audiência (é tentativa de acordo)', 'cliente', 'sec', 'ja', 'alta'], ['Combinar com o cliente o valor de acordo', 'cliente', 'resp', 5, 'alta'],
+    ['Preparar a audiência (resumo do caso e proposta)', 'audiencia', 'resp', 2, 'normal'], ['Conferir o link / modalidade da audiência', 'audiencia', 'sec', 1, 'normal']],
+  instrucao: [['Avisar o cliente da audiência de instrução', 'cliente', 'sec', 'ja', 'alta'], ['Pedir as testemunhas ao cliente (nome, CPF, telefone)', 'cliente', 'sec', 10, 'alta'],
+    ['Orientar o cliente sobre o depoimento', 'cliente', 'resp', 3, 'alta'], ['Separar documentos e provas para a audiência', 'documentos', 'resp', 3, 'normal'],
+    ['Preparar as perguntas da audiência', 'audiencia', 'resp', 2, 'normal']],
+  sentenca: [['Avisar o cliente da sentença', 'cliente', 'resp', 'ja', 'alta'], ['Analisar a sentença', 'prazo', 'resp', 4, 'alta'],
+    ['Decidir: recurso, embargos ou cumprimento', 'prazo', 'resp', 3, 'alta'], ['Elaborar o recurso / embargos (se for o caso)', 'peticao', 'resp', 2, 'alta'],
+    ['Conferir preparo e custas', 'financeiro', 'resp', 2, 'normal'], ['Protocolar', 'protocolo', 'resp', 1, 'alta']],
+  acordao: [['Avisar o cliente do acórdão', 'cliente', 'resp', 'ja', 'alta'], ['Analisar o acórdão', 'prazo', 'resp', 4, 'alta'],
+    ['Decidir: recurso ou embargos de declaração', 'prazo', 'resp', 3, 'alta'], ['Elaborar o recurso (se for o caso)', 'peticao', 'resp', 2, 'alta'], ['Protocolar', 'protocolo', 'resp', 1, 'alta']],
+  contrarrazoes: [['Ler o recurso da outra parte', 'prazo', 'resp', 4, 'normal'], ['Elaborar as contrarrazões', 'peticao', 'resp', 2, 'alta'],
+    ['Protocolar as contrarrazões', 'protocolo', 'resp', 1, 'alta'], ['Avisar o cliente que a outra parte recorreu', 'cliente', 'sec', 'ja', 'normal']],
+  contestacao: [['Avisar o cliente e pedir os documentos', 'cliente', 'sec', 'ja', 'alta'], ['Elaborar a contestação / defesa', 'peticao', 'resp', 3, 'alta'],
+    ['Protocolar a defesa', 'protocolo', 'resp', 1, 'alta']],
+  replica: [['Ler a contestação e os documentos', 'prazo', 'resp', 4, 'normal'], ['Pedir documentos ao cliente (se precisar)', 'documentos', 'sec', 'ja', 'normal'],
+    ['Elaborar a réplica', 'peticao', 'resp', 2, 'alta'], ['Protocolar a réplica', 'protocolo', 'resp', 1, 'alta']],
+  emenda: [['Ver o que o juiz pediu na emenda', 'prazo', 'resp', 3, 'alta'], ['Pedir os documentos ao cliente', 'documentos', 'sec', 'ja', 'alta'],
+    ['Elaborar a emenda à inicial', 'peticao', 'resp', 2, 'alta'], ['Protocolar a emenda', 'protocolo', 'resp', 1, 'alta']],
+  calculos: [['Conferir os cálculos', 'prazo', 'resp', 3, 'alta'], ['Elaborar a manifestação sobre os cálculos', 'peticao', 'resp', 2, 'alta'], ['Protocolar', 'protocolo', 'resp', 1, 'alta']],
+  valores: [['Conferir o valor liberado', 'financeiro', 'resp', 'ja', 'alta'], ['Pedir os dados bancários ao cliente', 'cliente', 'sec', 'ja', 'normal'],
+    ['Peticionar o levantamento / alvará', 'peticao', 'resp', 2, 'alta'], ['Lançar o valor no financeiro', 'financeiro', 'resp', 1, 'normal']],
+  embargos: [['Analisar os embargos', 'prazo', 'resp', 3, 'normal'], ['Elaborar a resposta aos embargos', 'peticao', 'resp', 2, 'alta'], ['Protocolar', 'protocolo', 'resp', 1, 'alta']],
+  acordo: [['Avisar o cliente do acordo', 'cliente', 'sec', 'ja', 'alta'], ['Lançar o acordo e os honorários no financeiro', 'financeiro', 'resp', 'ja', 'alta'],
+    ['Acompanhar os pagamentos do acordo', 'financeiro', 'sec', 'ja', 'normal']],
+  manifestacao: [['Ler o despacho / decisão e ver o que fazer', 'prazo', 'resp', 3, 'normal'], ['Elaborar a manifestação', 'peticao', 'resp', 2, 'alta'],
+    ['Protocolar a manifestação', 'protocolo', 'resp', 1, 'alta']],
+  ciencia: []
+};
+var CAT_IA_ = { falar_cliente: 'cliente', cliente: 'cliente', peticao: 'peticao', protocolo: 'protocolo', documentos: 'documentos', audiencia: 'audiencia', prazo: 'prazo',
+  extrajudicial: 'extrajudicial', financeiro: 'financeiro', administrativo: 'administrativo' };
+function iaDados_(i) { try { var o = JSON.parse(i.ia_dados || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+/** Qual é o ato da intimação (chave de TAREFAS_ATO). */
+function atoDaIntimacao_(i, z, ia) {
+  ia = ia || iaDados_(i);
+  var t = normalizar_([z ? z.descricao : '', ia.ato || '', ia.providencia || '', ia.pericia || '', ia.audiencia || '', i.movimento || '', String(i.texto || '').slice(0, 1500)].join(' '));
+  if (/^ato:/.test((z && z.observacoes) || '')) return /per[ií]cia/.test(normalizar_(z.observacoes)) ? 'pericia' : (/instru/.test(normalizar_(z.observacoes)) ? 'instrucao' : 'audiencia');
+  if (/manifestar_laudo|laudo_apresentado|laudo pericial|sobre o laudo|esclarecimentos do perito/.test(t)) return 'laudo';
+  if (/quesitos|nomeacao_perito|pericia|perito/.test(t)) return 'pericia';
+  if (/audiencia/.test(t) && /(designad|redesignad|designo|pauta|intimad|comparec)/.test(t)) return /instrucao|prosseguimento|una\b/.test(t) ? 'instrucao' : 'audiencia';
+  if (/homologa\w* (o |do )?acordo|acordo homologado|termo de acordo/.test(t)) return 'acordo';
+  if (/contrarraz/.test(t)) return 'contrarrazoes';
+  if (/alvara|rpv|precatorio|requisicao de pagamento|levantamento/.test(t)) return 'valores';
+  if (/acordao/.test(t)) return 'acordao';
+  if (/sentenc/.test(t) && !/cumprimento de sentenc/.test(t)) return 'sentenca';
+  if (/embargos de declaracao opostos|contrarrazoes aos embargos|manifestar sobre os embargos/.test(t)) return 'embargos';
+  if (/emenda|emendar/.test(t)) return 'emenda';
+  if (/calculos|liquidacao/.test(t)) return 'calculos';
+  if (/replica|sobre a contestacao|sobre a defesa/.test(t)) return 'replica';
+  if (/contestac|apresentar defesa|citad|citacao/.test(t)) return 'contestacao';
+  if (z && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) return 'manifestacao';
+  return z ? 'manifestacao' : 'ciencia';
+}
+/* ---- Aprendizado (👍/👎) ---- */
+function chaveApr_(ato, titulo) { return (ato || 'geral') + '|' + nomeComparavel_(titulo).slice(0, 80); }
+function aprendizado_() {
+  var m = {}; try { tabela_('IaAprendizado').linhas.forEach(function (r) { if (r.chave) m[r.chave] = r; }); } catch (e) { /* aba nova */ }
+  return m;
+}
+function recusada_(apr, ato, titulo) {
+  var r = apr[chaveApr_(ato, titulo)]; if (!r) return false;
+  var rej = +r.rejeitadas || 0, ac = +r.aceitas || 0;
+  return rej >= 2 && rej > ac;
+}
+function venceTarefa_(antes, fatal, hoje, fer) {
+  var amanha = somarDias_(hoje, 1);
+  try { amanha = proximoUtil_(hoje, 'todos', fer, true) || amanha; } catch (e) { /* segue */ }
+  if (antes === 'ja' || !fatal) return fatal && amanha > fatal ? (fatal < hoje ? hoje : fatal) : amanha;
+  var d = fatal; for (var k = 0; k < +antes; k++) d = utilAntes_(d, fer);
+  if (d < hoje) d = hoje;
+  return d > fatal ? fatal : d;
+}
+/** O que o painel sugere para tratar a intimação: o prazo (do robô) + as tarefas de preparação, com responsável e data. */
+function sugestaoTratamento_(i, z, proc, ctx) {
+  ctx = ctx || {};
+  var ia = iaDados_(i), ato = atoDaIntimacao_(i, z, ia), hoje = hojeSP_(), fer = ctx.fer || (ctx.fer = mapaFeriados_());
+  var apr = ctx.apr || (ctx.apr = aprendizado_());
+  proc = proc || {};
+  var outra = /outra parte/.test(i.terminada_por || '');
+  var resp = (z && z.responsavel) || proc.responsavel || quemDa_('prazo', proc.area, i.numero) || '';
+  var sec = ctx.sec !== undefined ? ctx.sec : (ctx.sec = respSecretaria_() || '');
+  var fonte = 'modelo', modelo = TAREFAS_ATO[ato] || [];
+  var iaT = Array.isArray(ia.tarefas) ? ia.tarefas.filter(function (x) { return x && x.titulo; }).slice(0, 6) : [];
+  if (iaT.length) { fonte = 'ia'; modelo = iaT.map(function (x) { return [String(x.titulo).slice(0, 140), CAT_IA_[x.tipo] || 'outro', x.quem === 'secretaria' ? 'sec' : 'resp', /^\d+$/.test(String(x.dias_antes)) ? +x.dias_antes : 'ja', 'normal']; }); }
+  var fatal = z && z.fatal && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 ? z.fatal : '';
+  var tarefas = outra ? [] : modelo.filter(function (m) { return !recusada_(apr, ato, m[0]); }).map(function (m, n) {
+    return { n: n, titulo: m[0], categoria: m[1], quem: m[2], responsavel: m[2] === 'sec' ? (sec || resp) : resp, vence_em: venceTarefa_(m[3], fatal, hoje, fer), prioridade: m[4] };
+  });
+  // confiança: o ato veio do texto da publicação / IA segura = alta; prazo provisório (sem o texto) = baixa; 👎 no prazo deste ato baixa a confiança
+  var conf = !z ? 60 : /PROVIS/i.test(z.descricao || '') ? 35 : ia.confiabilidade === 'alta' ? 92 : ia.confiabilidade === 'baixa' ? 55 : /identificado pelo texto|indicado na intima/.test(z.descricao || '') ? 85 : 75;
+  var rp = apr[chaveApr_(ato, '__prazo__')]; if (rp && (+rp.rejeitadas || 0) > (+rp.aceitas || 0)) conf = Math.max(20, conf - 20);
+  return {
+    ato: ato, rotulo: ROTULO_ATO[ato] || ato, fonte: fonte, confianca: conf, outra_parte: outra, so_historico: outra || ato === 'ciencia',
+    providencia: ia.providencia || '', resumo: ia.resumo || '',
+    prazo: z ? { id: z.id, descricao: z.descricao, fatal: z.fatal, dias: z.dias, contagem: z.contagem, situacao: z.situacao, responsavel: z.responsavel || resp,
+      fila: filaPrazo_(z), ato: /^ato:/.test(z.observacoes || '') } : null,
+    tarefas: tarefas
+  };
+}
+function itemCaixa_(i, ctx) {
+  var z = ctx.prazos[i.prazo_id], p = ctx.procs[i.processo_id] || ctx.procsNum[i.numero] || {}, c = ctx.clis[p.cliente_id] || {};
+  var s = sugestaoTratamento_(i, z, p, ctx);
+  return { id: i.id, recebido_em: i.recebido_em, fonte: i.fonte, numero: i.numero, tribunal: i.tribunal || p.tribunal || '', movimento: String(i.movimento || '').slice(0, 200),
+    texto: String(i.texto || '').slice(0, 280), resumo_ia: String(i.resumo_ia || '').slice(0, 300), processo_id: p.id || '', cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '',
+    responsavel: (z && z.responsavel) || p.responsavel || '', responsavel_nome: ctx.nomes[(z && z.responsavel) || p.responsavel] || '', status: statusCaixa_(i, ctx.prazos), tratamento: i.tratamento || '', tratada_por: i.tratada_por || i.terminada_por || '',
+    tratada_em: i.tratada_em || i.terminada_em || '', gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '',
+    sug: { ato: s.ato, rotulo: s.rotulo, fonte: s.fonte, confianca: s.confianca, outra_parte: s.outra_parte, so_historico: s.so_historico, n_tarefas: s.tarefas.length,
+      prazo: s.prazo ? { id: s.prazo.id, fatal: s.prazo.fatal, descricao: String(s.prazo.descricao || '').slice(0, 120), situacao: s.prazo.situacao, fila: s.prazo.fila, ato: s.prazo.ato } : null } };
+}
+function ctxCaixa_() {
+  var ctx = { prazos: {}, procs: {}, procsNum: {}, clis: {}, nomes: {} };
+  usuarios_().forEach(function (q) { ctx.nomes[q.usuario] = q.nome || q.usuario; });
+  tabela_('Prazos').linhas.forEach(function (z) { ctx.prazos[z.id] = z; });
+  tabela_('Processos').linhas.forEach(function (p) { ctx.procs[p.id] = p; if (p.numero && !ctx.procsNum[p.numero]) ctx.procsNum[p.numero] = p; });
+  tabela_('Clientes').linhas.forEach(function (c) { ctx.clis[c.id] = c; });
+  return ctx;
+}
+/** Rota intimacoes.caixa: placar do dia + gráfico da semana + lista (status nao|tratadas|descartadas|todas). */
+function caixaIntimacoes_(d, u) {
+  var hoje = hojeSP_(), desde = caixaDesde_(), ctx = ctxCaixa_(), status = d.status || 'nao', q = normalizar_(d.busca || '');
+  var dia = function (iso) { return iso ? diaSP_(String(iso)) : ''; };
+  var todas = tabela_('Intimacoes').linhas.filter(function (i) { return naCaixa_(i, desde, ctx.prazos); });
+  var stOf = function (i) { return statusCaixa_(i, ctx.prazos); };
+  var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0 }, semana = [];
+  for (var k = 6; k >= 0; k--) semana.push({ dia: somarDias_(hoje, -k), recebidas: 0, tratadas: 0 });
+  var idx = {}; semana.forEach(function (s, n) { idx[s.dia] = n; });
+  todas.forEach(function (i) {
+    var st = stOf(i), rec = String(i.recebido_em).slice(0, 10), tr = dia(i.tratada_em || i.terminada_em);
+    if (st === 'nao') { placar.nao++; if (rec === hoje) placar.nao_hoje++; }
+    if (st === 'tratada' && tr === hoje) placar.tratadas_hoje++;
+    if (st === 'descartada' && tr === hoje) placar.descartadas_hoje++;
+    if (idx[rec] !== undefined) semana[idx[rec]].recebidas++;
+    if (st !== 'nao' && idx[tr] !== undefined) semana[idx[tr]].tratadas++;
+  });
+  var dias = Math.min(+d.dias || 7, 90), corte = somarDias_(hoje, -dias);
+  var lista = todas.filter(function (i) {
+    var st = stOf(i);
+    if (status === 'nao' && st !== 'nao') return false;
+    if (status === 'nao_hoje' && (st !== 'nao' || String(i.recebido_em).slice(0, 10) !== hoje)) return false;
+    if (status === 'tratadas' && (st !== 'tratada' || dia(i.tratada_em || i.terminada_em) < corte)) return false;
+    if (status === 'tratadas_hoje' && (st !== 'tratada' || dia(i.tratada_em || i.terminada_em) !== hoje)) return false;
+    if (status === 'descartadas' && (st !== 'descartada' || dia(i.tratada_em) < corte)) return false;
+    if (status === 'descartadas_hoje' && (st !== 'descartada' || dia(i.tratada_em) !== hoje)) return false;
+    if (status === 'todas' && String(i.recebido_em).slice(0, 10) < corte) return false;
+    if (q && normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto, (ctx.clis[(ctx.procs[i.processo_id] || {}).cliente_id] || {}).nome].join(' ')).indexOf(q) < 0) return false;
+    return true;
+  }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, Math.min(+d.limite || 200, 400)).map(function (i) { return itemCaixa_(i, ctx); });
+  if (d.minhas) lista = lista.filter(function (x) { return x.responsavel === u.usuario; });
+  return { placar: placar, semana: semana, lista: lista, desde: desde };
+}
+/** Rota intimacoes.obter: a intimação inteira + o processo, o cliente, as atividades pendentes, os andamentos e a sugestão de tratamento. */
+function intimacaoObter_(d, u) {
+  var i = tabela_('Intimacoes').linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!i) throw falha_('Intimação não encontrada.');
+  var ctx = ctxCaixa_(), z = ctx.prazos[i.prazo_id], p = ctx.procs[i.processo_id] || ctx.procsNum[i.numero] || {}, c = ctx.clis[p.cliente_id] || {};
+  var s = sugestaoTratamento_(i, z, p, ctx);
+  var x = limpar_(i); x.texto = String(i.texto || ''); x.status = statusCaixa_(i, ctx.prazos);
+  var pend = [];
+  Object.keys(ctx.prazos).forEach(function (k) { var w = ctx.prazos[k]; if (w.numero === i.numero && SITUACOES_ABERTAS.indexOf(w.situacao) >= 0) pend.push({ tipo: /^ato:/.test(w.observacoes || '') ? 'ato' : 'prazo', id: w.id, titulo: w.descricao, data: w.fatal, responsavel: w.responsavel || '' }); });
+  // título só das tarefas da própria pessoa (ou para a administração): as dos colegas aparecem como "tarefa de Fulano" (o navegador não recebe o título delas)
+  var adm = !!(PERFIS[u.perfil] || {}).usuarios;
+  tabela_('Tarefas').linhas.forEach(function (t) { if (t.processo_id && t.processo_id !== p.id && t.numero !== i.numero) return; if ((t.numero === i.numero || (p.id && t.processo_id === p.id)) && abertaT_(t) && t.situacao !== 'cancelada')
+    pend.push({ tipo: 'tarefa', id: t.id, titulo: adm || t.responsavel === u.usuario || t.criado_por === u.usuario ? t.titulo : 'Tarefa de ' + (t.responsavel || 'alguém da equipe'), data: t.vence_em, responsavel: t.responsavel || '' }); });
+  pend.sort(function (a, b) { return (a.data || '9') < (b.data || '9') ? -1 : 1; });
+  var movs = [];
+  if (p.andamentos && p.andamentos.charAt(0) === '[') { try { JSON.parse(p.andamentos).slice(0, 8).forEach(function (m) { movs.push({ d: String(m.d || m.data || '').slice(0, 10), n: String(m.n || m.nome || '').slice(0, 160), de: 'DataJud' }); }); } catch (e) { /* segue */ } }
+  var outras = tabela_('Intimacoes').linhas.filter(function (o) { return o.numero === i.numero && o.id !== i.id && !movimentoPuro_(o); })
+    .sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, 6)
+    .map(function (o) { return { id: o.id, recebido_em: o.recebido_em, fonte: o.fonte, movimento: String(o.movimento || '').slice(0, 140), status: statusCaixa_(o, ctx.prazos) }; });
+  var equipe = usuarios_().filter(function (q) { return q.ativo === 'sim'; }).map(function (q) { return { usuario: q.usuario, nome: q.nome || q.usuario }; });
+  return { intimacao: x, sugestao: s, processo: { id: p.id || '', numero: p.numero || i.numero, tribunal: p.tribunal || i.tribunal || '', orgao: p.orgao || '', area: p.area || '', fase: p.fase || '',
+      responsavel: p.responsavel || '', parte_contraria: p.parte_contraria || '', status: p.status || '' },
+    cliente: c.id ? { id: c.id, nome: c.nome, telefone: c.telefone || '' } : null, pendentes: pend.slice(0, 15), andamentos: movs, outras: outras, equipe: equipe };
+}
+var INSS_ETAPAS = [
+  ['assinado', 'Contrato assinado', 'Pedir ao cliente os documentos e laudos'],
+  ['documentos', 'Aguardando documentos e laudos', 'Quando chegar tudo, fazer o pedido no Meu INSS'],
+  ['protocolado', 'Pedido feito no INSS', 'Acompanhar no Meu INSS'],
+  ['analise', 'Em análise no INSS', 'Acompanhar: exigência, perícia ou resultado'],
+  ['exigencia', 'Exigência: falta documento', 'Cumprir a exigência dentro do prazo'],
+  ['pericia', 'Perícia marcada', 'Avisar o cliente e preparar os laudos'],
+  ['resultado', 'Aguardando o resultado', 'Acompanhar o resultado no Meu INSS'],
+  ['deferido', 'Aprovado', 'Benefício concedido: honorário no Financeiro'],
+  ['indeferido', 'Indeferido', 'Decidir: recurso ordinário ou ação na Justiça'],
+  ['recurso', 'Recurso ordinário', 'Acompanhar o recurso (Junta de Recursos / CRPS)'],
+  ['recurso_negado', 'Recurso negado', 'Ajuizar a ação na Justiça'],
+  ['judicial', 'Foi para a Justiça', 'Segue em Processos'],
+  ['arquivado', 'Arquivado / desistiu', '']];
+var INSS_NOME = {}; INSS_ETAPAS.forEach(function (e) { INSS_NOME[e[0]] = e[1]; });
+// para onde cada etapa pode ir (o painel mostra só esses botões)
+var INSS_PROXIMAS = {
+  assinado: ['documentos', 'protocolado'], documentos: ['protocolado'], protocolado: ['analise', 'exigencia', 'pericia', 'deferido', 'indeferido'],
+  analise: ['exigencia', 'pericia', 'deferido', 'indeferido'], exigencia: ['analise', 'pericia', 'deferido', 'indeferido'], pericia: ['resultado', 'deferido', 'indeferido'],
+  resultado: ['deferido', 'indeferido', 'exigencia'], indeferido: ['recurso', 'judicial'], recurso: ['deferido', 'recurso_negado', 'exigencia', 'pericia'],
+  recurso_negado: ['judicial'], deferido: [], judicial: [], arquivado: ['assinado']
+};
+var INSS_BENEFICIOS = ['Auxílio por incapacidade temporária (auxílio-doença)', 'Aposentadoria por incapacidade permanente', 'Aposentadoria por idade',
+  'Aposentadoria por tempo de contribuição', 'Aposentadoria especial', 'Aposentadoria da pessoa com deficiência', 'BPC/LOAS — idoso', 'BPC/LOAS — pessoa com deficiência',
+  'Pensão por morte', 'Salário-maternidade', 'Auxílio-acidente', 'Auxílio-reclusão', 'Revisão de benefício', 'Outro'];
+// prazo do recurso ordinário: 30 dias da ciência da decisão (Decreto 3.048/99, art. 305, § 1º); da exigência: 30 dias (padrão do INSS)
+function inssItem_(r, clis, nomes, hoje) {
+  var c = clis[r.cliente_id] || {}, prox = '', tipoProx = '';
+  if (r.etapa === 'pericia' && r.pericia_data) { prox = r.pericia_data; tipoProx = 'perícia'; }
+  else if (r.etapa === 'exigencia' && r.exigencia_prazo) { prox = r.exigencia_prazo; tipoProx = 'prazo da exigência'; }
+  else if (r.etapa === 'indeferido' && r.recurso_prazo) { prox = r.recurso_prazo; tipoProx = 'prazo do recurso'; }
+  var dias = r.etapa_em ? Math.max(0, Math.round((Date.parse(hoje) - Date.parse(String(r.etapa_em).slice(0, 10))) / 864e5)) : 0;
+  return { id: r.id, cliente_id: r.cliente_id, cliente: c.nome || r.cliente_nome || '', telefone: c.telefone || '', beneficio: r.beneficio || '', protocolo: r.protocolo || '', der: r.der || '',
+    nb: r.nb || '', etapa: r.etapa || 'assinado', etapa_nome: INSS_NOME[r.etapa] || r.etapa, etapa_em: r.etapa_em || '', dias_etapa: dias, responsavel: r.responsavel || '',
+    responsavel_nome: nomes[r.responsavel] || r.responsavel || '', proxima_data: prox, proxima_tipo: tipoProx, atrasado: !!(prox && prox < hoje && /prazo/.test(tipoProx)),
+    pericia_data: r.pericia_data || '', pericia_hora: r.pericia_hora || '', pericia_local: r.pericia_local || '', exigencia: r.exigencia || '', exigencia_prazo: r.exigencia_prazo || '',
+    motivo: r.motivo || '', recurso_prazo: r.recurso_prazo || '', valor_beneficio: r.valor_beneficio || '', dib: r.dib || '', processo_id: r.processo_id || '',
+    honorario_id: r.honorario_id || '', observacoes: r.observacoes || '', criado_em: r.criado_em || '' };
+}
+/** Rota inss.listar: todos os pedidos no INSS (quadro por etapa) + as petições iniciais previdenciárias sem número (para trazer para cá). */
+function inssListar_(d, u) {
+  var hoje = hojeSP_(), clis = {}, nomes = {};
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  usuarios_().forEach(function (q) { nomes[q.usuario] = q.nome || q.usuario; });
+  var lista = tabela_('Inss').linhas.filter(function (r) { return r.id; }).map(function (r) { return inssItem_(r, clis, nomes, hoje); });
+  if (d.minhas) lista = lista.filter(function (x) { return x.responsavel === u.usuario; });
+  var iniciais = tabela_('Processos').linhas.filter(function (p) { return !p.numero && p.status !== 'arquivado' && p.fase === 'contratado' && /previd/i.test(p.area || ''); })
+    .map(function (p) { var c = clis[p.cliente_id] || {}; return { id: p.id, cliente: c.nome || p.cliente_nome || '', cliente_id: p.cliente_id, criado_em: p.criado_em || '', responsavel: p.responsavel || '' }; })
+    .filter(function (p) { return !lista.some(function (x) { return x.cliente_id === p.cliente_id && ['judicial', 'arquivado', 'deferido'].indexOf(x.etapa) < 0; }); });
+  return { etapas: INSS_ETAPAS.map(function (e) { return { id: e[0], nome: e[1], proximo: e[2], vai: INSS_PROXIMAS[e[0]] || [] }; }), beneficios: INSS_BENEFICIOS, lista: lista, iniciais: iniciais,
+    equipe: usuarios_().filter(function (q) { return q.ativo === 'sim'; }).map(function (q) { return { usuario: q.usuario, nome: q.nome || q.usuario }; }) };
+}
+function inssHistorico_(r) { try { var h = JSON.parse(r.historico || '[]'); return Array.isArray(h) ? h : []; } catch (e) { return []; } }
+/** Rota inss.obter: o pedido + a linha do tempo + as tarefas abertas dele. */
+function inssObter_(d, u) {
+  var r = tabela_('Inss').linhas.filter(function (x) { return x.id === d.id; })[0];
+  if (!r) throw falha_('Pedido do INSS não encontrado.');
+  var clis = {}, nomes = {}; tabela_('Clientes').linhas.forEach(function (c) { if (c.id === r.cliente_id) clis[c.id] = c; });
+  usuarios_().forEach(function (q) { nomes[q.usuario] = q.nome || q.usuario; });
+  var adm = !!(PERFIS[u.perfil] || {}).usuarios;
+  var tarefas = tabela_('Tarefas').linhas.filter(function (t) { return String(t.descricao || '').indexOf('[inss:' + r.id + ']') >= 0 && t.situacao !== 'cancelada'; })
+    .map(function (t) { var meu = adm || t.responsavel === u.usuario || t.criado_por === u.usuario;
+      return { id: t.id, titulo: meu ? t.titulo : 'Tarefa de ' + (nomes[t.responsavel] || t.responsavel || 'alguém da equipe'), vence_em: t.vence_em || '', responsavel: nomes[t.responsavel] || t.responsavel || '', feita: !abertaT_(t) }; });
+  var x = inssItem_(r, clis, nomes, hojeSP_());
+  x.historico = inssHistorico_(r);
+  var c = clis[r.cliente_id] || {};
+  x.cliente_info = c.id ? { id: c.id, nome: c.nome, telefone: c.telefone || '', cpf: c.cpf_cnpj || '', nascimento: c.nascimento || '' } : null;
+  return { pedido: x, tarefas: tarefas, etapas: INSS_ETAPAS.map(function (e) { return { id: e[0], nome: e[1], proximo: e[2], vai: INSS_PROXIMAS[e[0]] || [] }; }), beneficios: INSS_BENEFICIOS,
+    equipe: usuarios_().filter(function (q) { return q.ativo === 'sim'; }).map(function (q) { return { usuario: q.usuario, nome: q.nome || q.usuario }; }) };
+}
+/** Tarefa ligada ao pedido do INSS (não repete a mesma tarefa aberta). */
+function comissoesListar_(d, u) {
+  var lista = tabela_('Comissoes').linhas.filter(function (x) { return x.id; }).map(function (x) { return limpar_(x); })
+    .sort(function (a, b) { return a.gerada_em < b.gerada_em ? 1 : -1; });
+  var porInd = {};
+  lista.forEach(function (x) { if (x.situacao === 'cancelada') return; var k = x.indicador || '—'; var o = porInd[k] = porInd[k] || { indicador: k, a_pagar: 0, pago: 0, n: 0, clientes: {} };
+    if (x.situacao === 'a pagar') o.a_pagar += dinheiro_(x.valor) || 0; else if (x.situacao === 'paga') o.pago += dinheiro_(x.valor) || 0; o.n++; o.clientes[x.cliente_nome] = 1; });
+  var indicados = tabela_('Clientes').linhas.filter(function (c) { return String(c.indicado_por || '').trim(); })
+    .map(function (c) { return { id: c.id, nome: c.nome, indicado_por: c.indicado_por, pct: c.indicacao_pct || '', base: c.indicacao_base || 'exito', desde: c.indicacao_em || '' }; })
+    .sort(function (a, b) { return String(a.indicado_por).localeCompare(String(b.indicado_por)); });
+  return { lista: lista.slice(0, 500), indicadores: Object.keys(porInd).map(function (k) { var o = porInd[k]; o.clientes = Object.keys(o.clientes).length; o.a_pagar = Math.round(o.a_pagar * 100) / 100; o.pago = Math.round(o.pago * 100) / 100; return o; })
+    .sort(function (a, b) { return b.a_pagar - a.a_pagar; }), indicados: indicados };
+}
+/** Rota comissoes.pagar: marca como paga(s) e lança UMA despesa paga no Caixa por indicador. */
+function minutosEntre_(a, b) { return Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000)); }
+function horasItem_(x, nomes, clis) {
+  var rodando = !!(x.inicio && !x.fim);
+  return { id: x.id, usuario: x.usuario, nome: nomes[x.usuario] || x.usuario, inicio: x.inicio || '', fim: x.fim || '', rodando: rodando,
+    minutos: rodando ? minutosEntre_(x.inicio, new Date().toISOString()) : (+x.minutos || 0), dia: x.dia || String(x.inicio || '').slice(0, 10),
+    cliente_id: x.cliente_id || '', cliente: (clis[x.cliente_id] || {}).nome || '', processo_id: x.processo_id || '', numero: x.numero || '', descricao: x.descricao || '',
+    faturavel: x.faturavel !== 'nao', valor_hora: x.valor_hora || '', faturado_em: x.faturado_em || '', fatura_id: x.fatura_id || '' };
+}
+/** Rota horas.listar: as horas da pessoa (a administração escolhe a pessoa ou vê todas) num período, com totais e o cronômetro rodando. */
+function horasListar_(d, u) {
+  var adm = !!(PERFIS[u.perfil] || {}).usuarios, quem = adm ? (d.usuario || '') : u.usuario;
+  var hoje = hojeSP_(), de = /^\d{4}-\d{2}-\d{2}$/.test(d.de || '') ? d.de : somarDias_(hoje, -30), ate = /^\d{4}-\d{2}-\d{2}$/.test(d.ate || '') ? d.ate : hoje;
+  var nomes = {}, clis = {}; usuarios_().forEach(function (q) { nomes[q.usuario] = q.nome || q.usuario; }); tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  var todas = tabela_('Horas').linhas.filter(function (x) { return x.id; });
+  var meu = todas.filter(function (x) { return x.usuario === u.usuario && x.inicio && !x.fim; })[0];
+  var lista = todas.filter(function (x) { var dia = x.dia || String(x.inicio || '').slice(0, 10); return (!quem || x.usuario === quem) && dia >= de && dia <= ate && (!d.cliente_id || x.cliente_id === d.cliente_id); })
+    .map(function (x) { return horasItem_(x, nomes, clis); }).sort(function (a, b) { return (a.inicio || a.dia) < (b.inicio || b.dia) ? 1 : -1; });
+  var tot = { minutos: 0, faturavel: 0, porCliente: {}, porPessoa: {} };
+  lista.forEach(function (x) { tot.minutos += x.minutos; if (x.faturavel) tot.faturavel += x.minutos; var k = x.cliente || 'Sem cliente'; tot.porCliente[k] = (tot.porCliente[k] || 0) + x.minutos; tot.porPessoa[x.nome] = (tot.porPessoa[x.nome] || 0) + x.minutos; });
+  return { lista: lista.slice(0, 500), totais: tot, rodando: meu ? horasItem_(meu, nomes, clis) : null, de: de, ate: ate, valor_hora: config_('VALOR_HORA') || '',
+    equipe: adm ? usuarios_().filter(function (q) { return q.ativo === 'sim'; }).map(function (q) { return { usuario: q.usuario, nome: q.nome || q.usuario }; }) : [] };
+}
+function faturaPrevia_(d, u) {
+  var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === d.cliente_id; })[0];
+  if (!c) throw falha_('Escolha o cliente.');
+  var hoje = hojeSP_(), ate = /^\d{4}-\d{2}-\d{2}$/.test(d.ate || '') ? d.ate : somarDias_(hoje, 30), de = /^\d{4}-\d{2}-\d{2}$/.test(d.de || '') ? d.de : '';
+  var vh = dinheiro_(d.valor_hora || config_('VALOR_HORA')) || 0;
+  var hons = {}; tabela_('Honorarios').linhas.forEach(function (h) { hons[h.id] = h; });
+  var parcelas = tabela_('Parcelas').linhas.filter(function (p) { var h = hons[p.honorario_id] || {}; return p.cliente_id === c.id && !p.pago_em && p.vencimento && p.vencimento <= ate && (!de || p.vencimento >= de) && !/retirad|cancel/.test(h.situacao || ''); })
+    .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; })
+    .map(function (p) { var h = hons[p.honorario_id] || {}; return { id: p.id, descricao: (h.descricao || 'Honorários') + (p.numero ? ' — parcela ' + p.numero : ''), vencimento: p.vencimento, valor: dinheiro_(p.valor) || 0, atrasada: p.vencimento < hoje }; });
+  var horas = tabela_('Horas').linhas.filter(function (x) { var dia = x.dia || String(x.inicio || '').slice(0, 10); return x.cliente_id === c.id && !(x.inicio && !x.fim) && +x.minutos > 0 && x.faturavel !== 'nao' && !x.faturado_em && dia <= ate && (!de || dia >= de); })
+    .map(function (x) { var v = dinheiro_(x.valor_hora) || vh, min = +x.minutos || 0; return { id: x.id, dia: x.dia || String(x.inicio).slice(0, 10), descricao: x.descricao || 'Trabalho', minutos: min, valor_hora: v, valor: Math.round(v * min / 60 * 100) / 100 }; });
+  var despesas = tabela_('Despesas').linhas.filter(function (x) { return x.cliente_id === c.id && x.reembolsavel === 'sim' && !x.reembolsado_em && (x.pago_em || x.situacao === 'paga'); })
+    .map(function (x) { return { id: x.id, descricao: x.descricao, dia: x.pago_em || x.vencimento, valor: dinheiro_(x.valor_pago || x.valor) || 0 }; });
+  var soma = function (l) { return Math.round(l.reduce(function (s, x) { return s + (x.valor || 0); }, 0) * 100) / 100; };
+  var t = { honorarios: soma(parcelas), horas: soma(horas), despesas: soma(despesas) }; t.total = Math.round((t.honorarios + t.horas + t.despesas) * 100) / 100;
+  return { cliente: { id: c.id, nome: c.nome, cpf: c.cpf_cnpj || '', email: c.email || '', telefone: c.telefone || '' }, de: de, ate: ate, valor_hora: vh, parcelas: parcelas, horas: horas, despesas: despesas, totais: t };
+}
+/** Rota fin.fatura.gerar (Google Docs): gera a fatura em Doc + PDF na pasta do cliente e marca as horas como faturadas. */
+function atosSemDataAbertos_() {
+  // pela marca [agenda:nº:ref] da descrição — o título fica escondido no navegador para quem não é da administração
+  var hoje = hojeSP_();
+  return tabela_('Tarefas').linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; })
+    .map(function (t) { var dias = Math.max(0, Math.round((Date.parse(hoje) - Date.parse(String(t.criado_em || t.vence_em || hoje).slice(0, 10))) / 864e5));
+      return { id: t.id, numero: t.numero || ((/\[agenda:([^:\]]+)/.exec(t.descricao || '') || [])[1] || ''), responsavel: t.responsavel || '', dias: dias,
+        pericia: /\[atosd:pericia\]|indica per[ií]cia/i.test(t.descricao || ''), tarefa: t }; });
+}
+var RE_IMPORTANTE_ = /senten[çc]|ac[oó]rd[aã]o|julgad[oa]s? (procedente|improcedente)|proced[eê]ncia|improced|homologa|alvar[aá]|\brpv\b|precat[oó]rio|requisi[çc][ãa]o de pagamento|tutela|liminar|audi[eê]ncia[^|]{0,60}designad|per[ií]cia[^|]{0,60}designad|designad[ao][^|]{0,40}(audi[eê]ncia|per[ií]cia)|laudo|tr[aâ]nsito em julgado|penhora|bloqueio|sisbajud|bacenjud|renajud|(?<![a-z])cita[çc][ãa]o|extin[çc][ãa]o|levantamento|dep[oó]sito judicial|deferid|indeferid|acordo/i;
+var RE_NAO_IMPORTANTE_ = /conclus[oa]s|remetid|juntad[ao]s? (a |de |o )|disponibiliz|decorrid|documento sigiloso|expedi[çc][ãa]o de (certid|of[ií]cio)|ato ordinat|mero expediente|recebid[oa]s? os autos|habilita[çc]|documento anexado/i;
+function rotuloImportante_(n) {
+  var t = normalizar_(n);
+  if (/extin/.test(t)) return 'Extinção'; if (/senten/.test(t)) return 'Sentença'; if (/acordao/.test(t)) return 'Acórdão'; if (/alvara|rpv|precatorio|requisicao de pagamento|levantamento|deposito judicial/.test(t)) return 'Valores';
+  if (/audiencia/.test(t)) return 'Audiência'; if (/pericia|laudo/.test(t)) return 'Perícia'; if (/transito em julgado/.test(t)) return 'Trânsito em julgado';
+  if (/penhora|bloqueio|sisbajud|bacenjud|renajud/.test(t)) return 'Penhora / bloqueio'; if (/tutela|liminar/.test(t)) return 'Tutela / liminar';
+  if (/homologa|acordo/.test(t)) return 'Acordo'; if (/(^|[^a-z])citacao/.test(t)) return 'Citação'; if (/extincao/.test(t)) return 'Extinção';
+  return 'Decisão';
+}
+/** Rota andamentos.importantes: o que mudou de importante nos processos ativos (DataJud + avisos dos tribunais), sem repetir. */
+function andamentosImportantes_(d, u) {
+  var hoje = hojeSP_(), desde = somarDias_(hoje, -Math.min(+d.dias || 15, 60)), vistos = avisosMapa_(), clis = {}, porNum = {}, itens = {}, n = 0, nomes = {};
+  usuarios_().forEach(function (q) { nomes[q.usuario] = q.nome || q.usuario; });
+  tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  var procs = tabela_('Processos').linhas.filter(function (p) { return p.numero && p.status !== 'arquivado'; });
+  procs.forEach(function (p) { porNum[p.numero] = p; });
+  var add = function (p, dia, texto, de) {
+    if (!dia || dia < desde || dia > hoje || !RE_IMPORTANTE_.test(texto)) return;
+    if (RE_NAO_IMPORTANTE_.test(texto) && !/alvar|senten|ac[oó]rd|laudo|audi[eê]ncia|per[ií]cia/i.test(texto)) return;
+    var chave = 'imp:' + hashCurto_(p.numero + '|' + dia + '|' + nomeComparavel_(texto).slice(0, 60));
+    if (itens[chave]) return;
+    var c = clis[p.cliente_id] || {};
+    itens[chave] = { chave: chave, numero: p.numero, processo_id: p.id, cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '', responsavel: p.responsavel || '', responsavel_nome: nomes[p.responsavel] || '',
+      dia: dia, texto: String(texto).slice(0, 200), de: de, rotulo: rotuloImportante_(texto), visto_em: (vistos[chave] || {}).em || '', visto_por: (vistos[chave] || {}).por || '' };
+  };
+  procs.forEach(function (p) {
+    if (!p.andamentos || p.andamentos.charAt(0) !== '[') return;
+    try { JSON.parse(p.andamentos).forEach(function (m) { add(p, String(m.d || m.data || '').slice(0, 10), String(m.n || m.nome || ''), 'DataJud'); }); } catch (e) { /* segue */ }
+  });
+  tabela_('Intimacoes').linhas.forEach(function (i) {
+    var p = porNum[i.numero]; if (!p) return;
+    add(p, String(i.recebido_em || '').slice(0, 10), String(i.movimento || '').replace(/\s+—\s+.*$/, ''), i.fonte || '');
+  });
+  var lista = Object.keys(itens).map(function (k) { return itens[k]; });
+  var expl = {}; try { tabela_('Explicacoes').linhas.forEach(function (e) { if (e.chave) expl[e.chave] = e.situacao; }); } catch (eX) { /* aba nova */ }
+  lista.forEach(function (x) { x.explicacao = expl[x.chave] || ''; });
+  if (d.minhas) lista = lista.filter(function (x) { return x.responsavel === u.usuario; });
+  lista.sort(function (a, b) { return a.dia < b.dia ? 1 : a.dia > b.dia ? -1 : 0; });
+  return { lista: lista.slice(0, 300), nao_vistos: lista.filter(function (x) { return !x.visto_em; }).length };
+}
 function resumoPrazos_() {
   var lista = listarPrazos_({});
   var hoje = hojeSP_();
@@ -1166,6 +1561,12 @@ function nomeNoTitulo_(titulo, nome) {
   if (t.indexOf(' ' + ps[0] + ' ') < 0) return false;
   return ps.slice(1).some(function (x) { return t.indexOf(' ' + x + ' ') >= 0; });
 }
+function nomeComparavel_(n) {
+  return normalizar_(n).replace(/[^a-z0-9 ]/g, ' ').split(' ')
+    .filter(function (w) { return w && ['de', 'da', 'do', 'dos', 'das', 'e', 'ltda', 'me', 'epp', 'eireli', 'sa', 's', 'a'].indexOf(w) < 0; }).join(' ');
+}
+
+/** Acha o cliente pelo nome de quem pagou. Só aceita nome igual (o mesmo nome completo) ou um único cliente com as mesmas palavras. */
 function listarPix_(d) {
   var dias = Math.min(parseInt(d.dias, 10) || 60, 365), desde = new Date(Date.now() - dias * 86400000).toISOString();
   var clientes = {}, tabParc = tabela_('Parcelas'), parc = {};
@@ -1329,7 +1730,7 @@ function audienciasLista_(dias, passados, comFin) {
     return { chave: e.chave || a.chave, lembrete: a.chave, tipo: a.tipo, nome: a.nome, data: a.data, hora: a.hora || '', numero: a.numero, local: a.local || p.orgao || '',
       titulo: a.titulo || '', cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '',
       avisos: av, dias_aviso: diasDosAvisos_(a.data, fer), devido: avisoDevido_(a.data, hoje, feitos, fer, novo), nova: novo,
-      modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      modo: f.modo || '', link: f.link || '', forum: f.forum || '', sala: f.sala || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
       acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo), passou: a.data < hoje, pct_exito: exito[c.id] || '', obs_cliente: passados ? String(c.observacoes || '').split(/\n/).filter(String).slice(-3).join('\n').slice(0, 1500) : '',
       // compatibilidade com o Início antigo
       avisado_em: av.semana.em, avisado_por: av.semana.por, avisado_dia_em: av.dia.em, avisado_dia_por: av.dia.por };
@@ -1354,7 +1755,7 @@ function audienciasDoCliente_(clienteId, comFin) {
     var p = nums[o.numero] || {}, f = o.f || {};
     hist.push({ chave: o.chave, lembrete: o.chave, tipo: o.tipo, nome: o.nome || '', data: o.data, hora: o.hora || '', numero: o.numero, local: p.orgao || '', titulo: '',
       cliente: c.nome || '', cliente_id: c.id || '', telefone: c.telefone || '', processo_id: p.id || '', avisos: {}, dias_aviso: {}, devido: '', nova: false,
-      modo: f.modo || '', link: f.link || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
+      modo: f.modo || '', link: f.link || '', forum: f.forum || '', sala: f.sala || '', testemunhas: testemunhasDe_(f), obs: f.obs || '', ciente_em: f.ciente_em || '', ciente_por: f.ciente_por || '',
       acordo: jsonAto_(f.acordo), preparo: jsonAto_(f.preparo), passou: o.data < hoje, historico: true, pct_exito: '', obs_cliente: '' });
   };
   tabela_('Audiencias').linhas.forEach(function (f) { if (nums[f.numero]) add({ chave: f.chave, tipo: tipoN(f.tipo), data: f.data, hora: f.hora, numero: f.numero, f: f }); });
@@ -2372,14 +2773,22 @@ var ROTAS_MOTOR = {
   'agenda.listar': { fn: listarAgenda_ },
   'inicio.extras': { fn: inicioExtras_ },
   'fin.painel': { permissao: 'financeiro', fn: painelFinanceiro_ },
-  'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ }
+  'relatorio.geral': { permissao: 'usuarios', fn: relatorioGeral_ },
+  'intimacoes.caixa': { fn: caixaIntimacoes_ },
+  'intimacoes.obter': { fn: intimacaoObter_ },
+  'andamentos.importantes': { fn: andamentosImportantes_ },
+  'inss.listar': { fn: inssListar_ },
+  'inss.obter': { fn: inssObter_ },
+  'horas.listar': { fn: horasListar_ },
+  'comissoes.listar': { permissao: 'financeiro', fn: comissoesListar_ },
+  'fin.fatura': { permissao: 'financeiro', fn: faturaPrevia_ }
 };
 window.PAINEL_MOTOR = {
   versao: MOTOR_VERSAO,
   esquema: ESQUEMA,
-  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","AVISO_NOVA_DESDE","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO"],
-  tabelasDaRota: {"resumo":["Clientes","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Processos","Tarefas","Usuarios"],"audiencias.cliente":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Avisos","Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Assinaturas","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"],"fin.painel":["Assinaturas","Clientes","Despesas","Honorarios","Parcelas","Processos","Usuarios"],"relatorio.geral":["Assinaturas","Avisos","Clientes","Despesas","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"]},
-  google: ["agenda.criar","agenda.marcarAto","banco.conferir","banco.config","calc.indices","clientes.criarPasta","clientes.documentos","clientes.portal","clientes.salvar","clientes.whatsapp","consulta.baixar","consulta.enviar","consulta.processos","crm.consulta","crm.proposta","djen.robo","documentos.gerar","ext.analisar","fin.asaas.cancelar","fin.asaas.config","fin.asaas.gerar","fin.levantamento","fin.parcela.pagar","fin.pixLer","fin.recibo.gerar","future.contrato.aditivo","future.contrato.distrato","future.contrato.gerar","future.drive","future.importar","future.importarPasta","future.pessoa.pasta","future.vistoria.enviar","ia.audioParte","ia.config","ia.organizarNota","ia.resumirPrazo","ia.resumirProcesso","ia.textoCliente","ia.transcrever","ia.transcricaoResumo","marketing.gbp","modelos.liberarEdicao","modelos.listar","padroes.guia","prazos.baixarVencidos","processos.apagar","resumo.email.testar","robo.consertar","robo.rodar","seguranca","site.contato","whats.acao","whats.config","whats.webhook","whatsapp.entrada"],
+  configLivre: ["ACAO_COB_IGNORADOS","AGENDAS","AGENDA_COPIA","AGENDA_SINC","ALERTA_ROBO_EM","ASSIN_ANTIGAS","AUTO_ATUALIZAR_ERRO","AVISO_NOVA_DESDE","CAIXA_DESDE","DATAJUD_ERRO","DATAJUD_OK","DATAJUD_ULTIMA","DISTRIBUICAO","DJEN_NAVEGADOR_ERRO","DJEN_NAVEGADOR_ULTIMA","FUTURE_USUARIOS","IA_ERRO","IA_LIGADA","IA_ULTIMA","LINK_AVALIACAO","PIX_TOLERANCIA_JUROS","PIX_ULTIMA","RESP_EPROC","RESP_INICIAL","RESP_PADRAO","RESP_PJE","RESP_SECRETARIA","RESUMO_EMAIL_DIA","ROBO_EXTRAS","ROBO_GMAIL_OK","ROBO_ULTIMA_EXECUCAO","ROBO_ULTIMO_RESULTADO","VALOR_HORA"],
+  tabelasDaRota: {"resumo":["Clientes","Feriados","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"clientes.listar":["Assinaturas","Clientes","Honorarios","Leads","Parcelas","Processos","Usuarios"],"clientes.obter":["Assinaturas","Clientes","Honorarios","Leads","ObsArquivo","Parcelas","Processos","Usuarios"],"processos.listar":["Clientes","Processos","Usuarios"],"prazos.listar":["Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"intimacoes.listar":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"tarefas.listar":["Avisos","Clientes","Prazos","Processos","Tarefas","Usuarios"],"feriados.listar":["Usuarios"],"equipe.listar":["Usuarios"],"trabalho.aguardando":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"inicio.acoes":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"audiencias.listar":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Processos","Tarefas","Usuarios"],"audiencias.cliente":["AgendaEventos","Audiencias","Clientes","Eventos","Feriados","Honorarios","Processos","Tarefas","Usuarios"],"eu.painel":["Avisos","Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"documentos.assinaturas":["Assinaturas","Clientes","Processos","Usuarios"],"fluxos.processo":["Processos","Tarefas","Usuarios"],"prazos.memoria":["Feriados","Prazos","Processos","Usuarios"],"fin.resumo":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorarios":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.honorario":["Clientes","Honorarios","Parcelas","Recebimentos","Usuarios"],"fin.areceber":["Clientes","Honorarios","Parcelas","Usuarios"],"fin.pix":["Clientes","Parcelas","Pix","Usuarios"],"fin.acaoCobranca":["Avisos","Clientes","Honorarios","Parcelas","Usuarios"],"fin.conferencia":["Clientes","Honorarios","Parcelas","Processos","Usuarios"],"indicadores.mes":["Assinaturas","Clientes","Honorarios","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"relatorio.semana":["Clientes","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"relatorio.cumpridos":["Clientes","Prazos","Processos","Usuarios"],"agenda.listar":["AgendaEventos","Clientes","Feriados","Intimacoes","Prazos","Processos","Usuarios"],"inicio.extras":["AgendaEventos","Assinaturas","Audiencias","Avisos","Clientes","Eventos","Feriados","Honorarios","Parcelas","Processos","Tarefas","Usuarios"],"fin.painel":["Assinaturas","Clientes","Despesas","Honorarios","Parcelas","Processos","Usuarios"],"relatorio.geral":["Assinaturas","Avisos","Clientes","Despesas","Intimacoes","Parcelas","Prazos","Processos","Tarefas","Usuarios"],"intimacoes.caixa":["Clientes","Feriados","IaAprendizado","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"intimacoes.obter":["Clientes","Feriados","IaAprendizado","Intimacoes","Prazos","Processos","Tarefas","Usuarios"],"andamentos.importantes":["Avisos","Clientes","Explicacoes","Intimacoes","Processos","Usuarios"],"inss.listar":["Clientes","Inss","Processos","Usuarios"],"inss.obter":["Clientes","Inss","Tarefas","Usuarios"],"horas.listar":["Clientes","Horas","Usuarios"],"comissoes.listar":["Clientes","Comissoes","Usuarios"],"fin.fatura":["Clientes","Despesas","Honorarios","Horas","Parcelas","Usuarios"]},
+  google: ["agenda.criar","agenda.marcarAto","banco.conferir","banco.config","calc.indices","clientes.criarPasta","clientes.documentos","clientes.portal","clientes.salvar","clientes.whatsapp","consulta.baixar","consulta.enviar","consulta.processos","crm.consulta","crm.proposta","djen.robo","documentos.gerar","explicacoes.enviar","ext.analisar","fin.asaas.cancelar","fin.asaas.config","fin.asaas.gerar","fin.fatura.gerar","fin.levantamento","fin.parcela.pagar","fin.pixLer","fin.recibo.gerar","future.contrato.aditivo","future.contrato.distrato","future.contrato.gerar","future.drive","future.importar","future.importarPasta","future.pessoa.pasta","future.vistoria.enviar","ia.audioParte","ia.config","ia.explicarAndamento","ia.jurisprudencia","ia.organizarNota","ia.peca","ia.resumirPrazo","ia.resumirProcesso","ia.textoCliente","ia.transcrever","ia.transcricaoResumo","inss.agenda","inss.trazer","intimacoes.agendar","marketing.gbp","modelos.liberarEdicao","modelos.listar","padroes.guia","prazos.baixarVencidos","processos.apagar","resumo.email.testar","robo.consertar","robo.rodar","seguranca","site.contato","whats.acao","whats.config","whats.webhook","whatsapp.entrada"],
   tem: function (acao) { return !!ROTAS_MOTOR[acao]; },
   /** Roda a rota como o Apps Script faria (rotear_): permissão do perfil, a conta e os valores escondidos do RH. */
   rodar: function (acao, dados, u, amb) {
