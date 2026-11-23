@@ -23,7 +23,7 @@ const ROTAS_MOTOR = ['resumo', 'clientes.listar', 'clientes.obter', 'processos.l
   'feriados.listar', 'equipe.listar', 'trabalho.aguardando', 'inicio.acoes', 'audiencias.listar', 'audiencias.cliente', 'eu.painel', 'documentos.assinaturas',
   'fluxos.processo', 'prazos.memoria', 'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'fin.pix', 'fin.acaoCobranca',
   'fin.conferencia', 'indicadores.mes', 'relatorio.semana', 'relatorio.cumpridos', 'agenda.listar', 'inicio.extras',
-  'fin.painel', 'relatorio.geral', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes']; // 8.36.3: Cobranças e Relatórios sem esperar o Google
+  'fin.painel', 'relatorio.geral', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'inss.listar', 'inss.obter', 'horas.listar', 'comissoes.listar', 'fin.fatura']; // 8.36.3: Cobranças e Relatórios sem esperar o Google
 const blocoRotas = texto(decl.get('ROTAS'));
 const rotas = {};
 for (const r of ROTAS_MOTOR) {

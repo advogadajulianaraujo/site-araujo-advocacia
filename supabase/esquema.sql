@@ -1645,3 +1645,209 @@ alter table ia_aprendizado add column if not exists "atualizado_em" text;
 alter table ia_aprendizado enable row level security;
 drop policy if exists "ia_aprendizado: só o próprio escritório" on ia_aprendizado;
 create policy "ia_aprendizado: só o próprio escritório" on ia_aprendizado for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+-- acrescentado pela versão nova do painel
+
+create table if not exists inss (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "cliente_id" text,
+  "cliente_nome" text,
+  "beneficio" text,
+  "protocolo" text,
+  "der" text,
+  "nb" text,
+  "etapa" text,
+  "etapa_em" text,
+  "responsavel" text,
+  "pericia_data" text,
+  "pericia_hora" text,
+  "pericia_local" text,
+  "exigencia" text,
+  "exigencia_prazo" text,
+  "resultado_em" text,
+  "motivo" text,
+  "valor_beneficio" text,
+  "dib" text,
+  "recurso_prazo" text,
+  "processo_id" text,
+  "honorario_id" text,
+  "assinatura_id" text,
+  "historico" text,
+  "observacoes" text,
+  "criado_em" text,
+  "criado_por" text,
+  "atualizado_em" text,
+  "atualizado_por" text,
+  primary key (escritorio_id, "id")
+);
+alter table inss add column if not exists "id" text;
+alter table inss add column if not exists "cliente_id" text;
+alter table inss add column if not exists "cliente_nome" text;
+alter table inss add column if not exists "beneficio" text;
+alter table inss add column if not exists "protocolo" text;
+alter table inss add column if not exists "der" text;
+alter table inss add column if not exists "nb" text;
+alter table inss add column if not exists "etapa" text;
+alter table inss add column if not exists "etapa_em" text;
+alter table inss add column if not exists "responsavel" text;
+alter table inss add column if not exists "pericia_data" text;
+alter table inss add column if not exists "pericia_hora" text;
+alter table inss add column if not exists "pericia_local" text;
+alter table inss add column if not exists "exigencia" text;
+alter table inss add column if not exists "exigencia_prazo" text;
+alter table inss add column if not exists "resultado_em" text;
+alter table inss add column if not exists "motivo" text;
+alter table inss add column if not exists "valor_beneficio" text;
+alter table inss add column if not exists "dib" text;
+alter table inss add column if not exists "recurso_prazo" text;
+alter table inss add column if not exists "processo_id" text;
+alter table inss add column if not exists "honorario_id" text;
+alter table inss add column if not exists "assinatura_id" text;
+alter table inss add column if not exists "historico" text;
+alter table inss add column if not exists "observacoes" text;
+alter table inss add column if not exists "criado_em" text;
+alter table inss add column if not exists "criado_por" text;
+alter table inss add column if not exists "atualizado_em" text;
+alter table inss add column if not exists "atualizado_por" text;
+alter table inss enable row level security;
+drop policy if exists "inss: só o próprio escritório" on inss;
+create policy "inss: só o próprio escritório" on inss for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+create table if not exists comissoes (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "cliente_id" text,
+  "cliente_nome" text,
+  "indicador" text,
+  "parcela_id" text,
+  "honorario_id" text,
+  "base" text,
+  "pct" text,
+  "valor" text,
+  "situacao" text,
+  "gerada_em" text,
+  "paga_em" text,
+  "paga_por" text,
+  "despesa_id" text,
+  "observacoes" text,
+  primary key (escritorio_id, "id")
+);
+alter table comissoes add column if not exists "id" text;
+alter table comissoes add column if not exists "cliente_id" text;
+alter table comissoes add column if not exists "cliente_nome" text;
+alter table comissoes add column if not exists "indicador" text;
+alter table comissoes add column if not exists "parcela_id" text;
+alter table comissoes add column if not exists "honorario_id" text;
+alter table comissoes add column if not exists "base" text;
+alter table comissoes add column if not exists "pct" text;
+alter table comissoes add column if not exists "valor" text;
+alter table comissoes add column if not exists "situacao" text;
+alter table comissoes add column if not exists "gerada_em" text;
+alter table comissoes add column if not exists "paga_em" text;
+alter table comissoes add column if not exists "paga_por" text;
+alter table comissoes add column if not exists "despesa_id" text;
+alter table comissoes add column if not exists "observacoes" text;
+alter table comissoes enable row level security;
+drop policy if exists "comissoes: só o próprio escritório" on comissoes;
+create policy "comissoes: só o próprio escritório" on comissoes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+create table if not exists explicacoes (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "chave" text,
+  "cliente_id" text,
+  "processo_id" text,
+  "numero" text,
+  "andamento" text,
+  "dia" text,
+  "texto" text,
+  "situacao" text,
+  "criado_em" text,
+  "criado_por" text,
+  "enviado_em" text,
+  "enviado_por" text,
+  "canal" text,
+  primary key (escritorio_id, "id")
+);
+alter table explicacoes add column if not exists "id" text;
+alter table explicacoes add column if not exists "chave" text;
+alter table explicacoes add column if not exists "cliente_id" text;
+alter table explicacoes add column if not exists "processo_id" text;
+alter table explicacoes add column if not exists "numero" text;
+alter table explicacoes add column if not exists "andamento" text;
+alter table explicacoes add column if not exists "dia" text;
+alter table explicacoes add column if not exists "texto" text;
+alter table explicacoes add column if not exists "situacao" text;
+alter table explicacoes add column if not exists "criado_em" text;
+alter table explicacoes add column if not exists "criado_por" text;
+alter table explicacoes add column if not exists "enviado_em" text;
+alter table explicacoes add column if not exists "enviado_por" text;
+alter table explicacoes add column if not exists "canal" text;
+alter table explicacoes enable row level security;
+drop policy if exists "explicacoes: só o próprio escritório" on explicacoes;
+create policy "explicacoes: só o próprio escritório" on explicacoes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+create table if not exists horas (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "usuario" text,
+  "inicio" text,
+  "fim" text,
+  "minutos" text,
+  "dia" text,
+  "cliente_id" text,
+  "processo_id" text,
+  "numero" text,
+  "descricao" text,
+  "faturavel" text,
+  "valor_hora" text,
+  "faturado_em" text,
+  "fatura_id" text,
+  "criado_em" text,
+  primary key (escritorio_id, "id")
+);
+alter table horas add column if not exists "id" text;
+alter table horas add column if not exists "usuario" text;
+alter table horas add column if not exists "inicio" text;
+alter table horas add column if not exists "fim" text;
+alter table horas add column if not exists "minutos" text;
+alter table horas add column if not exists "dia" text;
+alter table horas add column if not exists "cliente_id" text;
+alter table horas add column if not exists "processo_id" text;
+alter table horas add column if not exists "numero" text;
+alter table horas add column if not exists "descricao" text;
+alter table horas add column if not exists "faturavel" text;
+alter table horas add column if not exists "valor_hora" text;
+alter table horas add column if not exists "faturado_em" text;
+alter table horas add column if not exists "fatura_id" text;
+alter table horas add column if not exists "criado_em" text;
+alter table horas enable row level security;
+drop policy if exists "horas: só o próprio escritório" on horas;
+create policy "horas: só o próprio escritório" on horas for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+alter table clientes add column if not exists "indicado_por" text;
+alter table clientes add column if not exists "indicacao_pct" text;
+alter table clientes add column if not exists "indicacao_base" text;
+alter table clientes add column if not exists "indicacao_em" text;
+alter table clientes add column if not exists "ctps" text;
+alter table clientes add column if not exists "pis" text;
+alter table clientes add column if not exists "cnh" text;
+alter table clientes add column if not exists "nome_pai" text;
+alter table clientes add column if not exists "nome_mae" text;
+alter table clientes add column if not exists "naturalidade" text;
+alter table clientes add column if not exists "banco" text;
+alter table clientes add column if not exists "agencia" text;
+alter table clientes add column if not exists "conta" text;
+alter table clientes add column if not exists "pix" text;
+alter table clientes add column if not exists "falecido" text;
+alter table clientes add column if not exists "obito_em" text;
+alter table audiencias add column if not exists "forum" text;
+alter table audiencias add column if not exists "sala" text;

@@ -32,7 +32,8 @@
   "ROBO_EXTRAS",
   "ROBO_GMAIL_OK",
   "ROBO_ULTIMA_EXECUCAO",
-  "ROBO_ULTIMO_RESULTADO"
+  "ROBO_ULTIMO_RESULTADO",
+  "VALOR_HORA"
  ],
  "rotas": {
   "resumo": {
@@ -180,7 +181,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 59
+   "funcoes": 60
   },
   "audiencias.listar": {
    "tabelas": [
@@ -504,6 +505,7 @@
    "tabelas": [
     "Avisos",
     "Clientes",
+    "Explicacoes",
     "Intimacoes",
     "Processos",
     "Usuarios"
@@ -512,7 +514,65 @@
     "Utilities"
    ],
    "funcoes": 19
+  },
+  "inss.listar": {
+   "tabelas": [
+    "Clientes",
+    "Inss",
+    "Processos",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 16
+  },
+  "inss.obter": {
+   "tabelas": [
+    "Clientes",
+    "Inss",
+    "Tarefas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 18
+  },
+  "horas.listar": {
+   "tabelas": [
+    "Clientes",
+    "Horas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 14
+  },
+  "comissoes.listar": {
+   "tabelas": [
+    "Clientes",
+    "Comissoes",
+    "Usuarios"
+   ],
+   "servicos": [],
+   "funcoes": 10
+  },
+  "fin.fatura": {
+   "tabelas": [
+    "Clientes",
+    "Despesas",
+    "Honorarios",
+    "Horas",
+    "Parcelas",
+    "Usuarios"
+   ],
+   "servicos": [
+    "Utilities"
+   ],
+   "funcoes": 13
   }
  },
- "funcoes": 188
+ "funcoes": 202
 }
