@@ -3427,3 +3427,17 @@ body.sem-sessao .chatf{display:none}
 .jr-item{border:1px solid #e4dfd6;border-radius:10px;padding:10px 12px;background:#fff}
 .jr-cab{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}.jr-ementa{font-size:13px;line-height:1.55;margin:6px 0;white-space:pre-wrap}
 @media (max-width:760px){.inss-passo{min-width:78px;font-size:11px}.crono-desc{display:none}}
+
+/* 8.56 intimações direto do eproc */
+.trib-dialogo { max-width: 860px; width: calc(100vw - 32px); }
+.trib-item { border: 1px solid var(--linha, #e3ded5); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+.trib-item h3 { margin: 0 0 4px; font-size: 15px; }
+.trib-item h3 small { font-weight: 400; color: var(--cinza, #777); font-size: 12px; }
+.trib-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.trib-form input { flex: 1 1 180px; min-width: 0; }
+.trib-form.oculto { display: none; }
+.trib-partes { list-style: none; padding: 0; margin: 8px 0; font-size: 13px; }
+.trib-ok { color: #1f7a3f; } .trib-erro { color: #a33a2c; }
+.trib-tab-wrap { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+.trib-tab td, .trib-tab th { white-space: nowrap; }
+.trib-nota { margin-top: 12px; }

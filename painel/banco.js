@@ -586,6 +586,19 @@
     } catch (e) { throw new Error(ctl.signal.aborted ? 'O servidor de arquivos demorou: tente de novo.' : e.message); }
     finally { clearTimeout(timer); }
   }
+  /** 8.56: função "tribunais" do Supabase (logins do eproc no cofre e leitura das intimações pendentes, sem dar ciência). */
+  async function tribunais(corpo, ms) {
+    if (!chatSessao()) { try { await iniciar(); } catch (e) { /* segue */ } }
+    const s = chatSessao(); if (!s) throw new Error('Sem conexão com o banco agora: tente de novo em instantes.');
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms || 120000);
+    try {
+      const r = await fetch(s.url + '/functions/v1/tribunais', { method: 'POST', headers: { apikey: s.chave, 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, corpo, { token: s.token })), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal });
+      const j = await r.json().catch(() => ({}));
+      if (r.status >= 400 && !j.partes) throw new Error(j.erro || ('erro ' + r.status));
+      return j;
+    } catch (e) { throw new Error(ctl.signal.aborted ? 'O tribunal demorou para responder: tente de novo.' : e.message); }
+    finally { clearTimeout(timer); }
+  }
   /** Envia o arquivo direto ao Storage pelo link assinado (com a % do envio). */
   function chatSubir(url, blob, aoAndar) {
     const s = chatSessao();
@@ -602,5 +615,5 @@
   }
   /** Depois de qualquer gravação: a próxima leitura busca o que mudou (incremental, rápido). */
   function envelhecer() { cache.forEach(c => { if (c) c.em = 0; }); }
-  window.PAINEL_BANCO = { chatPing, chatRpc, chatArquivo, chatSubir, envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
+  window.PAINEL_BANCO = { tribunais, chatPing, chatRpc, chatArquivo, chatSubir, envelhecer, configurar: f => { chamarApps = f; }, iniciar, sair, pode, lerOuPlanilha, ler, comparar, estado, medir, lerViaEdge, gravarViaEdge, edgeLigada, entrarViaEdge, acordar, temEdge: () => !!cfgEdge() };
 })();

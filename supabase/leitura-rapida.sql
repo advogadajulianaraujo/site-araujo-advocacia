@@ -804,3 +804,35 @@ do $$ begin
 end $$;
 create index if not exists chat_sala_em_idx on chat (escritorio_id, sala, em);
 notify pgrst, 'reload schema';
+
+-- 8.56: intimações DIRETO do eproc (serviço oficial do tribunal, MNI 2.2.2). O usuário e a senha do eproc ficam no COFRE (Vault),
+-- um segredo por tribunal: trib_<tribunal>_<escritório> = {"usuario","senha","em","por"}. Só a chave secreta do Supabase lê e grava
+-- (função "tribunais"). O robô usa SÓ consultarAvisosPendentes (lista o que está pendente SEM dar ciência); nunca o teor nem a confirmação.
+create or replace function painel_trib_gravar(p_escritorio uuid, p_trib text, p_valor text) returns void
+language plpgsql security definer set search_path = public, vault as $$
+declare nome text; sid uuid;
+begin
+  if p_trib !~ '^[a-z0-9]{2,12}$' then raise exception 'tribunal inválido'; end if;
+  nome := 'trib_' || p_trib || '_' || p_escritorio::text;
+  select id into sid from vault.secrets where name = nome;
+  if coalesce(p_valor, '') = '' then
+    if sid is not null then delete from vault.secrets where id = sid; end if;
+    return;
+  end if;
+  if sid is null then perform vault.create_secret(p_valor, nome, 'login do tribunal para ler intimações pendentes (não compartilhar)');
+  else perform vault.update_secret(sid, p_valor); end if;
+end $$;
+create or replace function painel_trib_info(p_escritorio uuid) returns jsonb
+language plpgsql security definer set search_path = public, vault as $$
+declare r jsonb := '{}'::jsonb; s record; suf text := '_' || p_escritorio::text;
+begin
+  for s in select name, decrypted_secret from vault.decrypted_secrets where name like 'trib\_%' || suf loop
+    begin r := r || jsonb_build_object(substring(s.name from 6 for length(s.name) - 5 - length(suf)), s.decrypted_secret::jsonb);
+    exception when others then null; end;
+  end loop;
+  return r;
+end $$;
+revoke all on function painel_trib_gravar(uuid, text, text) from public, anon, authenticated;
+revoke all on function painel_trib_info(uuid) from public, anon, authenticated;
+grant execute on function painel_trib_gravar(uuid, text, text) to service_role;
+grant execute on function painel_trib_info(uuid) to service_role;
