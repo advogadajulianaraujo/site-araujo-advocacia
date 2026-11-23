@@ -90,7 +90,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -128,7 +128,7 @@
     processos: ['eu', 'trabalho', 'processos', 'clientes', 'resumo', 'prazos', 'intimacoes', 'tarefas'], prazos: ['eu', 'trabalho', 'prazos', 'resumo', 'agenda', 'intimacoes', 'relatorio', 'processos', 'tarefas'],
     intimacoes: ['eu', 'trabalho', 'intimacoes', 'prazos', 'resumo', 'relatorio'], registro: ['eu', 'relatorio'], trabalho: ['eu', 'trabalho', 'prazos', 'intimacoes', 'resumo', 'relatorio', 'processos', 'tarefas', 'clientes'], robo: ['resumo', 'intimacoes', 'prazos', 'processos', 'eu', 'trabalho', 'tarefas', 'agenda'], agenda: ['agenda', 'inicio', 'resumo', 'prazos', 'intimacoes', 'processos', 'tarefas'], fin: ['fin', 'inicio', 'resumo', 'clientes', 'relatorio'],
     tarefas: ['eu', 'trabalho', 'tarefas', 'prazos', 'resumo', 'relatorio', 'processos', 'agenda'], ia: ['intimacoes', 'prazos', 'tarefas', 'resumo'], resumo: [],
-    advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
+    andamentos: ['andamentos'], advogados: ['modelos'], marketing: ['marketing'], usuarios: ['usuarios', 'equipe', 'eu'], feriados: ['feriados', 'prazos', 'resumo'], future: ['future']
   };
   function esquecerDepois(acao) {
     // 8.47 (chat "muito travado"): mensagem e "lida" do chat não mudam nada das telas. Antes, cada mensagem (e cada conversa aberta,
@@ -376,7 +376,7 @@
   function preBuscar(aba) { const f = LEITURAS_DA_ABA[aba]; if (f && sessao) f().forEach(([a, d]) => api(a, d).catch(() => {})); }
 
   /* Velocidade: as leituras pedidas juntas (a mesma tela, a busca por trás) vão numa ida só ao Google ("lote"). */
-  const EM_LOTE = new Set(['audiencias.cliente', 'audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
+  const EM_LOTE = new Set(['intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'audiencias.listar', 'fin.acaoCobranca', 'ia.transcricoes', 'prompts.listar', 'fin.recibos', 'fin.alevantar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos', 'processos.listar', 'prazos.listar',
     'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'tarefas.listar',
     'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana']);
   let filaLote = [], loteTimer = null, loteDesligado = false;
@@ -790,7 +790,9 @@
     ['clientes', 'Clientes', null, null, 'Escritório'],
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
+    ['inss', 'INSS', null, 'inss', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
+    ['horas', 'Horas', null, 'horas', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -800,16 +802,18 @@
   ];
   // sub-abas da barra do topo: [rota, nome, permissão]
   const SUBABAS = {
-    modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa']],
+    modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa'], ['juridico', 'Jurisprudência e peças (IA)']],
     crm: [['crm', 'Funil', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
     relatorios: [['relatorios', 'Resumo do mês', 'usuarios'], ['relatorios?ver=equipe', 'Equipe', 'usuarios']]
   };
-  const SECAO_DA_TELA = { compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
+  const SECAO_DA_TELA = { juridico: 'modelos', compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
     processo: 'processos', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
   ICONES.chat = 'M3.5 5h12v8.5h-7L3.5 17zM18 9.5h2.5V20L17.5 17.5H11v-2';
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
   ICONES.trocar = 'M4 8h13l-3.5-3.5M20 16H7l3.5 3.5';
   ICONES.cobranca = 'M4 6.5h16v11H4zM4 10h16M8 14h4';
+  ICONES.inss = 'M4 20.5h16M5.5 18V10M9.5 18V10M14.5 18V10M18.5 18V10M3.5 8.5 12 4l8.5 4.5z';
+  ICONES.horas = 'M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 9v4.5l2.5 1.5M10 2.5h4';
   ICONES.energia = 'M13 3 6 13.5h5.5L10.5 21 18 10h-5.5z';
   ICONES.pessoas = ICONES.clientes;
   const ABAS_FUTURE = [ // 8.4: menos abas e na ordem do mês (pedido do Luiz: "está confuso")
@@ -868,6 +872,16 @@
      De 90 em 90 s (só com a aba visível) olha PIX recebidos e intimações novas; o que já foi visto fica guardado neste computador
      (só os ids). Na primeira vez marca tudo como visto, para não despejar avisos antigos. */
   let notifTimer = null;
+  /* 8.55 (Etapa 3): cada pessoa escolhe os avisos que quer no canto da tela (Configurações › Minha conta). Fica guardado no
+     servidor (Usuarios.avisos) e, enquanto não chega, neste computador. Padrão: tudo ligado. */
+  const TIPOS_NOTIF = [['intimacao', '📨 Intimação nova'], ['prazo', '⏰ Prazo meu chegando (dias marcados no prazo)'], ['pix', '💰 PIX recebido (só administração)'],
+    ['importante', '⚖ Andamento importante nos meus processos'], ['chat', '💬 Mensagem no chat da equipe']];
+  function prefNotif(tipo) {
+    const u = sessao && sessao.usuario; if (!u) return true;
+    let off = u.avisos_off;
+    if (off === undefined) { try { off = JSON.parse(localStorage.getItem('notif_off_' + u.usuario) || '[]'); } catch (e) { off = []; } }
+    return !String(Array.isArray(off) ? off.join(',') : off || '').split(',').includes(tipo);
+  }
   function iniciarNotificacoes() {
     clearInterval(notifTimer);
     const p = sessao && sessao.usuario && sessao.usuario.pode; if (!p) return;
@@ -877,24 +891,43 @@
     const lerVistos = () => { try { return JSON.parse(localStorage.getItem(CH) || 'null'); } catch (e) { return null; } };
     const rodar = async () => {
       if (document.hidden || !sessao) return;
-      const antes = lerVistos(), primeira = !antes, vistos = new Set(antes || []), novos = [];
+      const antes = lerVistos(), primeira = !antes, vistos = new Set(antes || []), novos = [], alertas = [];
       try {
-        if (admin && p.financeiro) {
+        if (admin && p.financeiro && prefNotif('pix')) {
           const r = await apiFresco('fin.pix', { dias: 2 });
           (r.lista || []).forEach(x => { if (vistos.has('pix:' + x.id)) return; vistos.add('pix:' + x.id);
             const v = x.valor === null || x.valor === undefined || x.valor === '' ? '' : 'R$ ' + formatarMoeda(x.valor);
             novos.push({ ico: '💰', tit: `PIX ${v ? 'de ' + v + ' ' : ''}recebido`, sub: [primeiroNome(x.pagador || ''), x.situacao === 'baixado' ? 'baixado ✓' : x.situacao === 'a conferir' ? 'conferir' : x.situacao].filter(Boolean).join(' · '), ir: '#/financeiro?ver=pix', cls: x.situacao === 'baixado' ? 'ok' : 'atencao' }); });
         }
-        {
+        if (prefNotif('intimacao')) {
           const r = await apiFresco('intimacoes.listar', { limite: 15, abertas: true });
           ((r && r.lista) || []).forEach(x => { if (vistos.has('int:' + x.id)) return; vistos.add('int:' + x.id);
             novos.push({ ico: '📨', tit: 'Intimação nova', sub: [x.numero, x.cliente || x.cliente_nome].filter(Boolean).join(' · '), ir: '#/prazos', cls: '' }); });
         }
+        // 8.55: andamento importante (sentença, acórdão, alvará…) nos processos da pessoa
+        if (prefNotif('importante')) {
+          const r = await apiFresco('andamentos.importantes', { dias: 3, minhas: 1 });
+          ((r && r.lista) || []).filter(x => !x.visto_em).forEach(x => { const k = x.chave; if (vistos.has(k)) return; vistos.add(k);
+            novos.push({ ico: '⚖', tit: x.rotulo + ' — ' + (x.cliente || x.numero), sub: String(x.texto || '').slice(0, 80), ir: '#/prazos?parte=importantes', cls: '' }); });
+        }
+        // 8.55: prazo meu com "avisar X dias antes" — um aviso por dia, desde X dias antes até a data final (também na 1ª vez)
+        if (prefNotif('prazo')) {
+          const hoje = hojeISO(), lst = await api('prazos.listar', {});
+          (lst || []).forEach(z => {
+            if (!z.alerta_dias || !z.fatal || z.responsavel !== sessao.usuario.usuario || !SITUACOES_ABERTAS.includes(z.situacao) || z.fatal < hoje) return;
+            if (z.fatal > isoSoma(hoje, +z.alerta_dias)) return;
+            const k = 'alerta:' + z.id + ':' + hoje; if (vistos.has(k)) return; vistos.add(k);
+            const dif = Math.round((Date.parse(z.fatal) - Date.parse(hoje)) / 864e5);
+            alertas.push({ ico: '⏰', tit: dif === 0 ? 'Prazo vence HOJE' : dif === 1 ? 'Prazo vence amanhã' : `Prazo vence em ${dif} dias (${dataBR(z.fatal).slice(0, 5)})`,
+              sub: [z.cliente, String(z.descricao || '').slice(0, 60), z.etiqueta].filter(Boolean).join(' · '), ir: '#/prazo/' + z.id, cls: dif <= 1 ? 'urgente' : '' });
+          });
+        }
       } catch (e) { return; }
       try { localStorage.setItem(CH, JSON.stringify([...vistos].slice(-400))); } catch (e) { /* ok */ }
+      alertas.slice(0, 3).forEach(mostrarNotif);
       if (primeira || !novos.length) return;
       if (novos.length > 3) { const pix = novos.filter(n => n.ico === '💰').length, int = novos.length - pix;
-        mostrarNotif({ ico: '🔔', tit: [pix ? pix + ' PIX recebido(s)' : '', int ? int + ' intimação(ões) nova(s)' : ''].filter(Boolean).join(' · '), sub: 'clique para ver', ir: pix ? '#/financeiro?ver=pix' : '#/prazos' }); }
+        mostrarNotif({ ico: '🔔', tit: [pix ? pix + ' PIX recebido(s)' : '', int ? int + ' aviso(s) novo(s)' : ''].filter(Boolean).join(' · '), sub: 'clique para ver', ir: pix ? '#/financeiro?ver=pix' : '#/prazos' }); }
       else novos.forEach(mostrarNotif);
     };
     setTimeout(rodar, 6000); notifTimer = setInterval(rodar, 90000);
@@ -1321,6 +1354,7 @@
       gravarLSc(CHAT_ULT(), u.em);
       if (!visto) return; // 1ª vez neste computador: só anota
       if (u.de === 'robô' && st.modo === 'fechado') { chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; } // 8.42: aviso do robô não abre a janela
+      if (u.de !== sessao.usuario.usuario && st.modo === 'fechado' && !prefNotif('chat')) { chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; } // 8.55: quem desligou o aviso do chat só vê a bolinha piscar
       if (u.de !== sessao.usuario.usuario && st.modo === 'fechado') { chatF.abrir('pequeno', u.sala); chatF.bolha.classList.add('pisca'); setTimeout(() => chatF && chatF.bolha.classList.remove('pisca'), 4000); return; }
       chatF.carregar();
     };
@@ -1693,8 +1727,17 @@
       ['#/clientes', '👥', 'Clientes'], ['#/processos', '📁', 'Processos'], ['#/tarefas', '✓', 'Tarefas'], ['#/agenda', '📅', 'Agenda'],
       pd.financeiro ? ['#/financeiro', '💰', 'Cobranças'] : null, pd.usuarios ? ['#/crm', '📈', 'CRM'] : null
     ].filter(Boolean).map(([href, ico, nome]) => h('a', { class: 'ini-rap', href }, h('span', { class: 'ini-rap-ico', 'aria-hidden': 'true' }, ico), h('span', {}, nome))));
+    // 8.55: intimações recebidas esperando alguém resolver (aparece só quando há)
+    const faixaCaixa = h('a', { class: 'ini-caixa', href: '#/prazos', hidden: true });
+    api('intimacoes.caixa', { status: 'nao', busca: '', minhas: '', dias: 7 }).then(r => {
+      const P = (r && r.placar) || {}; if (!P.nao) return;
+      faixaCaixa.replaceChildren(h('span', { class: 'ini-caixa-ico', 'aria-hidden': 'true' }, '📥'),
+        h('b', {}, `${P.nao} intimaç${P.nao === 1 ? 'ão' : 'ões'} para resolver`), P.nao_hoje ? h('span', {}, ` · ${P.nao_hoje} chegaram hoje`) : null,
+        P.tratadas_hoje ? h('span', {}, ` · ${P.tratadas_hoje} resolvidas hoje`) : null, h('span', { class: 'ini-caixa-ir' }, 'Resolver →'));
+      faixaCaixa.hidden = false;
+    }).catch(() => {});
     if (secretaria) {
-      mostrar(hero, rapidos,
+      mostrar(hero, rapidos, faixaCaixa,
         h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
           atalho('#/audiencias', 'Audiências hoje', audHoje.length, audHoje.length ? 'lembrar o cliente hoje' : 'nenhuma hoje', audHoje.some(a => a.devido === 'dia') ? 'alerta' : ''),
           atalho('#/audiencias?ver=avisar', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
@@ -1710,7 +1753,7 @@
       return;
     }
     if (!admin) {
-      mostrar(hero, rapidos,
+      mostrar(hero, rapidos, faixaCaixa,
         h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Meu resumo' },
           atalho('#/tarefas', 'Minhas tarefas', meu ? meu.abertas : 0, meu && meu.hoje ? `${meu.hoje} para hoje` : 'tarefas e prazos'),
           atalho('#/tarefas', 'Atrasadas', meu ? meu.atrasadas : 0, meu && meu.atrasadas ? 'resolva primeiro' : 'nenhuma 👏', meu && meu.atrasadas ? 'alerta' : ''),
@@ -1722,7 +1765,7 @@
       return;
     }
     // administração: o essencial
-    mostrar(hero, rapidos,
+    mostrar(hero, rapidos, faixaCaixa,
       h('nav', { class: 'atalhos ini-numeros', 'aria-label': 'Resumo' },
         atalho('#/prazos', 'Prazos', pz.vencidos || pz.vencendo, pz.vencidos ? 'vencido(s) sem baixa' : 'vencem em até 5 dias', pz.vencidos ? 'alerta' : pz.vencendo ? 'atencao' : ''),
         atalho('#/prazos', 'Seu OK', aguarda ? aguarda.length : 0, 'esperando aprovação', aguarda && aguarda.length ? 'atencao' : ''),
@@ -3926,6 +3969,29 @@
 
   /** Painel da administração: o que a equipe conferiu e espera o OK. */
   /* ---------- 8.36.1 Configurações (pedido da usuária: "quando clicar no nome, aparece só Configurações, organizado por tópicos") ---------- */
+  function dialogoMeusAvisos() {
+    const u = sessao.usuario, admin = !!u.pode.usuarios;
+    const off = new Set(String(u.avisos_off || '').split(',').filter(Boolean));
+    const caixas = TIPOS_NOTIF.filter(([k]) => k !== 'pix' || (admin && u.pode.financeiro)).map(([k, rot]) => {
+      const c = h('input', { type: 'checkbox', checked: !off.has(k), value: k });
+      return h('label', { class: 'cx-check cfg-aviso' }, c, ' ', rot);
+    });
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, '🔔 Meus avisos'),
+      h('p', { class: 'peq' }, 'Marque o que você quer ver no canto da tela. Vale só para você, em qualquer computador.'),
+      h('div', { class: 'cfg-avisos' }, caixas),
+      h('div', { class: 'acoes' }, botao('Salvar', async () => {
+        const desl = caixas.map(l => l.querySelector('input')).filter(i => !i.checked).map(i => i.value);
+        try {
+          const r = await api('eu.avisos', { off: desl });
+          sessao.usuario.avisos_off = r.off; guardar('painel_sessao', sessao);
+          try { localStorage.setItem('notif_off_' + u.usuario, JSON.stringify(desl)); } catch (e) { /* ok */ }
+          avisar('Avisos salvos.'); caixa.close();
+        } catch (e) { avisar(e.message, true); }
+      }), botao('Cancelar', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa); caixa.showModal();
+  }
+
   function telaConfiguracoes() {
     const p = sessao.usuario.pode, admin = !!p.usuarios;
     const item = (ico, tit, txt, alvo) => h(typeof alvo === 'string' ? 'a' : 'button', Object.assign({ class: 'cfg-item' }, typeof alvo === 'string' ? { href: alvo } : { type: 'button', onclick: alvo }),
@@ -3936,6 +4002,7 @@
       h('div', { class: 'cfg-grade' },
         grupo('👤 Minha conta',
           item('🔑', 'Trocar minha senha', 'Senha de entrada no painel', '#/senha'),
+          item('🔔', 'Meus avisos', 'Escolher o que aparece no canto da tela', () => dialogoMeusAvisos()),
           celular ? null : item('💬', 'WhatsApp neste computador', 'Abrir no aplicativo ou no WhatsApp Web', whats),
           item('🌐', 'Ver o site do escritório', 'araujoadvocaciasc.com.br', '/')),
         admin ? grupo('👥 Equipe',
@@ -4467,7 +4534,8 @@
       onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/prazo/' + z.id; } },
       h('div', { class: 'ix-quando' }, folhinha(z.fatal, d.cls), h('div', { class: 'ix-qtxt' }, h('div', { class: 'ix-rot ' + d.cls }, d.rot), z.fatal ? h('div', { class: 'ix-rel' }, etiquetaContagem(z.fatal)) : null)),
       h('div', { class: 'ix-oque' },
-        h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : /PROVIS/i.test(o.titulo) ? 'Conferido no tribunal' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo)),
+        h('div', {}, h('span', { class: 'ix-cli' }, z.cliente || 'Cliente a identificar'), ' ', h('span', { class: 'ix-ato', title: o.titulo }, docPendente(z) ? 'Ato não identificado' : /PROVIS/i.test(o.titulo) ? 'Conferido no tribunal' : o.titulo.length > 70 ? o.titulo.slice(0, 68) + '…' : o.titulo),
+          z.etiqueta ? h('span', { class: 'ix-etq' }, z.etiqueta) : null),
         h('div', { class: 'ix-proc' }, z.numero, z.tribunal ? ' · ' + z.tribunal : ''),
         h('div', { class: 'ix-auto' }, h('span', { class: 'ix-auto-ico', 'aria-hidden': 'true' }, '⟳'),
           z.criado_em ? ' chegou ' + dataBR(String(z.criado_em).slice(0, 10)).slice(0, 5) + ' ·' : '', ' via ', fonte,
@@ -4552,7 +4620,8 @@
     carregando();
     const LEG_PARTE = { analisar: 'conferir' };
     const parte0 = LEG_PARTE[params.get('parte')] || params.get('parte');
-    const parte = ['prazos', 'conferir', 'execucao', 'sistema'].includes(parte0) ? parte0 : 'prazos';
+    // 8.55: a tela abre nas intimações recebidas (para resolver); "Prazos do dia" continua a um clique (links com ?dia= abrem nele)
+    const parte = ['caixa', 'prazos', 'conferir', 'execucao', 'sistema', 'importantes'].includes(parte0) ? parte0 : (params.get('dia') ? 'prazos' : 'caixa');
     // links antigos (Início, Indicadores): ver=vencido/urgente/hoje → venc; conferir/definir/fila=conferir → doc
     const LEG = { vencido: 'venc', urgente: 'venc', hoje: 'venc', atencao: 'venc', conferir: 'doc', definir: 'doc', confirmar: 'calc' };
     const ver = LEG[params.get('ver')] || params.get('ver') || (params.get('fila') === 'conferir' ? 'doc' : params.get('fila') === 'calculado' ? 'calc' : '');
@@ -4572,8 +4641,10 @@
         admin ? blocoFeriados() : null);
       return;
     }
-    const [listaToda, resumo, encerr] = await Promise.all([api('prazos.listar', {}), api('resumo'),
-      parte === 'execucao' ? api('prazos.listar', { encerrados: true }).catch(() => []) : Promise.resolve([])]);
+    const [listaToda, resumo, encerr, cxN, impN] = await Promise.all([api('prazos.listar', {}), api('resumo'),
+      parte === 'execucao' ? api('prazos.listar', { encerrados: true }).catch(() => []) : Promise.resolve([]),
+      api('intimacoes.caixa', { status: 'nao', busca: '', minhas: '', dias: 7 }).catch(() => null),
+      api('andamentos.importantes', { dias: 15, minhas: '' }).catch(() => null)]);
     const hoje = hojeISO(), em7 = isoSoma(hoje, 7);
     const bate = z => !busca || palavrasComecam([z.cliente, z.numero, z.descricao, z.responsavel].join(' '), busca) || String(z.numero || '').replace(/\D/g, '').includes(busca.replace(/\D/g, '') || '§');
     const abertosTodos = listaToda.filter(z => SITUACOES_ABERTAS.includes(z.situacao));
@@ -4595,10 +4666,10 @@
     }));
     const nConf = prazos.filter(precisaConferir).length;
     // 8.50 (pedido da usuária: "nas intimações só quero o que está no PJe"): só os prazos das intimações; audiências e perícias ficam na tela Audiências
-    const ABAS_IX = [['prazos', 'Prazos do dia', prazos.filter(z => !z.fatal || z.fatal <= hoje).length], ['conferir', 'Conferir no tribunal', nConf],
-      ['execucao', 'Em execução e aprovação', prazos.filter(z => z.situacao === 'conferido').length]];
+    const ABAS_IX = [['caixa', 'Recebidas', cxN ? cxN.placar.nao : ''], ['prazos', 'Prazos do dia', prazos.filter(z => !z.fatal || z.fatal <= hoje).length], ['conferir', 'Conferir no tribunal', nConf],
+      ['execucao', 'Em execução e aprovação', prazos.filter(z => z.situacao === 'conferido').length], ['importantes', 'Andamentos importantes', impN ? impN.nao_vistos : '']];
     const barra = h('div', { class: 'ix-barra' },
-      h('div', { class: 'ix-abas', role: 'tablist' }, ABAS_IX.map(([k, rot, n]) => h('button', { type: 'button', role: 'tab', class: 'ix-aba' + (parte === k && !ver ? ' ativa' : ''), 'aria-selected': String(parte === k && !ver), onclick: () => ir({ parte: k === 'prazos' ? '' : k, ver: '' }) }, rot, h('span', { class: 'ix-n' + (k === 'conferir' && n ? ' alerta' : '') }, String(n))))),
+      h('div', { class: 'ix-abas', role: 'tablist' }, ABAS_IX.map(([k, rot, n]) => h('button', { type: 'button', role: 'tab', class: 'ix-aba' + (parte === k && !ver ? ' ativa' : ''), 'aria-selected': String(parte === k && !ver), onclick: () => ir({ parte: k === 'caixa' ? '' : k, ver: '', st: '', dia: '', rot: '', vistos: '' }) }, rot, n === '' ? null : h('span', { class: 'ix-n' + ((k === 'conferir' || k === 'caixa') && n ? ' alerta' : '') }, String(n))))),
       h('div', { class: 'ix-filtros' },
         h('input', { type: 'search', class: 'busca-peq', placeholder: 'Cliente ou nº do processo', value: busca, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) }),
         seletorSistema(sis, abertosTodos.filter(z => !ehAto(z)), v => { try { localStorage.setItem('prazos_sistema', v); } catch (x) { /* ok */ } ir({ sis: v === 'todos' ? '' : v }); })));
@@ -4608,6 +4679,10 @@
       const lista = prazos.filter(n[3]).sort(porData);
       corpo.push(h('p', { class: 'ix-filtro' }, 'Mostrando ', h('b', {}, n[2]), ` (${lista.length}). `, botao('Limpar', () => ir({ ver: '' }), 'mini sec')),
         lista.length ? h('div', { class: 'ix-lista' }, lista.map(linhaPrazoIx)) : h('p', { class: 'ini-vazio' }, 'Nada nesta lista.'));
+    } else if (parte === 'caixa') {
+      corpo.push(...await corpoCaixa(params, ir));
+    } else if (parte === 'importantes') {
+      corpo.push(...await corpoImportantes(params, ir));
     } else if (parte === 'prazos') {
       // 8.50.3 (pedido da usuária: "apenas as intimações do dia, com a data certa, e assim vai indo; amanhã é feriado: nenhum prazo;
       // não quero audiências aqui"): UM dia por vez — ‹ dia anterior · dia · próximo dia ›; feriado e fim de semana dizem que não vence nada.
@@ -4659,7 +4734,7 @@
         h('p', {}, `${prazos.length} prazo${prazos.length === 1 ? '' : 's'} em aberto${sis === 'todos' ? '' : ' · ' + (/^t:/.test(sis) ? nomeTrib(sis.slice(2)) : SISTEMAS.find(x => x[0] === sis)[1])} · `, h('a', { href: '#/prazos?parte=sistema', class: 'ix-sis' }, 'Funcionamento do sistema'))),
         h('div', { class: 'barra' }, botao('Novo prazo', () => { location.hash = '#/prazo/novo'; }))),
       avisoFontes(resumo.robo),
-      numeros, barra, ...corpo.filter(Boolean));
+      parte === 'caixa' || parte === 'importantes' ? null : numeros, barra, ...corpo.filter(Boolean));
   }
 
   /** Lista das intimações, sempre aberta na tela: busca, filtro do sistema, prazo de cada uma e "Marcar na agenda". */
@@ -4775,6 +4850,666 @@
     return det;
   }
 
+  /* ================================================================================================================
+     8.55 Intimações recebidas (caixa de entrada) — pedido da usuária (22/11/2026): cada intimação que chega fica "para resolver" até
+     alguém RESOLVER (confirmar a sugestão do painel, lançar prazo/audiência/tarefa/evento/histórico ou "Concluir" quando é só ciência)
+     ou DESCARTAR. Nomes do escritório: "Para resolver / Resolvidas / Descartadas" (nunca "não tratadas", a pedido dela).
+     ================================================================================================================ */
+  const ST_CAIXA = { nao: 'Para resolver', nao_hoje: 'Chegaram hoje', tratadas: 'Resolvidas', tratadas_hoje: 'Resolvidas hoje', descartadas: 'Descartadas',
+    descartadas_hoje: 'Descartadas hoje', todas: 'Todas' };
+  const ROT_TRAT = { prazo: 'prazo lançado', audiencia: 'audiência marcada', tarefa: 'tarefa criada', evento: 'evento na agenda', historico: 'histórico anotado',
+    concluida: 'concluída', ia: 'sugestão confirmada' };
+  const guardarFilaCaixa = ids => { try { sessionStorage.setItem('caixa_fila', JSON.stringify(ids.slice(0, 400))); } catch (e) { /* ok */ } };
+  const filaCaixa = () => { try { return JSON.parse(sessionStorage.getItem('caixa_fila') || '[]'); } catch (e) { return []; } };
+  const confCls = n => n >= 80 ? 'cx-c-a' : n >= 55 ? 'cx-c-m' : 'cx-c-b';
+
+  function dialogoDescartar(x, depois) {
+    const motivo = h('select', { 'aria-label': 'Motivo' }, ['É para a outra parte', 'Repetida (já chegou antes)', 'Só movimentação, nada a fazer', 'Processo que não é do escritório', 'Outro']
+      .map(m => h('option', { value: m }, m)));
+    const obs = h('input', { type: 'text', maxlength: 120, placeholder: 'Observação (opcional)' });
+    const temPrazo = x.sug && x.sug.prazo && !x.sug.prazo.ato && ['calculado', 'a definir', 'conferido'].includes(x.sug.prazo.situacao);
+    const cancelar = h('input', { type: 'checkbox', checked: true });
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, 'Descartar a intimação'),
+      h('p', { class: 'peq' }, (x.cliente || 'Cliente a identificar') + ' · ' + (x.numero || '')),
+      h('label', { class: 'campo' }, h('span', {}, 'Por quê?'), motivo), h('label', { class: 'campo' }, h('span', {}, 'Observação'), obs),
+      temPrazo ? h('label', { class: 'cx-check' }, cancelar, ' Cancelar também o prazo de ' + (x.sug.prazo.fatal ? dataBR(x.sug.prazo.fatal) : 'data a definir') + ' que o robô criou') : null,
+      h('div', { class: 'acoes' }, botao('Descartar', async () => {
+        try {
+          await api('intimacoes.tratar', { id: x.id, acao: 'descartar', motivo: motivo.value + (obs.value.trim() ? ' — ' + obs.value.trim() : ''), cancelar_prazo: temPrazo && cancelar.checked ? 1 : '' });
+          caixa.close(); avisar('Intimação descartada. Dá para reabrir em "Descartadas".'); depois && depois();
+        } catch (e) { avisar(e.message, true); }
+      }, 'perigo'), botao('Cancelar', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa); caixa.showModal();
+  }
+  async function concluirIntimacao(x, depois) {
+    try { await api('intimacoes.tratar', { id: x.id, acao: 'concluir' }); avisar('Intimação resolvida.'); depois && depois(); } catch (e) { avisar(e.message, true); }
+  }
+  async function reabrirIntimacao(x, depois) {
+    try { await api('intimacoes.tratar', { id: x.id, acao: 'reabrir' }); avisar('Intimação voltou para "Para resolver".'); depois && depois(); } catch (e) { avisar(e.message, true); }
+  }
+
+  function linhaCaixa(x) {
+    const s = x.sug || {}, aberta = x.status === 'nao', rec = String(x.recebido_em || '');
+    const abrir = () => { location.hash = '#/intimacao/' + encodeURIComponent(x.id); };
+    const sug = !aberta ? null : s.so_historico
+      ? h('div', { class: 'cx-sug cx-sug-ciencia' }, s.outra_parte ? 'Para a outra parte — basta concluir' : 'Só ciência — basta concluir')
+      : h('div', { class: 'cx-sug', title: 'Sugestão do painel (confira antes de confirmar)' }, h('span', { class: 'cx-ia' }, '✨'),
+        s.prazo && !s.prazo.ato ? 'Prazo ' + (s.prazo.fatal ? 'até ' + dataBR(s.prazo.fatal).slice(0, 5) : 'a definir') : (s.rotulo || 'Ver o ato'),
+        s.n_tarefas ? ` + ${s.n_tarefas} tarefa${s.n_tarefas > 1 ? 's' : ''}` : '',
+        h('span', { class: 'cx-conf ' + confCls(s.confianca || 0), title: 'Confiança da sugestão' }, (s.confianca || 0) + '%'));
+    const feito = aberta ? null : h('div', { class: 'cx-feito' + (x.status === 'descartada' ? ' desc' : '') },
+      x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
+      x.tratada_por ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
+    return h('div', { class: 'cx-item' + (aberta ? '' : ' feita'), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
+      h('div', { class: 'cx-quando' }, h('b', {}, rec ? dataBR(rec.slice(0, 10)).slice(0, 5) : '—'), h('span', {}, rec.length > 15 ? rec.slice(11, 16) : ''), h('span', { class: 'cx-fonte' }, x.fonte || '')),
+      h('div', { class: 'cx-oque' },
+        h('div', { class: 'cx-l1' }, h('span', { class: 'ix-cli' }, x.cliente || 'Cliente a identificar'), s.rotulo ? h('span', { class: 'cx-ato' }, s.rotulo) : null),
+        h('div', { class: 'ix-proc' }, x.numero || '', x.tribunal ? ' · ' + x.tribunal : '', x.gmail ? ' · ' : '', seloGmail(x.gmail)),
+        h('div', { class: 'cx-txt' }, String(x.resumo_ia || x.movimento || x.texto || '').replace(/^⚠[^.]*\.\s*/, '').slice(0, 220))),
+      h('div', { class: 'cx-lado' }, sug || feito,
+        h('div', { class: 'ix-resp' }, x.responsavel ? h('span', {}, h('span', { class: 'quem-ini mini' }, iniciais(x.responsavel_nome || x.responsavel)), ' ', primeiroNome(x.responsavel_nome || x.responsavel)) : h('span', { class: 'ix-sem' }, 'sem responsável'))),
+      h('div', { class: 'cx-acoes', onclick: ev => ev.stopPropagation() },
+        aberta ? [botao('Resolver', abrir, 'mini'), botao('✓ Concluir', () => concluirIntimacao(x, rota), 'mini sec'), botao('Descartar', () => dialogoDescartar(x, rota), 'mini sec cx-desc')]
+          : botao('Reabrir', () => reabrirIntimacao(x, rota), 'mini sec')));
+  }
+
+  async function corpoCaixa(params, ir) {
+    const st = ST_CAIXA[params.get('st')] ? params.get('st') : 'nao';
+    const minhas = params.get('minhas') === '1', busca = (params.get('q') || '').trim(), dias = [7, 15, 30, 90].includes(+params.get('dias')) ? +params.get('dias') : 7;
+    const r = await api('intimacoes.caixa', { status: st, busca, minhas: minhas ? 1 : '', dias });
+    const P = r.placar || {};
+    const CARDS = [['nao_hoje', 'Chegaram hoje', 'ainda para resolver', P.nao_hoje, 'k-azul'], ['tratadas_hoje', 'Resolvidas hoje', '', P.tratadas_hoje, 'k-verde'],
+      ['descartadas_hoje', 'Descartadas hoje', '', P.descartadas_hoje, 'k-cinza'], ['nao', 'Para resolver', 'no total', P.nao, P.nao ? 'k-ambar' : '']];
+    const placar = h('div', { class: 'cx-placar' }, CARDS.map(([k, rot, sub, n, cor]) => h('button', { type: 'button', class: 'cx-card ' + (n ? cor : 'zero') + (st === k ? ' ativo' : ''),
+      'aria-pressed': String(st === k), onclick: () => ir({ st: k === 'nao' ? '' : k }) }, h('b', {}, String(n || 0)), h('span', {}, rot), sub ? h('small', {}, sub) : null)));
+    const sem = r.semana || [], max = Math.max(1, ...sem.map(s => Math.max(s.recebidas, s.tratadas)));
+    const semana = h('div', { class: 'cx-semana' },
+      h('div', { class: 'cx-sem-tit' }, h('b', {}, 'Últimos 7 dias'), h('span', { class: 'cx-leg' }, h('i', { class: 'cx-l-r' }), ' chegaram ', h('i', { class: 'cx-l-t' }), ' resolvidas')),
+      h('div', { class: 'cx-sem-cols' }, sem.map(s => {
+        const c = h('div', { class: 'cx-sem-c', title: `${dataBR(s.dia)}: chegaram ${s.recebidas}, resolvidas ${s.tratadas}` },
+          h('div', { class: 'cx-sem-b' }, h('i', { class: 'r' }), h('i', { class: 't' })),
+          h('span', {}, s.dia === hojeISO() ? 'hoje' : new Date(s.dia + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')));
+        const [a, b] = c.querySelectorAll('.cx-sem-b i');
+        a.style.setProperty('height', Math.max(s.recebidas ? 4 : 0, s.recebidas * 100 / max) + '%'); b.style.setProperty('height', Math.max(s.tratadas ? 4 : 0, s.tratadas * 100 / max) + '%');
+        return c;
+      })));
+    const filtros = h('div', { class: 'cx-filtros' },
+      h('select', { 'aria-label': 'Mostrar', onchange: e => ir({ st: e.target.value === 'nao' ? '' : e.target.value }) },
+        Object.entries(ST_CAIXA).map(([k, v]) => h('option', { value: k, selected: k === st }, v))),
+      /^(tratadas|descartadas|todas)$/.test(st) ? h('select', { 'aria-label': 'Período', onchange: e => ir({ dias: e.target.value === '7' ? '' : e.target.value }) },
+        [7, 15, 30, 90].map(n => h('option', { value: n, selected: n === dias }, 'últimos ' + n + ' dias'))) : null,
+      h('label', { class: 'cx-check' }, h('input', { type: 'checkbox', checked: minhas, onchange: e => ir({ minhas: e.target.checked ? '1' : '' }) }), ' Só as minhas'));
+    const lista = r.lista || [];
+    if (/^(nao|nao_hoje|todas)$/.test(st)) guardarFilaCaixa(lista.filter(x => x.status === 'nao').map(x => x.id));
+    const vazio = st === 'nao' || st === 'nao_hoje' ? '✓ Nada para resolver. Toda intimação que chegar aparece aqui.' : 'Nada nesta lista.';
+    return [h('div', { class: 'cx-topo' }, placar, semana), filtros,
+      lista.length ? h('div', { class: 'cx-lista' }, lista.map(linhaCaixa)) : h('p', { class: 'ini-vazio' }, vazio),
+      h('p', { class: 'ix-rodape' }, 'Entram aqui as publicações do DJEN e os avisos de intimação do PJe e do eproc desde ' + dataBR(r.desde) +
+        '. O robô continua criando o prazo sozinho; resolver aqui confirma o que fazer e cria as tarefas de preparação.')];
+  }
+
+  /* ---- Andamentos importantes (sentença, acórdão, citação, alvará, audiência, perícia, acordo, penhora…) ---- */
+  async function corpoImportantes(params, ir) {
+    const dias = [7, 15, 30, 60].includes(+params.get('dias')) ? +params.get('dias') : 15, todos = params.get('vistos') === '1', minhas = params.get('minhas') === '1';
+    const r = await api('andamentos.importantes', { dias, minhas: minhas ? 1 : '' });
+    const lista = (r.lista || []).filter(x => todos || !x.visto_em);
+    const ROT = [...new Set((r.lista || []).map(x => x.rotulo))].sort();
+    const so = params.get('rot') || '';
+    const vis = so ? lista.filter(x => x.rotulo === so) : lista;
+    const marcar = async chaves => { try { await api('andamentos.visto', { chaves }); avisar(chaves.length > 1 ? chaves.length + ' andamentos marcados como vistos.' : 'Marcado como visto.'); rota(); } catch (e) { avisar(e.message, true); } };
+    const porDia = {};
+    vis.forEach(x => { (porDia[x.dia] = porDia[x.dia] || []).push(x); });
+    const linhaImp = x => {
+      const abrir = () => { if (x.processo_id) location.hash = '#/processo/' + x.processo_id; };
+      return h('div', { class: 'imp-item' + (x.visto_em ? ' visto' : ''), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
+        h('span', { class: 'imp-rot imp-' + normal(x.rotulo).replace(/[^a-z]+/g, '-') }, x.rotulo),
+        h('div', { class: 'imp-oque' },
+          h('div', {}, h('span', { class: 'ix-cli' }, x.cliente || 'Cliente a identificar'), h('span', { class: 'ix-proc' }, ' · ' + x.numero)),
+          h('div', { class: 'cx-txt' }, x.texto),
+          h('div', { class: 'ix-auto' }, '⟳ ', x.de || '', x.responsavel ? ' · ' + primeiroNome(x.responsavel_nome || x.responsavel) : '',
+            x.visto_em ? ' · visto por ' + primeiroNome(x.visto_por || '') + ' em ' + dataBR(String(x.visto_em).slice(0, 10)).slice(0, 5) : '')),
+        h('div', { class: 'cx-acoes', onclick: ev => ev.stopPropagation() }, x.visto_em ? null : botao('✓ Visto', () => marcar([x.chave]), 'mini sec')));
+    };
+    const hoje = hojeISO();
+    return [h('div', { class: 'cx-filtros' },
+        h('select', { 'aria-label': 'Período', onchange: e => ir({ dias: e.target.value === '15' ? '' : e.target.value }) }, [7, 15, 30, 60].map(n => h('option', { value: n, selected: n === dias }, 'últimos ' + n + ' dias'))),
+        h('select', { 'aria-label': 'Tipo', onchange: e => ir({ rot: e.target.value }) }, h('option', { value: '' }, 'Todos os tipos'), ROT.map(x => h('option', { value: x, selected: x === so }, x))),
+        h('label', { class: 'cx-check' }, h('input', { type: 'checkbox', checked: todos, onchange: e => ir({ vistos: e.target.checked ? '1' : '' }) }), ' Mostrar os já vistos'),
+        h('label', { class: 'cx-check' }, h('input', { type: 'checkbox', checked: minhas, onchange: e => ir({ minhas: e.target.checked ? '1' : '' }) }), ' Só os meus processos'),
+        vis.some(x => !x.visto_em) ? botao('✓ Marcar todos como vistos', () => marcar(vis.filter(x => !x.visto_em).map(x => x.chave)), 'mini sec') : null),
+      vis.length ? h('div', { class: 'imp-lista' }, Object.keys(porDia).sort().reverse().map(d => h('section', { class: 'imp-dia' }, h('h3', {}, tituloDia(d, hoje)), porDia[d].map(linhaImp))))
+        : h('p', { class: 'ini-vazio' }, todos ? 'Nenhum andamento importante neste período.' : '✓ Você já viu todos os andamentos importantes deste período.'),
+      h('p', { class: 'ix-rodape' }, 'O painel separa das movimentações comuns (conclusão, juntada, remessa…) só o que muda o processo: sentença, acórdão, citação, audiência, perícia, alvará, acordo, penhora, tutela e decisões.')];
+  }
+  const normal = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+  /* ---- Tela da intimação: o texto à esquerda, o processo à direita, a sugestão do painel e os jeitos de resolver ---- */
+  function marcarTrecho(texto, trecho) {
+    const el = h('div', { class: 'in-texto' });
+    const t = String(texto || ''), tr = String(trecho || '').trim();
+    const i = tr.length > 15 ? t.toLowerCase().indexOf(tr.toLowerCase().slice(0, 120)) : -1;
+    if (i < 0) { el.textContent = t || 'Sem o texto do ato (o aviso do tribunal não traz o conteúdo). Abra o processo no sistema do tribunal.'; return el; }
+    const fim = Math.min(t.length, i + tr.length);
+    el.append(t.slice(0, i), h('mark', { title: 'Trecho que o painel usou' }, t.slice(i, fim)), t.slice(fim));
+    return el;
+  }
+  async function telaIntimacao(id) {
+    carregando();
+    const r = await api('intimacoes.obter', { id });
+    const x = r.intimacao, s = r.sugestao || {}, p = r.processo || {}, cli = r.cliente;
+    const aberta = x.status === 'nao';
+    const fila = filaCaixa(), pos = fila.indexOf(id), proxima = pos >= 0 ? fila[pos + 1] : fila.find(f => f !== id);
+    const seguir = () => { const f2 = filaCaixa().filter(f => f !== id); guardarFilaCaixa(f2); const nx = proxima && f2.includes(proxima) ? proxima : f2[0];
+      location.hash = nx ? '#/intimacao/' + encodeURIComponent(nx) : '#/prazos'; };
+    const equipe = r.equipe || [];
+    const nomeEquipe = us => { const q = equipe.find(e => e.usuario === us); return q ? q.nome : us || ''; };
+    const selResp = (v, rot) => h('select', { 'aria-label': rot || 'Responsável' }, h('option', { value: '' }, '— sem responsável —'),
+      equipe.map(q => h('option', { value: q.usuario, selected: q.usuario === v }, q.nome)));
+    let ia = {}; try { ia = JSON.parse(x.ia_dados || '{}') || {}; } catch (e) { /* ok */ }
+    const rec = String(x.recebido_em || '');
+
+    // ---------- sugestão do painel ----------
+    let caixaSug = null;
+    if (aberta && !s.so_historico) {
+      let prazoVoto = '';
+      const votoPrazo = h('span', { class: 'cx-votos' });
+      const desenharVoto = () => votoPrazo.replaceChildren(
+        h('button', { type: 'button', class: 'cx-voto' + (prazoVoto === 'ok' ? ' sim' : ''), title: 'O prazo está certo', 'aria-pressed': String(prazoVoto === 'ok'), onclick: () => { prazoVoto = prazoVoto === 'ok' ? '' : 'ok'; desenharVoto(); } }, '👍'),
+        h('button', { type: 'button', class: 'cx-voto' + (prazoVoto === 'nao' ? ' nao' : ''), title: 'Não tem prazo / o prazo está errado (o robô cancela o prazo dele e aprende)', 'aria-pressed': String(prazoVoto === 'nao'), onclick: () => { prazoVoto = prazoVoto === 'nao' ? '' : 'nao'; desenharVoto(); } }, '👎'));
+      desenharVoto();
+      const rejeitadas = [];
+      const linhasT = h('div', { class: 'sg-tarefas' });
+      const linhaT = t => {
+        const tit = h('input', { type: 'text', class: 'sg-tit', value: t.titulo || '', maxlength: 140, 'aria-label': 'Tarefa', readonly: !!t.titulo });
+        const resp = selResp(t.responsavel, 'Quem faz');
+        const data = h('input', { type: 'date', value: t.vence_em || '', 'aria-label': 'Fazer até' });
+        const usar = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Criar esta tarefa' });
+        const el = h('div', { class: 'sg-t' }, usar, chipTipo(t.categoria, true), tit, resp, data,
+          h('button', { type: 'button', class: 'cx-voto', title: 'Editar o texto', onclick: () => { tit.readOnly = false; tit.focus(); tit.select(); } }, '✏️'),
+          h('button', { type: 'button', class: 'cx-voto', title: 'Não sugerir isso (o painel aprende)', onclick: () => { if (t.titulo) rejeitadas.push(t.titulo); el.remove(); } }, '👎'));
+        el._dados = () => usar.checked && tit.value.trim() ? { titulo: tit.value.trim(), responsavel: resp.value, vence_em: data.value, categoria: t.categoria || adivinharTipo(tit.value) || 'outro', prioridade: t.prioridade || 'normal' } : null;
+        return el;
+      };
+      (s.tarefas || []).forEach(t => linhasT.append(linhaT(t)));
+      const pz = s.prazo;
+      caixaSug = h('section', { class: 'sg-caixa' },
+        h('div', { class: 'sg-cab' }, h('h3', {}, '✨ O que o painel sugere'), h('span', { class: 'cx-conf ' + confCls(s.confianca || 0) }, (s.confianca || 0) + '% de confiança'),
+          h('span', { class: 'sg-fonte' }, s.fonte === 'ia' ? 'lido pela IA no texto' : 'modelo do escritório para ' + (s.rotulo || 'este ato'))),
+        s.providencia ? h('p', { class: 'sg-prov' }, h('b', {}, 'O que pedem: '), s.providencia) : null,
+        pz ? h('div', { class: 'sg-prazo' + (pz.ato ? ' ato' : '') },
+          h('div', {}, h('b', {}, pz.ato ? 'Na agenda: ' : 'Prazo: '), String(pz.descricao || '').replace(/^PROVISÓRIO:?\s*/i, ''), ' — ',
+            h('b', {}, pz.fatal ? dataBR(pz.fatal) : 'data a definir'), pz.dias ? ` (${pz.dias} dias ${pz.contagem === 'corridos' ? 'corridos' : 'úteis'})` : '',
+            pz.fila === 'conferir' ? h('span', { class: 'tag conferir' }, 'conferir no tribunal') : null),
+          pz.ato ? null : h('div', { class: 'sg-pz-acoes' }, 'Está certo?', votoPrazo, h('a', { href: '#/prazo/' + pz.id, class: 'link' }, 'abrir o prazo'))) :
+          h('p', { class: 'peq' }, 'O robô não criou prazo para esta intimação. Se tiver prazo, use "Lançar prazo".'),
+        h('div', { class: 'sg-sub' }, h('b', {}, 'Tarefas de preparação'), h('span', { class: 'peq' }, ' — confira quem faz e até quando; desmarque o que não precisa')),
+        linhasT,
+        h('div', { class: 'acoes' }, botao('＋ Outra tarefa', () => linhasT.append(linhaT({ titulo: '', responsavel: p.responsavel, vence_em: pz && pz.fatal ? pz.fatal : '', categoria: 'outro' })), 'mini sec')),
+        h('div', { class: 'sg-fim' },
+          botao('✓ Confirmar e resolver', async ev => {
+            const tarefas = [...linhasT.children].map(el => el._dados && el._dados()).filter(Boolean);
+            ev.target.disabled = true;
+            try {
+              const rr = await api('intimacoes.tratar', { id, acao: 'confirmar', tarefas, rejeitadas, prazo: prazoVoto });
+              avisar('Resolvida' + (rr.tarefas && rr.tarefas.length ? ' — ' + rr.tarefas.length + ' tarefa(s) criada(s)' : '') + (prazoVoto === 'nao' ? '; o prazo do robô foi cancelado' : '') + '.');
+              seguir();
+            } catch (e) { ev.target.disabled = false; avisar(e.message, true); }
+          }),
+          botao('Ignorar a sugestão', () => { caixaSug.remove(); }, 'sec'),
+          h('span', { class: 'peq' }, 'A IA ajuda; quem decide é você.')));
+    }
+
+    // ---------- resolver de outro jeito ----------
+    const fazer = async (acao, dados, msg) => { try { const rr = await api(acao === 'audiencia' || acao === 'evento' ? 'intimacoes.agendar' : 'intimacoes.tratar', Object.assign({ id, acao }, dados));
+      avisar(msg + (rr.erro_agenda ? ' (o Google Agenda recusou agora; o robô tenta de novo)' : '')); seguir(); return true; } catch (e) { avisar(e.message, true); return false; } };
+    const dlg = (titulo, campos, ok) => {
+      const caixa = h('dialog', { class: 'dialogo' }), erro = h('p', { class: 'erro' });
+      const form = h('form', { class: 'campos', novalidate: true }, h('h2', { class: 'largo' }, titulo), ...campos, erro,
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar e resolver'), botao('Cancelar', () => caixa.close(), 'sec')));
+      form.addEventListener('submit', async ev => { ev.preventDefault(); erro.textContent = ''; const b = form.querySelector('button[type=submit]'); b.disabled = true;
+        try { if (await ok(new FormData(form))) caixa.close(); } catch (e) { erro.textContent = e.message; } finally { b.disabled = false; } });
+      caixa.append(form); caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+    };
+    const optsEquipe = v => [['', '— sem responsável —'], ...equipe.map(q => [q.usuario, q.nome])].map(([a, b]) => [a, b]);
+    const TRAT = {
+      prazo: () => dlg('Lançar prazo', [
+        campo('descricao', 'O que fazer', (s.prazo && !s.prazo.ato ? String(s.prazo.descricao || '').replace(/^.*?PROVISÓRIO\)?:?\s*/i, '') : (ia.providencia || '')).slice(0, 140), { largo: true, obrigatorio: true }),
+        campo('dias', 'Dias', String(ia.prazo_dias || (s.prazo && s.prazo.dias) || ''), { modo: 'numeric', max: 3 }),
+        campo('contagem', 'Contagem', ia.contagem === 'corridos' ? 'corridos' : 'uteis', { opcoes: [['uteis', 'Dias úteis'], ['corridos', 'Dias corridos']] }),
+        campo('ciencia', 'Começa a contar de (ciência)', (s.prazo && s.prazo.ciencia) || (ia.datas && ia.datas.ciencia) || '', { tipo: 'date' }),
+        campo('fatal', 'Ou a data final (se já souber)', '', { tipo: 'date' }),
+        campo('responsavel', 'Quem faz', (s.prazo && s.prazo.responsavel) || p.responsavel, { opcoes: optsEquipe() }),
+        campo('alerta_dias', 'Avisar quantos dias antes', '2', { opcoes: [['', 'Não avisar'], ['1', '1 dia antes'], ['2', '2 dias antes'], ['3', '3 dias antes'], ['5', '5 dias antes'], ['7', '7 dias antes']] }),
+        campo('etiqueta', 'Etiqueta (opcional)', '', { dica: 'ex.: urgente, recurso, cliente difícil', max: 40 })],
+        async fd => { const o = Object.fromEntries(fd.entries()); if (!o.fatal && !(o.dias && o.ciencia)) throw new Error('Informe os dias e a data de ciência, ou a data final.'); return fazer('prazo', { prazo: o }, 'Prazo lançado.'); }),
+      audiencia: () => dlg('Marcar audiência ou perícia', [
+        campo('tipo', 'O que é', s.ato === 'pericia' ? 'pericia' : s.ato === 'instrucao' ? 'instrucao' : 'conciliacao', { opcoes: [['conciliacao', 'Audiência de conciliação'], ['instrucao', 'Audiência de instrução'], ['inicial', 'Audiência inicial / una'], ['mediacao', 'Audiência de mediação (CEJUSC)'], ['pericia', 'Perícia']] }),
+        campo('data', 'Data', /^\d{4}-\d{2}-\d{2}$/.test(ia.data_ato || '') ? ia.data_ato : '', { tipo: 'date', obrigatorio: true }),
+        campo('hora', 'Horário', /^\d{2}:\d{2}$/.test(ia.hora_ato || '') ? ia.hora_ato : '', { tipo: 'time' }),
+        h('p', { class: 'largo peq' }, 'Vai para o Google Agenda certo e entra em Audiências com os avisos ao cliente.')],
+        async fd => fazer('audiencia', { audiencia: Object.fromEntries(fd.entries()) }, 'Marcado na agenda.')),
+      tarefa: () => dlg('Criar tarefa', [
+        campo('titulo', 'O que precisa ser feito', '', { largo: true, obrigatorio: true }),
+        campo('responsavel', 'Quem faz', p.responsavel, { opcoes: optsEquipe() }),
+        campo('vence_em', 'Até quando', s.prazo && s.prazo.fatal ? s.prazo.fatal : '', { tipo: 'date' }),
+        campo('categoria', 'Tipo', 'prazo', { opcoes: TIPOS_T.map(t => [t[0], t[1] + ' ' + t[2]]) }),
+        campo('prioridade', 'Prioridade', 'normal', { opcoes: [['urgente', 'Urgente'], ['alta', 'Alta'], ['normal', 'Normal'], ['baixa', 'Baixa']] })],
+        async fd => fazer('tarefa', { tarefa: Object.fromEntries(fd.entries()) }, 'Tarefa criada.')),
+      evento: () => dlg('Marcar um compromisso', [
+        campo('titulo', 'Título', (cli ? cli.nome + ' — ' : '') + (s.rotulo || ''), { largo: true, obrigatorio: true }),
+        campo('agenda', 'Agenda', 'ATENDIMENTOS', { opcoes: [['ATENDIMENTOS', 'Atendimentos'], ['AUDIÊNCIA CONCILIAÇÃO', 'Audiência conciliação'], ['AUDIÊNCIA INSTRUÇÃO', 'Audiência instrução'], ['PERÍCIAS', 'Perícias']] }),
+        campo('data', 'Data', '', { tipo: 'date', obrigatorio: true }), campo('inicio', 'Início', '', { tipo: 'time', obrigatorio: true }), campo('fim', 'Fim', '', { tipo: 'time' }),
+        campo('local', 'Local', '', { largo: true })],
+        async fd => fazer('evento', { evento: Object.fromEntries(fd.entries()) }, 'Compromisso na agenda.')),
+      historico: () => dlg('Só anotar no histórico do processo', [campo('texto', 'O que anotar', s.providencia || '', { area: true, largo: true })],
+        async fd => fazer('historico', { texto: fd.get('texto') }, 'Anotado no histórico.'))
+    };
+    const menuTrat = h('details', { class: 'in-menu' }, h('summary', { class: 'btn sec' }, 'Resolver de outro jeito ▾'),
+      h('div', { class: 'in-menu-l' }, [['prazo', '⏱ Lançar prazo'], ['audiencia', '⚖ Marcar audiência / perícia'], ['tarefa', '✓ Criar tarefa'], ['evento', '📅 Compromisso na agenda'], ['historico', '🗒 Só anotar no histórico']]
+        .map(([k, rot]) => h('button', { type: 'button', onclick: () => { menuTrat.open = false; TRAT[k](); } }, rot))));
+    const barra = h('div', { class: 'in-barra' },
+      h('a', { href: '#/prazos', class: 'link' }, '← Intimações'),
+      aberta ? [menuTrat, botao('✓ Concluir', () => concluirIntimacao(x, seguir), 'sec'), botao('Descartar', () => dialogoDescartar(Object.assign({}, x, { sug: s, cliente: cli && cli.nome }), seguir), 'sec cx-desc')]
+        : h('span', { class: 'cx-feito' + (x.status === 'descartada' ? ' desc' : '') }, x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
+          x.tratada_por || x.terminada_por ? ' por ' + (x.tratada_por || x.terminada_por) : '', x.tratada_em || x.terminada_em ? ' em ' + quando(x.tratada_em || x.terminada_em) : ''),
+      aberta ? null : botao('Reabrir', () => reabrirIntimacao(x, rota), 'sec'),
+      proxima && proxima !== id ? h('a', { href: '#/intimacao/' + encodeURIComponent(proxima), class: 'btn sec in-prox' }, 'Próxima ›') : null);
+
+    // ---------- coluna da direita ----------
+    const tr = linkTribunal(p.numero);
+    const lado = h('aside', { class: 'in-lado' },
+      h('section', { class: 'in-card' }, h('h3', {}, 'Processo'),
+        h('div', { class: 'num' }, p.numero || x.numero || '—'), acessoTribunal(p.numero || x.numero),
+        h('dl', { class: 'in-dl' }, [['Tribunal', p.tribunal], ['Vara', p.orgao], ['Área', p.area], ['Etapa', FASES[p.fase] || p.fase], ['Responsável', nomeEquipe(p.responsavel)], ['Outra parte', p.parte_contraria]]
+          .filter(a => a[1]).map(([a, b]) => [h('dt', {}, a), h('dd', {}, b)])),
+        p.id ? h('a', { class: 'btn mini sec', href: '#/processo/' + p.id }, 'Abrir o processo') : h('p', { class: 'peq' }, 'Processo ainda não cadastrado no painel.')),
+      cli ? h('section', { class: 'in-card' }, h('h3', {}, 'Cliente'), h('a', { href: '#/cliente/' + cli.id, class: 'in-cli' }, cli.nome),
+        cli.telefone ? h('div', { class: 'peq' }, cli.telefone) : null) : null,
+      h('section', { class: 'in-card' }, h('h3', {}, 'O que está em aberto neste processo'),
+        (r.pendentes || []).length ? h('ul', { class: 'in-pend' }, r.pendentes.map(q => h('li', {},
+          h('span', { class: 'in-pt in-pt-' + q.tipo }, q.tipo === 'ato' ? 'agenda' : q.tipo), ' ',
+          q.tipo === 'tarefa' ? q.titulo : h('a', { href: '#/prazo/' + q.id }, String(q.titulo || '').slice(0, 80)),
+          q.data ? h('span', { class: 'peq' }, ' · ' + dataBR(q.data).slice(0, 5)) : null, q.responsavel ? h('span', { class: 'peq' }, ' · ' + primeiroNome(nomeEquipe(q.responsavel))) : null)))
+          : h('p', { class: 'peq' }, 'Nada em aberto.')),
+      (r.andamentos || []).length ? h('section', { class: 'in-card' }, h('h3', {}, 'Últimos andamentos'),
+        h('ul', { class: 'in-and' }, r.andamentos.map(m => h('li', {}, h('b', {}, m.d ? dataBR(m.d).slice(0, 5) : ''), ' ', m.n)))) : null,
+      (r.outras || []).length ? h('section', { class: 'in-card' }, h('h3', {}, 'Outras intimações deste processo'),
+        h('ul', { class: 'in-and' }, r.outras.map(o => h('li', {}, h('a', { href: '#/intimacao/' + encodeURIComponent(o.id) }, dataBR(String(o.recebido_em).slice(0, 10)).slice(0, 5), ' · ', o.movimento || o.fonte),
+          o.status === 'nao' ? h('span', { class: 'tag conferir' }, 'para resolver') : null)))) : null);
+
+    mostrar(barra,
+      h('div', { class: 'in-grade' },
+        h('div', { class: 'in-principal' },
+          h('div', { class: 'in-cab' },
+            h('div', {}, h('h1', {}, cli ? cli.nome : 'Cliente a identificar'), h('div', { class: 'in-sub' },
+              s.rotulo ? h('span', { class: 'cx-ato' }, s.rotulo) : null, ' ', x.fonte || '', rec ? ' · chegou ' + dataBR(rec.slice(0, 10)) + (rec.length > 15 ? ' às ' + rec.slice(11, 16) : '') : '',
+              x.ciencia ? ' · ciência ' + dataBR(x.ciencia) : '', x.gmail_id ? ' · ' : '', seloGmail(x.gmail_apagado_em ? 'apagado' : x.gmail_lido_em ? 'aberto' : x.gmail_id ? 'nao' : ''))),
+            s.outra_parte ? h('div', { class: 'ix-alerta' }, 'O painel leu que esta intimação é para a OUTRA parte. Confira e conclua se não houver nada a fazer.') : null),
+          x.resumo_ia ? h('div', { class: 'in-resumo' + (/⚠/.test(x.resumo_ia) ? ' alerta' : '') }, h('b', {}, '✨ Resumo: '), x.resumo_ia) : null,
+          h('section', { class: 'in-doc' }, h('div', { class: 'in-doc-cab' }, h('b', {}, x.movimento ? String(x.movimento).slice(0, 160) : 'Texto da intimação'),
+            h('button', { type: 'button', class: 'link', onclick: () => copiar(x.texto || '', 'Texto copiado.') }, 'copiar o texto')),
+            marcarTrecho(x.texto, ia.trecho)),
+          caixaSug),
+        lado));
+  }
+
+  /* ================================================================================================================
+     8.55 INSS — pedidos administrativos previdenciários (pedido da usuária: "não quero juntar o judiciário com o INSS; quero uma aba para o
+     INSS, com as etapas bonitas"). Quadro por etapa (como Processos/CRM), linha do tempo em passos na ficha e um botão para cada próximo passo.
+     ================================================================================================================ */
+  const COR_INSS = { assinado: '#8a7f70', documentos: '#c98a12', protocolado: '#2f6fd0', analise: '#5b6bd6', exigencia: '#d0662f', pericia: '#8b4fc4',
+    resultado: '#3a8fa0', deferido: '#1f8a4c', indeferido: '#b3261e', recurso: '#a3591b', recurso_negado: '#7a1f1a', judicial: '#1C1A17', arquivado: '#9a9286' };
+  // as colunas do quadro (as etapas finais ficam juntas no fim)
+  const COLUNAS_INSS = [['assinado', ['assinado']], ['documentos', ['documentos']], ['protocolado', ['protocolado', 'analise']], ['exigencia', ['exigencia']],
+    ['pericia', ['pericia', 'resultado']], ['indeferido', ['indeferido', 'recurso', 'recurso_negado']], ['deferido', ['deferido']], ['judicial', ['judicial', 'arquivado']]];
+  const NOME_COL_INSS = { assinado: 'Contrato assinado', documentos: 'Documentos e laudos', protocolado: 'Pedido no INSS / em análise', exigencia: 'Exigência',
+    pericia: 'Perícia e resultado', indeferido: 'Indeferido e recurso', deferido: 'Aprovado', judicial: 'Justiça / arquivado' };
+  const ROT_BOTAO_INSS = { documentos: 'Aguardando documentos', protocolado: 'Pedido feito no INSS', analise: 'Em análise', exigencia: 'Exigência (falta documento)',
+    pericia: 'Perícia marcada', resultado: 'Perícia feita: aguardar resultado', deferido: '✓ Aprovado', indeferido: '✕ Indeferido', recurso: 'Entrar com recurso',
+    recurso_negado: 'Recurso negado', judicial: 'Levar para a Justiça', arquivado: 'Arquivar / desistiu', assinado: 'Reabrir' };
+
+  function dialogoEtapaInss(x, para, depois) {
+    const caixa = h('dialog', { class: 'dialogo' }), erro = h('p', { class: 'erro' });
+    const hoje = hojeISO(), C = [];
+    if (para === 'protocolado') C.push(campo('protocolo', 'Número do protocolo / requerimento', x.protocolo, { max: 60 }), campo('der', 'Data do pedido (DER)', x.der || hoje, { tipo: 'date' }));
+    if (para === 'exigencia') C.push(campo('exigencia', 'O que o INSS pediu', '', { area: true, largo: true, obrigatorio: true }), campo('ciencia', 'Data em que vimos a exigência', hoje, { tipo: 'date' }),
+      campo('exigencia_prazo', 'Prazo final (se o INSS informou)', '', { tipo: 'date' }), h('p', { class: 'largo peq' }, 'Sem o prazo, o painel conta 30 dias da ciência e cria as tarefas para cumprir 5 dias úteis antes.'));
+    if (para === 'pericia') C.push(campo('pericia_data', 'Data da perícia', x.pericia_data, { tipo: 'date', obrigatorio: true }), campo('pericia_hora', 'Horário', x.pericia_hora, { tipo: 'time' }),
+      campo('pericia_local', 'Local (agência do INSS)', x.pericia_local, { largo: true }), h('label', { class: 'largo cx-check' }, h('input', { type: 'checkbox', name: 'agendar', checked: true }), ' Pôr na agenda PERÍCIAS do Google'));
+    if (para === 'deferido') {
+      const vb = campo('valor_beneficio', 'Valor do benefício R$', x.valor_beneficio, { modo: 'decimal' });
+      C.push(campo('nb', 'Número do benefício (NB)', x.nb, { max: 30 }), vb, campo('dib', 'Início do benefício (DIB)', x.dib, { tipo: 'date' }), campo('data', 'Data da decisão', hoje, { tipo: 'date' }));
+      if (sessao.usuario.pode.financeiro && !x.honorario_id) {
+        const pv = h('p', { class: 'largo peq hon-previa' });
+        const tot = campo('hon_total', 'Honorários: valor total R$', '', { modo: 'decimal', dica: 'ex.: 2 benefícios' });
+        const n = campo('hon_parcelas', 'Em quantas parcelas', '2', { modo: 'numeric', max: 3 });
+        const prim = campo('hon_primeiro', '1º vencimento', isoSoma(hoje, 30), { tipo: 'date' });
+        const regra = campo('hon_regra', 'Regra do contrato', '2 primeiras parcelas do benefício', { opcoes: [['2 primeiras parcelas do benefício', '2 benefícios'], ['30% dos retroativos', '30% dos retroativos'], ['2 benefícios ou 30% (o que for maior)', '2 benefícios ou 30% — o maior'], ['outra', 'Outra']] });
+        const lancar = h('label', { class: 'largo cx-check' }, h('input', { type: 'checkbox', name: 'lancar', checked: true }), ' Lançar o honorário no Financeiro agora');
+        const calc = () => { const v = parseFloat(String(vb.querySelector('input').value).replace(/\./g, '').replace(',', '.')) || 0; const t = tot.querySelector('input');
+          if (v && !t.value && /2 /.test(regra.querySelector('select').value)) t.value = formatarMoeda(2 * v);
+          pv.textContent = t.value ? `Honorários de R$ ${t.value} em ${n.querySelector('input').value || 1}x, a partir de ${dataBR(prim.querySelector('input').value || hoje)}.` : ''; };
+        [vb, tot, n, prim, regra].forEach(el => el.addEventListener('input', calc)); regra.addEventListener('change', calc);
+        C.push(h('h3', { class: 'largo' }, '💰 Honorário'), regra, tot, n, prim, lancar, pv);
+      }
+    }
+    if (para === 'indeferido') C.push(campo('motivo', 'Motivo do indeferimento', '', { area: true, largo: true }), campo('data', 'Data da decisão', hoje, { tipo: 'date' }),
+      campo('ciencia', 'Data em que vimos a decisão (ciência)', hoje, { tipo: 'date' }), h('p', { class: 'largo peq' }, 'O prazo do recurso ordinário é de 30 dias da ciência (Decreto 3.048/99, art. 305, § 1º). O painel cria as tarefas.'));
+    if (para === 'recurso_negado') C.push(campo('motivo', 'Motivo', '', { area: true, largo: true }));
+    if (para === 'judicial') C.push(h('p', { class: 'largo' }, 'Vai abrir uma petição inicial previdenciária em Processos, ligada a este pedido. O histórico do INSS continua aqui.'));
+    C.push(campo('obs', 'Observação (opcional)', '', { area: true, largo: true }));
+    const form = h('form', { class: 'campos', novalidate: true }, h('h2', { class: 'largo' }, ROT_BOTAO_INSS[para] || 'Mudar a etapa'), h('p', { class: 'largo peq' }, x.cliente + (x.beneficio ? ' · ' + x.beneficio : '')),
+      ...C, erro, h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'), botao('Cancelar', () => caixa.close(), 'sec')));
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault(); erro.textContent = ''; const b = form.querySelector('button[type=submit]'); b.disabled = true;
+      const o = Object.fromEntries(new FormData(form).entries()), dados = { id: x.id, etapa: para };
+      ['protocolo', 'der', 'exigencia', 'ciencia', 'exigencia_prazo', 'pericia_data', 'pericia_hora', 'pericia_local', 'nb', 'valor_beneficio', 'dib', 'data', 'motivo', 'obs'].forEach(k => { if (o[k] !== undefined) dados[k] = o[k]; });
+      if (o.lancar && o.hon_total) dados.honorario = { valor_total: o.hon_total, parcelas: o.hon_parcelas, primeiro: o.hon_primeiro, regra: o.hon_regra };
+      try {
+        const r = await api('inss.etapa', dados);
+        if (para === 'pericia' && o.agendar) api('inss.agenda', { id: x.id }).then(() => avisar('Perícia na agenda PERÍCIAS.')).catch(e => avisar('Etapa salva; a agenda do Google recusou agora: ' + e.message, true));
+        caixa.close();
+        avisar((ROT_BOTAO_INSS[para] || 'Etapa salva').replace(/^[✓✕] /, '') + (r.honorario_id ? ' — honorário lançado no Financeiro.' : '.') + (r.processo_id ? ' Petição inicial aberta em Processos.' : ''));
+        depois && depois(r);
+      } catch (e) { erro.textContent = e.message; } finally { b.disabled = false; }
+    });
+    caixa.append(form); caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+  }
+  function dialogoNovoInss(clientes, beneficios, depois, cli0) {
+    const caixa = h('dialog', { class: 'dialogo' }), erro = h('p', { class: 'erro' });
+    const lista = h('datalist', { id: 'inss-clis' }, clientes.slice(0, 3000).map(c => h('option', { value: c.nome })));
+    const nome = h('input', { list: 'inss-clis', placeholder: 'Comece a digitar o nome', value: cli0 ? cli0.nome : '', 'aria-label': 'Cliente' });
+    const ben = h('select', { 'aria-label': 'Benefício' }, h('option', { value: '' }, '— qual benefício? —'), beneficios.map(b => h('option', { value: b }, b)));
+    const caixaForm = h('div', { class: 'campos' }, h('h2', { class: 'largo' }, '＋ Novo pedido no INSS'), h('label', { class: 'campo largo' }, h('span', {}, 'Cliente *'), nome, lista),
+      h('label', { class: 'campo largo' }, h('span', {}, 'Benefício'), ben), erro,
+      h('div', { class: 'acoes largo' }, botao('Criar', async () => {
+        const c = cli0 && nome.value === cli0.nome ? cli0 : clientes.find(x => x.nome === nome.value.trim());
+        if (!c) { erro.textContent = 'Escolha um cliente da lista (cadastre antes em Clientes, se for novo).'; return; }
+        try { const r = await api('inss.salvar', { cliente_id: c.id, beneficio: ben.value }); caixa.close(); avisar('Pedido criado. Tarefas: pedir os documentos e fazer o pedido no Meu INSS.'); depois && depois(r); }
+        catch (e) { erro.textContent = e.message; }
+      }), botao('Cancelar', () => caixa.close(), 'sec')));
+    caixa.append(caixaForm); caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+  }
+  async function telaInss(params) {
+    carregando();
+    const [r, clis] = await Promise.all([api('inss.listar', {}), api('clientes.listar', {}).catch(() => [])]);
+    const busca = (params.get('q') || '').trim(), ver = params.get('ver') === 'lista' ? 'lista' : 'quadro', minhas = params.get('minhas') === '1';
+    const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/inss' + (q.toString() ? '?' + q : ''); };
+    const clientes = (Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome }));
+    let lista = r.lista.filter(x => (!busca || palavrasComecam([x.cliente, x.beneficio, x.protocolo, x.nb].join(' '), busca)) && (!minhas || x.responsavel === sessao.usuario.usuario));
+    const ativos = lista.filter(x => !['deferido', 'judicial', 'arquivado'].includes(x.etapa));
+    const nPer = lista.filter(x => x.etapa === 'pericia' && x.pericia_data >= hojeISO()).length, nExi = lista.filter(x => x.etapa === 'exigencia').length;
+    const nAprov = lista.filter(x => x.etapa === 'deferido').length, nIndef = lista.filter(x => ['indeferido', 'recurso', 'recurso_negado'].includes(x.etapa)).length;
+    const nums = h('div', { class: 'inss-nums' }, [[ativos.length, 'Em andamento', ''], [nExi, 'Com exigência', nExi ? 'k-ambar' : ''], [nPer, 'Perícias marcadas', nPer ? 'k-azul' : ''],
+      [nIndef, 'Indeferidos / recurso', nIndef ? 'k-vermelho' : ''], [nAprov, 'Aprovados', nAprov ? 'k-verde' : '']].map(([n, rot, cor]) => h('div', { class: 'cx-card ' + (n ? cor : 'zero') }, h('b', {}, String(n)), h('span', {}, rot))));
+    const proxima = x => x.proxima_data ? h('p', { class: 'crm-prox' + (x.atrasado ? ' inss-atraso' : '') }, (x.proxima_tipo === 'perícia' ? '🩺 Perícia ' : '⏱ ' + x.proxima_tipo.replace(/^./, c => c.toUpperCase()) + ' ') + dataBR(x.proxima_data).slice(0, 5) + (x.pericia_hora && x.proxima_tipo === 'perícia' ? ' ' + x.pericia_hora : ''), ' ', etiquetaDias(x.proxima_data)) : null;
+    const cartao = x => h('article', { class: 'crm-card inss-card', tabindex: 0, onclick: () => { location.hash = '#/inss/' + x.id; }, onkeydown: ev => { if (ev.key === 'Enter') location.hash = '#/inss/' + x.id; } },
+      h('div', { class: 'crm-card-topo' }, h('strong', {}, x.cliente || 'Cliente')),
+      h('div', { class: 'crm-tags' }, x.beneficio ? h('span', { class: 'tag' }, x.beneficio.replace(/ \(.*\)$/, '')) : h('span', { class: 'tag sec' }, 'benefício a definir'),
+        x.etapa !== COLUNAS_INSS.find(c => c[1].includes(x.etapa))[0] ? h('span', { class: 'tag sec' }, x.etapa_nome) : null),
+      x.protocolo ? h('p', { class: 'peq proc-card-num' }, 'Protocolo ' + x.protocolo) : null, proxima(x),
+      h('div', { class: 'crm-card-pe' }, h('span', { class: 'crm-quem' }, h('span', { class: 'crm-av', title: x.responsavel_nome || 'Sem responsável' }, x.responsavel ? iniciais(x.responsavel_nome || x.responsavel) : '—')),
+        h('span', { class: 'inss-dias' + (x.dias_etapa >= 30 ? ' parado' : '') }, x.dias_etapa ? x.dias_etapa + ' dia' + (x.dias_etapa > 1 ? 's' : '') + ' nesta etapa' : 'hoje')));
+    const quadro = h('div', { class: 'crm-quadro quadro-inss' }, COLUNAS_INSS.map(([col, ets]) => {
+      const itens = lista.filter(x => ets.includes(x.etapa)).sort((a, b) => (a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1);
+      const sec = h('section', { class: 'crm-col', 'data-fase': col }, h('header', {}, h('span', { class: 'crm-ponto' }), h('strong', {}, NOME_COL_INSS[col]), h('span', { class: 'visao-n' }, String(itens.length))),
+        h('div', { class: 'crm-col-corpo' }, itens.length ? itens.map(cartao) : h('p', { class: 'peq crm-vazio' }, '—')));
+      sec.style.setProperty('--cor', COR_INSS[col]); return sec;
+    }));
+    const tabela = h('table', { class: 'tabela compacta' }, h('thead', {}, h('tr', {}, ['Cliente', 'Benefício', 'Etapa', 'Protocolo', 'Próxima data', 'Quem cuida'].map(t => h('th', {}, t)))),
+      h('tbody', {}, lista.map(x => h('tr', { class: 'clicavel', onclick: () => { location.hash = '#/inss/' + x.id; } }, h('td', {}, h('b', {}, x.cliente)), h('td', {}, x.beneficio || '—'),
+        h('td', {}, h('span', { class: 'inss-et', 'data-et': x.etapa }, x.etapa_nome)), h('td', {}, x.protocolo || '—'), h('td', {}, x.proxima_data ? dataBR(x.proxima_data) + ' · ' + x.proxima_tipo : '—'),
+        h('td', {}, x.responsavel_nome || '—')))));
+    tabela.querySelectorAll('.inss-et').forEach(el => el.style.setProperty('--cor', COR_INSS[el.dataset.et] || '#999'));
+    const trazer = (r.iniciais || []).length ? h('details', { class: 'caixa inss-trazer' }, h('summary', {}, `📥 ${r.iniciais.length} petição(ões) inicial(is) previdenciária(s) sem número — é pedido no INSS?`),
+      h('p', { class: 'peq' }, 'Se o caso começa pelo INSS (administrativo), traga para cá: a petição inicial sai de Processos e vira um pedido do INSS com as tarefas certas.'),
+      h('ul', { class: 'lista-int' }, r.iniciais.map(p => h('li', {}, h('b', {}, p.cliente || 'Cliente'), ' · criada ' + (p.criado_em ? dataBR(p.criado_em.slice(0, 10)) : ''), ' ',
+        botao('Trazer para o INSS', async ev => { ev.target.disabled = true; try { const rr = await api('inss.trazer', { processo_id: p.id }); avisar('Agora é um pedido no INSS.'); location.hash = '#/inss/' + rr.id; } catch (e) { ev.target.disabled = false; avisar(e.message, true); } }, 'mini sec'),
+        ' ', h('a', { href: '#/processo/' + p.id, class: 'link' }, 'ver o processo'))))) : null;
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'INSS'), h('p', {}, 'Pedidos administrativos no INSS — separados dos processos judiciais. Cada etapa cria as tarefas da equipe.')),
+        h('div', { class: 'barra' }, botao('＋ Novo pedido no INSS', () => dialogoNovoInss(clientes, r.beneficios, rr => { location.hash = '#/inss/' + rr.id; })))),
+      nums, trazer,
+      h('div', { class: 'cx-filtros' }, h('input', { type: 'search', class: 'busca-peq', placeholder: 'Cliente, benefício, protocolo ou NB', value: busca, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) }),
+        h('label', { class: 'cx-check' }, h('input', { type: 'checkbox', checked: minhas, onchange: e => ir({ minhas: e.target.checked ? '1' : '' }) }), ' Só os meus'),
+        h('div', { class: 'seg-mini' }, h('button', { type: 'button', class: ver === 'quadro' ? 'on' : '', onclick: () => ir({ ver: '' }) }, 'Quadro'), h('button', { type: 'button', class: ver === 'lista' ? 'on' : '', onclick: () => ir({ ver: 'lista' }) }, 'Lista'))),
+      lista.length ? (ver === 'lista' ? h('div', { class: 'caixa' }, tabela) : comSetas(quadro)) : h('p', { class: 'ini-vazio' }, 'Nenhum pedido no INSS ainda. Use "＋ Novo pedido no INSS" ou marque "Começa pelo INSS" ao registrar o "✓ Assinado" de um cliente previdenciário.'));
+  }
+  async function telaInssPedido(id) {
+    carregando();
+    const r = await api('inss.obter', { id }), x = r.pedido, et = r.etapas, ordem = ['assinado', 'documentos', 'protocolado', 'analise', 'pericia', 'resultado', 'deferido'];
+    const passou = new Set((x.historico || []).map(hh => hh.etapa));
+    const caminho = ['indeferido', 'recurso', 'recurso_negado', 'judicial', 'exigencia'].some(e => passou.has(e) || x.etapa === e)
+      ? ['assinado', 'documentos', 'protocolado', 'analise', ...(passou.has('exigencia') || x.etapa === 'exigencia' ? ['exigencia'] : []), ...(passou.has('pericia') || x.etapa === 'pericia' ? ['pericia'] : []),
+        ...(['indeferido', 'recurso', 'recurso_negado', 'judicial'].filter(e => passou.has(e) || x.etapa === e)), ...(x.etapa === 'deferido' ? ['deferido'] : [])] : ordem;
+    const idxAtual = caminho.indexOf(x.etapa);
+    const passos = h('ol', { class: 'inss-passos' }, caminho.map((e, i) => {
+      const li = h('li', { class: 'inss-passo' + (i < idxAtual || (passou.has(e) && i < idxAtual) ? ' feito' : '') + (e === x.etapa ? ' atual' : '') }, h('span', { class: 'inss-bola' }, i < idxAtual ? '✓' : String(i + 1)),
+        h('span', { class: 'inss-pnome' }, (et.find(q => q.id === e) || {}).nome || e));
+      li.style.setProperty('--cor', COR_INSS[e] || '#999'); return li;
+    }));
+    const atual = et.find(q => q.id === x.etapa) || {};
+    const botoes = h('div', { class: 'inss-botoes' }, (atual.vai || []).map(e => botao(ROT_BOTAO_INSS[e] || e, () => dialogoEtapaInss(x, e, () => rota()), /deferido/.test(e) && e === 'deferido' ? '' : 'sec')),
+      x.etapa !== 'arquivado' && !['deferido', 'judicial'].includes(x.etapa) ? botao('Arquivar / desistiu', () => dialogoEtapaInss(x, 'arquivado', () => rota()), 'sec cx-desc') : null);
+    const dado = (rot, v) => v ? [h('dt', {}, rot), h('dd', {}, v)] : null;
+    const editar = () => {
+      const caixa = h('dialog', { class: 'dialogo' }), erro = h('p', { class: 'erro' });
+      const form = h('form', { class: 'campos', novalidate: true }, h('h2', { class: 'largo' }, '✎ Dados do pedido'),
+        campo('beneficio', 'Benefício', x.beneficio, { opcoes: [['', '—'], ...r.beneficios.map(b => [b, b])], largo: true }), campo('protocolo', 'Protocolo / requerimento', x.protocolo),
+        campo('der', 'DER (data do pedido)', x.der, { tipo: 'date' }), campo('nb', 'NB', x.nb), campo('valor_beneficio', 'Valor do benefício R$', x.valor_beneficio, { modo: 'decimal' }), campo('dib', 'DIB', x.dib, { tipo: 'date' }),
+        campo('responsavel', 'Quem cuida', x.responsavel, { opcoes: [['', '—'], ...r.equipe.map(q => [q.usuario, q.nome])] }), campo('observacoes', 'Observações', x.observacoes, { area: true, largo: true }), erro,
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'), botao('Cancelar', () => caixa.close(), 'sec')));
+      form.addEventListener('submit', async ev => { ev.preventDefault(); try { await api('inss.salvar', Object.assign({ id: x.id }, Object.fromEntries(new FormData(form).entries()))); caixa.close(); avisar('Salvo.'); rota(); } catch (e) { erro.textContent = e.message; } });
+      caixa.append(form); caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+    };
+    const cli = x.cliente_info;
+    mostrar(h('p', {}, h('a', { href: '#/inss' }, '← INSS')),
+      h('div', { class: 'inss-cab' }, h('div', {}, h('h1', {}, x.cliente), h('p', { class: 'in-sub' }, x.beneficio || 'Benefício a definir', x.protocolo ? ' · protocolo ' + x.protocolo : '', x.der ? ' · pedido em ' + dataBR(x.der) : '')),
+        h('div', { class: 'barra' }, botao('✎ Editar dados', editar, 'sec'), cli ? h('a', { class: 'btn sec', href: '#/cliente/' + cli.id }, 'Ficha do cliente') : null,
+          x.processo_id ? h('a', { class: 'btn sec', href: '#/processo/' + x.processo_id }, 'Processo judicial') : null)),
+      h('section', { class: 'caixa inss-etapas' }, passos,
+        h('div', { class: 'inss-agora' }, h('div', {}, h('span', { class: 'peq' }, 'Agora'), h('h2', {}, x.etapa_nome), atual.proximo ? h('p', {}, '→ ' + atual.proximo) : null,
+          x.etapa === 'exigencia' && x.exigencia ? h('p', { class: 'nota' }, '📄 ' + x.exigencia + (x.exigencia_prazo ? ' — prazo ' + dataBR(x.exigencia_prazo) : '')) : null,
+          x.etapa === 'pericia' && x.pericia_data ? h('p', { class: 'nota' }, '🩺 Perícia ' + dataBR(x.pericia_data) + (x.pericia_hora ? ' às ' + x.pericia_hora : '') + (x.pericia_local ? ' — ' + x.pericia_local : ''), ' ', etiquetaDias(x.pericia_data)) : null,
+          x.etapa === 'indeferido' && x.recurso_prazo ? h('p', { class: 'nota alerta' }, '⏱ Recurso até ' + dataBR(x.recurso_prazo) + (x.motivo ? ' · motivo: ' + x.motivo : ''), ' ', etiquetaDias(x.recurso_prazo)) : null,
+          x.etapa === 'deferido' ? h('p', { class: 'nota ok' }, '✓ Benefício aprovado' + (x.nb ? ' · NB ' + x.nb : '') + (x.valor_beneficio ? ' · R$ ' + formatarMoeda(x.valor_beneficio) : ''), x.honorario_id ? [' · ', h('a', { href: '#/honorario/' + x.honorario_id }, 'ver o honorário')] : '') : null),
+          botoes)),
+      h('div', { class: 'in-grade' },
+        h('div', { class: 'in-principal' },
+          h('section', { class: 'caixa' }, h('h2', {}, 'Tarefas deste pedido'),
+            r.tarefas.length ? h('ul', { class: 'inss-tar' }, r.tarefas.map(t => h('li', { class: t.feita ? 'feita' : '' }, t.feita ? '✓ ' : '○ ', t.titulo, t.vence_em ? h('span', { class: 'peq' }, ' · até ' + dataBR(t.vence_em).slice(0, 5)) : null, t.responsavel ? h('span', { class: 'peq' }, ' · ' + primeiroNome(t.responsavel)) : null)))
+              : h('p', { class: 'peq' }, 'Nenhuma tarefa.'), h('a', { href: '#/tarefas', class: 'link' }, 'abrir Tarefas')),
+          h('section', { class: 'caixa' }, h('h2', {}, 'Linha do tempo'),
+            h('ul', { class: 'inss-hist' }, (x.historico || []).slice().reverse().map(hh => h('li', {}, h('b', {}, (et.find(q => q.id === hh.etapa) || {}).nome || hh.etapa), ' · ', quando(hh.em), hh.por ? ' · ' + hh.por : '', hh.obs ? h('div', { class: 'peq' }, hh.obs) : null))))),
+        h('aside', { class: 'in-lado' }, h('section', { class: 'in-card' }, h('h3', {}, 'Dados'),
+          h('dl', { class: 'in-dl' }, dado('Benefício', x.beneficio), dado('Protocolo', x.protocolo), dado('DER', x.der ? dataBR(x.der) : ''), dado('NB', x.nb), dado('Valor', x.valor_beneficio ? 'R$ ' + formatarMoeda(x.valor_beneficio) : ''),
+            dado('DIB', x.dib ? dataBR(x.dib) : ''), dado('Quem cuida', x.responsavel_nome), dado('Observações', x.observacoes))),
+          cli ? h('section', { class: 'in-card' }, h('h3', {}, 'Cliente'), h('a', { href: '#/cliente/' + cli.id, class: 'in-cli' }, cli.nome), cli.telefone ? h('div', { class: 'peq' }, cli.telefone) : null,
+            cli.cpf ? h('div', { class: 'peq' }, 'CPF ' + cli.cpf) : null, cli.nascimento ? h('div', { class: 'peq' }, 'Nascimento ' + dataBR(cli.nascimento)) : null) : null)));
+  }
+
+  /* ================================================================================================================
+     8.56 Horas trabalhadas: cronômetro no topo do painel (liga/para com um clique), tela #/horas com o dia a dia, totais e lançamento à mão.
+     ================================================================================================================ */
+  const hm = m => { m = Math.max(0, Math.round(+m || 0)); return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
+  let cronoTimer = null;
+  function montarCronometro() {
+    const barra = document.getElementById('barra-topo'); if (!barra || !sessao) return;
+    let el = document.getElementById('crono'); if (!el) { el = h('div', { id: 'crono', class: 'crono' }); barra.insertBefore(el, document.getElementById('subabas')); }
+    const desenhar = r => {
+      clearInterval(cronoTimer);
+      if (r && r.rodando) {
+        const ini = Date.parse(r.rodando.inicio), tempo = h('b', { class: 'crono-t' });
+        const tick = () => { const s = Math.max(0, Math.floor((Date.now() - ini) / 1000)); tempo.textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+        tick(); cronoTimer = setInterval(tick, 1000);
+        el.replaceChildren(h('button', { type: 'button', class: 'crono-bt rodando', title: 'Parar o cronômetro: ' + (r.rodando.descricao || 'sem descrição'), onclick: () => dialogoPararCrono(r.rodando, () => api('horas.listar', {}).then(desenhar)) },
+          h('span', { class: 'crono-ponto', 'aria-hidden': 'true' }), tempo, h('span', { class: 'crono-desc' }, r.rodando.descricao || r.rodando.cliente || 'trabalhando')));
+      } else el.replaceChildren(h('button', { type: 'button', class: 'crono-bt', title: 'Ligar o cronômetro de horas', onclick: () => dialogoLigarCrono(() => api('horas.listar', {}).then(desenhar)) }, '⏱ Horas'));
+    };
+    api('horas.listar', {}).then(desenhar).catch(() => el.replaceChildren());
+  }
+  async function listaClientesLeve() { try { const c = await api('clientes.listar', {}); return (Array.isArray(c) ? c : c.lista || []).map(x => ({ id: x.id, nome: x.nome })); } catch (e) { return []; } }
+  function campoCliente(clientes, valor) {
+    const id = 'dl-' + Math.random().toString(36).slice(2, 8);
+    const inp = h('input', { list: id, placeholder: 'Cliente (opcional)', value: valor || '', 'aria-label': 'Cliente' });
+    return { el: h('span', {}, inp, h('datalist', { id }, clientes.slice(0, 3000).map(c => h('option', { value: c.nome })))), id: () => { const c = clientes.find(x => x.nome === inp.value.trim()); return c ? c.id : ''; } };
+  }
+  async function dialogoLigarCrono(depois) {
+    const clientes = await listaClientesLeve();
+    const desc = h('input', { type: 'text', maxlength: 300, placeholder: 'O que você vai fazer? (ex.: réplica do processo do Fulano)', 'aria-label': 'O que vai fazer' });
+    const cli = campoCliente(clientes, ''), fat = h('input', { type: 'checkbox', checked: true });
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, '⏱ Ligar o cronômetro'), h('label', { class: 'campo' }, h('span', {}, 'Atividade'), desc), h('label', { class: 'campo' }, h('span', {}, 'Cliente'), cli.el),
+      h('label', { class: 'cx-check' }, fat, ' Pode ir para a fatura do cliente'),
+      h('div', { class: 'acoes' }, botao('▶ Começar', async () => { try { await api('horas.iniciar', { descricao: desc.value, cliente_id: cli.id(), faturavel: fat.checked ? 'sim' : 'nao' }); caixa.close(); depois && depois(); } catch (e) { avisar(e.message, true); } }),
+        botao('Cancelar', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal(); desc.focus();
+  }
+  function dialogoPararCrono(x, depois) {
+    const desc = h('input', { type: 'text', maxlength: 300, value: x.descricao || '', 'aria-label': 'O que fez' });
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, '⏹ Parar o cronômetro'), h('p', { class: 'peq' }, 'Começou ' + quando(x.inicio) + (x.cliente ? ' · ' + x.cliente : '')),
+      h('label', { class: 'campo' }, h('span', {}, 'O que você fez'), desc),
+      h('div', { class: 'acoes' }, botao('Parar e salvar', async () => { try { const r = await api('horas.parar', { id: x.id, descricao: desc.value }); caixa.close(); avisar('Salvo: ' + hm(r.minutos) + '.'); depois && depois(); } catch (e) { avisar(e.message, true); } }),
+        botao('Continuar contando', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+  }
+  async function telaHoras(params) {
+    carregando();
+    const admin = !!sessao.usuario.pode.usuarios, hoje = hojeISO();
+    const de = params.get('de') || isoSoma(hoje, -30), ate = params.get('ate') || hoje, quem = params.get('quem') || '';
+    const ir = mud => { const q = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) q.set(k, v); else q.delete(k); }); location.hash = '#/horas' + (q.toString() ? '?' + q : ''); };
+    const [r, clientes] = await Promise.all([api('horas.listar', { de, ate, usuario: quem }), listaClientesLeve()]);
+    const porDia = {}; r.lista.forEach(x => { (porDia[x.dia] = porDia[x.dia] || []).push(x); });
+    const cli = campoCliente(clientes, '');
+    const fDesc = h('input', { type: 'text', maxlength: 300, placeholder: 'O que foi feito', 'aria-label': 'Atividade' }), fDur = h('input', { type: 'text', placeholder: '1h30', 'aria-label': 'Tempo', class: 'hr-dur' }),
+      fDia = h('input', { type: 'date', value: hoje, 'aria-label': 'Dia' });
+    const lancar = h('div', { class: 'caixa hr-lancar' }, h('b', {}, 'Lançar horas à mão'), fDia, fDesc, cli.el, fDur,
+      botao('＋ Lançar', async () => { try { await api('horas.salvar', { dia: fDia.value, descricao: fDesc.value, cliente_id: cli.id(), duracao: fDur.value }); avisar('Horas lançadas.'); rota(); } catch (e) { avisar(e.message, true); } }));
+    const tot = r.totais || {};
+    const blocoTot = h('div', { class: 'inss-nums' }, h('div', { class: 'cx-card' }, h('b', {}, hm(tot.minutos)), h('span', {}, 'no período')), h('div', { class: 'cx-card k-verde' }, h('b', {}, hm(tot.faturavel)), h('span', {}, 'podem ir para fatura')),
+      ...Object.entries(tot.porCliente || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => h('div', { class: 'cx-card' }, h('b', {}, hm(v)), h('span', {}, k))));
+    const linha = x => h('div', { class: 'hr-item' + (x.rodando ? ' rodando' : '') },
+      h('b', { class: 'hr-tempo' }, x.rodando ? '▶ ' + hm(x.minutos) : hm(x.minutos)), h('div', { class: 'hr-oque' }, h('div', {}, x.descricao || '(sem descrição)'),
+        h('div', { class: 'peq' }, [x.cliente, x.numero, admin && !quem ? x.nome : '', x.faturado_em ? 'faturado (' + x.fatura_id + ')' : x.faturavel ? '' : 'não vai para fatura'].filter(Boolean).join(' · '))),
+      x.faturado_em || x.rodando ? null : botao('Apagar', async () => { if (!confirm('Apagar este registro de horas?')) return; try { await api('horas.salvar', { id: x.id, apagar: 1 }); rota(); } catch (e) { avisar(e.message, true); } }, 'mini sec'));
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Horas trabalhadas'), h('p', {}, 'Ligue o cronômetro no topo (⏱ Horas) ou lance à mão. As horas faturáveis entram na fatura do cliente (Cobranças › Fatura do cliente).'))),
+      h('div', { class: 'cx-filtros' }, h('label', {}, 'De ', h('input', { type: 'date', value: de, onchange: e => ir({ de: e.target.value }) })), h('label', {}, ' até ', h('input', { type: 'date', value: ate, onchange: e => ir({ ate: e.target.value }) })),
+        admin ? h('select', { 'aria-label': 'Pessoa', onchange: e => ir({ quem: e.target.value }) }, h('option', { value: '' }, 'Toda a equipe'), r.equipe.map(q => h('option', { value: q.usuario, selected: q.usuario === quem }, q.nome))) : null),
+      blocoTot, lancar,
+      Object.keys(porDia).length ? h('div', { class: 'cx-lista' }, Object.keys(porDia).sort().reverse().map(d => h('section', { class: 'imp-dia' },
+        h('h3', {}, tituloDia(d, hoje), ' · ', hm(porDia[d].reduce((s, x) => s + x.minutos, 0))), porDia[d].map(linha)))) : h('p', { class: 'ini-vazio' }, 'Nenhuma hora registrada neste período.'));
+  }
+
+  /* ---------- 8.56 Fatura consolidada do cliente (Cobranças › Ferramentas) ---------- */
+  function blocoFatura(params) {
+    const box = h('div', { class: 'caixa' }), res = h('div', {});
+    listaClientesLeve().then(clientes => {
+      const cli = campoCliente(clientes, ''), ate = h('input', { type: 'date', value: isoSoma(hojeISO(), 30), 'aria-label': 'Até' }), de = h('input', { type: 'date', 'aria-label': 'De (opcional)' });
+      const vh = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'R$ por hora (opcional)', 'aria-label': 'Valor da hora R$' });
+      const ver = async () => {
+        const id = cli.id(); if (!id) { avisar('Escolha o cliente.', true); return; }
+        res.replaceChildren(h('p', { class: 'peq' }, 'Calculando…'));
+        try {
+          const f = await api('fin.fatura', { cliente_id: id, de: de.value, ate: ate.value, valor_hora: vh.value });
+          const tab = (tit, itens, cols) => itens.length ? [h('h3', {}, tit), h('table', { class: 'tabela compacta' }, h('tbody', {}, itens.map(cols)))] : null;
+          res.replaceChildren(
+            tab('Honorários a cobrar', f.parcelas, p => h('tr', {}, h('td', {}, p.descricao + (p.atrasada ? ' (em atraso)' : '')), h('td', {}, dataBR(p.vencimento)), h('td', { class: 'num' }, reais(p.valor)))),
+            tab('Horas', f.horas, x => h('tr', {}, h('td', {}, dataBR(x.dia)), h('td', {}, x.descricao), h('td', {}, hm(x.minutos) + (x.valor_hora ? ' × ' + reais(x.valor_hora) : ' (sem valor da hora)')), h('td', { class: 'num' }, reais(x.valor)))),
+            tab('Despesas a reembolsar', f.despesas, x => h('tr', {}, h('td', {}, dataBR(x.dia)), h('td', {}, x.descricao), h('td', { class: 'num' }, reais(x.valor)))),
+            h('p', { class: 'fat-total' }, 'Total: ', h('b', {}, reais(f.totais.total))),
+            f.totais.total > 0 ? botao('📄 Gerar a fatura (PDF)', async ev => { ev.target.disabled = true; try { const g = await api('fin.fatura.gerar', { cliente_id: id, de: de.value, ate: ate.value, valor_hora: vh.value });
+              avisar('Fatura ' + g.numero + ' gerada na pasta do cliente.'); res.append(h('p', {}, h('a', { href: g.pdf, target: '_blank', rel: 'noopener' }, 'Abrir o PDF'), ' · ', h('a', { href: g.doc, target: '_blank', rel: 'noopener' }, 'editar no Google Docs'))); }
+              catch (e) { avisar(e.message, true); } finally { ev.target.disabled = false; } }) : h('p', { class: 'peq' }, 'Nada a faturar neste período.'));
+        } catch (e) { res.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+      };
+      box.replaceChildren(h('p', { class: 'peq fin-dica' }, 'Junta numa fatura só: as parcelas de honorário a cobrar até a data, as horas faturáveis ainda não faturadas e as despesas reembolsáveis do cliente.'),
+        h('div', { class: 'cx-filtros' }, cli.el, h('label', {}, 'De ', de), h('label', {}, 'até ', ate), vh, botao('Ver a fatura', ver)), res);
+    });
+    return box;
+  }
+
+  /* ---------- 8.55 Comissões de indicação (Cobranças › Ferramentas) ---------- */
+  function blocoComissoes() {
+    const box = h('div', {}, h('p', { class: 'peq' }, 'Carregando as comissões…'));
+    api('comissoes.listar', {}).then(r => {
+      const abertas = r.lista.filter(x => x.situacao === 'a pagar'), sel = new Set();
+      const linha = x => h('tr', {}, h('td', {}, x.situacao === 'a pagar' ? h('input', { type: 'checkbox', 'aria-label': 'Escolher', onchange: e => e.target.checked ? sel.add(x.id) : sel.delete(x.id) }) : ''),
+        h('td', {}, h('b', {}, x.indicador)), h('td', {}, x.cliente_nome), h('td', { class: 'peq' }, x.observacoes), h('td', { class: 'num' }, reais(x.base) + ' × ' + String(x.pct).replace('.', ',') + '%'),
+        h('td', { class: 'num' }, h('b', {}, reais(x.valor))), h('td', {}, x.situacao === 'paga' ? h('span', { class: 'tag ok' }, 'paga ' + dataBR(x.paga_em).slice(0, 5)) : x.situacao === 'cancelada' ? h('span', { class: 'tag' }, 'não vai pagar') :
+          botao('Não vai pagar', async () => { const m = prompt('Por que não vai pagar esta comissão?'); if (!m) return; try { await api('comissoes.cancelar', { id: x.id, motivo: m }); rota(); } catch (e) { avisar(e.message, true); } }, 'mini sec')));
+      box.replaceChildren(h('p', { class: 'peq fin-dica' }, 'Quem indicou o cliente recebe a porcentagem combinada quando o escritório RECEBE (cadastro do cliente › Indicação). A comissão nasce sozinha a cada parcela paga; "Paguei" lança a despesa no Caixa.'),
+        h('div', { class: 'inss-nums' }, r.indicadores.slice(0, 6).map(o => h('div', { class: 'cx-card' + (o.a_pagar ? ' k-ambar' : '') }, h('b', {}, reais(o.a_pagar)), h('span', {}, o.indicador), h('small', {}, `${o.clientes} cliente(s) · já pago ${reais(o.pago)}`)))),
+        abertas.length ? h('div', { class: 'acoes' }, botao('✓ Paguei as marcadas', async () => { if (!sel.size) { avisar('Marque as comissões pagas.', true); return; }
+          try { const rr = await api('comissoes.pagar', { ids: [...sel] }); avisar(rr.comissoes + ' comissão(ões) paga(s) — lançado no Caixa.'); rota(); } catch (e) { avisar(e.message, true); } })) : null,
+        r.lista.length ? h('div', { class: 'caixa' }, h('table', { class: 'tabela compacta' }, h('thead', {}, h('tr', {}, ['', 'Quem indicou', 'Cliente', 'De onde veio', 'Base', 'Comissão', ''].map(t => h('th', {}, t)))), h('tbody', {}, r.lista.map(linha))))
+          : h('p', { class: 'ini-vazio' }, 'Nenhuma comissão ainda.'),
+        r.indicados.length ? h('details', { class: 'caixa' }, h('summary', {}, `Clientes indicados (${r.indicados.length})`), h('ul', { class: 'lista-int' }, r.indicados.map(c => h('li', {}, h('a', { href: '#/cliente/' + c.id }, c.nome), ' · indicado por ', h('b', {}, c.indicado_por), c.pct ? ' · ' + String(c.pct).replace('.', ',') + '% ' + (c.base === 'todos' ? 'de todos os honorários' : 'do êxito') : ' · sem % definido')))) : null);
+    }).catch(e => box.replaceChildren(h('p', { class: 'erro' }, e.message)));
+    return box;
+  }
+
+  /* ---------- 8.56 IA jurídica: pesquisa de jurisprudência (só julgados reais) e rascunho de peça ---------- */
+  async function telaJuridico(params) {
+    carregando();
+    const escolhidos = [];
+    const resJ = h('div', {}), pergunta = h('textarea', { rows: 2, placeholder: 'Ex.: dano moral por atraso reiterado no pagamento de salário', 'aria-label': 'Tema da pesquisa' });
+    const pesquisar = async ev => {
+      if (pergunta.value.trim().length < 4) { avisar('Escreva o tema da pesquisa.', true); return; }
+      ev.target.disabled = true; resJ.replaceChildren(h('p', { class: 'peq' }, 'Pesquisando nas bases oficiais…'));
+      try {
+        const r = await api('ia.jurisprudencia', { pergunta: pergunta.value });
+        resJ.replaceChildren(
+          r.resumo ? h('div', { class: 'in-resumo' }, h('b', {}, '✨ O que os julgados encontrados dizem: '), r.resumo, h('div', { class: 'peq' }, 'Resumo feito só com as ementas abaixo, lidas da base oficial. Confira cada uma antes de usar.')) : null,
+          r.itens.length ? h('div', { class: 'jr-lista' }, r.itens.map(x => {
+            const ck = h('input', { type: 'checkbox', 'aria-label': 'Usar na peça', onchange: e => { const i = escolhidos.indexOf(x); if (e.target.checked && i < 0) escolhidos.push(x); else if (!e.target.checked && i >= 0) escolhidos.splice(i, 1); } });
+            return h('article', { class: 'jr-item' }, h('div', { class: 'jr-cab' }, h('label', { class: 'cx-check' }, ck, ' usar na peça'), h('b', {}, x.tribunal + ' · ' + x.processo), h('span', { class: 'peq' }, [x.orgao, x.relator, x.data].filter(Boolean).join(' · '))),
+              h('p', { class: 'jr-ementa' }, x.ementa), h('div', { class: 'acoes' }, h('a', { class: 'link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, 'ver na fonte oficial'), ' ',
+                h('button', { type: 'button', class: 'link', onclick: () => copiar(`${x.tribunal}, ${x.processo}${x.orgao ? ', ' + x.orgao : ''}${x.relator ? ', Rel. ' + x.relator : ''}${x.data ? ', julgado em ' + x.data : ''}. Ementa: ${x.ementa}`, 'Citação copiada.') }, 'copiar citação')));
+          })) : h('div', { class: 'nota alerta' }, 'Não trouxe julgados: ', r.erro || 'nada encontrado', '. O painel nunca inventa julgado — pesquise direto nas bases oficiais pelos links abaixo.'),
+          h('details', { class: 'jr-links', open: !r.itens.length }, h('summary', {}, 'Pesquisar nas bases oficiais'), h('ul', { class: 'lista-int' }, r.links.map(l => h('li', {}, h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer' }, l.nome))))));
+      } catch (e) { resJ.replaceChildren(h('p', { class: 'erro' }, e.message)); } finally { ev.target.disabled = false; }
+    };
+    const procs = await api('processos.listar', {}).catch(() => []);
+    const lp = (Array.isArray(procs) ? procs : []).filter(p => p.numero && p.status !== 'arquivado');
+    const dlId = 'dl-procs-ia';
+    const proc = h('input', { list: dlId, placeholder: 'Número do processo ou nome do cliente', 'aria-label': 'Processo' });
+    const tipo = h('select', { 'aria-label': 'Tipo da peça' }, [['manifestacao', 'Manifestação'], ['replica', 'Réplica à contestação'], ['contrarrazoes', 'Contrarrazões'], ['recurso_ordinario', 'Recurso ordinário (trabalhista)'],
+      ['apelacao', 'Apelação'], ['embargos_declaracao', 'Embargos de declaração'], ['impugnacao_laudo', 'Manifestação sobre o laudo pericial'], ['quesitos', 'Quesitos para a perícia'],
+      ['alegacoes_finais', 'Razões / alegações finais'], ['recurso_inss', 'Recurso ordinário ao INSS'], ['livre', 'Peça livre']].map(([v, t]) => h('option', { value: v }, t)));
+    const instr = h('textarea', { rows: 4, placeholder: 'O que a peça precisa dizer (fatos, pedidos, o que rebater). Quanto mais claro, melhor o rascunho.', 'aria-label': 'Instruções' });
+    const resP = h('div', {});
+    const gerar = async ev => {
+      const v = proc.value.trim(), p = lp.find(x => v.includes(x.numero)) || lp.find(x => x.cliente_nome && x.cliente_nome === v);
+      if (!p) { avisar('Escolha o processo da lista.', true); return; }
+      ev.target.disabled = true; resP.replaceChildren(h('p', { class: 'peq' }, 'Escrevendo o rascunho… (pode levar até 1 minuto)'));
+      try { const r = await api('ia.peca', { processo_id: p.id, tipo: tipo.value, instrucoes: instr.value, julgados: escolhidos });
+        resP.replaceChildren(h('div', { class: 'nota ok' }, '✓ Rascunho criado na pasta do cliente: ', h('a', { href: r.doc, target: '_blank', rel: 'noopener' }, 'abrir no Google Docs'), '. Revise tudo: o que estiver "[NÃO CONSTA — conferir]" a IA não sabia.')); }
+      catch (e) { resP.replaceChildren(h('p', { class: 'erro' }, e.message)); } finally { ev.target.disabled = false; }
+    };
+    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'IA jurídica'), h('p', {}, 'A IA está aqui para nos auxiliar, nunca para nos substituir. Julgados só das bases oficiais; o rascunho usa só o que está no processo.'))),
+      h('section', { class: 'caixa' }, h('h2', {}, '🔎 Pesquisa de jurisprudência'), pergunta, h('div', { class: 'acoes' }, botao('Pesquisar', pesquisar)), resJ),
+      h('section', { class: 'caixa' }, h('h2', {}, '📝 Rascunho de peça'), h('div', { class: 'campos' },
+        h('label', { class: 'campo largo' }, h('span', {}, 'Processo'), proc, h('datalist', { id: dlId }, lp.slice(0, 2000).map(p => h('option', { value: p.numero + ' — ' + (p.cliente_nome || '') })))),
+        h('label', { class: 'campo' }, h('span', {}, 'Tipo da peça'), tipo), h('label', { class: 'campo largo' }, h('span', {}, 'Instruções'), instr)),
+        h('p', { class: 'peq' }, 'Os julgados marcados "usar na peça" na pesquisa acima entram no rascunho; nenhum outro é citado.'), h('div', { class: 'acoes' }, botao('✨ Escrever o rascunho', gerar)), resP));
+  }
+
+  /* ---------- 8.56 Explicar o andamento ao cliente (IA, com aprovação) ---------- */
+  async function dialogoExplicar(x, depois) {
+    const caixa = h('dialog', { class: 'dialogo' }), area = h('textarea', { rows: 7, 'aria-label': 'Mensagem ao cliente' }, 'Escrevendo…');
+    const acoes = h('div', { class: 'acoes' });
+    caixa.append(h('h2', {}, '✨ Explicar ao cliente'), h('p', { class: 'peq' }, (x.cliente || '') + ' · ' + x.rotulo + ': ' + x.texto), area, acoes, h('p', { class: 'peq' }, 'Revise antes de mandar. Sem prazo interno e sem promessa.'));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+    let r;
+    try { r = await api('ia.explicarAndamento', { chave: x.chave, numero: x.numero, processo_id: x.processo_id, texto: x.rotulo + ': ' + x.texto, dia: x.dia }); area.value = r.texto; }
+    catch (e) { area.value = ''; avisar(e.message, true); return; }
+    const mandar = async canal => { try { await api('explicacoes.enviar', { id: r.id, texto: area.value, canal }); avisar(canal === 'email' ? 'E-mail enviado ao cliente.' : canal === 'descartar' ? 'Descartada.' : 'Marcado como enviado.'); caixa.close(); depois && depois(); } catch (e) { avisar(e.message, true); } };
+    const tel = telefoneWhats(r.telefone || '');
+    acoes.replaceChildren(r.email ? botao('📧 Mandar por e-mail', () => mandar('email')) : h('span', { class: 'peq' }, 'sem e-mail no cadastro'),
+      tel ? h('a', { class: 'btn wa', href: 'https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(area.value), target: '_blank', rel: 'noopener noreferrer', onclick: ev => { ev.currentTarget.href = 'https://wa.me/' + (tel.length <= 11 ? '55' + tel : tel) + '?text=' + encodeURIComponent(area.value); mandar('whatsapp'); } }, 'WhatsApp') : null,
+      botao('Escrever de novo', async () => { area.value = 'Escrevendo…'; try { r = await api('ia.explicarAndamento', { chave: x.chave, numero: x.numero, processo_id: x.processo_id, texto: x.rotulo + ': ' + x.texto, dia: x.dia, refazer: 1 }); area.value = r.texto; } catch (e) { avisar(e.message, true); } }, 'sec'),
+      botao('Não mandar', () => mandar('descartar'), 'sec'));
+  }
+
   async function telaPrazo(id, params) {
     carregando();
     const novo = id === 'novo';
@@ -4791,6 +5526,9 @@
         campo('contagem', 'Contagem', z.contagem, { opcoes: [['uteis', 'Dias úteis'], ['corridos', 'Dias corridos (ex.: criminal)']] }),
         campo('ciencia', 'Data da ciência / publicação', z.ciencia, { tipo: 'date' }),
         campo('fatal', 'Data fatal (só se quiser digitar à mão)', '', { tipo: 'date' }),
+        // 8.55: aviso no canto da tela de quem cuida, X dias antes; etiqueta livre (aparece na lista)
+        campo('alerta_dias', 'Avisar quantos dias antes', z.alerta_dias || '', { opcoes: [['', 'Não avisar'], ['1', '1 dia antes'], ['2', '2 dias antes'], ['3', '3 dias antes'], ['5', '5 dias antes'], ['7', '7 dias antes'], ['10', '10 dias antes']] }),
+        campo('etiqueta', 'Etiqueta', z.etiqueta || '', { max: 40, dica: 'ex.: urgente, recurso, cliente difícil' }),
         campo('observacoes', 'Observações', z.observacoes, { area: true, largo: true })),
       h('p', { class: 'peq' }, 'Deixe a data fatal em branco para o painel calcular a partir da ciência, contando dias úteis, feriados e o recesso.'),
       h('div', { class: 'acoes' }, h('button', { type: 'submit', class: 'btn' }, novo ? 'Lançar prazo' : 'Salvar'), h('a', { class: 'btn sec', href: '#/prazos' }, 'Voltar')),
@@ -5700,7 +6438,7 @@
      3 números, uma lista com 4 abas e UM botão por linha (o resto no ⋯); clicar na linha abre a cobrança na lateral.
      Ferramentas (honorários, ação de cobrança, PIX, alvarás, recibos, conferir, sistema antigo, boleto/Pix, entradas e saídas)
      ficam no botão "Ferramentas"; cada uma abre com "← Cobranças". */
-  const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['pix', 'PIX recebidos'], ['levantar', 'Alvarás e RPV a levantar'],
+  const FERRAMENTAS_FIN = [['honorarios', 'Honorários (todos os contratos)'], ['fatura', 'Fatura do cliente (honorários + horas + despesas)'], ['comissoes', 'Comissões de indicação'], ['pix', 'PIX recebidos'], ['levantar', 'Alvarás e RPV a levantar'],
     ['recibos', 'Recibos'], ['conferir', 'Conferir cobranças'], ['antigos', 'Do sistema antigo'], ['asaas', 'Boleto e Pix automático', 'usuarios'], ['painel', 'Entradas e saídas do mês', 'usuarios']];
   async function telaFinanceiro(params) {
     carregando();
@@ -5719,7 +6457,7 @@
       h('input', { type: 'search', name: 'busca', value: busca, placeholder: 'Buscar honorário por cliente', 'aria-label': 'Buscar honorários' }),
       h('button', { type: 'submit', class: 'btn' }, 'Buscar'));
     form.addEventListener('submit', ev => { ev.preventDefault(); ir({ busca: form.busca.value.trim(), ver: 'honorarios' }); });
-    const ferramenta = () => ver === 'conferir' ? blocoConferencia()
+    const ferramenta = () => ver === 'fatura' ? blocoFatura(params) : ver === 'comissoes' ? blocoComissoes() : ver === 'conferir' ? blocoConferencia()
       : ver === 'asaas' ? blocoAsaas()
       : ver === 'pix' ? blocoPix()
       : ver === 'antigos' ? blocoLevantamento()
@@ -7453,7 +8191,7 @@ function main() {
     }
     if (!!montarTopo.modo !== (!!sessao.usuario.pode.future && modoFuture())) montarTopo();
     if (tela !== 'chat') rota.anterior = location.hash;
-    const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
+    const aba = { cliente: 'clientes', processo: 'processos', prazo: 'prazos', intimacao: 'prazos', compromisso: 'agenda', honorario: 'financeiro' }[tela] || tela || 'inicio';
     marcarAba(aba);
     if (!rota.adiantou) { rota.adiantou = true; setTimeout(() => ['inicio', 'clientes', 'prazos', 'tarefas'].forEach(preBuscar), 1200); }
     sujo = false;
@@ -7481,6 +8219,10 @@ function main() {
         case 'central': location.replace('#/prazos'); break;
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
+        case 'intimacao': await telaIntimacao(decodeURIComponent(id || '')); break;
+        case 'inss': if (id) await telaInssPedido(id); else await telaInss(params); break;
+        case 'horas': await telaHoras(params); break;
+        case 'juridico': await telaJuridico(params); break;
         case 'financeiro': if (id === 'receber') await telaAReceber(params); else if (id === 'caixa') await telaCaixa(params); else await telaFinanceiro(params); break;
         case 'tarefas': await telaTarefas(params); break;
         case 'relatorios': await telaRelatorios(params); break;
