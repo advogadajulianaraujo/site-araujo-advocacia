@@ -5770,10 +5770,12 @@ function crmDadosCliente_(clienteId) {
 /* agora" de todos e o robô manda no chat da equipe, uma vez por dia, a lista com quem cuida.                                               */
 /* ================================================================== */
 function atosSemDataAbertos_() {
+  // pela marca [agenda:nº:ref] da descrição — o título fica escondido no navegador para quem não é da administração
   var hoje = hojeSP_();
-  return tabela_('Tarefas').linhas.filter(function (t) { return abertaT_(t) && t.situacao !== 'cancelada' && /abrir o processo e lançar na agenda/i.test(t.titulo || ''); })
+  return tabela_('Tarefas').linhas.filter(function (t) { return /\[agenda:/.test(t.descricao || '') && abertaT_(t) && t.situacao !== 'cancelada'; })
     .map(function (t) { var dias = Math.max(0, Math.round((Date.parse(hoje) - Date.parse(String(t.criado_em || t.vence_em || hoje).slice(0, 10))) / 864e5));
-      return { id: t.id, titulo: t.titulo, numero: t.numero || ((/\(([\d.\-]{20,25})\)/.exec(t.titulo || '') || [])[1] || ''), responsavel: t.responsavel || '', dias: dias, pericia: /per[ií]cia/i.test(t.titulo || ''), tarefa: t }; });
+      return { id: t.id, numero: t.numero || ((/\[agenda:([^:\]]+)/.exec(t.descricao || '') || [])[1] || ''), responsavel: t.responsavel || '', dias: dias,
+        pericia: /\[atosd:pericia\]|indica per[ií]cia/i.test(t.descricao || ''), tarefa: t }; });
 }
 function cobrarAtosSemData_() {
   var lista = atosSemDataAbertos_(); if (!lista.length) return 0;
