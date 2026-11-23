@@ -2054,3 +2054,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   prazo do painel fica IGUAL ao PJe (conferido, origem "vinculado ao PJe"), o que faltar vira prazo novo (pela extensão só com as 3 datas).
   Sem senha e sem abrir expediente (não dá ciência). Diego (0000011-37): ajustado à mão para 24/11 a pedido da usuária.
 - Teste: `.github/motor/teste/etapa855.js` (caixa, sugestão, aprendizado, INSS, comissão, horas/fatura, lista do PJe, CRM, atos sem data, ficha).
+
+## 8.56 Intimações direto do eproc (pedido da usuária, 23/11/2026: "monitorar as intimações que saem só nos portais", como o Astrea)
+
+- Testado do Supabase (us-east e sa-east-1): o eproc do TJSC (1º e 2º grau), da JFSC e do TRF4 RESPONDE ao serviço oficial (MNI 2.2.2,
+  `…/ws/controlador_ws.php?srv=intercomunicacao2.2`) e autentica com USUÁRIO + SENHA do eproc (não precisa de certificado). O PJe do TRT12 e do
+  TST, o eproc do TJRS e o DJEN recusam servidores (403 antes de qualquer login: certificado não resolve) → esses ficam com o Chrome do escritório
+  (extensão). TRT4, TRT9, TRT6 e o SSO do PJe (sso.cloud.pje.jus.br) aceitam servidores (certificado A1 no servidor só serviria para eles).
+- Função `tribunais` do Supabase (supabase/functions/tribunais; `FUNCAO=tribunais node .github/motor/publicar-edge.mjs`): só administração
+  (`painel_quem`); acao status | guardar (testa ANTES e só guarda se o eproc aceitar) | testar | apagar. Login no COFRE (`painel_trib_gravar`/
+  `painel_trib_info`, só service_role; segredo trib_<tribunal>_<escritório>); resultado do último teste em painel_estado `tribunais`.
+  REGRA DE OURO: só `consultarAvisosPendentes` (lista sem dar ciência); NUNCA `consultarTeorComunicacao` nem `confirmarRecebimento`.
+- Painel: Configurações › Robôs e sistema › "⚖ Intimações direto do eproc" (`dialogoTribunais`, `PAINEL_BANCO.tribunais`). A senha vai do
+  navegador direto à função (não passa pelo Google nem pela planilha).
+- Falta (depois do teste com o login real): o robô de hora em hora importar as pendentes como intimações (cruzando com o DJEN) e a extensão
+  ler o PJe do TRT12 sozinha.

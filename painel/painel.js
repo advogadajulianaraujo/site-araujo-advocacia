@@ -3991,6 +3991,69 @@
 
   /** Painel da administração: o que a equipe conferiu e espera o OK. */
   /* ---------- 8.36.1 Configurações (pedido da usuária: "quando clicar no nome, aparece só Configurações, organizado por tópicos") ---------- */
+  /* 8.56: intimações direto do eproc (serviço oficial do tribunal). Usuário e senha vão direto ao cofre do Supabase (nunca ficam no navegador
+     nem na planilha). O teste só LISTA o que está pendente — não abre nenhuma intimação, então não dá ciência. */
+  function dialogoTribunais() {
+    const B = window.PAINEL_BANCO;
+    const corpo = h('div', { class: 'trib-corpo' }, h('p', { class: 'peq' }, 'Carregando…'));
+    const caixa = h('dialog', { class: 'dialogo trib-dialogo' }, h('h2', {}, '⚖ Intimações direto do eproc'),
+      h('p', { class: 'peq' }, 'O robô entra no serviço oficial do eproc com o usuário e a senha da Dra. e LISTA as intimações que estão pendentes. ',
+        h('b', {}, 'Ele não abre nenhuma intimação, então não dá ciência.'), ' A senha vai direto para o cofre do banco: não fica no navegador, na planilha nem no código.'),
+      corpo, h('div', { class: 'acoes' }, botao('Fechar', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa); caixa.showModal();
+    const dataBR = iso => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? String(iso).slice(0, 16) : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+    const dispBR = v => { const m = /^(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?/.exec(String(v || '').replace(/\D/g, '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(v || ''); };
+    const numCNJ = n => { const d = String(n || '').replace(/\D/g, ''); return d.length === 20 ? d.replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, '$1-$2.$3.$4.$5.$6') : n; };
+    function resultado(r) {
+      const partes = (r.partes || []).map(p => h('li', { class: p.ok ? 'trib-ok' : 'trib-erro' }, (p.ok ? '✓ ' : '✕ ') + p.nome + ': ' + (p.ok ? p.n + ' pendente(s)' : p.mensagem)));
+      const av = r.avisos || [];
+      return h('div', { class: 'trib-res' }, h('ul', { class: 'trib-partes' }, partes),
+        av.length ? h('div', { class: 'trib-tab-wrap' }, h('table', { class: 'tabela compacta trib-tab' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Sistema'), h('th', {}, 'Processo'), h('th', {}, 'Disponibilizada'), h('th', {}, 'Tipo'), h('th', {}, 'Para quem'), h('th', {}, 'Órgão'))),
+          h('tbody', {}, av.map(a => h('tr', {}, h('td', {}, a.sistema), h('td', {}, h('a', { href: '#/processos?busca=' + encodeURIComponent(numCNJ(a.numero)) }, numCNJ(a.numero))),
+            h('td', {}, dispBR(a.disponibilizado)), h('td', {}, a.tipo || ''), h('td', {}, a.destinatario || ''), h('td', {}, a.orgao || '')))))) :
+          (r.ok ? h('p', { class: 'peq' }, 'Nenhuma intimação pendente no eproc agora.') : null));
+    }
+    function desenhar(lista) {
+      corpo.replaceChildren(...lista.map(t => {
+        const res = h('div');
+        const usuario = h('input', { type: 'text', autocomplete: 'off', placeholder: 'usuário do eproc', 'aria-label': 'Usuário do eproc — ' + t.nome });
+        const senha = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'senha do eproc', 'aria-label': 'Senha do eproc — ' + t.nome });
+        const form = h('div', { class: 'trib-form' + (t.ligado ? ' oculto' : '') }, usuario, senha,
+          botao('Guardar e testar', async (ev) => {
+            const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Falando com o eproc… (pode levar até 1 minuto)'));
+            try {
+              const r = await B.tribunais({ acao: 'guardar', tribunal: t.id, usuario: usuario.value, senha: senha.value });
+              senha.value = '';
+              if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.'), resultado(r)); return; }
+              desenhar(r.tribunais); avisar('Login guardado. ' + (r.avisos || []).length + ' intimação(ões) pendente(s).');
+              const novo = corpo.querySelector('[data-trib="' + t.id + '"] .trib-res-lugar'); if (novo) novo.replaceChildren(resultado(r));
+            } catch (e) { res.replaceChildren(h('p', { class: 'erro' }, e.message)); }
+            finally { b.disabled = false; }
+          }));
+        const info = t.ligado ? h('p', { class: 'peq' }, '✓ Login guardado (', h('b', {}, t.usuario), ') por ', t.guardado_por || '—', ' em ', dataBR(t.guardado_em),
+          t.teste ? h('span', {}, ' · último teste ', dataBR(t.teste.em), ': ', t.teste.ok ? t.teste.n + ' pendente(s)' : 'não conectou') : null) :
+          h('p', { class: 'peq' }, 'Sem login. Use ' + t.dica + ' (o mesmo usuário e senha da tela de entrada do eproc).');
+        const botoes = t.ligado ? h('div', { class: 'mini-acoes' },
+          botao('Testar agora', async (ev) => {
+            const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Falando com o eproc… (pode levar até 1 minuto)'));
+            try { const r = await B.tribunais({ acao: 'testar', tribunal: t.id }); res.replaceChildren(r.ok ? null : h('p', { class: 'erro' }, r.erro), resultado(r)); }
+            catch (e) { res.replaceChildren(h('p', { class: 'erro' }, e.message)); } finally { b.disabled = false; }
+          }, 'mini'),
+          botao('Trocar a senha', () => form.classList.toggle('oculto'), 'mini sec'),
+          botao('Apagar o login', async () => {
+            if (!confirm('Apagar o login do eproc (' + t.nome + ') do cofre? O robô para de ler este tribunal.')) return;
+            try { const r = await B.tribunais({ acao: 'apagar', tribunal: t.id }); desenhar(r.tribunais); avisar('Login apagado.'); } catch (e) { avisar(e.message, true); }
+          }, 'mini sec')) : null;
+        res.className = 'trib-res-lugar';
+        return h('section', { class: 'trib-item', 'data-trib': t.id }, h('h3', {}, t.nome, ' ', h('small', {}, t.sistemas.join(' · '))), info, botoes, form, res);
+      }),
+      h('p', { class: 'peq trib-nota' }, 'PJe do TRT12 e do TST e eproc do TJRS: o tribunal recusa servidores, com ou sem certificado. Esses são lidos pelo Chrome do escritório (extensão).'));
+    }
+    B && B.tribunais ? B.tribunais({ acao: 'status' }, 30000).then(r => r.ok ? desenhar(r.tribunais) : corpo.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')))
+      .catch(e => corpo.replaceChildren(h('p', { class: 'erro' }, e.message))) : corpo.replaceChildren(h('p', { class: 'erro' }, 'O banco novo não está ligado neste computador.'));
+  }
   function dialogoMeusAvisos() {
     const u = sessao.usuario, admin = !!u.pode.usuarios;
     const off = new Set(String(u.avisos_off || '').split(',').filter(Boolean));
@@ -4037,6 +4100,7 @@
           item('🧾', 'Recibos', 'Recibos gerados das parcelas pagas', '#/financeiro?ver=recibos')) : null,
         admin ? grupo('🤖 Robôs e sistema',
           item('🚦', 'Situação dos robôs', 'Gmail, DJEN, andamentos, agenda e IA', '#/prazos'),
+          item('⚖', 'Intimações direto do eproc', 'Login do eproc no cofre: o robô lista as pendentes sem dar ciência', () => dialogoTribunais()),
           item('🗄', 'Banco de dados e atualização', 'Supabase, velocidade e atualização automática', '#/usuarios?ver=banco'),
           item('🤖', 'Chatbot do WhatsApp', 'Atendimento automático e conversas', '#/conversas'),
           item('📣', 'Marketing', 'Investimento, origem dos clientes e Google Ads', '#/marketing')) : null,
