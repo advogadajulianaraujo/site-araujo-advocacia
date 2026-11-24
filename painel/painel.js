@@ -90,7 +90,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['ia.assistente', 'inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -865,6 +865,7 @@
     quemEl.hidden = false;
     iniciarNotificacoes();
     try { montarCronometro(); } catch (e) { /* o cronômetro é opcional */ }
+    try { montarAssistente(); } catch (e) { /* o assistente é opcional */ }
     iniciarChat();
   }
 
@@ -4053,6 +4054,91 @@
     B && B.tribunais ? B.tribunais({ acao: 'status' }, 30000).then(r => r.ok ? desenhar(r.tribunais) : corpo.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')))
       .catch(e => corpo.replaceChildren(h('p', { class: 'erro' }, e.message))) : corpo.replaceChildren(h('p', { class: 'erro' }, 'O banco novo não está ligado neste computador.'));
   }
+  /* 8.57 Certificado digital A1 (pedido da usuária: "igual ao Astrea"): 1º o TERMO de responsabilidade; depois de "Li e aceito", o formulário
+     (arquivo .pfx/.p12, nome, senha, UF e número da OAB). O arquivo e a senha vão direto do navegador ao cofre do Supabase (função "tribunais"):
+     a função confere se a senha abre o arquivo, de quem é e até quando vale; nada fica no navegador, na planilha nem no código. */
+  const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
+  function dialogoCertificado() {
+    const B = window.PAINEL_BANCO;
+    const corpo = h('div', { class: 'cert-corpo' }, h('p', { class: 'peq' }, 'Carregando…'));
+    const caixa = h('dialog', { class: 'dialogo cert-dialogo' }, corpo);
+    caixa.addEventListener('close', () => caixa.remove());
+    document.body.append(caixa); caixa.showModal();
+    const fechar = botao('Fechar', () => caixa.close(), 'sec');
+    const dataBR2 = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+    function guardado(c) {
+      corpo.replaceChildren(h('h2', {}, 'Certificado digital'),
+        h('div', { class: 'cert-ok' }, h('b', {}, '✓ Certificado guardado no cofre'),
+          h('div', {}, 'Titular: ', h('b', {}, c.titular || '—')), h('div', {}, 'Identificador: ', c.nome || '—', ' · OAB/', c.uf, ' ', c.oab),
+          h('div', {}, 'Vale até ', h('b', {}, dataBR2(c.validade))), h('small', {}, 'Guardado por ', c.por || '—', ' em ', dataBR2(c.em), '. O termo de responsabilidade foi aceito na mesma hora.')),
+        h('p', { class: 'peq' }, 'O arquivo e a senha ficam só no cofre do banco e nunca voltam ao navegador. O PJe do TRT12 e do TST recusam servidores; nesses o painel usa o Chrome do escritório, onde o certificado está instalado.'),
+        h('div', { class: 'acoes' }, botao('Trocar o certificado', termo), botao('Apagar do cofre', async () => {
+          if (!confirm('Apagar o certificado digital do cofre?')) return;
+          try { await B.tribunais({ acao: 'cert_apagar' }); avisar('Certificado apagado.'); termo(); } catch (e) { avisar(e.message, true); }
+        }, 'sec'), fechar));
+    }
+    function termo() {
+      const ok = h('input', { type: 'checkbox', id: 'cert-li' });
+      const seguir = botao('Li e aceito', () => form(), '');
+      seguir.disabled = true; ok.addEventListener('change', () => { seguir.disabled = !ok.checked; });
+      corpo.replaceChildren(h('h2', {}, 'Certificado digital A1'),
+        h('div', { class: 'cert-termo' },
+          h('p', {}, 'Esta funcionalidade permite usar o Certificado Digital A1 para o acesso automatizado aos sistemas de processo eletrônico dos Tribunais de Justiça, Tribunais Regionais e demais órgãos do Poder Judiciário.'),
+          h('p', {}, h('b', {}, 'Antes de prosseguir, leia com atenção:')),
+          h('h3', {}, 'Responsabilidade do usuário'),
+          h('ul', {}, h('li', {}, 'Ao prosseguir, você declara ser o titular do Certificado Digital A1 ou estar legalmente autorizado(a) a utilizá-lo;'),
+            h('li', {}, 'Você reconhece que a utilização do certificado implica a prática de atos processuais em nome próprio ou de terceiros, conforme as procurações e permissões legais;'),
+            h('li', {}, 'Toda e qualquer operação realizada por meio deste certificado será considerada válida, autêntica e de sua inteira responsabilidade, nos termos da legislação vigente, especialmente do Estatuto da OAB e do CPC.')),
+          h('h3', {}, 'Consentimento e aceite'),
+          h('ul', {}, h('li', {}, 'O uso desta funcionalidade depende da sua concordância expressa com estes termos;'),
+            h('li', {}, 'O painel atua apenas como intermediário no envio de pedidos a sistemas externos, sem qualquer ingerência sobre o conteúdo acessado, os prazos processuais ou os atos judiciais praticados por meio do certificado;'),
+            h('li', {}, 'O painel NUNCA abre intimações (não dá ciência) nem protocola nada: só lê listas de expedientes pendentes.')),
+          h('h3', {}, 'Segurança e sigilo'),
+          h('ul', {}, h('li', {}, 'É de sua exclusiva responsabilidade a guarda segura do Certificado Digital A1 e de suas credenciais, bem como o uso em ambiente confiável;'),
+            h('li', {}, 'O uso indevido do certificado por terceiros, por falha de segurança ou negligência, será de sua inteira responsabilidade;'),
+            h('li', {}, 'O arquivo e a senha ficam guardados de forma cifrada no cofre do banco de dados do escritório e podem ser apagados a qualquer momento.')),
+          h('p', {}, 'Ao clicar em "Li e aceito", você manifesta ciência e concordância com os termos acima e autoriza o uso do Certificado Digital A1 neste painel.')),
+        h('label', { class: 'cx-check cert-li', for: 'cert-li' }, ok, ' Li e concordo com o termo acima'),
+        h('div', { class: 'acoes' }, seguir, fechar));
+    }
+    function form() {
+      let arquivo = '', nomeArq = '';
+      const msgArq = h('span', {}, 'Arraste o arquivo do seu certificado ou clique aqui');
+      const inp = h('input', { type: 'file', accept: '.pfx,.p12,application/x-pkcs12', hidden: true });
+      const ler = f => { if (!f) return; if (!/\.(pfx|p12)$/i.test(f.name)) { avisar('O arquivo precisa ser .pfx ou .p12.', true); return; }
+        const r = new FileReader(); r.onload = () => { arquivo = String(r.result); nomeArq = f.name; msgArq.textContent = '✓ ' + f.name; zona.classList.add('ok'); }; r.readAsDataURL(f); };
+      inp.addEventListener('change', () => ler(inp.files[0]));
+      const zona = h('div', { class: 'cert-zona', tabindex: '0', role: 'button', onclick: () => inp.click(), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } } }, msgArq, inp);
+      zona.addEventListener('dragover', e => { e.preventDefault(); zona.classList.add('sobre'); });
+      zona.addEventListener('dragleave', () => zona.classList.remove('sobre'));
+      zona.addEventListener('drop', e => { e.preventDefault(); zona.classList.remove('sobre'); ler(e.dataTransfer.files[0]); });
+      const nome = h('input', { type: 'text', id: 'cert-nome', placeholder: 'Exemplo: certificado da Dra. Júlian', maxlength: 80 });
+      const senha = h('input', { type: 'password', id: 'cert-senha', placeholder: 'Digite a senha', autocomplete: 'new-password' });
+      const uf = h('select', { id: 'cert-uf' }, h('option', { value: '' }, 'UF'), UFS.map(x => h('option', { value: x, selected: x === 'SC' }, x)));
+      const oab = h('input', { type: 'text', id: 'cert-oab', inputmode: 'numeric', placeholder: '123456', maxlength: 8 });
+      const erro = h('p', { class: 'erro', hidden: true });
+      const salvar = botao('Salvar', async ev => {
+        erro.hidden = true;
+        const falta = !arquivo ? 'Escolha o arquivo do certificado.' : !nome.value.trim() ? 'Dê um nome ao certificado.' : !senha.value ? 'Digite a senha do certificado.' : !uf.value ? 'Escolha a UF da OAB.' : !oab.value.replace(/\D/g, '') ? 'Este campo é obrigatório: número da OAB.' : '';
+        if (falta) { erro.textContent = falta; erro.hidden = false; return; }
+        const b = ev.currentTarget; b.disabled = true; b.textContent = 'Conferindo…';
+        try {
+          const r = await B.tribunais({ acao: 'certificado', aceito: true, nome: nome.value.trim(), senha: senha.value, uf: uf.value, oab: oab.value, arquivo });
+          senha.value = ''; arquivo = '';
+          if (!r.ok) { erro.textContent = r.erro || 'Não deu certo.'; erro.hidden = false; return; }
+          avisar('Certificado guardado: ' + (r.certificado.titular || nomeArq)); guardado(r.certificado);
+        } catch (e) { erro.textContent = e.message; erro.hidden = false; }
+        finally { b.disabled = false; b.textContent = 'Salvar'; }
+      }, '');
+      const campo = (rot, el) => h('label', { class: 'cert-campo' }, h('span', {}, rot, h('i', {}, '*')), el);
+      corpo.replaceChildren(h('h2', {}, 'Adicionar certificado'),
+        h('div', { class: 'cert-campo' }, h('span', {}, 'Upload do certificado (arquivo .pfx ou .p12)', h('i', {}, '*')), zona),
+        h('div', { class: 'cert-grade' }, campo('Nome/Identificador do certificado', nome), campo('Senha do certificado', senha), campo('UF da OAB', uf), campo('Número da OAB', oab)),
+        erro, h('div', { class: 'acoes' }, botao('Cancelar', () => caixa.close(), 'sec'), salvar));
+    }
+    B && B.tribunais ? B.tribunais({ acao: 'status' }, 30000).then(r => r.ok && r.certificado ? guardado(r.certificado) : termo())
+      .catch(() => termo()) : corpo.replaceChildren(h('p', { class: 'erro' }, 'O banco novo não está ligado neste computador.'), fechar);
+  }
   function dialogoMeusAvisos() {
     const u = sessao.usuario, admin = !!u.pode.usuarios;
     const off = new Set(String(u.avisos_off || '').split(',').filter(Boolean));
@@ -4100,6 +4186,7 @@
         admin ? grupo('🤖 Robôs e sistema',
           item('🚦', 'Situação dos robôs', 'Gmail, DJEN, andamentos, agenda e IA', '#/prazos'),
           item('⚖', 'Intimações direto do eproc', 'Login do eproc no cofre: o robô lista as pendentes sem dar ciência', () => dialogoTribunais()),
+          item('🔐', 'Certificado digital', 'Certificado A1 da advogada, guardado no cofre do banco de dados', () => dialogoCertificado()),
           item('🗄', 'Banco de dados e atualização', 'Supabase, velocidade e atualização automática', '#/usuarios?ver=banco'),
           item('🤖', 'Chatbot do WhatsApp', 'Atendimento automático e conversas', '#/conversas'),
           item('📣', 'Marketing', 'Investimento, origem dos clientes e Google Ads', '#/marketing')) : null,
@@ -4322,7 +4409,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.56.0';
+  const VERSAO_PAINEL = '8.57.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4946,7 +5033,7 @@
      ou DESCARTAR. Nomes do escritório: "Para resolver / Resolvidas / Descartadas" (nunca "não tratadas", a pedido dela).
      ================================================================================================================ */
   const ST_CAIXA = { nao: 'Para resolver', nao_hoje: 'Chegaram hoje', tratadas: 'Resolvidas', tratadas_hoje: 'Resolvidas hoje', descartadas: 'Descartadas',
-    descartadas_hoje: 'Descartadas hoje', nao_feitas: 'Não feitas (baixadas)', todas: 'Todas' };
+    descartadas_hoje: 'Descartadas hoje', nao_feitas: 'Não foram feitas', todas: 'Todas' };
   const ROT_TRAT = { prazo: 'prazo lançado', audiencia: 'audiência marcada', tarefa: 'tarefa criada', evento: 'evento na agenda', historico: 'histórico anotado',
     concluida: 'concluída', ia: 'sugestão confirmada' };
   const guardarFilaCaixa = ids => { try { sessionStorage.setItem('caixa_fila', JSON.stringify(ids.slice(0, 400))); } catch (e) { /* ok */ } };
@@ -4989,7 +5076,7 @@
         s.n_tarefas ? ` + ${s.n_tarefas} tarefa${s.n_tarefas > 1 ? 's' : ''}` : '',
         h('span', { class: 'cx-conf ' + confCls(s.confianca || 0), title: 'Confiança da sugestão' }, (s.confianca || 0) + '%'));
     const feito = aberta ? null : h('div', { class: 'cx-feito' + (x.status === 'descartada' || x.status === 'nao_feita' ? ' desc' : '') },
-      x.status === 'nao_feita' ? 'Não feita · ' + String(x.tratada_por || '').replace(/^robô \(não feita: |\)$/g, '') : x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
+      x.status === 'nao_feita' ? [h('span', { class: 'cx-naofeita' }, 'Não foi feita'), ' ', h('small', {}, x.tratada_por ? String(x.tratada_por).replace(/^robô \(não feita: |\)$/g, '') : 'o prazo venceu sem ser resolvida')] : x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
       x.tratada_por && x.status !== 'nao_feita' ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
     return h('div', { class: 'cx-item' + (aberta ? '' : ' feita'), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
       h('div', { class: 'cx-quando' }, h('b', {}, rec ? dataBR(rec.slice(0, 10)).slice(0, 5) : '—'), h('span', {}, rec.length > 15 ? rec.slice(11, 16) : ''), h('span', { class: 'cx-fonte' }, x.fonte || '')),
@@ -5007,7 +5094,7 @@
   async function corpoCaixa(params, ir) {
     const st = ST_CAIXA[params.get('st')] ? params.get('st') : 'nao';
     const minhas = params.get('minhas') === '1', busca = (params.get('q') || '').trim(), dias = [7, 15, 30, 90].includes(+params.get('dias')) ? +params.get('dias') : 7;
-    const r = await api('intimacoes.caixa', { status: st, busca, minhas: minhas ? 1 : '', dias });
+    const r = await api('intimacoes.caixa', { status: st, busca, minhas: minhas ? 1 : '', dias, limite: st === 'nao' ? 400 : '' });
     const P = r.placar || {};
     const CARDS = [['nao_hoje', 'Chegaram hoje', 'ainda para resolver', P.nao_hoje, 'k-azul'], ['tratadas_hoje', 'Resolvidas hoje', '', P.tratadas_hoje, 'k-verde'],
       ['descartadas_hoje', 'Descartadas hoje', '', P.descartadas_hoje, 'k-cinza'], ['nao', 'Para resolver', 'no total', P.nao, P.nao ? 'k-ambar' : '']];
@@ -5033,8 +5120,22 @@
     const lista = r.lista || [];
     if (/^(nao|nao_hoje|todas)$/.test(st)) guardarFilaCaixa(lista.filter(x => x.status === 'nao').map(x => x.id));
     const vazio = st === 'nao' || st === 'nao_hoje' ? '✓ Nada para resolver. Toda intimação que chegar aparece aqui.' : 'Nada nesta lista.';
-    return [h('div', { class: 'cx-topo' }, placar, semana), filtros,
-      lista.length ? h('div', { class: 'cx-lista' }, lista.map(linhaCaixa)) : h('p', { class: 'ini-vazio' }, vazio),
+    // 8.57 (pedido da usuária): "Para resolver" por DIA do prazo — hoje (com o que chegou sem prazo), embaixo o dia seguinte e assim por diante, em páginas
+    const POR_PAG = 25, pg = Math.max(1, +params.get('pg') || 1), hoje = hojeISO();
+    let corpoLista;
+    if (st === 'nao' && lista.length) {
+      const chave = x => { const f = (x.sug && x.sug.prazo && !x.sug.prazo.ato && x.sug.prazo.fatal) || ''; return f && f > hoje ? f : hoje; };
+      const ord = lista.slice().sort((a, b) => chave(a) < chave(b) ? -1 : chave(a) > chave(b) ? 1 : (a.recebido_em < b.recebido_em ? 1 : -1));
+      const paginas = Math.ceil(ord.length / POR_PAG), pAt = Math.min(pg, paginas), pedaco = ord.slice((pAt - 1) * POR_PAG, pAt * POR_PAG);
+      const amanha = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+      const titulo = dia => { const ext = new Date(dia + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+        return dia === hoje ? 'Hoje · ' + ext : dia === amanha ? 'Amanhã · ' + ext : ext.charAt(0).toUpperCase() + ext.slice(1); };
+      const grupos = []; pedaco.forEach(x => { const k = chave(x); const g = grupos[grupos.length - 1]; if (g && g.k === k) g.itens.push(x); else grupos.push({ k, itens: [x] }); });
+      corpoLista = [h('div', { class: 'cx-lista cx-por-dia' }, grupos.map(g => [h('div', { class: 'cx-dia' + (g.k === hoje ? ' hoje' : '') }, h('b', {}, titulo(g.k)), h('span', {}, g.itens.length + (g.itens.length === 1 ? ' intimação' : ' intimações'))), g.itens.map(linhaCaixa)])),
+        paginas > 1 ? h('nav', { class: 'cx-paginas', 'aria-label': 'Páginas' }, Array.from({ length: paginas }, (_, i) => i + 1).map(n =>
+          h('button', { type: 'button', class: 'cx-pag' + (n === pAt ? ' on' : ''), 'aria-current': n === pAt ? 'page' : null, onclick: () => ir({ pg: n === 1 ? '' : String(n) }) }, 'Página ' + n))) : null];
+    } else corpoLista = lista.length ? h('div', { class: 'cx-lista' }, lista.map(linhaCaixa)) : h('p', { class: 'ini-vazio' }, vazio);
+    return [h('div', { class: 'cx-topo' }, placar, semana), filtros, corpoLista,
       h('p', { class: 'ix-rodape' }, 'Entram aqui as publicações do DJEN e os avisos de intimação do PJe e do eproc desde ' + dataBR(r.desde) +
         '. O robô continua criando o prazo sozinho; resolver aqui confirma o que fazer e cria as tarefas de preparação.')];
   }
@@ -5425,6 +5526,86 @@
      ================================================================================================================ */
   const hm = m => { m = Math.max(0, Math.round(+m || 0)); return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
   let cronoTimer = null;
+  /* 8.57 ASSISTENTE (IA embutida, pedido da usuária: "igual à do ADVBOX, com um design para interagir"). Botão "✨ Assistente" na barra do
+     topo abre um painel à direita: sugestões de perguntas, conversa, respostas com a lista clicável (abre o prazo, o processo, o cliente),
+     escolha quando há dois clientes com o mesmo nome e "Criar a tarefa" para confirmar uma ação proposta (nada é gravado sem o clique).
+     A conversa fica só nesta aba (sessionStorage `assistente_conversa`). Servidor: rota ia.assistente (assistenteIA_). */
+  function montarAssistente() {
+    const barra = document.getElementById('barra-topo'); if (!barra || !sessao || document.getElementById('assist-bt')) return;
+    const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'Perguntar ao assistente (IA)', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '✨'), ' Assistente');
+    barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
+  }
+  const SUGESTOES_IA = ['O que eu tenho para fazer hoje?', 'Audiências e perícias desta semana', 'Prazos que vencem amanhã', 'Intimações para resolver', 'Processos parados há mais de 90 dias', 'Aniversariantes desta semana'];
+  function abrirAssistente() {
+    let painel = document.getElementById('assist');
+    if (painel) { painel.classList.add('aberto'); const c = painel.querySelector('textarea'); if (c) c.focus(); return; }
+    let conversa = []; try { conversa = JSON.parse(sessionStorage.getItem('assistente_conversa') || '[]'); } catch (e) { conversa = []; }
+    const guardar = () => { try { sessionStorage.setItem('assistente_conversa', JSON.stringify(conversa.slice(-30))); } catch (e) { /* ok */ } };
+    const lista = h('div', { class: 'assist-msgs', role: 'log', 'aria-live': 'polite' });
+    const campo = h('textarea', { id: 'assist-campo', rows: 1, placeholder: 'Pergunte sobre prazos, audiências, clientes, tarefas…', 'aria-label': 'Pergunta ao assistente' });
+    const enviar = h('button', { type: 'button', class: 'assist-enviar', title: 'Enviar', 'aria-label': 'Enviar' }, '➤');
+    const fechar = () => painel.classList.remove('aberto');
+    const limpar = () => { conversa = []; guardar(); desenhar(); };
+    painel = h('aside', { id: 'assist', class: 'assist aberto', 'aria-label': 'Assistente do painel' },
+      h('header', { class: 'assist-cab' }, h('div', {}, h('b', {}, 'Assistente Araújo'), h('small', {}, 'IA que consulta o painel e só cria algo quando você confirma')),
+        h('div', { class: 'assist-cab-bt' }, h('button', { type: 'button', title: 'Nova conversa', onclick: limpar }, '↺'), h('button', { type: 'button', title: 'Fechar', 'aria-label': 'Fechar', onclick: fechar }, '✕'))),
+      lista,
+      h('div', { class: 'assist-entrada' }, campo, enviar));
+    document.body.append(painel);
+    const linkAbre = (href) => { if (href) { location.hash = href; if (window.innerWidth < 900) fechar(); } };
+    function bolhaResposta(m) {
+      const r = m.r || {}, partes = [h('p', {}, r.texto || '')];
+      if (r.opcoes && r.opcoes.length) partes.push(h('div', { class: 'assist-opcoes' }, r.opcoes.map(o => h('button', { type: 'button', onclick: () => perguntar(m.p, o.id) }, h('b', {}, o.nome), o.extra ? h('small', {}, o.extra) : null))));
+      if (r.linhas && r.linhas.length) {
+        partes.push(h('div', { class: 'assist-tab' }, h('table', {}, h('thead', {}, h('tr', {}, (r.colunas || []).map(c => h('th', {}, c)))),
+          h('tbody', {}, r.linhas.map(l => h('tr', { tabindex: '0', title: 'Abrir', onclick: () => linkAbre(l.link), onkeydown: ev => { if (ev.key === 'Enter') linkAbre(l.link); } }, l.c.map(v => h('td', {}, v))))))));
+        if (r.linhas.length >= 40) partes.push(h('small', { class: 'assist-nota' }, 'Mostrando as 40 primeiras.'));
+      }
+      if (r.abrir) partes.push(botao('Abrir a ficha', () => linkAbre(r.abrir), 'mini sec'));
+      if (r.acao && r.acao.tipo === 'tarefa') {
+        const caixa = h('div', { class: 'assist-acao' }, h('div', {}, h('b', {}, 'Nova tarefa: '), r.acao.resumo));
+        const bts = h('div', { class: 'mini-acoes' });
+        if (m.feito) bts.append(h('span', { class: 'assist-ok' }, '✓ ' + m.feito));
+        else bts.append(botao('Criar a tarefa', async ev => {
+          ev.currentTarget.disabled = true;
+          try { await api('tarefas.salvar', { tarefa: Object.assign({ prioridade: 'normal' }, r.acao.tarefa) }); m.feito = 'Tarefa criada'; avisar('Tarefa criada.'); }
+          catch (e) { m.feito = ''; avisar(e.message, true); }
+          guardar(); desenhar();
+        }, 'mini'), botao('Cancelar', () => { m.feito = 'Cancelada'; guardar(); desenhar(); }, 'mini sec'));
+        caixa.append(bts); partes.push(caixa);
+      }
+      return h('div', { class: 'assist-msg ia' }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, '✨'), h('div', { class: 'assist-bolha' }, partes));
+    }
+    function desenhar() {
+      lista.replaceChildren();
+      if (!conversa.length) {
+        lista.append(h('div', { class: 'assist-vazio' }, h('div', { class: 'assist-logo', 'aria-hidden': 'true' }, '✨'),
+          h('b', {}, 'Olá, ' + primeiroNome(sessao.usuario.nome || sessao.usuario.usuario) + '! Como posso ajudar?'),
+          h('p', {}, 'Pergunte em português. Eu procuro no painel e mostro a lista com o link de cada item.'),
+          h('div', { class: 'assist-sug' }, SUGESTOES_IA.map(t => h('button', { type: 'button', onclick: () => perguntar(t) }, t))),
+          h('small', {}, 'Também dá para pedir: "crie uma tarefa para a Taina ligar para o cliente amanhã". Eu só crio quando você confirmar.')));
+        return;
+      }
+      conversa.forEach(m => { lista.append(h('div', { class: 'assist-msg eu' }, h('div', { class: 'assist-bolha' }, m.p)));
+        lista.append(m.esperando ? h('div', { class: 'assist-msg ia' }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, '✨'), h('div', { class: 'assist-bolha pensando' }, h('i'), h('i'), h('i')))
+          : m.erro ? h('div', { class: 'assist-msg ia' }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, '!'), h('div', { class: 'assist-bolha erro' }, m.erro, ' ', botao('Tentar de novo', () => { conversa.splice(conversa.indexOf(m), 1); perguntar(m.p, m.esc); }, 'mini sec')))
+          : bolhaResposta(m)); });
+      lista.scrollTop = lista.scrollHeight;
+    }
+    async function perguntar(texto, escolha) {
+      texto = String(texto || '').trim(); if (!texto) return;
+      const m = { p: texto, esc: escolha || '', esperando: true }; conversa.push(m); desenhar(); campo.value = '';
+      try {
+        const hist = conversa.slice(0, -1).slice(-3).map(x => x.p);
+        m.r = await api('ia.assistente', { pergunta: texto, historico: hist, escolha_cliente: escolha || '' });
+      } catch (e) { m.erro = e.message || 'Não consegui responder agora.'; }
+      delete m.esperando; guardar(); desenhar();
+    }
+    enviar.addEventListener('click', () => perguntar(campo.value));
+    campo.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); perguntar(campo.value); } if (ev.key === 'Escape') fechar(); });
+    campo.addEventListener('input', () => { campo.style.setProperty('height', 'auto'); campo.style.setProperty('height', Math.min(140, campo.scrollHeight) + 'px'); });
+    desenhar(); campo.focus();
+  }
   function montarCronometro() {
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao) return;
     let el = document.getElementById('crono'); if (!el) { el = h('div', { id: 'crono', class: 'crono' }); barra.insertBefore(el, document.getElementById('subabas')); }

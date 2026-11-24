@@ -27,6 +27,13 @@
       else botao(n, '⚠ ' + ((r && r.erro) || 'não deu para mandar') + ' — clique para tentar');
     });
   }
+  // 1.5.0: avisa o fundo da extensão que esta é uma tela de Expedientes (para reabrir sozinha de 2 em 2 h) ou que o PJe pediu para entrar de novo
+  function relatar() {
+    const t = document.body ? document.body.innerText : '';
+    if (temLista(t)) chrome.runtime.sendMessage({ tipo: 'pjeUrl', url: location.href, host: location.hostname, n: new Set(t.match(RE) || []).size });
+    else if (/sso\.cloud\.pje|login/i.test(location.href) || /certificado digital|PJeOffice|entrar com certificado/i.test(t)) chrome.runtime.sendMessage({ tipo: 'pjeLogin', host: location.hostname, url: location.href });
+  }
+  setTimeout(relatar, 8000);
   let timer = null;
   new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => mandar(false), 2500); }).observe(document.documentElement, { childList: true, subtree: true });
   setTimeout(() => mandar(false), 3000);

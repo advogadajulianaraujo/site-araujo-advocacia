@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Araújo Advocacia — Assistente do WhatsApp",
   "short_name": "Assistente Araújo",
-  "version": "1.4.0",
-  "description": "Mostra ao lado de cada conversa do WhatsApp Web quem é a pessoa no painel do escritório (cliente, etapa do funil, processos) e ajuda a seguir o atendimento. Também lê o DJEN (diário eletrônico) de 2 em 2 horas com o Chrome aberto. Com a tela de Expedientes do PJe aberta, manda a lista ao painel (prazo igual ao PJe).",
+  "version": "1.5.0",
+  "description": "Mostra ao lado de cada conversa do WhatsApp Web quem é a pessoa no painel do escritório (cliente, etapa do funil, processos) e ajuda a seguir o atendimento. Também lê o DJEN (diário eletrônico) de 2 em 2 horas com o Chrome aberto. Lê sozinha, de 2 em 2 horas, as telas de Expedientes do PJe já abertas uma vez neste Chrome (sem abrir nenhum expediente) e manda ao painel.",
   "icons": {
     "16": "icones/a16.png",
     "32": "icones/a32.png",

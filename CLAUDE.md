@@ -2079,4 +2079,26 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 - Horas trabalhadas saiu do menu: sub-aba de Documentos, ao lado de Calculadoras. Datas de Greenwich × Brasília corrigidas em andamentos
   importantes, "esperando há muito tempo" e comissão (`diaSP_`).
 - 24/11: tarefas de processo (177), prazos abertos (112) e a distribuição trabalhista (prazos e iniciais) passaram da Lara para a Taina; avisos
-  ao cliente e secretaria ficaram com a Lara (49 tarefas). Os PROCESSOS com responsável Lara não foram mudados (falta o OK da usuária).
+  ao cliente e secretaria ficaram com a Lara (49 tarefas). Os 12 PROCESSOS com responsável Lara também passaram para a Taina (OK da usuária).
+
+## 8.57.0 Assistente de IA, intimações por dia, certificado digital, PJe sozinho (pedidos da usuária, 24/11/2026)
+
+- Design: a usuária PREFERE Início, Clientes e Processos como estavam (o "antes/depois" de 24/11 foi recusado) — não redesenhar essas telas.
+- Intimações › Recebidas: intimação com prazo do painel já vencido (fora "ato:") conta como "Não foi feita" NA HORA (`statusCaixa_`, `hojeCaixa_`
+  com 1 min de memória) e sai de "Para resolver" (chip vermelho "Não foi feita" + motivo; filtro "Não foram feitas"); o robô
+  `baixarCaixaVencida_` grava a baixa. "Para resolver" em grupos por dia (Hoje · …, Amanhã · …, dia da semana) com 25 por página
+  ("Página 1, 2, 3…", `?pg=`). O filtro de tribunais continua.
+- Certificado digital (Configurações › Robôs e sistema › "🔐 Certificado digital", `dialogoCertificado`): termo de responsabilidade ("Li e
+  concordo" + "Li e aceito") → formulário (arquivo .pfx/.p12, nome, senha, UF e nº da OAB). Vai do navegador direto à função `tribunais`
+  (acao certificado: confere arquivo + senha, recusa vencido, guarda no COFRE do Supabase com quem aceitou o termo; cert_apagar). Nunca passa
+  pelo Google, pela planilha nem pelo chat. Serve aos tribunais que aceitam servidores; o PJe do TRT12/TST recusa servidores (fica com a extensão).
+- Extensão 1.5.0: lê o PJe SOZINHA (alarme 'pje' de 30 em 30 min; roda de 2 em 2 h, seg–sex 7h–20h) — aprende o endereço dos Expedientes de cada
+  PJe aberto uma vez com o certificado instalado, abre em aba de fundo, manda a lista (`ext.pjeLista`) e fecha em 90 s; avisa quando o PJe pede
+  login. Popup: "Ler os PJe sozinha" e "Ler os PJe agora". Nunca abre expediente (não dá ciência).
+- Assistente de IA (botão "✨ Assistente" no topo, gaveta à direita; rota `ia.assistente` = leitura): a pessoa pergunta em português ("prazos
+  vencidos", "audiências da semana", "como está o cliente X", "crie uma tarefa…"). `entidadesIA_` troca nº de processo e nome do cliente por
+  [PROCESSO1]/[CLIENTE1] antes do Gemini; a IA só devolve um PLANO em JSON (`SISTEMA_ASSISTENTE_`; sem Gemini, `planoRegrasIA_`) e
+  `executarIA_` busca os dados no painel com as permissões da pessoa (colaborador vê só as tarefas dele; RH sem valores; cobranças só com
+  financeiro). Ferramentas: agenda, prazos, intimações, tarefas, cliente, processo, cobranças, parados, aniversários, criar_tarefa (só
+  PROPÕE: a tarefa é criada no botão "Criar a tarefa" da pessoa), conversa. Nome ambíguo → pergunta qual. Conversa guardada na aba
+  (sessionStorage `assistente_conversa`). A IA nunca muda prazo nem grava nada sozinha. Teste `.github/motor/teste/etapa857.js`.

@@ -117,3 +117,47 @@ chrome.runtime.onMessage.addListener((msg, _de, responder) => {
   lerDjen(true).then(responder);
   return true;
 });
+
+/* ---------- 1.5.0: PJe lido SOZINHO (pedido da usuária: "ler todos os tribunais, entrar nos portais") ----------
+   O TRT12, o TST e o TRT23 recusam servidores: só o Chrome do escritório, com o certificado da Dra. instalado, entra. Cada tela de
+   Expedientes que alguém abrir uma vez fica guardada (por tribunal). De 2 em 2 horas, nos dias úteis das 7h às 20h, a extensão reabre
+   essas telas numa aba em segundo plano, o pje.js lê a lista e manda ao painel (ext.pjeLista), e a aba fecha sozinha em 90 s.
+   Não clica em nada, não abre expediente (não dá ciência) e não guarda senha. Se o PJe pedir para entrar de novo, o popup mostra. */
+const abasDoRobo = new Set();
+async function pjeAnotar(host, dados) {
+  const { pje = {} } = await chrome.storage.local.get('pje');
+  pje[host] = Object.assign(pje[host] || {}, dados);
+  await chrome.storage.local.set({ pje });
+}
+async function lerPjeSozinho(forcar) {
+  const st = await chrome.storage.local.get(['token', 'pje', 'pje_auto', 'pje_ultimo']);
+  if (!st.token || st.pje_auto === false) return { ok: false, erro: st.token ? 'desligado' : 'extensão não ligada' };
+  const agora = new Date(), h = agora.getHours(), dia = agora.getDay();
+  if (!forcar && (dia === 0 || dia === 6 || h < 7 || h >= 20)) return { ok: true, pulou: true };
+  if (!forcar && Date.now() - (+st.pje_ultimo || 0) < 2 * 3600e3) return { ok: true, pulou: true };
+  const telas = Object.entries(st.pje || {}).filter(([, v]) => v && v.url);
+  await chrome.storage.local.set({ pje_ultimo: Date.now() });
+  for (const [host, v] of telas) {
+    try {
+      const aba = await chrome.tabs.create({ url: v.url, active: false });
+      abasDoRobo.add(aba.id);
+      await pjeAnotar(host, { aberto_em: Date.now() });
+      setTimeout(() => { abasDoRobo.delete(aba.id); chrome.tabs.remove(aba.id).catch(() => {}); }, 90000);
+      await espera(4000);
+    } catch (e) { await pjeAnotar(host, { erro: String(e.message || e).slice(0, 120), erro_em: Date.now() }); }
+  }
+  return { ok: true, telas: telas.length };
+}
+chrome.alarms.create('pje', { periodInMinutes: 30, delayInMinutes: 2 });
+chrome.alarms.onAlarm.addListener(a => { if (a.name === 'pje') lerPjeSozinho(false); });
+chrome.runtime.onStartup.addListener(() => chrome.alarms.create('pje', { periodInMinutes: 30, delayInMinutes: 2 }));
+chrome.runtime.onMessage.addListener((msg, de, responder) => {
+  if (msg.tipo === 'pjeUrl') { pjeAnotar(msg.host, { url: msg.url, n: msg.n, lido_em: Date.now(), login_em: 0 }).then(() => responder({ ok: true })); return true; }
+  if (msg.tipo === 'pjeLogin') { // só conta como "precisa entrar" quando a aba foi aberta pelo robô
+    if (de && de.tab && abasDoRobo.has(de.tab.id)) pjeAnotar(msg.host, { login_em: Date.now() }).then(() => responder({ ok: true }));
+    else responder({ ok: true });
+    return true;
+  }
+  if (msg.tipo === 'pjeAgora') { lerPjeSozinho(true).then(responder); return true; }
+  return false;
+});
