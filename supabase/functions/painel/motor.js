@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.58.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.58.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.58.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.58.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.58.0';
+var VERSAO = '8.58.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -6057,7 +6057,7 @@ function pessoaIA_(nome, u) {
   return x ? x.usuario : '';
 }
 function assistenteIA_(d, u) {
-  var pergunta = String(d.pergunta || '').trim().slice(0, 600);
+  var pergunta = String(d.pergunta || '').trim().slice(0, 4000);
   if (!pergunta) throw falha_('Escreva a sua pergunta.');
   var hoje = hojeSP_(), ent = entidadesIA_(pergunta), plano = null, viaIA = false;
   if (d.escolha_cliente) ent.mapa['[CLIENTE1]'] = { tipo: 'cliente', ids: [String(d.escolha_cliente)] };
@@ -6073,6 +6073,7 @@ function assistenteIA_(d, u) {
   }
   if (!plano || !plano.ferramenta) plano = planoRegrasIA_(pergunta);
   if (d.modo === 'juridico' && plano.ferramenta !== 'criar_tarefa') plano.ferramenta = 'juridico';
+  plano._conversa = (Array.isArray(d.conversa) ? d.conversa : []).slice(-4).map(function (x) { return { p: anonimizar_(String((x && x.p) || '').slice(0, 600), []), r: anonimizar_(String((x && x.r) || '').slice(0, 2200), []) }; });
   plano._pergunta = ent.paraIA; plano._anterior = d.anterior ? anonimizar_(String(d.anterior).slice(0, 2500), []) : ''; plano._hist = Array.isArray(d.historico) ? d.historico.slice(-3) : [];
   var res = executarIA_(plano, ent.mapa, u, hoje);
   res.plano = { ferramenta: plano.ferramenta, de: plano.de || '', ate: plano.ate || '', pessoa: plano.pessoa || '' }; res.via_ia = viaIA;
@@ -6085,16 +6086,20 @@ function assistenteIA_(d, u) {
    abertos e últimos andamentos). Nunca inventa julgado; nunca dá data fatal; a IA auxilia, não substitui a advogada. */
 var RE_JURIDICO_IA_ = /\b(art(igo)?s?\.? ?\d|lei\b|sumula|clt|cpc|cpp|cdc|codigo civil|constitui|vinculo|prescri|decadenc|requisit|cabivel|recurso ordinario|agravo|embargos|apelac|contestac|replica|reconvenc|tutela|liminar|horas? extras?|insalubr|periculos|rescis|justa causa|aviso previo|fgts|estabilidade|acidente de trabalho|dano moral|pensao|guarda|alimentos|divorcio|inventario|usucapiao|aposentadori|auxilio|bpc|loas|carencia|qualidade de segurado|tempo de contribuicao|como funciona|o que (e|eh|significa)|qual (o )?prazo|quantos dias|tese|jurisprud|onus da prova|testemunha|pericia medica|execucao|penhora|cumprimento de sentenca)\b/;
 var SISTEMA_JURIDICO_ = 'Você é a IA jurídica do escritório Araújo Advocacia (Tubarão/SC), que atua em Direito do Trabalho, Previdenciário, Cível, Família, Consumidor e Criminal. ' +
-  'Quem pergunta é a equipe (advogadas, advogados e estagiários). Responda em português do Brasil, claro e técnico na medida certa, em Markdown, nesta ordem: ' +
-  'primeiro um parágrafo curto começando com "**Em resumo:**" com a resposta direta; depois "## Fundamento legal" (artigos com número: CF/88, CLT, CPC/2015, CPP, CC/2002, CDC, Lei 8.213/91, Lei 8.212/91, Decreto 3.048/99, LOAS, ECA, Lei 5.478/68 etc.); ' +
-  '"## Como funciona na prática" (passo a passo, prazos legais, documentos, provas, quem faz o quê); "## Pontos de atenção" (prescrição, decadência, ônus da prova, riscos, divergências entre tribunais, mudanças da lei); ' +
-  '"## O que conferir no caso" (lista curta do que verificar). Use listas e negrito para facilitar a leitura. ' +
-  'REGRAS: 1) Nunca invente número de processo, ementa, relator, data de julgamento ou nome de precedente. Súmula, OJ ou Tema só com número e conteúdo que você tem certeza; se não tiver, escreva "(conferir a redação atual)". ' +
-  '2) Deixe claro o direito VIGENTE e quando mudou (ex.: Reforma Trabalhista, Lei 13.467/2017; Reforma da Previdência, EC 103/2019; CPC/2015). ' +
-  '3) Prazos processuais: CPC e CLT em dias úteis; diga o prazo legal, mas NUNCA calcule a data final do prazo de um caso (isso é conferido no painel e no tribunal). ' +
-  '4) Se vier um CASO (com [CLIENTE1]/[PROCESSO1] e dados do processo), aplique ao caso e diga o que falta saber; não use nomes. ' +
-  '5) Se a pergunta for vaga, responda o essencial e termine com 1 ou 2 perguntas para completar. 6) Até cerca de 650 palavras. ' +
-  '7) Termine com uma linha em itálico: "_A IA auxilia; a decisão é sempre da advogada responsável._"';
+  'Pense como um advogado sênior, com 20 anos de prática, explicando a um colega do escritório: com profundidade, raciocínio jurídico e visão prática. Nada de resposta superficial. ' +
+  'Responda em português do Brasil, em Markdown. Ajuste o tamanho à pergunta (pergunta simples: direto ao ponto; tema amplo: completo), mas em geral use estas partes: ' +
+  '1) um parágrafo inicial começando com "**Em resumo:**" com a resposta direta e a conclusão; ' +
+  '2) "## Fundamento legal": os dispositivos com número e o que cada um diz em poucas palavras (CF/88, CLT, CPC/2015, CPP, CC/2002, CDC, Lei 8.213/91, Lei 8.212/91, Decreto 3.048/99, Lei 8.742/93, ECA, Lei 5.478/68, Lei 13.467/2017, EC 103/2019, IN do INSS etc.); ' +
+  '3) "## Entendimento dos tribunais": súmulas, OJs, temas repetitivos/repercussão geral e a posição predominante (TST, STJ, STF, TNU, TRF4, TRT12, TJSC), só com número e conteúdo que você tem certeza; quando houver divergência, explique as correntes; ' +
+  '4) "## Como funciona na prática": passo a passo, competência, rito, prazos legais (dias úteis no CPC e na CLT), custas, quem prova o quê, documentos e provas que o escritório deve reunir; ' +
+  '5) "## Estratégia e argumentos": teses principais e subsidiárias, pedidos que costumam ser esquecidos, como rebater a defesa típica da outra parte; ' +
+  '6) "## Riscos e pontos de atenção": prescrição, decadência, ônus da prova, sucumbência/honorários, armadilhas comuns; ' +
+  '7) "## O que conferir no caso": lista objetiva. Quando ajudar, use uma tabela Markdown (ex.: requisitos × prova) ou um exemplo numérico de cálculo. ' +
+  'REGRAS: nunca invente número de processo, ementa, relator, data de julgamento ou precedente; se não tiver certeza de uma súmula/tema escreva "(conferir a redação atual)". ' +
+  'Deixe claro o direito VIGENTE e o que mudou (Reforma Trabalhista, Reforma da Previdência, CPC/2015). Diga o prazo legal, mas NUNCA calcule a data final do prazo de um caso concreto. ' +
+  'Se vier um CASO do escritório ([CLIENTE1]/[PROCESSO1] e dados do processo), aplique tudo a ele e diga o que falta saber; não use nomes. ' +
+  'Use as mensagens anteriores da conversa para continuar o raciocínio (a pessoa pode pedir "e se…", "aprofunde", "faça um modelo"). Se pedirem um texto (cláusula, tópico de petição, quesitos, perguntas para testemunha), escreva o texto pronto. ' +
+  'Termine com uma linha em itálico: "_A IA auxilia; a decisão é sempre da advogada responsável._"';
 function casoParaIA_(pa) {
   if (!pa) return '';
   var zs = tabela_('Prazos').linhas.filter(function (z) { return z.processo_id === pa.id && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; }).slice(0, 6)
@@ -6112,10 +6117,11 @@ function juridicoIA_(p, mapa, cli, procNum, procs, u, hoje) {
   if (mapa['[PROCESSO1]']) pa = procNum[mapa['[PROCESSO1]'].numero] || null;
   if (!pa && cli) pa = tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cli.id && x.status !== 'arquivado'; })[0] || null;
   var caso = casoParaIA_(pa);
-  var hist = (p._hist || []).map(function (x) { return 'pergunta anterior: ' + anonimizar_(String(x || '').slice(0, 300), []); }).join('\n');
-  var txt = 'HOJE: ' + hojeExtenso_() + (hist ? '\n' + hist : '') + (p._anterior ? '\nSUA RESPOSTA ANTERIOR (para continuar a conversa):\n' + p._anterior : '') +
-    (caso ? '\n\n' + caso : '') + '\n\nPERGUNTA: ' + (p._pergunta || '');
-  var r = geminiTexto_([{ text: txt }], { sistema: SISTEMA_JURIDICO_, max: 3000, temp: 0.3 });
+  var conv = (p._conversa || []).map(function (x) { return 'EQUIPE: ' + x.p + '\nVOCÊ: ' + x.r; }).join('\n\n');
+  if (!conv) { var hist = (p._hist || []).map(function (x) { return 'pergunta anterior: ' + anonimizar_(String(x || '').slice(0, 300), []); }).join('\n'); conv = hist + (p._anterior ? '\nSUA RESPOSTA ANTERIOR:\n' + p._anterior : ''); }
+  var txt = 'HOJE: ' + hojeExtenso_() + (conv ? '\n\nCONVERSA ATÉ AGORA:\n' + conv : '') + (caso ? '\n\n' + caso : '') + '\n\nPERGUNTA AGORA: ' + (p._pergunta || '');
+  var modeloJ = config_('IA_MODELO_JURIDICO') || modeloIA_().replace(/-lite$/, '');
+  var r = geminiTexto_([{ text: txt }], { sistema: SISTEMA_JURIDICO_, max: 8192, temp: 0.35, modelo: modeloJ });
   var t = String(r.texto || '').trim();
   if (!t) throw falha_('A IA não respondeu agora. Tente de novo em alguns segundos.');
   if (cli) t = t.replace(/\[CLIENTE1\]|\[PARTE\]/g, primeiroNomeProprio_(cli.nome));

@@ -24,8 +24,11 @@ const proc = C.tabela_('Processos').linhas.find(p => p.numero && p.cliente_id);
 const out = C.assistenteIA_({ pergunta: 'quais os requisitos do vínculo no processo ' + proc.numero + '?', modo: 'juridico' }, admin);
 assert(out.juridico && out.md && /Fundamento legal/.test(out.texto), 'modo jurídico responde em Markdown organizado');
 assert(pedido && /CASO \[PROCESSO1\]/.test(pedido.txt) && !pedido.txt.includes(proc.numero), 'o caso vai à IA sem o número do processo');
-assert(/Nunca invente número de processo/.test(pedido.sis), 'regra: nunca inventar julgado');
+assert(/nunca invente número de processo/i.test(pedido.sis), 'regra: nunca inventar julgado');
 assert(out.caso && out.caso.link === '#/processo/' + proc.id, 'a resposta mostra qual caso foi usado');
 const out2 = C.assistenteIA_({ pergunta: 'crie uma tarefa para eu ligar para o cliente amanhã', modo: 'juridico' }, admin);
 assert(!out2.juridico, 'no modo jurídico, pedido de tarefa continua virando tarefa');
 
+
+const out3 = C.assistenteIA_({ pergunta: 'e se ele era MEI?', modo: 'juridico', conversa: [{ p: 'requisitos do vínculo', r: 'Em resumo: são cinco requisitos.' }] }, admin);
+assert(out3.juridico && /CONVERSA ATÉ AGORA/.test(pedido.txt) && /cinco requisitos/.test(pedido.txt), 'a IA recebe a conversa anterior (memória)');
