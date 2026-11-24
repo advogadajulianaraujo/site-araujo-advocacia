@@ -594,7 +594,7 @@
     if (BANCO) BANCO.sair(!expirou);
     clearInterval(chatTimer); if (chatF) { chatF.raiz.remove(); chatF = null; }
     esquecerTudo();
-    try { sessionStorage.removeItem('painel_memoria'); } catch (e) { /* ok */ }
+    try { sessionStorage.removeItem('painel_memoria'); Object.keys(sessionStorage).filter(k => /^ia_conversas_|^assistente_conversa/.test(k)).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
     abasEl.hidden = true;
@@ -791,6 +791,7 @@
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
+    ['ia', 'IA Jurídica', null, 'pecas', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -3243,13 +3244,18 @@
       }), botao('Cancelar', () => caixa.close(), 'sec')));
     caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
   }
+  /* 8.58.1 (pedido da usuária: "sem trilhas; 3 abas principais em cima — Petição inicial, Ajuizados e INSS; sempre abrir na Petição inicial,
+     com 2 etapas grandes embaixo: Petição inicial e Protocolo"). Ajuizados e INSS: quadrados grandes de cada etapa (clicar mostra a lista). */
+  const PX3_DESC_J = { ajuizado: 'citação e defesa', conciliacao: 'tentativa de acordo', andamento: 'defesa, réplica e provas', pericia: 'perícia marcada ou em curso',
+    instrucao: 'audiência com testemunhas', sentenca: 'sentença ou acordo', recurso: 'no tribunal', execucao: 'cumprimento e recebimento', extinto: 'encerrados / arquivados' };
+  const PX3_ETAPAS_INSS = [['protocolado', 'Pedido feito', 'acompanhar no Meu INSS', '#9C7A43'], ['analise', 'Em análise', 'aguardando o INSS', '#6B7FA3'], ['exigencia', 'Exigência', 'falta documento — 30 dias', '#C9822B'],
+    ['pericia', 'Perícia', 'perícia marcada', '#7A5BA6'], ['resultado', 'Resultado', 'aguardando a decisão', '#4F7E8C'], ['indeferido', 'Indeferido', 'recurso ou Justiça', '#B23A33'],
+    ['recurso', 'Recurso', 'Junta de Recursos', '#B9752F'], ['deferido', 'Aprovado', 'benefício concedido', '#2F7D4F'], ['encerrados', 'Encerrados', 'foi à Justiça ou arquivado', '#8A8276']];
+  const iniciaisPx = n => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
   async function telaProcessosB(params) {
     carregando();
-    let abaSalva = ''; try { abaSalva = localStorage.getItem('proc_aba') || ''; } catch (e) { /* segue */ }
-    const aba = ['peticao', 'ajuizados', 'inss'].includes(params.get('aba')) ? params.get('aba') : (abaSalva || 'peticao');
-    try { localStorage.setItem('proc_aba', aba); } catch (e) { /* segue */ }
-    const etapa = params.get('etapa') === 'protocolar' ? 'protocolar' : 'peticao';
-    const q = (params.get('q') || '').trim(), fase = params.get('fase') || '', area = params.get('area') || '', sit = params.get('sit') || 'ativo', pg = Math.max(1, parseInt(params.get('pg'), 10) || 1);
+    const aba = ['peticao', 'ajuizados', 'inss'].includes(params.get('aba')) ? params.get('aba') : 'peticao'; // sempre abre na Petição inicial
+    const q = (params.get('q') || '').trim(), etapa = params.get('etapa') || '', area = params.get('area') || '', sit = params.get('sit') || 'ativo', pg = Math.max(1, parseInt(params.get('pg'), 10) || 1);
     const ir = mud => { const u = new URLSearchParams(params); Object.entries(mud).forEach(([k, v]) => { if (v) u.set(k, v); else u.delete(k); }); if (!('pg' in mud)) u.delete('pg'); location.hash = '#/processos' + (u.toString() ? '?' + u : ''); };
     const [procs, ri] = await Promise.all([api('processos.listar', {}), api('inss.listar', {}).catch(() => ({ lista: [], beneficios: [] }))]);
     const bate = (...t) => !q || palavrasComecam(t.filter(Boolean).join(' '), q);
@@ -3257,98 +3263,98 @@
     const inssPet = (ri.lista || []).filter(x => ['assinado', 'documentos'].includes(x.etapa));
     const pet = semNum.filter(p => !p.inicial_feita_em), prot = semNum.filter(p => p.inicial_feita_em);
     const ajuiz = procs.filter(p => !(p.fase === 'contratado' && !p.numero));
-    const ajuizAtivos = ajuiz.filter(p => p.status !== 'arquivado');
-    const inssAnd = (ri.lista || []).filter(x => !['assinado', 'documentos', 'deferido', 'judicial', 'arquivado'].includes(x.etapa));
-    const ABAS_PB = [['peticao', 'Petição', 'fazer a inicial e protocolar', '✎', pet.length + prot.length + inssPet.length],
-      ['ajuizados', 'Ajuizados', 'processos na Justiça', '⚖', ajuizAtivos.length], ['inss', 'INSS', 'pedidos administrativos', '🏛', inssAnd.length]];
-    const vt = h('nav', { class: 'pb-abas', 'aria-label': 'Abas de processos' });
-    ABAS_PB.forEach(([k, nome, sub, ic, n], i) => {
-      if (i === 1) vt.append(h('div', { class: 'pb-liga', 'aria-hidden': 'true' }, h('span', {}, 'protocolou')));
-      vt.append(h('button', { type: 'button', class: 'pb-aba' + (aba === k ? ' on' : ''), 'aria-pressed': String(aba === k), onclick: () => ir({ aba: k, etapa: '', fase: '', area: '', sit: '' }) },
-        h('span', { class: 'pb-ic', 'aria-hidden': 'true' }, ic), h('span', { class: 'pb-tx' }, h('b', {}, nome), h('small', {}, sub)), h('span', { class: 'pb-q num' }, String(n))));
-    });
-    const linha = (cols, onclick) => { const l = h('div', { class: 'pb-linha' + (onclick ? ' clicavel' : ''), tabindex: onclick ? 0 : null, onclick, onkeydown: onclick ? ev => { if (ev.key === 'Enter' && ev.target === l) onclick(); } : null }, cols); return l; };
-    const quem = r => r ? h('span', { class: 'pb-quem', title: 'Quem cuida' }, '👤 ' + (r === sessao.usuario.usuario ? 'você' : r)) : null;
+    const inssTodos = (ri.lista || []).filter(x => !['assinado', 'documentos'].includes(x.etapa));
+    const inssAnd = inssTodos.filter(x => !['deferido', 'judicial', 'arquivado'].includes(x.etapa));
     const parar = ev => ev.stopPropagation();
-    let conteudo;
+    const avatar = (nome, quem) => h('span', { class: 'px3-av', title: quem ? 'Quem cuida: ' + quem : 'Sem responsável' }, quem ? iniciaisPx(quem) : '—');
+    const item = (o) => h('article', { class: 'px3-item' + (o.alerta ? ' alerta' : ''), tabindex: 0, onclick: o.abrir, onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) o.abrir(); } },
+      h('span', { class: 'px3-ini', 'aria-hidden': 'true' }, iniciaisPx(o.nome)),
+      h('div', { class: 'px3-txt' }, h('b', {}, o.nome || 'Cliente a identificar'), h('small', {}, o.sub || ''), o.info ? h('div', { class: 'px3-info' }, o.info) : null),
+      h('div', { class: 'px3-lado', onclick: parar }, h('div', { class: 'px3-bts' }, o.bts || []), avatar(o.nome, o.quem)));
+    const chip = (txt, cls) => h('span', { class: 'px3-chip ' + (cls || '') }, txt);
+    const ABAS3 = [['peticao', 'Petição inicial', 'fazer e protocolar', 'M7 3.5h7l4 4V20.5H7zM14 3.5V8h4M9.5 12h6M9.5 15.5h6', pet.length + prot.length + inssPet.length],
+      ['ajuizados', 'Ajuizados', 'processos na Justiça', 'M12 3.5v3M7 8.5h10l-1.5 4h-7zM5 20.5h14M12 12.5v8', ajuiz.filter(p => p.status !== 'arquivado').length],
+      ['inss', 'INSS', 'pedidos administrativos', 'M4 9.5 12 4l8 5.5M5.5 10v8M9.5 10v8M14.5 10v8M18.5 10v8M3.5 20h17', inssAnd.length]];
+    const ico = d => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const pth = document.createElementNS('http://www.w3.org/2000/svg', 'path'); pth.setAttribute('d', d); s.append(pth); return s; };
+    const abas = h('nav', { class: 'px3-abas', role: 'tablist', 'aria-label': 'Processos' }, ABAS3.map(([k, nome, sub, d, n]) =>
+      h('button', { type: 'button', role: 'tab', 'aria-selected': String(aba === k), class: 'px3-aba' + (aba === k ? ' on' : ''), onclick: () => ir({ aba: k === 'peticao' ? '' : k, etapa: '', area: '', sit: '', q: '' }) },
+        h('span', { class: 'px3-aba-ic' }, ico(d)), h('span', { class: 'px3-aba-tx' }, h('b', {}, nome), h('small', {}, sub)), h('span', { class: 'px3-aba-n num' }, String(n)))));
+    let corpo;
     if (aba === 'peticao') {
-      const lp = pet.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area)), li = inssPet.filter(x => bate(x.cliente, x.beneficio)), lr = prot.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area));
-      const sub = h('div', { class: 'pb-sub', role: 'tablist' },
-        h('button', { type: 'button', class: etapa === 'peticao' ? 'on' : '', onclick: () => ir({ etapa: '' }) }, h('span', { class: 'pb-n' }, '1'), 'Petição ', h('em', { class: 'num' }, String(lp.length + li.length))),
-        h('span', { class: 'pb-seta', 'aria-hidden': 'true' }, '→'),
-        h('button', { type: 'button', class: etapa === 'protocolar' ? 'on' : '', onclick: () => ir({ etapa: 'protocolar' }) }, h('span', { class: 'pb-n' }, '2'), 'Protocolar ', h('em', { class: 'num' }, String(lr.length))),
-        h('span', { class: 'pb-seta', 'aria-hidden': 'true' }, '→'), h('span', { class: 'pb-destino' }, 'Ajuizados ou INSS'));
-      const destinoDe = p => /previd/i.test(p.area || '') ? 'Ajuizar ou INSS' : 'Ajuizar';
-      let linhas = [];
-      if (etapa === 'peticao') {
-        linhas = lp.sort((a, b) => (a.criado_em || '') < (b.criado_em || '') ? -1 : 1).map(p => {
-          const d = diasDesde(p.criado_em);
-          return linha([h('div', { class: 'pb-cli' }, h('b', {}, p.cliente_nome || 'Cliente a identificar'), h('small', {}, [p.area, p.tipo_acao].filter(Boolean).join(' · ') || 'área a definir')),
-            trilhoPb(['Assinou', 'Petição', 'Protocolar', destinoDe(p)], 1),
-            h('div', { class: 'pb-prox' }, 'Fazer a petição inicial', h('div', {}, d >= 10 ? h('span', { class: 'chip k-verm' }, `parada há ${d} dias`) : h('span', { class: 'chip k-cinza' }, d ? `há ${d} dia${d > 1 ? 's' : ''}` : 'hoje'), ' ', quem(p.responsavel))),
-            h('div', { class: 'pb-acoes', onclick: parar }, botaoNaoFechou(p), botao('Inicial feita →', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Foi para Protocolar: mande ao cliente e protocole.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini'))],
-            () => { location.hash = '#/processo/' + p.id; });
-        }).concat(li.map(x => linha([h('div', { class: 'pb-cli' }, h('b', {}, x.cliente), h('small', {}, 'INSS · ' + (x.beneficio || 'benefício a definir'))),
-          trilhoPb(['Assinou', 'Petição', 'Protocolar', 'INSS'], 1),
-          h('div', { class: 'pb-prox' }, x.etapa === 'documentos' ? 'Esperando documentos e laudos' : 'Pedir os documentos e montar o pedido', h('div', {}, h('span', { class: 'chip k-ouro' }, 'pedido no INSS'), ' ', quem(x.responsavel_nome))),
-          h('div', { class: 'pb-acoes', onclick: parar }, botao('Protocolar no INSS →', () => dialogoProtocoloInss(x), 'mini'))], () => { location.hash = '#/inss/' + x.id; })));
+      const lp = pet.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area)).sort((a, b) => (a.criado_em || '') < (b.criado_em || '') ? -1 : 1);
+      const li = inssPet.filter(x => bate(x.cliente, x.beneficio));
+      const lr = prot.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area));
+      const itensPet = lp.map(p => { const d = diasDesde(p.criado_em);
+        return item({ nome: p.cliente_nome, sub: [p.area, p.tipo_acao].filter(Boolean).join(' · ') || 'área a definir', quem: p.responsavel, alerta: d >= 10,
+          info: [d >= 10 ? chip('parada há ' + d + ' dias', 'verm') : chip(d ? 'há ' + d + ' dia' + (d > 1 ? 's' : '') : 'chegou hoje', 'cinza'), /previd/i.test(p.area || '') ? chip('pode ir ao INSS', 'ouro') : null],
+          abrir: () => { location.hash = '#/processo/' + p.id; },
+          bts: [botaoNaoFechou(p, 'sec'), botao('Inicial feita →', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Foi para Protocolo: mande ao cliente e protocole.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini')] }); })
+        .concat(li.map(x => item({ nome: x.cliente, sub: 'Pedido no INSS · ' + (x.beneficio || 'benefício a definir'), quem: x.responsavel_nome,
+          info: [chip(x.etapa === 'documentos' ? 'esperando documentos' : 'montar o pedido', 'ambar'), chip('INSS', 'ouro')], abrir: () => { location.hash = '#/inss/' + x.id; },
+          bts: [botao('Protocolar no INSS →', () => dialogoProtocoloInss(x), 'mini')] })));
+      const itensProt = lr.map(p => { const link = linkInicialCliente(p.cliente_nome, p.cliente_tel), env = !!p.inicial_enviada_em;
+        return item({ nome: p.cliente_nome, sub: [p.area, p.tipo_acao].filter(Boolean).join(' · '), quem: p.responsavel,
+          info: [env ? chip('✓ cliente aprovou / avisado', 'verde') : chip('falta mandar ao cliente', 'ambar')], abrir: () => { location.hash = '#/processo/' + p.id; },
+          bts: [h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para Petição inicial', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id, desfazer: true }); rota(); } catch (e) { avisar(e.message, true); } } }, '←'),
+            !env && link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: () => { api('processos.inicialEnviada', { id: p.id }).then(() => rota()).catch(e => avisar(e.message, true)); } }, '📄 Mandar ao cliente') : null,
+            botao('Protocolar →', () => dialogoProtocolar(p, ri.beneficios), 'mini')] }); });
+      const quadro = (n, titulo, desc, itens, vazio, cls) => h('section', { class: 'px3-etapa ' + (cls || '') },
+        h('header', {}, h('span', { class: 'px3-n' }, n), h('div', {}, h('h3', {}, titulo), h('p', {}, desc)), h('span', { class: 'px3-conta num' }, String(itens.length))),
+        h('div', { class: 'px3-itens' }, itens.length ? itens : h('p', { class: 'px3-vazio' }, vazio)));
+      corpo = h('div', { class: 'px3-duo' },
+        quadro('1', 'Petição inicial', 'Contrato assinado: fazer a inicial (ou o pedido no INSS).', itensPet, 'Nenhuma petição para fazer. Quando o cliente assina, ela aparece aqui sozinha.', 'e1'),
+        h('div', { class: 'px3-seta', 'aria-hidden': 'true' }, '→'),
+        quadro('2', 'Protocolo', 'Inicial pronta: o cliente aprova e você protocola na Justiça ou no INSS.', itensProt, 'Nada esperando protocolo.', 'e2'));
+    } else {
+      const ehJ = aba === 'ajuizados';
+      let base, etapas, chave;
+      if (ehJ) {
+        base = ajuiz.filter(p => (sit === 'todos' || (p.status === 'arquivado') === (sit === 'arquivado')) && (!area || (p.area || 'Sem área') === area) && bate(p.cliente_nome, p.numero, p.parte_contraria, p.orgao, p.tribunal));
+        chave = p => PB_JUSTICA[PB_POS_JUSTICA[p.fase] ?? 2][0];
+        etapas = PB_JUSTICA.map(([k, n]) => [k, n, PX3_DESC_J[k], CORES_FASE[k] || '#9aa0aa']);
       } else {
-        linhas = lr.map(p => {
-          const link = linkInicialCliente(p.cliente_nome, p.cliente_tel);
-          const env = !!p.inicial_enviada_em;
-          return linha([h('div', { class: 'pb-cli' }, h('b', {}, p.cliente_nome || 'Cliente'), h('small', {}, [p.area, p.tipo_acao].filter(Boolean).join(' · '))),
-            trilhoPb(['Assinou', 'Petição', 'Protocolar', destinoDe(p)], 2),
-            h('div', { class: 'pb-prox' }, env ? 'Cliente avisado: protocolar' : 'Mandar a inicial ao cliente aprovar', h('div', {}, env ? h('span', { class: 'chip k-verde' }, '✓ cliente avisado') : h('span', { class: 'chip k-ambar' }, 'falta mandar ao cliente'), ' ', quem(p.responsavel))),
-            h('div', { class: 'pb-acoes', onclick: parar },
-              h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para Petição', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id, desfazer: true }); rota(); } catch (e) { avisar(e.message, true); } } }, '←'),
-              !env && link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: () => { api('processos.inicialEnviada', { id: p.id }).then(() => rota()).catch(e => avisar(e.message, true)); } }, '📄 Mandar ao cliente') : null,
-              botao('Protocolar →', () => dialogoProtocolar(p, ri.beneficios), env ? 'mini' : 'mini sec'))],
-            () => { location.hash = '#/processo/' + p.id; });
-        });
+        base = inssTodos.filter(x => bate(x.cliente, x.beneficio, x.protocolo, x.nb));
+        chave = x => ['judicial', 'arquivado'].includes(x.etapa) ? 'encerrados' : x.etapa === 'recurso_negado' ? 'recurso' : x.etapa;
+        etapas = PX3_ETAPAS_INSS;
       }
-      conteudo = [sub, linhas.length ? h('div', { class: 'pb-lista' }, linhas) : h('p', { class: 'ini-vazio' }, etapa === 'peticao' ? 'Nenhuma petição para fazer. Quando o cliente assina, a petição aparece aqui sozinha.' : 'Nada para protocolar agora.')];
-    } else if (aba === 'ajuizados') {
-      const base = ajuiz.filter(p => (sit === 'todos' || (p.status === 'arquivado') === (sit === 'arquivado')) && bate(p.cliente_nome, p.numero, p.parte_contraria, p.orgao, p.tribunal));
-      const areas = [...new Set(base.map(p => p.area || 'Sem área'))].sort();
-      const naArea = base.filter(p => !area || (p.area || 'Sem área') === area);
-      const cont = {}; naArea.forEach(p => { const k = PB_JUSTICA[PB_POS_JUSTICA[p.fase] ?? 2][0]; cont[k] = (cont[k] || 0) + 1; });
-      const lista = naArea.filter(p => !fase || PB_JUSTICA[PB_POS_JUSTICA[p.fase] ?? 2][0] === fase)
-        .sort((a, b) => (a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1);
-      const POR = 40, pags = Math.max(1, Math.ceil(lista.length / POR)), pag = Math.min(pg, pags);
-      const chips = h('div', { class: 'pb-chips' }, h('button', { type: 'button', class: 'pb-chip' + (!fase ? ' on' : ''), onclick: () => ir({ fase: '' }) }, 'Todas ', h('em', {}, String(naArea.length))),
-        PB_JUSTICA.map(([k, n]) => { const b = h('button', { type: 'button', class: 'pb-chip' + (fase === k ? ' on' : ''), onclick: () => ir({ fase: fase === k ? '' : k }) }, h('i'), n + ' ', h('em', {}, String(cont[k] || 0))); b.querySelector('i').style.setProperty('background', CORES_FASE[k] || '#9aa0aa'); return b; }));
-      const filtros = h('div', { class: 'pb-filtros' },
+      const cont = {}; base.forEach(x => { const k = chave(x); cont[k] = (cont[k] || 0) + 1; });
+      const grade = h('div', { class: 'px3-grade' }, etapas.map(([k, nome, desc, cor], i) => {
+        const b = h('button', { type: 'button', class: 'px3-quad' + (etapa === k ? ' on' : '') + (cont[k] ? '' : ' zero'), 'aria-pressed': String(etapa === k), onclick: () => ir({ etapa: etapa === k ? '' : k }) },
+          h('span', { class: 'px3-quad-n num' }, String(cont[k] || 0)), h('b', {}, nome), h('small', {}, desc), h('span', { class: 'px3-quad-i num' }, String(i + 1).padStart(2, '0')));
+        b.style.setProperty('--cor', cor); return b;
+      }));
+      const lista = base.filter(x => !etapa || chave(x) === etapa).filter(x => ehJ || etapa || !['deferido', 'encerrados'].includes(chave(x)))
+        .sort((a, b) => ehJ ? ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1) : ((a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1));
+      const POR = 30, pags = Math.max(1, Math.ceil(lista.length / POR)), pag = Math.min(pg, pags);
+      const corDe = k => (etapas.find(e => e[0] === k) || [])[3] || '#9aa0aa', nomeDe = k => (etapas.find(e => e[0] === k) || [])[1] || '';
+      const itens = lista.slice((pag - 1) * POR, pag * POR).map(x => {
+        const k = chave(x), tag = h('span', { class: 'px3-et' }, nomeDe(k)); tag.style.setProperty('--cor', corDe(k));
+        if (ehJ) { const futuro = x.proximo_ato_data && x.proximo_ato_data >= hojeISO();
+          return item({ nome: x.cliente_nome, sub: [x.numero, x.tribunal, x.area].filter(Boolean).join(' · '), quem: x.responsavel, abrir: () => { location.hash = '#/processo/' + x.id; },
+            info: [tag, futuro ? h('span', { class: 'px3-prox' }, atoComData(x.proximo_ato || 'Próximo ato', x.proximo_ato_data), ' ', etiquetaDias(x.proximo_ato_data)) : null],
+            bts: [h('a', { class: 'btn mini sec', href: '#/processo/' + x.id }, 'Abrir')] }); }
+        return item({ nome: x.cliente, sub: [x.beneficio || 'benefício a definir', x.protocolo ? 'protocolo ' + x.protocolo : ''].filter(Boolean).join(' · '), quem: x.responsavel_nome, alerta: x.atrasado,
+          abrir: () => { location.hash = '#/inss/' + x.id; },
+          info: [tag, x.proxima_data ? chip(x.proxima_tipo + ' ' + dataBR(x.proxima_data).slice(0, 5), x.atrasado ? 'verm' : 'ambar') : chip(x.dias_etapa ? x.dias_etapa + ' dias nesta etapa' : 'hoje', 'cinza')],
+          bts: [h('a', { class: 'btn mini sec', href: '#/inss/' + x.id }, 'Abrir o pedido')] });
+      });
+      const areas = ehJ ? [...new Set(ajuiz.map(p => p.area || 'Sem área'))].sort() : [];
+      const filtros = ehJ ? h('div', { class: 'px3-filtros' },
         h('select', { 'aria-label': 'Área', onchange: e => ir({ area: e.target.value }) }, h('option', { value: '' }, 'Todas as áreas'), areas.map(a => h('option', { value: a, selected: a === area }, a))),
         h('select', { 'aria-label': 'Situação', onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value }) }, [['ativo', 'Em andamento'], ['arquivado', 'Arquivados'], ['todos', 'Todos']].map(([v, t]) => h('option', { value: v, selected: sit === v }, t))),
-        h('a', { class: 'link', href: '#/processos?visao=quadro' }, 'Ver em quadro'));
-      const linhas = lista.slice((pag - 1) * POR, pag * POR).map(p => {
-        const pos = PB_POS_JUSTICA[p.fase] ?? 2, futuro = p.proximo_ato_data && p.proximo_ato_data >= hojeISO();
-        return linha([h('div', { class: 'pb-cli' }, h('b', {}, p.cliente_nome || 'Cliente a identificar'), h('small', { class: 'num' }, [p.numero || '(sem número)', p.tribunal, p.area].filter(Boolean).join(' · '))),
-          trilhoPb(PB_JUSTICA.map(x => x[1]), pos, p.fase === 'extinto'),
-          h('div', { class: 'pb-prox' }, futuro ? atoComData(p.proximo_ato || 'Próximo ato', p.proximo_ato_data) : (FASES[p.fase] || 'Em andamento'), h('div', {}, futuro ? etiquetaDias(p.proximo_ato_data) : null, ' ', quem(p.responsavel))),
-          h('div', { class: 'pb-acoes' }, h('a', { class: 'btn mini sec', href: '#/processo/' + p.id, onclick: parar }, 'Abrir'))], () => { location.hash = '#/processo/' + p.id; });
-      });
+        h('a', { class: 'link', href: '#/processos?visao=quadro' }, 'Ver em quadro')) : null;
+      const titulo = etapa ? nomeDe(etapa) : ehJ ? 'Todos em andamento' : 'Em andamento no INSS';
       const pagin = pags > 1 ? h('div', { class: 'cx-paginas' }, Array.from({ length: pags }, (_, i) => h('button', { type: 'button', class: 'cx-pag' + (i + 1 === pag ? ' on' : ''), onclick: () => ir({ pg: String(i + 1) }) }, 'Página ' + (i + 1)))) : null;
-      conteudo = [chips, filtros, lista.length ? h('div', { class: 'pb-lista' }, linhas) : h('p', { class: 'ini-vazio' }, 'Nenhum processo com esse filtro.'), pagin];
-    } else {
-      const todos = (ri.lista || []).filter(x => !['assinado', 'documentos'].includes(x.etapa) && bate(x.cliente, x.beneficio, x.protocolo, x.nb));
-      const grupo = x => ['deferido', 'judicial', 'arquivado'].includes(x.etapa) ? (x.etapa === 'deferido' ? 'deferido' : 'encerrados') : x.etapa;
-      const cont = {}; todos.forEach(x => { cont[grupo(x)] = (cont[grupo(x)] || 0) + 1; });
-      const lista = todos.filter(x => fase ? grupo(x) === fase : !['deferido', 'encerrados'].includes(grupo(x))).sort((a, b) => (a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1);
-      const chips = h('div', { class: 'pb-chips' }, h('button', { type: 'button', class: 'pb-chip' + (!fase ? ' on' : ''), onclick: () => ir({ fase: '' }) }, 'Em andamento ', h('em', {}, String(inssAnd.length))),
-        PB_ETAPAS_INSS.map(([k, n]) => h('button', { type: 'button', class: 'pb-chip' + (fase === k ? ' on' : '') + (['exigencia', 'indeferido'].includes(k) && cont[k] ? ' alerta' : ''), onclick: () => ir({ fase: fase === k ? '' : k }) }, n + ' ', h('em', {}, String(cont[k] || 0)))));
-      const linhas = lista.map(x => linha([h('div', { class: 'pb-cli' }, h('b', {}, x.cliente), h('small', {}, [x.beneficio || 'benefício a definir', x.protocolo ? 'protocolo ' + x.protocolo : ''].filter(Boolean).join(' · '))),
-        trilhoPb(PB_INSS, PB_POS_INSS[x.etapa] ?? 0, ['deferido', 'judicial', 'arquivado'].includes(x.etapa)),
-        h('div', { class: 'pb-prox' }, x.etapa_nome, h('div', {}, x.proxima_data ? h('span', { class: 'chip ' + (x.atrasado ? 'k-verm' : 'k-ambar') }, x.proxima_tipo + ' ' + dataBR(x.proxima_data).slice(0, 5)) : h('span', { class: 'chip k-cinza' }, x.dias_etapa ? x.dias_etapa + ' dias nesta etapa' : 'hoje'), ' ', quem(x.responsavel_nome))),
-        h('div', { class: 'pb-acoes' }, h('a', { class: 'btn mini sec', href: '#/inss/' + x.id, onclick: parar }, 'Abrir o pedido'))], () => { location.hash = '#/inss/' + x.id; }));
-      conteudo = [chips, lista.length ? h('div', { class: 'pb-lista' }, linhas) : h('p', { class: 'ini-vazio' }, 'Nenhum pedido no INSS com esse filtro. Os pedidos entram aqui quando a petição é protocolada no INSS.')];
+      corpo = [grade, h('section', { class: 'px3-lista' }, h('header', {}, h('h3', {}, titulo, h('span', { class: 'num' }, ' · ' + lista.length)), filtros,
+        etapa ? h('button', { type: 'button', class: 'link', onclick: () => ir({ etapa: '' }) }, 'ver todas as etapas') : null),
+        itens.length ? h('div', { class: 'px3-itens' }, itens) : h('p', { class: 'px3-vazio' }, ehJ ? 'Nenhum processo nesta etapa.' : 'Nenhum pedido nesta etapa. Os pedidos entram aqui quando a petição é protocolada no INSS.'), pagin)];
     }
-    const A = ABAS_PB.find(a => a[0] === aba);
-    const busca = h('input', { type: 'search', class: 'busca-peq', placeholder: aba === 'ajuizados' ? 'Cliente, número, parte contrária…' : 'Buscar cliente', value: q, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) });
-    mostrar(h('div', { class: 'cab' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, 'Tudo começa na Petição. Ao protocolar, o caso vai para Ajuizados (Justiça) ou para o INSS.')),
-        h('div', { class: 'barra' }, aba === 'inss' ? botao('＋ Novo pedido no INSS', async () => { const clis = await api('clientes.listar', {}).catch(() => []); dialogoNovoInss((Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome })), ri.beneficios || [], rr => { location.hash = '#/inss/' + rr.id; }); }, 'sec') : null,
+    const busca = h('input', { type: 'search', class: 'px3-busca', placeholder: aba === 'ajuizados' ? 'Buscar cliente, nº do processo, parte contrária…' : 'Buscar cliente', value: q, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) });
+    mostrar(h('div', { class: 'px3' },
+      h('div', { class: 'px3-topo' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, 'Tudo começa na Petição inicial. Protocolou na Justiça, vai para Ajuizados; no INSS, vai para INSS.')),
+        h('div', { class: 'px3-topo-bts' }, busca, aba === 'inss' ? botao('＋ Pedido no INSS', async () => { const clis = await api('clientes.listar', {}).catch(() => []); dialogoNovoInss((Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome })), ri.beneficios || [], rr => { location.hash = '#/inss/' + rr.id; }); }, 'sec') : null,
           h('a', { class: 'btn', href: '#/processo/novo' }, '+ Novo processo'))),
-      h('div', { class: 'pb-wrap' }, vt, h('section', { class: 'pb-painel' }, h('div', { class: 'pb-cab' }, h('h2', {}, A[1]), h('span', { class: 'peq' }, A[2]), busca), conteudo)));
+      abas, corpo));
   }
 
   async function telaProcessos(params) {
@@ -4580,7 +4586,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.58.0';
+  const VERSAO_PAINEL = '8.58.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5706,140 +5712,124 @@
     const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'IA jurídica e assistente do escritório', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '⚖'), ' IA Jurídica');
     barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
   }
-  /* 8.58 (pedido da usuária: "transforme numa IA jurídica bem boa… reforme o design"): dois modos — ⚖ IA Jurídica (pergunta de Direito,
-     resposta organizada com fundamento legal, prática, atenção e o que conferir; se citar cliente/processo, usa o caso anonimizado) e
-     📋 Escritório (consulta os dados do painel, como antes). Respostas em Markdown desenhadas sem innerHTML. Pode ampliar a janela. */
-  const SUGESTOES_IA = ['O que eu tenho para fazer hoje?', 'Audiências e perícias desta semana', 'Prazos que vencem amanhã', 'Intimações para resolver', 'Processos parados há mais de 90 dias', 'Aniversariantes desta semana'];
-  const TEMAS_JUR = [
-    ['Trabalhista', '⚒', ['Quais os requisitos para o reconhecimento de vínculo de emprego?', 'Como funciona a rescisão indireta e o que precisa provar?', 'Horas extras: quem tem o ônus da prova e como calcular?']],
-    ['Previdenciário', '🏛', ['Requisitos da aposentadoria por idade depois da EC 103/2019', 'BPC/LOAS: renda, deficiência e o que juntar', 'Auxílio por incapacidade negado: recurso no INSS ou ação?']],
-    ['Processo civil', '⚖', ['Quais recursos cabem contra decisão interlocutória no CPC?', 'Tutela de urgência: requisitos e como pedir', 'Cumprimento de sentença: passos e prazos']],
-    ['Processo do trabalho', '📑', ['Prazos dos recursos na Justiça do Trabalho', 'O que acontece se o reclamante faltar à audiência?', 'Como funciona a execução trabalhista e a penhora?']],
-    ['Família', '👪', ['Pensão alimentícia: como se calcula e como revisar', 'Guarda compartilhada x unilateral', 'Divórcio consensual: judicial ou em cartório?']],
-    ['Consumidor e cível', '🛒', ['Negativação indevida: dano moral e provas', 'Prescrição na reparação civil', 'Usucapião: modalidades e requisitos']]];
-  /** Markdown simples → elementos (títulos, listas, negrito, itálico, código). Nada de innerHTML. */
+  /* 8.58.1 IA (pedido da usuária: "design muito bonito; sem perguntas prontas; a pessoa pergunta e a IA tira a dúvida; bem inteligente,
+     não superficial"). Página inteira #/ia: conversas à esquerda (guardadas só nesta aba do navegador), conversa no centro, caixa grande
+     embaixo com o modo (⚖ Jurídico | 📋 Dados do escritório). Cada pergunta leva as 4 últimas trocas (memória da conversa). */
   function mdParaDom(txt) {
-    const caixa = h('div', { class: 'assist-md' });
+    const caixa = h('div', { class: 'ia-md' });
     const inline = s => { const out = []; const re = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*\s][^*]*\*|_[^_\s][^_]*_|`[^`]+`)/g; let i = 0, m;
       while ((m = re.exec(s))) { if (m.index > i) out.push(s.slice(i, m.index)); const t = m[0];
         out.push(/^(\*\*|__)/.test(t) ? h('strong', {}, t.slice(2, -2)) : t[0] === '`' ? h('code', {}, t.slice(1, -1)) : h('em', {}, t.slice(1, -1))); i = m.index + t.length; }
       if (i < s.length) out.push(s.slice(i)); return out; };
+    const linhas = String(txt || '').replace(/\r/g, '').split('\n');
     let lista = null, tipo = '';
-    String(txt || '').replace(/\r/g, '').split('\n').forEach(l => {
-      const t = l.trim();
-      const ul = /^[-*•]\s+(.*)/.exec(t), ol = /^\d+[.)]\s+(.*)/.exec(t), tit = /^#{1,4}\s+(.*)/.exec(t);
-      if (ul || ol) { const k = ul ? 'ul' : 'ol'; if (!lista || tipo !== k) { lista = h(k); tipo = k; caixa.append(lista); } lista.append(h('li', {}, inline((ul || ol)[1]))); return; }
+    for (let n = 0; n < linhas.length; n++) {
+      const t = linhas[n].trim();
+      if (/^\|.*\|$/.test(t) && n + 1 < linhas.length && /^\|?\s*:?-{2,}/.test(linhas[n + 1].trim())) { // tabela
+        const cel = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+        const cab = cel(t); n += 2; const corpo = [];
+        while (n < linhas.length && /^\|.*\|$/.test(linhas[n].trim())) { corpo.push(cel(linhas[n])); n++; }
+        n--; lista = null;
+        caixa.append(h('div', { class: 'ia-tab' }, h('table', {}, h('thead', {}, h('tr', {}, cab.map(c => h('th', {}, inline(c))))), h('tbody', {}, corpo.map(r => h('tr', {}, r.map(c => h('td', {}, inline(c)))))))));
+        continue;
+      }
+      const ul = /^[-*•]\s+(.*)/.exec(t), ol = /^\d+[.)]\s+(.*)/.exec(t), tit = /^(#{1,4})\s+(.*)/.exec(t), cit = /^>\s?(.*)/.exec(t);
+      if (ul || ol) { const k = ul ? 'ul' : 'ol'; if (!lista || tipo !== k) { lista = h(k); tipo = k; caixa.append(lista); } lista.append(h('li', {}, inline((ul || ol)[1]))); continue; }
       lista = null; tipo = '';
-      if (!t) return;
-      if (tit) caixa.append(h('h4', {}, inline(tit[1].replace(/\*\*/g, ''))));
+      if (!t) continue;
+      if (tit) caixa.append(h(tit[1].length <= 2 ? 'h3' : 'h4', {}, inline(tit[2].replace(/\*\*/g, ''))));
+      else if (cit) caixa.append(h('blockquote', {}, inline(cit[1])));
       else if (/^---+$/.test(t)) caixa.append(h('hr'));
       else caixa.append(h('p', {}, inline(t)));
-    });
+    }
     return caixa;
   }
-  function abrirAssistente(modoPedido) {
-    let painel = document.getElementById('assist');
-    if (painel) { painel.classList.add('aberto'); if (modoPedido && painel.trocarModo) painel.trocarModo(modoPedido); const c = painel.querySelector('textarea'); if (c) c.focus(); return; }
-    let modo = modoPedido || ''; if (!modo) { try { modo = localStorage.getItem('assist_modo') || 'juridico'; } catch (e) { modo = 'juridico'; } }
-    const ler = () => { try { return JSON.parse(sessionStorage.getItem('assistente_conversa_' + modo) || '[]'); } catch (e) { return []; } };
-    let conversa = ler();
-    const guardar = () => { try { sessionStorage.setItem('assistente_conversa_' + modo, JSON.stringify(conversa.slice(-30))); } catch (e) { /* ok */ } };
-    const lista = h('div', { class: 'assist-msgs', role: 'log', 'aria-live': 'polite' });
-    const campo = h('textarea', { id: 'assist-campo', rows: 1, 'aria-label': 'Pergunta ao assistente' });
-    const enviar = h('button', { type: 'button', class: 'assist-enviar', title: 'Enviar (Enter)', 'aria-label': 'Enviar' }, '➤');
-    const fechar = () => painel.classList.remove('aberto');
-    const limpar = () => { conversa = []; guardar(); desenhar(); campo.focus(); };
-    const bModo = (k, ic, nome) => h('button', { type: 'button', class: 'assist-modo', 'data-m': k, 'aria-pressed': 'false', onclick: () => trocarModo(k) }, h('span', { 'aria-hidden': 'true' }, ic), ' ', nome);
-    const modos = h('div', { class: 'assist-modos', role: 'tablist' }, bModo('juridico', '⚖', 'IA Jurídica'), bModo('escritorio', '📋', 'Escritório'));
-    const ampliar = h('button', { type: 'button', title: 'Ampliar', 'aria-label': 'Ampliar', onclick: () => { painel.classList.toggle('grande'); ampliar.textContent = painel.classList.contains('grande') ? '⤡' : '⤢'; } }, '⤢');
-    const sub = h('small', {});
-    painel = h('aside', { id: 'assist', class: 'assist aberto', 'aria-label': 'Assistente' },
-      h('header', { class: 'assist-cab' },
-        h('div', { class: 'assist-cab-l' }, h('span', { class: 'assist-marca', 'aria-hidden': 'true' }, '✦'), h('div', {}, h('b', {}, 'Assistente Araújo'), sub)),
-        h('div', { class: 'assist-cab-bt' }, h('button', { type: 'button', title: 'Nova conversa', 'aria-label': 'Nova conversa', onclick: limpar }, '↺'), ampliar, h('button', { type: 'button', title: 'Fechar', 'aria-label': 'Fechar', onclick: fechar }, '✕'))),
-      modos, lista,
-      h('div', { class: 'assist-entrada' }, h('div', { class: 'assist-campo' }, campo, enviar), h('small', { class: 'assist-rodape' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números vão à IA trocados por códigos.')));
-    document.body.append(painel);
-    function trocarModo(k) {
-      modo = k; try { localStorage.setItem('assist_modo', k); } catch (e) { /* ok */ }
-      conversa = ler();
-      modos.querySelectorAll('.assist-modo').forEach(b => { const on = b.dataset.m === k; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
-      painel.classList.toggle('m-jur', k === 'juridico');
-      sub.textContent = k === 'juridico' ? 'Perguntas de Direito: lei, procedimento, requisitos, estratégia' : 'Consulta o painel e só cria algo quando você confirma';
-      campo.placeholder = k === 'juridico' ? 'Ex.: quais os requisitos do vínculo de emprego? (pode citar o cliente ou o nº do processo)' : 'Pergunte sobre prazos, audiências, clientes, tarefas…';
-      desenhar();
+  function abrirAssistente(modo) { if (modo) { try { localStorage.setItem('assist_modo', modo); } catch (e) { /* ok */ } } location.hash = '#/ia'; }
+  const IA_CHAVE = () => 'ia_conversas_' + (sessao && sessao.usuario ? sessao.usuario.usuario : '');
+  function iaLer() { try { return JSON.parse(sessionStorage.getItem(IA_CHAVE()) || '[]'); } catch (e) { return []; } }
+  function iaGuardar(l) { try { sessionStorage.setItem(IA_CHAVE(), JSON.stringify(l.slice(0, 30))); } catch (e) { /* cheio */ } }
+  async function telaIA(params) {
+    let convs = iaLer(), atual = params.get('c') || '';
+    let modo = 'juridico'; try { modo = localStorage.getItem('assist_modo') || 'juridico'; } catch (e) { /* ok */ }
+    let conv = convs.find(c => c.id === atual) || null;
+    const nome = primeiroNome(sessao.usuario.nome || sessao.usuario.usuario);
+    const raiz = h('div', { class: 'ia' }), lado = h('aside', { class: 'ia-lado' }), centro = h('section', { class: 'ia-centro' });
+    const fala = h('div', { class: 'ia-fala', role: 'log', 'aria-live': 'polite' });
+    const campo = h('textarea', { id: 'ia-campo', rows: 2, 'aria-label': 'Sua pergunta' });
+    const enviar = h('button', { type: 'button', class: 'ia-enviar', 'aria-label': 'Enviar', title: 'Enviar (Enter)' }, '↑');
+    const pilula = (k, rot) => h('button', { type: 'button', class: 'ia-pil', 'data-m': k, onclick: () => { modo = k; try { localStorage.setItem('assist_modo', k); } catch (e) { /* ok */ } marcarModo(); campo.focus(); } }, rot);
+    const pils = h('div', { class: 'ia-pils', role: 'group', 'aria-label': 'Modo' }, pilula('juridico', '⚖ Jurídico'), pilula('escritorio', '📋 Dados do escritório'));
+    const marcarModo = () => { pils.querySelectorAll('.ia-pil').forEach(b => b.classList.toggle('on', b.dataset.m === modo));
+      campo.placeholder = modo === 'juridico' ? 'Escreva a sua dúvida jurídica. Pode citar o cliente ou o nº do processo para aplicar ao caso.' : 'Pergunte sobre prazos, audiências, clientes, tarefas ou cobranças do escritório.'; };
+    const compor = h('div', { class: 'ia-compor' }, campo, h('div', { class: 'ia-compor-pe' }, pils, h('span', { class: 'ia-dica' }, 'Enter envia · Shift+Enter pula linha'), enviar));
+    const salvar = () => { if (!conv) return; conv.em = Date.now(); convs = [conv].concat(convs.filter(c => c.id !== conv.id)); iaGuardar(convs); desenharLado(); };
+    function desenharLado() {
+      lado.replaceChildren(h('button', { type: 'button', class: 'ia-nova', onclick: () => { conv = null; location.hash = '#/ia'; } }, '＋ Nova conversa'),
+        h('div', { class: 'ia-lado-t' }, 'Conversas'),
+        convs.length ? h('nav', { class: 'ia-convs' }, convs.map(c => h('a', { href: '#/ia?c=' + c.id, class: 'ia-conv' + (conv && conv.id === c.id ? ' on' : '') }, h('span', {}, c.titulo), h('small', {}, (c.msgs[0] && c.msgs[0].modo === 'escritorio' ? '📋 ' : '⚖ ') + new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })))))
+          : h('p', { class: 'ia-lado-vazio' }, 'As conversas ficam aqui enquanto o navegador estiver aberto.'),
+        convs.length ? h('button', { type: 'button', class: 'ia-limpar', onclick: () => { convs = []; iaGuardar(convs); conv = null; location.hash = '#/ia'; } }, 'Apagar o histórico') : null);
     }
-    painel.trocarModo = trocarModo;
-    const linkAbre = href => { if (href) { location.hash = href; if (window.innerWidth < 900) fechar(); } };
-    function acoesResposta(m, r) {
-      const bar = h('div', { class: 'assist-acoes' });
-      bar.append(h('button', { type: 'button', onclick: ev => { const b = ev.currentTarget; navigator.clipboard.writeText(r.texto || '').then(() => { b.textContent = '✓ Copiado'; setTimeout(() => { b.textContent = '⧉ Copiar'; }, 1500); }).catch(() => avisar('Não consegui copiar.', true)); } }, '⧉ Copiar'));
-      if (r.juridico) bar.append(h('button', { type: 'button', onclick: () => linkAbre('#/juridico?q=' + encodeURIComponent(m.p)) }, '🔎 Julgados reais (STJ)'));
-      bar.append(h('button', { type: 'button', onclick: () => { conversa.splice(conversa.indexOf(m), 1); perguntar(m.p, m.esc); } }, '↻ Refazer'));
-      return bar;
-    }
-    function bolhaResposta(m) {
-      const r = m.r || {}, partes = [];
-      if (r.caso && r.caso.numero) partes.push(h('button', { type: 'button', class: 'assist-caso', onclick: () => linkAbre(r.caso.link) }, '📁 Caso usado: ', h('b', {}, r.caso.cliente || 'cliente'), ' · ' + r.caso.numero));
-      partes.push(r.md ? mdParaDom(r.texto) : h('p', {}, r.texto || ''));
-      if (r.opcoes && r.opcoes.length) partes.push(h('div', { class: 'assist-opcoes' }, r.opcoes.map(o => h('button', { type: 'button', onclick: () => perguntar(m.p, o.id) }, h('b', {}, o.nome), o.extra ? h('small', {}, o.extra) : null))));
-      if (r.linhas && r.linhas.length) {
-        partes.push(h('div', { class: 'assist-tab' }, h('table', {}, h('thead', {}, h('tr', {}, (r.colunas || []).map(c => h('th', {}, c)))),
-          h('tbody', {}, r.linhas.map(l => h('tr', { tabindex: '0', title: 'Abrir', onclick: () => linkAbre(l.link), onkeydown: ev => { if (ev.key === 'Enter') linkAbre(l.link); } }, l.c.map(v => h('td', {}, v))))))));
-        if (r.linhas.length >= 40) partes.push(h('small', { class: 'assist-nota' }, 'Mostrando as 40 primeiras.'));
-      }
-      if (r.abrir && !r.caso) partes.push(botao('Abrir a ficha', () => linkAbre(r.abrir), 'mini sec'));
+    function respostaEl(m) {
+      const r = m.r || {};
+      const acoes = h('div', { class: 'ia-acoes' },
+        h('button', { type: 'button', onclick: ev => { const b = ev.currentTarget; navigator.clipboard.writeText(r.texto || '').then(() => { b.textContent = '✓ Copiado'; setTimeout(() => { b.textContent = '⧉ Copiar'; }, 1600); }).catch(() => avisar('Não consegui copiar.', true)); } }, '⧉ Copiar'),
+        r.juridico ? h('a', { href: '#/juridico?q=' + encodeURIComponent(m.p) }, '🔎 Buscar julgados reais no STJ') : null,
+        h('button', { type: 'button', onclick: () => { conv.msgs.splice(conv.msgs.indexOf(m), 1); perguntar(m.p, m.esc, m.modo); } }, '↻ Gerar de novo'));
+      const corpo = [];
+      if (r.caso && r.caso.numero) corpo.push(h('a', { class: 'ia-caso', href: r.caso.link }, '📁 Aplicado ao caso: ', h('b', {}, r.caso.cliente || 'cliente'), ' · ' + r.caso.numero));
+      corpo.push(r.md ? mdParaDom(r.texto) : h('p', { class: 'ia-p' }, r.texto || ''));
+      if (r.opcoes && r.opcoes.length) corpo.push(h('div', { class: 'ia-opcoes' }, r.opcoes.map(o => h('button', { type: 'button', onclick: () => perguntar(m.p, o.id, m.modo) }, h('b', {}, o.nome), o.extra ? h('small', {}, o.extra) : null))));
+      if (r.linhas && r.linhas.length) corpo.push(h('div', { class: 'ia-tab' }, h('table', {}, h('thead', {}, h('tr', {}, (r.colunas || []).map(c => h('th', {}, c)))),
+        h('tbody', {}, r.linhas.map(l => h('tr', { tabindex: '0', class: 'clicavel', onclick: () => { if (l.link) location.hash = l.link; }, onkeydown: ev => { if (ev.key === 'Enter' && l.link) location.hash = l.link; } }, l.c.map(v => h('td', {}, v))))))));
+      if (r.abrir && !r.caso) corpo.push(h('a', { class: 'ia-caso', href: r.abrir }, 'Abrir a ficha →'));
       if (r.acao && r.acao.tipo === 'tarefa') {
-        const caixa = h('div', { class: 'assist-acao' }, h('div', {}, h('b', {}, 'Nova tarefa: '), r.acao.resumo));
-        const bts = h('div', { class: 'mini-acoes' });
-        if (m.feito) bts.append(h('span', { class: 'assist-ok' }, '✓ ' + m.feito));
-        else bts.append(botao('Criar a tarefa', async ev => {
-          ev.currentTarget.disabled = true;
-          try { await api('tarefas.salvar', { tarefa: Object.assign({ prioridade: 'normal' }, r.acao.tarefa) }); m.feito = 'Tarefa criada'; avisar('Tarefa criada.'); }
-          catch (e) { m.feito = ''; avisar(e.message, true); }
-          guardar(); desenhar();
-        }, 'mini'), botao('Cancelar', () => { m.feito = 'Cancelada'; guardar(); desenhar(); }, 'mini sec'));
-        caixa.append(bts); partes.push(caixa);
+        corpo.push(h('div', { class: 'ia-acao' }, h('div', {}, h('b', {}, 'Nova tarefa: '), r.acao.resumo), m.feito ? h('span', { class: 'ia-ok' }, '✓ ' + m.feito) : h('div', { class: 'mini-acoes' },
+          botao('Criar a tarefa', async ev => { ev.currentTarget.disabled = true; try { await api('tarefas.salvar', { tarefa: Object.assign({ prioridade: 'normal' }, r.acao.tarefa) }); m.feito = 'Tarefa criada'; avisar('Tarefa criada.'); } catch (e) { avisar(e.message, true); } salvar(); desenhar(); }, 'mini'),
+          botao('Cancelar', () => { m.feito = 'Cancelada'; salvar(); desenhar(); }, 'mini sec'))));
       }
-      if (r.texto) partes.push(acoesResposta(m, r));
-      return h('div', { class: 'assist-msg ia' + (r.juridico ? ' jur' : '') }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, r.juridico ? '⚖' : '✦'), h('div', { class: 'assist-bolha' }, partes));
-    }
-    function vazio() {
-      const nome = primeiroNome(sessao.usuario.nome || sessao.usuario.usuario);
-      if (modo === 'juridico') return h('div', { class: 'assist-vazio jur' }, h('div', { class: 'assist-logo', 'aria-hidden': 'true' }, '⚖'),
-        h('b', {}, 'Olá, ' + nome + '. Qual é a dúvida jurídica?'),
-        h('p', {}, 'Pergunte sobre qualquer tema. A resposta vem com o fundamento legal, como funciona na prática, os pontos de atenção e o que conferir. Cite o cliente ou o nº do processo para aplicar ao caso.'),
-        h('div', { class: 'assist-temas' }, TEMAS_JUR.map(([t, ic, qs]) => h('div', { class: 'assist-tema' }, h('div', { class: 'assist-tema-t' }, h('span', { 'aria-hidden': 'true' }, ic), ' ', t),
-          qs.map(q => h('button', { type: 'button', onclick: () => perguntar(q) }, q))))));
-      return h('div', { class: 'assist-vazio' }, h('div', { class: 'assist-logo', 'aria-hidden': 'true' }, '✦'),
-        h('b', {}, 'Olá, ' + nome + '! O que quer saber do escritório?'),
-        h('p', {}, 'Eu procuro no painel e mostro a lista com o link de cada item.'),
-        h('div', { class: 'assist-sug' }, SUGESTOES_IA.map(t => h('button', { type: 'button', onclick: () => perguntar(t) }, t))),
-        h('small', {}, 'Também dá para pedir: "crie uma tarefa para a Taina ligar para o cliente amanhã". Eu só crio quando você confirmar.'));
+      corpo.push(acoes);
+      return h('div', { class: 'ia-resp' + (r.juridico ? ' jur' : '') }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, r.juridico ? '⚖' : '✦'),
+        h('b', {}, r.juridico ? 'IA Jurídica' : 'Assistente do escritório'), m.seg ? h('small', {}, 'respondeu em ' + m.seg + ' s') : null), h('div', { class: 'ia-resp-corpo' }, corpo));
     }
     function desenhar() {
-      lista.replaceChildren();
-      if (!conversa.length) { lista.append(vazio()); return; }
-      conversa.forEach(m => { lista.append(h('div', { class: 'assist-msg eu' }, h('div', { class: 'assist-bolha' }, m.p)));
-        lista.append(m.esperando ? h('div', { class: 'assist-msg ia' }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, modo === 'juridico' ? '⚖' : '✦'), h('div', { class: 'assist-bolha pensando' }, h('i'), h('i'), h('i'), h('span', { class: 'assist-pensa' }, modo === 'juridico' ? 'Pesquisando a lei e montando a resposta…' : 'Procurando no painel…')))
-          : m.erro ? h('div', { class: 'assist-msg ia' }, h('span', { class: 'assist-av', 'aria-hidden': 'true' }, '!'), h('div', { class: 'assist-bolha erro' }, m.erro, ' ', botao('Tentar de novo', () => { conversa.splice(conversa.indexOf(m), 1); perguntar(m.p, m.esc); }, 'mini sec')))
-          : bolhaResposta(m)); });
-      const ult = lista.lastElementChild; if (ult && conversa.length && !conversa[conversa.length - 1].esperando) ult.scrollIntoView({ block: 'start' }); else lista.scrollTop = lista.scrollHeight;
+      fala.replaceChildren();
+      raiz.classList.toggle('vazia', !conv || !conv.msgs.length);
+      if (!conv || !conv.msgs.length) {
+        fala.append(h('div', { class: 'ia-boas' }, h('div', { class: 'ia-emblema', 'aria-hidden': 'true' }, h('span', {}, '⚖')),
+          h('h1', {}, 'Em que posso ajudar, ' + nome + '?'),
+          h('p', {}, 'Escreva qualquer dúvida jurídica — trabalhista, previdenciário, processo civil, família, consumidor, criminal. A resposta vem com fundamento legal, entendimento dos tribunais, prática, estratégia e riscos. Cite o cliente ou o nº do processo para aplicar ao caso.')));
+        return;
+      }
+      conv.msgs.forEach(m => {
+        fala.append(h('div', { class: 'ia-eu' }, h('div', {}, m.p)));
+        if (m.esperando) fala.append(h('div', { class: 'ia-resp pensando' }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, m.modo === 'escritorio' ? '✦' : '⚖'),
+          h('b', {}, m.modo === 'escritorio' ? 'Procurando no painel' : 'Analisando a lei e os tribunais'), h('span', { class: 'ia-pontos' }, h('i'), h('i'), h('i'))),
+          m.modo === 'escritorio' ? null : h('p', { class: 'ia-espera' }, 'Respostas completas levam de 15 a 60 segundos.')));
+        else if (m.erro) fala.append(h('div', { class: 'ia-resp erro' }, h('p', {}, m.erro), botao('Tentar de novo', () => { conv.msgs.splice(conv.msgs.indexOf(m), 1); perguntar(m.p, m.esc, m.modo); }, 'mini sec')));
+        else fala.append(respostaEl(m));
+      });
+      const ult = fala.lastElementChild; if (ult) ult.scrollIntoView({ block: conv.msgs[conv.msgs.length - 1].esperando ? 'end' : 'start', behavior: 'smooth' });
     }
-    async function perguntar(texto, escolha) {
+    async function perguntar(texto, escolha, modoMsg) {
       texto = String(texto || '').trim(); if (!texto) return;
-      const ant = [...conversa].reverse().find(x => x.r && x.r.juridico);
-      const m = { p: texto, esc: escolha || '', esperando: true }; conversa.push(m); desenhar(); campo.value = ''; campo.style.removeProperty('height');
-      try {
-        const hist = conversa.slice(0, -1).slice(-3).map(x => x.p);
-        m.r = await api('ia.assistente', { pergunta: texto, historico: hist, escolha_cliente: escolha || '', modo, anterior: modo === 'juridico' && ant ? String(ant.r.texto || '').slice(0, 2500) : '' });
-      } catch (e) { m.erro = e.message || 'Não consegui responder agora.'; }
-      delete m.esperando; guardar(); desenhar();
+      if (!conv) { conv = { id: 'c' + Date.now().toString(36), titulo: texto.slice(0, 60), em: Date.now(), msgs: [] }; history.replaceState(null, '', '#/ia?c=' + conv.id); }
+      const md = modoMsg || modo;
+      const ant = conv.msgs.filter(x => x.r && x.r.texto && x.modo === md).slice(-4).map(x => ({ p: x.p, r: String(x.r.texto).slice(0, 2200) }));
+      const m = { p: texto, esc: escolha || '', modo: md, esperando: true }; conv.msgs.push(m); salvar(); desenhar(); campo.value = ''; campo.style.removeProperty('height');
+      const t0 = Date.now();
+      try { m.r = await api('ia.assistente', { pergunta: texto, modo: md, conversa: ant, historico: ant.map(x => x.p), escolha_cliente: escolha || '' }); m.seg = Math.round((Date.now() - t0) / 1000); }
+      catch (e) { m.erro = e.message || 'Não consegui responder agora.'; }
+      delete m.esperando; salvar(); if (location.hash.startsWith('#/ia')) desenhar();
     }
     enviar.addEventListener('click', () => perguntar(campo.value));
-    campo.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); perguntar(campo.value); } if (ev.key === 'Escape') fechar(); });
-    campo.addEventListener('input', () => { campo.style.setProperty('height', 'auto'); campo.style.setProperty('height', Math.min(160, campo.scrollHeight) + 'px'); });
-    trocarModo(modo); campo.focus();
+    campo.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); perguntar(campo.value); } });
+    campo.addEventListener('input', () => { campo.style.setProperty('height', 'auto'); campo.style.setProperty('height', Math.min(220, campo.scrollHeight) + 'px'); });
+    centro.append(fala, h('div', { class: 'ia-baixo' }, compor, h('p', { class: 'ia-aviso' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números de processo vão à IA trocados por códigos.')));
+    raiz.append(lado, centro);
+    desenharLado(); marcarModo(); desenhar();
+    mostrar(raiz);
+    setTimeout(() => campo.focus(), 50);
   }
   function montarCronometro() {
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao) return;
@@ -8752,6 +8742,7 @@ function main() {
         case 'prazos': await telaPrazos(params); break;
         case 'prazo': await telaPrazo(id, params); break;
         case 'intimacao': await telaIntimacao(decodeURIComponent(id || '')); break;
+        case 'ia': await telaIA(params); break;
         case 'inss': if (id) await telaInssPedido(id); else await telaInss(params); break;
         case 'horas': await telaHoras(params); break;
         case 'juridico': await telaJuridico(params); break;

@@ -2103,20 +2103,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   PROPÕE: a tarefa é criada no botão "Criar a tarefa" da pessoa), conversa. Nome ambíguo → pergunta qual. Conversa guardada na aba
   (sessionStorage `assistente_conversa`). A IA nunca muda prazo nem grava nada sozinha. Teste `.github/motor/teste/etapa857.js`.
 
-## 8.58.0 Processos em 3 abas + IA Jurídica (pedidos da usuária, 24/11/2026)
+## 8.58.0 / 8.58.1 Processos em 3 abas + IA Jurídica (pedidos da usuária, 24/11/2026)
 
-- PJe: a usuária NÃO quer extensão ("tem que ser tudo automático"); amanhã ela põe o certificado e testamos o caminho pelo servidor.
-- Processos (#/processos, `telaProcessosB`, modelo "B" escolhido): abas na lateral Petição · Ajuizados · INSS ("INSS" saiu do menu; #/inss continua).
-  Petição tem 2 etapas embaixo: 1 Petição (inicial sem número; "Inicial feita →") → 2 Protocolar (mandar ao cliente + "Protocolar →").
-  "Protocolar →" (`dialogoProtocolar`) pergunta ONDE: Na Justiça (número CNJ + vara → `trabalho.conferir` inicial → Ajuizados, aviso ao cliente) ou
-  No INSS (protocolo + DER + benefício → rota `processos.protocolarInss` / `protocolarNoInss_`: cria o pedido do INSS já em "Pedido feito no INSS" e
-  apaga a petição sem número). Pedidos do INSS ainda em assinado/documentos aparecem na Petição com "Protocolar no INSS →" (`inss.etapa`).
-  Ajuizados: chips por etapa (PB_JUSTICA), área, situação, 40 por página, trilho de 9 etapas (só a atual com nome). INSS: chips por etapa do INSS e
-  trilho próprio. Cada linha tem o trilho do caminho (Assinou → Petição → Protocolar → Ajuizar/INSS). Quadro antigo: #/processos?visao=quadro.
-  A barra do topo (IA, Horas) aparece também em Clientes e Processos (só a busca geral fica escondida).
-- IA Jurídica (botão "⚖ IA Jurídica" no topo; gaveta com 2 modos, lembra em localStorage `assist_modo`, conversa por modo na sessionStorage
-  `assistente_conversa_<modo>`, "⤢" amplia): modo jurídico manda `modo: 'juridico'` ao `ia.assistente` → `juridicoIA_` (Gemini, `SISTEMA_JURIDICO_`):
-  Markdown com "Em resumo", Fundamento legal, Como funciona na prática, Pontos de atenção, O que conferir; nunca inventa julgado/súmula; nunca calcula
-  data fatal; com cliente/processo citado vai o caso ANONIMIZADO (`casoParaIA_`) e a resposta mostra "📁 Caso usado". Continuação da conversa:
-  `anterior` (última resposta). Botões: Copiar, "🔎 Julgados reais (STJ)" (#/juridico), Refazer. Temas prontos por área. Pedido de tarefa continua
-  virando tarefa. Modo Escritório = o assistente da 8.57. Teste `.github/motor/teste/etapa858.js`.
+- PJe: a usuária NÃO quer extensão ("tem que ser tudo automático"); ela põe o certificado e testamos o caminho pelo servidor.
+- Processos (#/processos, `telaProcessosB`; 8.58.1 refeito a pedido: "sem trilhas, feio"): 3 abas GRANDES em cima — Petição inicial · Ajuizados · INSS
+  (sempre abre na Petição inicial; "INSS" saiu do menu, #/inss continua). Petição inicial = 2 quadros grandes lado a lado: 1 Petição inicial
+  ("Inicial feita →", "Não vai fechar") → 2 Protocolo ("📄 Mandar ao cliente", "←", "Protocolar →"). "Protocolar →" (`dialogoProtocolar`) pergunta
+  ONDE: Na Justiça (nº CNJ + vara → `trabalho.conferir` inicial → Ajuizados) ou No INSS (protocolo + DER + benefício → `processos.protocolarInss` /
+  `protocolarNoInss_`: pedido do INSS já em "Pedido feito no INSS"; a petição sem número sai). Pedidos do INSS em assinado/documentos ficam no quadro 1
+  ("Protocolar no INSS →"). Ajuizados e INSS: QUADRADOS grandes por etapa (número, nome, descrição, faixa de cor; `PX3_DESC_J`, `PX3_ETAPAS_INSS`);
+  clicar filtra a lista embaixo (30 por página). Classes `px3-*`. Quadro antigo: #/processos?visao=quadro. A barra do topo aparece em Clientes/Processos.
+- IA Jurídica (8.58.1: página inteira #/ia, `telaIA`, item "IA Jurídica" no menu e botão no topo; SEM perguntas prontas, pedido da usuária):
+  conversas à esquerda (sessionStorage `ia_conversas_<usuário>`, apagadas ao Sair), caixa grande com o modo ⚖ Jurídico | 📋 Dados do escritório
+  (localStorage `assist_modo`), respostas em Markdown com títulos, listas, tabelas e citações (`mdParaDom`), Copiar, "🔎 Buscar julgados reais no STJ",
+  "↻ Gerar de novo". Servidor: `juridicoIA_` com o modelo FLASH (Config IA_MODELO_JURIDICO força outro; o padrão lite fica para o resto), 8192 tokens,
+  `SISTEMA_JURIDICO_` de advogado sênior (resumo, fundamento legal, entendimento dos tribunais, prática, estratégia e argumentos, riscos, o que conferir;
+  tabelas e exemplos de cálculo; escreve o texto quando pedem cláusula/tópico/quesitos), memória das 4 últimas trocas (`conversa`), caso do painel
+  ANONIMIZADO (`casoParaIA_`). Nunca inventa julgado nem calcula data fatal. Pedido de tarefa continua virando tarefa. Teste `.github/motor/teste/etapa858.js`.
