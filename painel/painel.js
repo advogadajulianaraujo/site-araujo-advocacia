@@ -5332,7 +5332,19 @@
     const minhas = params.get('minhas') === '1', busca = (params.get('q') || '').trim(), dias = [7, 15, 30, 90].includes(+params.get('dias')) ? +params.get('dias') : 7;
     const sis = sisValido(params.get('sis')) ? params.get('sis') : sistemaPreferido();
     const admin = !!sessao.usuario.pode.usuarios;
-    const r = await api('intimacoes.caixa', { status: st, busca, minhas: minhas ? 1 : '', dias, limite: 400 });
+    let r = await api('intimacoes.caixa', { status: st, busca, minhas: minhas ? 1 : '', dias, limite: 400 });
+    // servidor ainda na versão anterior (não conhece as 4 partes): a tela separa sozinha a partir da lista completa
+    if (!r.placar || r.placar.hoje === undefined) {
+      const tudo = await api('intimacoes.caixa', { status: 'todas', busca, minhas: minhas ? 1 : '', dias: 60, limite: 400 });
+      const hj = hojeISO(), corte = isoSoma(hj, -dias), fat = x => (x.sug && x.sug.prazo && !x.sug.prazo.ato && x.sug.prazo.fatal) || '';
+      const dia = x => String(x.tratada_em || '').slice(0, 10) || hj;
+      const G = { hoje: x => x.status === 'nao' && !(fat(x) > hj), proximos: x => x.status === 'nao' && fat(x) > hj,
+        aguardando_ok: x => x.status === 'tratada' && x.ok_em === '' && dia(x) >= isoSoma(hj, -30),
+        descartadas_todas: x => (x.status === 'descartada' || x.status === 'nao_feita') && dia(x) >= corte, todas: x => true };
+      const l = tudo.lista || [];
+      r = Object.assign({}, tudo, { lista: l.filter(G[st]), placar: { hoje: l.filter(G.hoje).length, proximos: l.filter(G.proximos).length, aguardando_ok: l.filter(G.aguardando_ok).length,
+        descartadas7: l.filter(x => (x.status === 'descartada' || x.status === 'nao_feita') && dia(x) >= isoSoma(hj, -7)).length } });
+    }
     const P = r.placar || {};
     const doTrib = x => filtroSisOk({ sistema: x.fonte, tribunal: x.tribunal || tribunalPeloNumero(x.numero), numero: x.numero }, sis);
     const lista = (r.lista || []).filter(doTrib);
