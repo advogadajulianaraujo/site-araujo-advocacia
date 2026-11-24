@@ -2,12 +2,12 @@
 // (MNI 2.2.2, operação consultarAvisosPendentes), com o usuário e a senha do eproc guardados no COFRE do Supabase.
 // REGRA DE OURO: só consultarAvisosPendentes (lista o que está pendente, SEM dar ciência). NUNCA chamar consultarTeorComunicacao
 // (abrir o teor = intimação considerada feita) nem confirmarRecebimento.
-// O PJe recusa servidores de nuvem (403 antes do login): o PJe é lido pelo Chrome do escritório (extensão).
+// 8.59: o PJe ACEITA servidores de São Paulo (sa-east-1): o painel e o robô chamam esta função com o cabeçalho x-region: sa-east-1.
 // Publicar: FUNCAO=tribunais node .github/motor/publicar-edge.mjs (verify_jwt = false: a pessoa é conferida pelo código da sessão do banco).
 import forge from 'npm:node-forge@1.3.1';
 const URL_BANCO = Deno.env.get('SUPABASE_URL') ?? '';
 const CHAVE = Deno.env.get('PAINEL_CHAVE') ?? Deno.env.get('SUPABASE_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-region', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const cab = (): Record<string, string> => { const h: Record<string, string> = { apikey: CHAVE, 'Content-Type': 'application/json' }; if (CHAVE.startsWith('eyJ')) h.Authorization = 'Bearer ' + CHAVE; return h; };
 const resp = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
@@ -73,6 +73,108 @@ async function lerTribunal(trib: string, cred: { usuario: string; senha: string 
     catch (e) { partes.push({ nome, ok: false, mensagem: /timed out|Timeout/i.test(String(e)) ? 'o tribunal não respondeu a tempo' : 'não consegui falar com o tribunal: ' + String((e as Error).message || e).slice(0, 120), avisos: [] }); }
   }));
   return partes.sort((a, b) => Object.keys(t.bases).indexOf(a.nome) - Object.keys(t.bases).indexOf(b.nome));
+}
+
+
+/* =====================================================================================================================
+   8.59 INTIMAÇÕES ELETRÔNICAS DO PJe (pedido da usuária, 24/11/2026: "igual ao Astrea: login, senha e 2FA Seed").
+   Desde 03/11/2025 o PJe pede, além do CPF e da senha, o código de 6 dígitos do aplicativo autenticador. A "2FA Seed" é a CHAVE que fica
+   dentro do QR Code do autenticador: com ela o robô gera o mesmo código do celular (TOTP, RFC 6238) e entra sozinho no PJe.
+   Caminho (conferido em 24/11 a partir de São Paulo — o PJe recusa servidores dos EUA): <base>/authenticateSSO.seam → login nacional
+   (sso.cloud.pje.jus.br, PDPJ) → CPF + senha → código de 6 dígitos → volta ao PJe com a sessão. REGRA DE OURO: o robô só LISTA; nunca abre
+   expediente nem documento (abrir = ciência).
+   ===================================================================================================================== */
+export const PJE: Record<string, { nome: string; graus: Record<string, string> }> = {
+  trt12: { nome: 'TRT 12 — Santa Catarina', graus: { '1g': 'https://pje.trt12.jus.br/primeirograu/', '2g': 'https://pje.trt12.jus.br/segundograu/' } },
+  trt6: { nome: 'TRT 6 — Pernambuco', graus: { '1g': 'https://pje.trt6.jus.br/primeirograu/', '2g': 'https://pje.trt6.jus.br/segundograu/' } },
+  trt23: { nome: 'TRT 23 — Mato Grosso', graus: { '1g': 'https://pje.trt23.jus.br/primeirograu/', '2g': 'https://pje.trt23.jus.br/segundograu/' } },
+  trt4: { nome: 'TRT 4 — Rio Grande do Sul', graus: { '1g': 'https://pje.trt4.jus.br/primeirograu/', '2g': 'https://pje.trt4.jus.br/segundograu/' } },
+  trt9: { nome: 'TRT 9 — Paraná', graus: { '1g': 'https://pje.trt9.jus.br/primeirograu/', '2g': 'https://pje.trt9.jus.br/segundograu/' } },
+  trt16: { nome: 'TRT 16 — Maranhão', graus: { '1g': 'https://pje.trt16.jus.br/primeirograu/', '2g': 'https://pje.trt16.jus.br/segundograu/' } },
+  tst: { nome: 'TST', graus: { '3g': 'https://pje.tst.jus.br/tst/' } },
+};
+export const GRAU_NOME: Record<string, string> = { '1g': 'Intimação Eletrônica PJe Primeiro Grau', '2g': 'Intimação Eletrônica PJe Segundo Grau', '3g': 'Intimação Eletrônica PJe TST' };
+
+/** A seed pode vir solta (base32, com espaços) ou inteira (otpauth://totp/...?secret=X&period=30&digits=6&algorithm=SHA1). */
+export function lerSeed(txt: string) {
+  const t = String(txt || '').trim(); let secret = t, period = 30, digits = 6, algo = 'SHA-1';
+  if (/^otpauth:/i.test(t)) { try { const u = new URL(t); secret = u.searchParams.get('secret') || ''; period = +(u.searchParams.get('period') || 30) || 30;
+    digits = +(u.searchParams.get('digits') || 6) || 6; const a = String(u.searchParams.get('algorithm') || 'SHA1').toUpperCase(); algo = a === 'SHA256' ? 'SHA-256' : a === 'SHA512' ? 'SHA-512' : 'SHA-1'; } catch { secret = ''; } }
+  secret = secret.replace(/[\s-]/g, '').toUpperCase().replace(/=+$/, '');
+  if (!/^[A-Z2-7]{16,128}$/.test(secret)) return null;
+  return { secret, period, digits, algo };
+}
+function base32(s: string) { const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = 0, val = 0; const out: number[] = [];
+  for (const c of s) { val = (val << 5) | A.indexOf(c); bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } } return new Uint8Array(out); }
+/** Código de 6 dígitos (TOTP, RFC 6238) — o mesmo do aplicativo autenticador. */
+export async function totp(seed: { secret: string; period: number; digits: number; algo: string }, quando = Date.now()) {
+  const k = await crypto.subtle.importKey('raw', base32(seed.secret), { name: 'HMAC', hash: seed.algo }, false, ['sign']);
+  let c = Math.floor(quando / 1000 / seed.period); const msg = new Uint8Array(8); for (let i = 7; i >= 0; i--) { msg[i] = c & 255; c = Math.floor(c / 256); }
+  const h = new Uint8Array(await crypto.subtle.sign('HMAC', k, msg)); const o = h[h.length - 1] & 15;
+  const n = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
+  return String(n % 10 ** seed.digits).padStart(seed.digits, '0');
+}
+
+const UA_PJE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
+/** Navegador mínimo: guarda os cookies por site e segue os redirecionamentos. */
+class Nav {
+  jar: Record<string, Record<string, string>> = {};
+  cookie(u: string) { const h = new URL(u).host; return Object.entries(this.jar[h] || {}).map(([k, v]) => k + '=' + v).join('; '); }
+  guardar(u: string, r: Response) { const h = new URL(u).host; const sc = (r.headers as any).getSetCookie ? (r.headers as any).getSetCookie() : [];
+    sc.forEach((c: string) => { const [kv] = c.split(';'); const i = kv.indexOf('='); if (i > 0) { (this.jar[h] = this.jar[h] || {})[kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); } }); }
+  async ir(u: string, init: RequestInit = {}, max = 10) {
+    let url = u, opts: RequestInit = init;
+    for (let i = 0; i <= max; i++) {
+      const r = await fetch(url, { ...opts, redirect: 'manual', headers: { 'User-Agent': UA_PJE, Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'pt-BR,pt;q=0.9', ...(opts.headers || {}), cookie: this.cookie(url) }, signal: AbortSignal.timeout(25000) });
+      this.guardar(url, r);
+      const loc = r.headers.get('location');
+      if (loc && r.status >= 300 && r.status < 400) { url = new URL(loc, url).toString(); opts = {}; await r.body?.cancel(); continue; }
+      return { url, status: r.status, html: await r.text() };
+    }
+    throw new Error('redirecionamentos demais');
+  }
+}
+const deHtml = (s: string) => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+function formulario(html: string) {
+  const f = /<form[^>]*action="([^"]+)"[^>]*>([\s\S]*?)<\/form>/i.exec(html); if (!f) return null;
+  const campos: Record<string, string> = {}; const re = /<input[^>]*>/gi; let m: RegExpExecArray | null;
+  while ((m = re.exec(f[2]))) { const n = atr(m[0], 'name'); if (n && !/type="(submit|button|checkbox)"/i.test(m[0])) campos[n] = deHtml(atr(m[0], 'value')); }
+  return { action: deHtml(f[1]), campos, html: f[2] };
+}
+const msgErro = (html: string) => {
+  const bruto = (/<span[^>]*(?:kc-feedback-text|input-error|alert-error)[^>]*>([\s\S]*?)<\/span>\s*<\/div>/i.exec(html) || /<span[^>]*(?:kc-feedback-text|input-error)[^>]*>([\s\S]*?)<\/span>/i.exec(html) || [])[1] || '';
+  // o PDPJ mostra a recusa do CPF/senha como uma página "HTTP Status 401" embutida (conferido em 24/11/2026)
+  if (/HTTP Status 401|requires HTTP authentication/i.test(bruto)) return 'O PJe recusou o CPF ou a senha';
+  return deHtml(bruto.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 160);
+};
+const titulo = (html: string) => deHtml((/<title>([^<]*)/i.exec(html) || [])[1] || '').trim();
+const ehSso = (u: string) => /sso\.cloud\.pje\.jus\.br|\/auth\/realms\//.test(u);
+
+/** Entra no PJe (CPF + senha + código do autenticador). Devolve o navegador já logado ou o motivo exato. */
+export async function entrarPje(base: string, cred: { login: string; senha: string; seed: string; period?: number }) {
+  const seed = lerSeed(cred.seed || ''); const nav = new Nav();
+  if (cred.seed && !seed) return { ok: false, etapa: 'seed', mensagem: 'A 2FA Seed não parece uma chave do autenticador (letras A–Z e números 2–7).' };
+  if (seed && cred.period) seed.period = cred.period;
+  let p = await nav.ir(base + 'authenticateSSO.seam');
+  if (p.status === 403) return { ok: false, etapa: 'bloqueio', mensagem: 'O PJe recusou o servidor (403). Tente de novo mais tarde.' };
+  if (!ehSso(p.url)) return { ok: false, etapa: 'sso', mensagem: 'O PJe não abriu a tela de login nacional (' + p.status + ').' };
+  let f = formulario(p.html); if (!f || !('username' in f.campos)) return { ok: false, etapa: 'login', mensagem: 'A tela de login do PJe mudou (' + titulo(p.html) + ').' };
+  const corpo = new URLSearchParams({ ...f.campos, username: String(cred.login).replace(/\D/g, '') || cred.login, password: cred.senha, credentialId: '' });
+  p = await nav.ir(new URL(f.action, p.url).toString(), { method: 'POST', body: corpo, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  for (let passo = 0; passo < 3 && ehSso(p.url); passo++) {
+    f = formulario(p.html);
+    const campoOtp = f && Object.keys(f.campos).find(k => /^(otp|totp|code|codigo|token)$/i.test(k));
+    if (f && 'password' in f.campos && !campoOtp) return { ok: false, etapa: 'senha', mensagem: msgErro(p.html) || 'O PJe recusou o CPF ou a senha.' };
+    if (!campoOtp) return { ok: false, etapa: 'desconhecida', mensagem: 'Depois da senha o PJe mostrou uma tela que o robô não conhece: "' + titulo(p.html) + '"' + (msgErro(p.html) ? ' — ' + msgErro(p.html) : '') + '.', campos: f ? Object.keys(f.campos) : [] };
+    if (!seed) return { ok: false, etapa: 'seed', mensagem: 'O PJe pediu o código do autenticador: preencha a 2FA Seed.' };
+    const cod = await totp(seed);
+    p = await nav.ir(new URL(f!.action, p.url).toString(), { method: 'POST', body: new URLSearchParams({ ...f!.campos, [campoOtp]: cod }), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    if (ehSso(p.url) && formulario(p.html) && Object.keys(formulario(p.html)!.campos).some(k => k === campoOtp))
+      return { ok: false, etapa: 'codigo', mensagem: (msgErro(p.html) || 'O código do autenticador não foi aceito') + ' — confira a 2FA Seed e se é a do mesmo PJe.' };
+  }
+  if (ehSso(p.url)) return { ok: false, etapa: 'sso', mensagem: 'O login nacional não devolveu ao PJe: ' + (msgErro(p.html) || titulo(p.html)) };
+  if (p.status >= 400) return { ok: false, etapa: 'pje', mensagem: 'O PJe respondeu ' + p.status + ' depois do login.' };
+  return { ok: true, nav, url: p.url, titulo: titulo(p.html), html: p.html };
 }
 
 Deno.serve(async (req: Request) => {
@@ -141,6 +243,45 @@ Deno.serve(async (req: Request) => {
     if (b.acao === 'cert_apagar') {
       await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: 'cert', p_valor: '' }); delete creds.cert;
       return resp({ ok: true, certificado: null });
+    }
+    // ---------- 8.59 PJe: login + senha + 2FA Seed (um acesso por tribunal e grau) ----------
+    const chavePje = (t: string, g: string) => 'pje' + t + g;          // ex.: pjetrt121g (o cofre aceita só letras/números, até 12)
+    const acessosPje = () => Object.entries(creds).filter(([k, v]) => /^pje/.test(k) && v && v.login).map(([k, v]: [string, any]) => ({
+      chave: k, tribunal: v.trib, grau: v.grau, tribunal_nome: (PJE[v.trib] || { nome: v.trib }).nome, consulta: GRAU_NOME[v.grau] || v.grau, nome: v.nome || '',
+      login: String(v.login).replace(/^(.{3}).*(.{2})$/, '$1•••••$2'), com_seed: !!v.seed, guardado_em: v.em || '', guardado_por: v.por || '', teste: st[k] || null }));
+    const opcoesPje = () => Object.entries(PJE).map(([id, t]) => ({ id, nome: t.nome, graus: Object.keys(t.graus).map(g => ({ id: g, nome: GRAU_NOME[g] })) }));
+    if (b.acao === 'pje_status') return resp({ ok: true, acessos: acessosPje(), tribunais: opcoesPje() });
+    if (b.acao === 'pje_apagar') {
+      const k = String(b.chave || ''); if (!/^pje[a-z0-9]{2,9}$/.test(k)) return resp({ ok: false, erro: 'Acesso inválido.' }, 400);
+      await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: k, p_valor: '' }); delete creds[k]; delete st[k]; await gravarEstado(escId, st);
+      return resp({ ok: true, acessos: acessosPje() });
+    }
+    if (b.acao === 'pje_guardar' || b.acao === 'pje_testar') {
+      let cred: any;
+      if (b.acao === 'pje_guardar') {
+        const t = String(b.tribunal || ''), g = String(b.grau || '');
+        if (!PJE[t] || !PJE[t].graus[g]) return resp({ ok: false, erro: 'Escolha o tribunal e a consulta.' }, 400);
+        const login = String(b.login || '').trim().slice(0, 40), senha = String(b.senha || '').slice(0, 200), seed = String(b.seed || '').trim().slice(0, 400);
+        if (!login || !senha) return resp({ ok: false, erro: 'Preencha o login (CPF) e a senha do PJe.' }, 400);
+        if (seed && !lerSeed(seed)) return resp({ ok: false, erro: 'A 2FA Seed não parece uma chave do autenticador: são letras de A a Z e números de 2 a 7 (às vezes em grupos com espaço).' }, 400);
+        cred = { trib: t, grau: g, nome: String(b.nome || '').trim().slice(0, 80), login, senha, seed };
+      } else { cred = creds[String(b.chave || '')]; if (!cred || !cred.login) return resp({ ok: false, erro: 'Este acesso não está guardado.' }, 400); }
+      const base = PJE[cred.trib].graus[cred.grau];
+      const t0 = Date.now();
+      let r: any = await entrarPje(base, cred);
+      // período do código: o padrão é 30 s; se o PJe recusar o código, tenta UMA vez com 60 s (alguns tribunais falam em "a cada minuto")
+      if (!r.ok && r.etapa === 'codigo' && !cred.period) { const r2: any = await entrarPje(base, { ...cred, period: 60 }); if (r2.ok) { r = r2; cred.period = 60; } }
+      const k = chavePje(cred.trib, cred.grau);
+      st[k] = { em: new Date().toISOString(), por, ok: !!r.ok, etapa: r.etapa || '', mensagem: r.ok ? 'entrou no PJe' : r.mensagem, ms: Date.now() - t0 };
+      await gravarEstado(escId, st);
+      if (!r.ok) return resp({ ok: false, erro: r.mensagem + (b.acao === 'pje_guardar' ? ' Nada foi guardado.' : ''), etapa: r.etapa, campos: r.campos || [], acessos: acessosPje() });
+      if (b.acao === 'pje_guardar') {
+        await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: k, p_valor: JSON.stringify({ ...cred, em: new Date().toISOString(), por }) });
+        creds[k] = { ...cred, em: new Date().toISOString(), por };
+      }
+      // o que a tela inicial do PJe mostra (só nomes e links do painel — nenhum expediente é aberto)
+      const links = [...String(r.html || '').matchAll(/href="([^"#]*(?:[Ee]xpediente|[Pp]ainel|[Aa]dvogado)[^"]*)"/g)].map(m => m[1]).slice(0, 12);
+      return resp({ ok: true, mensagem: 'Entrou no PJe (' + PJE[cred.trib].nome + ', ' + (GRAU_NOME[cred.grau] || cred.grau) + ').', pagina: { titulo: r.titulo, caminho: new URL(r.url).pathname, links }, acessos: acessosPje() });
     }
     const trib = String(b.tribunal || '');
     if (!TRIBUNAIS[trib]) return resp({ ok: false, erro: 'Escolha o tribunal.' }, 400);

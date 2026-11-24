@@ -2168,3 +2168,20 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   destaque a data FINAL do prazo ("prazo final"), "chegou dd/mm" pequeno. Processos: os 4 quadrinhos viraram UMA faixa (`px5`: barra das etapas + legenda
   + avisos curtos). CRM: o topo virou um painel só (`crm2`: período Dia/Semana/Mês com 6 números em linha + 8 semanas | "Funil agora" em barra colorida,
   fechamento 180 dias e tempo até o 1º contato); saíram os 5 cartões e o gráfico escuro.
+
+## 8.59 Intimações eletrônicas do PJe com login, senha e 2FA Seed (pedido da usuária, 24/11/2026: "igual ao Astrea")
+
+- Desde 03/11/2025 o PJe exige o código de 6 dígitos do autenticador. A "2FA Seed" é a chave do QR Code: com ela o robô gera o mesmo código
+  (TOTP RFC 6238, `totp`/`lerSeed` na função `tribunais`, conferido com os vetores da RFC; aceita a chave solta ou o link otpauth://).
+- Testado em 24/11 a partir do Supabase de SÃO PAULO (cabeçalho `x-region: sa-east-1`): PJe do TRT12/TRT6/TRT23/TRT4/TST e o login nacional
+  (sso.cloud.pje.jus.br, PDPJ) RESPONDEM. Caminho: <base>/authenticateSSO.seam → PDPJ (username/password) → código → volta ao PJe com a sessão.
+  O PDPJ mostra a senha errada como uma página "HTTP Status 401" embutida (`msgErro` traduz). O painel (banco.js `tribunais`) manda sempre
+  `x-region: sa-east-1`; CORS da função aceita esse cabeçalho.
+- Função `tribunais` (Supabase): `entrarPje` (classe `Nav` com cookies por site), ações `pje_status`/`pje_guardar`/`pje_testar`/`pje_apagar` (só
+  administração). Guarda no COFRE só se o PJe aceitar o login; chave `pje<tribunal><grau>` (ex.: pjetrt121g); código recusado com 30 s tenta UMA vez
+  com 60 s. Nunca devolve senha nem seed. REGRA DE OURO: só lista; nunca abre expediente nem documento (abrir = ciência).
+- Painel: Configurações › Robôs e sistema › "⚖ Intimações eletrônicas do PJe" (`dialogoPje`): Nome de pesquisa, Tribunal, Consulta (1º/2º grau/TST),
+  Login (CPF), Senha, 2FA Seed + "Como pegar a 2FA Seed" (Minha conta do login nacional › Aplicativo autenticador › configurar de novo › "Não
+  consegue escanear?" mostra a chave; ler o MESMO QR no celular).
+- FALTA (depois do 1º acesso guardado): o robô ler a lista de expedientes do painel do advogado (o endereço só aparece depois do login real) e
+  entrar no robô de hora em hora junto com DJEN, Gmail e eproc.
