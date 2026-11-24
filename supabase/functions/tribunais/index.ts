@@ -4,6 +4,7 @@
 // (abrir o teor = intimação considerada feita) nem confirmarRecebimento.
 // O PJe recusa servidores de nuvem (403 antes do login): o PJe é lido pelo Chrome do escritório (extensão).
 // Publicar: FUNCAO=tribunais node .github/motor/publicar-edge.mjs (verify_jwt = false: a pessoa é conferida pelo código da sessão do banco).
+import forge from 'npm:node-forge@1.3.1';
 const URL_BANCO = Deno.env.get('SUPABASE_URL') ?? '';
 const CHAVE = Deno.env.get('PAINEL_CHAVE') ?? Deno.env.get('SUPABASE_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
@@ -108,7 +109,39 @@ Deno.serve(async (req: Request) => {
     const lista = () => Object.entries(TRIBUNAIS).map(([id, t]) => ({ id, nome: t.nome, dica: t.dica, sistemas: Object.keys(t.bases),
       ligado: !!(creds[id] && creds[id].usuario), usuario: creds[id] && creds[id].usuario ? String(creds[id].usuario).replace(/^(.{2}).*(.{2})$/, '$1•••$2') : '',
       guardado_em: creds[id] && creds[id].em || '', guardado_por: creds[id] && creds[id].por || '', teste: st[id] || null }));
-    if (b.acao === 'status') return resp({ ok: true, tribunais: lista() });
+    // 8.57: certificado digital A1 (pedido da usuária, "igual ao Astrea"): termo aceito → arquivo .pfx/.p12 + senha conferidos aqui (abre com a
+    // senha? de quem é? vale até quando?) e guardados no COFRE (segredo trib_cert_<escritório>). Nunca volta ao navegador.
+    const certInfo = () => { const c = creds.cert; return c && c.titular ? { nome: c.nome, titular: c.titular, validade: c.validade, uf: c.uf, oab: c.oab, em: c.em, por: c.por, aceito_em: c.aceito_em } : null; };
+    if (b.acao === 'status') return resp({ ok: true, tribunais: lista(), certificado: certInfo() });
+    if (b.acao === 'certificado') {
+      if (!b.aceito) return resp({ ok: false, erro: 'É preciso ler e aceitar o termo antes.' }, 400);
+      const nome = String(b.nome || '').trim().slice(0, 80), senha = String(b.senha || ''), uf = String(b.uf || '').toUpperCase().slice(0, 2), oab = String(b.oab || '').replace(/\D/g, '').slice(0, 8);
+      const arq = String(b.arquivo || '').replace(/^data:[^,]*,/, '');
+      if (!arq || !nome || !senha || !/^[A-Z]{2}$/.test(uf) || !oab) return resp({ ok: false, erro: 'Preencha o arquivo, o nome, a senha, a UF e o número da OAB.' }, 400);
+      if (arq.length > 200000) return resp({ ok: false, erro: 'Arquivo grande demais para um certificado A1.' }, 400);
+      let titular = '', validade = '', emissor = '';
+      try {
+        const p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.decode64(arq)), false, senha);
+        const bags = (p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []).map((x: any) => x.cert).filter(Boolean);
+        const keys = (p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []);
+        if (!bags.length || !keys.length) throw new Error('sem chave');
+        const c = bags.find((x: any) => !(x.extensions || []).some((e: any) => e.name === 'basicConstraints' && e.cA)) || bags[0];
+        const cn = (c.subject.getField('CN') || {}).value || ''; titular = String(cn).split(':')[0];
+        validade = c.validity.notAfter.toISOString().slice(0, 10); emissor = String((c.issuer.getField('CN') || {}).value || '').slice(0, 80);
+      } catch (e) {
+        const m = String((e as Error).message || e);
+        return resp({ ok: false, erro: /password|mac|Invalid password|decrypt/i.test(m) ? 'A senha do certificado não confere. Nada foi guardado.' : 'Este arquivo não é um certificado A1 (.pfx ou .p12) válido. Nada foi guardado.' }, 400);
+      }
+      if (validade && validade < new Date().toISOString().slice(0, 10)) return resp({ ok: false, erro: 'Este certificado venceu em ' + validade.split('-').reverse().join('/') + '. Nada foi guardado.' }, 400);
+      const agora = new Date().toISOString();
+      await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: 'cert', p_valor: JSON.stringify({ nome, uf, oab, titular, validade, emissor, pfx: arq, senha, em: agora, por, aceito_em: agora, aceito_por: por }) });
+      creds.cert = { nome, uf, oab, titular, validade, em: agora, por, aceito_em: agora };
+      return resp({ ok: true, certificado: certInfo() });
+    }
+    if (b.acao === 'cert_apagar') {
+      await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: 'cert', p_valor: '' }); delete creds.cert;
+      return resp({ ok: true, certificado: null });
+    }
     const trib = String(b.tribunal || '');
     if (!TRIBUNAIS[trib]) return resp({ ok: false, erro: 'Escolha o tribunal.' }, 400);
     if (b.acao === 'apagar') {

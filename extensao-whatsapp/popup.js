@@ -33,3 +33,27 @@ $('djenAgora').addEventListener('click', () => {
     chrome.storage.local.get(['djen_msg'], v => { $('djenMsg').textContent = (r && !r.ok && r.erro) ? 'Não leu: ' + r.erro : (v.djen_msg || 'Pronto.'); });
   });
 });
+
+// 1.5.0: PJe lido sozinho
+function mostrarPje() {
+  chrome.storage.local.get(['pje', 'pje_auto'], v => {
+    $('pjeAuto').checked = v.pje_auto !== false;
+    const t = Object.entries(v.pje || {}).filter(([, x]) => x && x.url);
+    const quando = ms => ms ? new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+    $('pjeMsg').textContent = '';
+    if (!t.length) { $('pjeMsg').textContent = 'Nenhuma tela guardada ainda. Entre no PJe com o certificado e abra a tela de Expedientes uma vez: a extensão aprende o endereço.'; return; }
+    t.forEach(([host, x]) => {
+      const d = document.createElement('div');
+      const login = x.login_em && x.login_em > (x.lido_em || 0);
+      d.textContent = host.replace(/^pje\./, '').replace(/\.jus\.br$/, '').toUpperCase() + ': ' + (login ? '⚠ pediu para entrar de novo (abra o PJe com o certificado)' : 'lido ' + quando(x.lido_em) + (x.n ? ' · ' + x.n + ' processo(s)' : ''));
+      if (login) d.style.color = '#B3261E';
+      $('pjeMsg').appendChild(d);
+    });
+  });
+}
+mostrarPje();
+$('pjeAuto').addEventListener('change', e => chrome.storage.local.set({ pje_auto: e.target.checked }));
+$('pjeAgora').addEventListener('click', () => {
+  $('pjeAgora').disabled = true;
+  chrome.runtime.sendMessage({ tipo: 'pjeAgora' }, r => { $('pjeAgora').disabled = false; if (r && !r.ok) $('pjeMsg').textContent = 'Não leu: ' + r.erro; setTimeout(mostrarPje, 100000); mostrarPje(); });
+});
