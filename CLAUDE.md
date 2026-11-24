@@ -2141,3 +2141,8 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   aberto numa aba aberta à mão, aparece "Usar aqui" uma vez. A API oficial (Chatbot) fica para depois.
   CRM integrado: cartão do funil mostra o processo do cliente ("📁 etapa", link) e "✓ cliente" abre a ficha (`crmListar_` → `processo`);
   a IA responde sobre o funil (ferramenta `crm`, só administração).
+- 8.58.5 (pedido da usuária, com desenho): Processos = 3 abas médias + BOTÕES PEQUENOS das etapas embaixo (`px3-ets`, `?etapa=` mostra só a
+  coluna) e, à direita, gráfico de COLUNAS por área (`grafCols`; clicar filtra Ajuizados pela área). As 3 abas são QUADROS por etapa (`px4`):
+  Petição inicial = Documentos → Fazer a inicial → Avisar o cliente → Protocolar; INSS = Fazer o pedido (petição previdenciária sem número +
+  pedidos assinado/documentos) → etapas do INSS; Ajuizados = etapas da Justiça (arrastar muda a etapa). TODO o previdenciário fica no INSS
+  (petição sem número de área previdenciária sai da aba Petição); indeferido/negado no recurso vai à Justiça (Ajuizados).
