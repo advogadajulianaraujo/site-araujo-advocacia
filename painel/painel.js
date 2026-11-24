@@ -627,12 +627,15 @@
      A escolha fica neste computador (localStorage whats_modo = auto|app|web e whats_aprendido = app|web). */
   const lerLS = (k, pad) => { try { return localStorage.getItem(k) || pad; } catch (e) { return pad; } };
   const gravarLS = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* sem memória */ } };
-  const modoWhats = () => { const m = lerLS('whats_modo', 'auto'); return m === 'auto' ? lerLS('whats_aprendido', 'auto') : m; };
+  // 8.58.4 ("num computador funciona, nos outros não abre a conversa"): o modo automático confundia o aviso do Chrome ("Abrir WhatsApp?")
+  // com o aplicativo aberto e passava a mandar para um aplicativo que nem existe. Agora é SEMPRE o WhatsApp Web (aba fixa), salvo quem
+  // escolher "aplicativo" de propósito. O que foi aprendido antes é esquecido.
+  gravarLS('whats_aprendido', null); if (lerLS('whats_modo', '') === 'auto') gravarLS('whats_modo', null);
+  const modoWhats = () => lerLS('whats_modo', 'web') === 'app' ? 'app' : 'web';
   const btnWhats = document.getElementById('btn-whats');
   const rotuloWhats = () => {
     if (!btnWhats) return;
-    const m = lerLS('whats_modo', 'auto'), ap = lerLS('whats_aprendido', '');
-    btnWhats.textContent = 'WhatsApp: ' + (m === 'app' ? 'aplicativo' : m === 'web' ? 'WhatsApp Web' : 'automático' + (ap === 'app' ? ' (aplicativo)' : ap === 'web' ? ' (Web)' : ''));
+    btnWhats.textContent = 'WhatsApp: ' + (modoWhats() === 'app' ? 'aplicativo' : 'WhatsApp Web');
   };
   const btnWhatsAbrir = document.getElementById('btn-whats-abrir');
   if (btnWhatsAbrir) btnWhatsAbrir.hidden = true; // a aba do WhatsApp Web abre sozinha no 1º envio
@@ -642,12 +645,11 @@
     btnWhats.addEventListener('click', () => {
       const caixa = h('dialog', { class: 'dialogo whats-modo' },
         h('h2', {}, 'Para onde vão as mensagens de WhatsApp'),
-        h('p', { class: 'peq' }, 'Neste computador. No automático o painel descobre sozinho e não pergunta mais.'),
-        ...[['auto', 'Automático (recomendado)', 'Usa o aplicativo se ele estiver instalado; senão, o WhatsApp Web sempre na mesma aba.'],
-          ['app', 'Sempre o aplicativo do WhatsApp', 'O aplicativo do computador já fica aberto e logado: a mensagem cai direto nele.'],
-          ['web', 'Sempre o WhatsApp Web', 'Abre numa aba do Chrome que o painel reaproveita em todos os envios.']].map(([v, t, d]) =>
-          h('button', { type: 'button', class: 'whats-op' + (lerLS('whats_modo', 'auto') === v ? ' ativo' : ''), onclick: () => {
-            gravarLS('whats_modo', v); if (v === 'auto') gravarLS('whats_aprendido', null); rotuloWhats(); caixa.close(); avisar('Pronto: ' + t.replace(' (recomendado)', '') + '.');
+        h('p', { class: 'peq' }, 'Neste computador.'),
+        ...[['web', 'WhatsApp Web (recomendado)', 'Abre numa aba do Chrome que o painel reaproveita em todos os envios.'],
+          ['app', 'Aplicativo do WhatsApp instalado no computador', 'Só escolha se o aplicativo estiver instalado e logado neste computador.']].map(([v, t, d]) =>
+          h('button', { type: 'button', class: 'whats-op' + (modoWhats() === v ? ' ativo' : ''), onclick: () => {
+            gravarLS('whats_modo', v); rotuloWhats(); caixa.close(); avisar('Pronto: ' + t.replace(' (recomendado)', '') + '.');
           } }, h('strong', {}, t), h('span', {}, d))),
         h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'btn sec', onclick: () => caixa.close() }, 'Fechar')));
       caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
@@ -744,16 +746,17 @@
     if (modo !== 'app' && document.documentElement.dataset.araujoWhats) {
       ev.preventDefault();
       window.postMessage({ araujo: 'whats', tel, texto }, location.origin);
-      if (modo === 'auto') gravarLS('whats_aprendido', 'web');
       return;
     }
-    if (modo === 'auto') { ev.preventDefault(); descobrirWhats(tel, enc); return; }
     if (modo === 'app') { a.href = urlApp(tel, enc); a.removeAttribute('target'); return; }
-    a.href = urlWeb(tel, enc);
-    a.target = 'whatsapp_painel'; // tenta a mesma aba (sem a extensão o WhatsApp Web pode abrir outra e pedir "Usar aqui")
-    a.rel = ''; a.referrerPolicy = 'no-referrer';
-    if (!sessionStorage.getItem('dica_ext_whats')) { try { sessionStorage.setItem('dica_ext_whats', '1'); } catch (e) { /* ok */ }
-      setTimeout(() => avisar('Dica: com o "Assistente do WhatsApp" atualizado (Configurações › Gerenciar acessos › Assistente do WhatsApp Web) a mensagem abre sempre na aba do WhatsApp Web que já está aberta.'), 800); }
+    // WhatsApp Web sempre na MESMA aba (nome fixo): o 1º clique abre a aba do painel; os próximos caem nela. Se o WhatsApp Web também estiver
+    // aberto numa aba aberta à mão, o WhatsApp pede "Usar aqui" uma vez — depois disso use só a aba do painel.
+    ev.preventDefault();
+    const w = window.open(urlWeb(tel, enc), 'whatsapp_painel');
+    if (!w) { location.href = urlWeb(tel, enc); return; }
+    try { w.focus(); } catch (e) { /* ok */ }
+    if (!sessionStorage.getItem('dica_whats_aba')) { try { sessionStorage.setItem('dica_whats_aba', '1'); } catch (e) { /* ok */ }
+      setTimeout(() => avisar('O WhatsApp abre sempre na mesma aba. Se aparecer "Usar aqui", clique nele uma vez e feche a outra aba do WhatsApp que estava aberta.'), 800); }
   }, true);
 
   /* Menu lateral: [id, nome, grupo, permissão, ícone (traços SVG 24×24)] */
@@ -1632,8 +1635,10 @@
     const esp = ext.esperando || { assinatura: [], iniciais: [] };
     const zapAssin = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
       return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.cliente).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Ficou faltando a assinatura da procuração e do contrato para darmos andamento ao seu caso. Conseguiu ver? Se tiver alguma dúvida, é só nos chamar.`); };
-    const blocoEsperando = esp.assinatura.length || esp.iniciais.length ? h('details', { class: 'caixa ini-esperando', open: true },
-      h('summary', {}, h('strong', {}, `⏳ Esperando há muito tempo (${esp.assinatura.length + esp.iniciais.length})`), h('span', { class: 'peq' }, ` · não assinaram há ${esp.assinDias || 7}+ dias · petição inicial sem protocolo há ${esp.inicialDias || 10}+ dias`)),
+    const pedirDocsLink = c => { const tel = telefoneWhats(c.telefone || ''); if (!tel) return null;
+      return 'https://wa.me/' + tel + '?text=' + encodeURIComponent(`Olá, ${nomeProprioJS(String(c.cliente).split(' ')[0])}! Aqui é do escritório Araújo Advocacia. Para darmos entrada na sua ação, ainda faltam alguns documentos. Pode nos enviar por aqui? Se tiver dúvida de quais são, é só perguntar.`); };
+    const blocoEsperando = esp.assinatura.length || esp.iniciais.length || (esp.semDocs || []).length ? h('details', { class: 'caixa ini-esperando', open: true },
+      h('summary', {}, h('strong', {}, `⏳ Esperando (${esp.assinatura.length + esp.iniciais.length + (esp.semDocs || []).length})`), h('span', { class: 'peq' }, ` · não assinaram há ${esp.assinDias || 7}+ dias · petição inicial parada há ${esp.inicialDias || 10}+ dias · faltam documentos`)),
       h('div', { class: 'ini-duas' },
         h('div', {}, h('h3', {}, `✍ Ainda não assinaram (${esp.assinatura.length})`),
           esp.assinatura.length ? h('ul', { class: 'ini-lista' }, esp.assinatura.slice(0, 12).map(x => item(() => { location.hash = '#/cliente/' + x.cliente_id; },
@@ -1643,7 +1648,11 @@
         h('div', {}, h('h3', {}, `📄 Petição inicial parada (${esp.iniciais.length})`),
           esp.iniciais.length ? h('ul', { class: 'ini-lista' }, esp.iniciais.slice(0, 12).map(x => item(() => { location.hash = '#/processo/' + x.processo_id; },
             h('div', { class: 'selo-data faixa-vencido' }, h('b', {}, String(x.dias)), h('span', {}, 'dias')), x.cliente || 'cliente', [x.area, x.responsavel ? 'com ' + x.responsavel : 'SEM responsável'].filter(Boolean).join(' · '), null)))
-            : vazio('Nenhuma petição inicial parada.')))) : null;
+            : vazio('Nenhuma petição inicial parada.')),
+        (esp.semDocs || []).length ? h('div', {}, h('h3', {}, `📎 Faltam documentos (${esp.semDocs.length})`),
+          h('ul', { class: 'ini-lista' }, esp.semDocs.slice(0, 12).map(x => item(() => { location.hash = '#/processos'; },
+            h('div', { class: 'selo-data' + (x.dias >= 7 ? ' faixa-vencido' : '') }, h('b', {}, String(x.dias)), h('span', {}, 'dias')), x.cliente || 'cliente', [x.area, x.marcado ? 'marcado: faltam documentos' : 'documentos não conferidos'].filter(Boolean).join(' · '),
+            pedirDocsLink(x) ? h('a', { class: 'btn mini wa', href: pedirDocsLink(x), target: '_blank', rel: 'noopener', onclick: ev => ev.stopPropagation() }, 'Pedir no WhatsApp') : null)))) : null)) : null;
 
     // ----- aniversariantes de hoje -----
     const parabens = c => { let tel = telefoneWhats(c.telefone || ''); if (!tel) return null; if (tel.length <= 11) tel = '55' + tel;
@@ -3267,7 +3276,8 @@
     const bate = (...t) => !q || palavrasComecam(t.filter(Boolean).join(' '), q);
     const semNum = procs.filter(p => !p.numero && p.fase === 'contratado' && p.status !== 'arquivado');
     const inssPet = (ri.lista || []).filter(x => ['assinado', 'documentos'].includes(x.etapa));
-    const pet = semNum.filter(p => !p.inicial_feita_em), prot = semNum.filter(p => p.inicial_feita_em);
+    // 8.58.4 (pedido da usuária): o caso só vai para Protocolo DEPOIS de avisar o cliente (inicial feita → mandar ao cliente → protocolo)
+    const pet = semNum.filter(p => !p.inicial_enviada_em), prot = semNum.filter(p => p.inicial_enviada_em);
     const ajuiz = procs.filter(p => !(p.fase === 'contratado' && !p.numero));
     const inssTodos = (ri.lista || []).filter(x => !['assinado', 'documentos'].includes(x.etapa));
     const inssAnd = inssTodos.filter(x => !['deferido', 'judicial', 'arquivado'].includes(x.etapa));
@@ -3285,6 +3295,20 @@
     const abas = h('nav', { class: 'px3-abas', role: 'tablist', 'aria-label': 'Processos' }, ABAS3.map(([k, nome, sub, d, n]) =>
       h('button', { type: 'button', role: 'tab', 'aria-selected': String(aba === k), class: 'px3-aba' + (aba === k ? ' on' : ''), onclick: () => ir({ aba: k === 'peticao' ? '' : k, etapa: '', area: '', sit: '', q: '' }) },
         h('span', { class: 'px3-aba-ic' }, ico(d)), h('span', { class: 'px3-aba-tx' }, h('b', {}, nome), h('small', {}, sub)), h('span', { class: 'px3-aba-n num' }, String(n)))));
+    // 8.58.4 (pedido da usuária): 3 quadrados MÉDIOS e, ao lado, um relatório dos processos por área
+    const ordemA = ['Trabalhista', 'Previdenciário', 'Cível', 'Família', 'Consumidor', 'Criminal', 'Empresarial', 'Federal', 'Cobrança de honorários'];
+    const porArea = {};
+    const somar = (a, k) => { a = a || 'Sem área'; porArea[a] = porArea[a] || { pet: 0, aj: 0 }; porArea[a][k]++; };
+    semNum.forEach(p => somar(p.area, 'pet')); ajuiz.filter(p => p.status !== 'arquivado').forEach(p => somar(p.area, 'aj'));
+    const areasR = Object.keys(porArea).sort((a, b) => ((ordemA.indexOf(a) + 1) || 99) - ((ordemA.indexOf(b) + 1) || 99) || (porArea[b].pet + porArea[b].aj) - (porArea[a].pet + porArea[a].aj));
+    const maxR = Math.max(1, ...areasR.map(a => porArea[a].pet + porArea[a].aj));
+    const totalR = areasR.reduce((s2, a) => s2 + porArea[a].pet + porArea[a].aj, 0);
+    const relatorio = h('section', { class: 'px3-rel' }, h('header', {}, h('b', {}, 'Relatório dos processos'), h('small', {}, totalR + ' em andamento · ' + inssAnd.length + ' no INSS')),
+      h('div', { class: 'px3-rel-l' }, areasR.map(a => { const x = porArea[a], t = x.pet + x.aj;
+        const barra = h('span', { class: 'px3-rel-b' }, h('i', { class: 'aj' }), h('i', { class: 'pet' }));
+        barra.children[0].style.setProperty('width', (x.aj / maxR * 100) + '%'); barra.children[1].style.setProperty('width', (x.pet / maxR * 100) + '%');
+        return h('div', { class: 'px3-rel-r' }, h('span', { class: 'px3-rel-n' }, a), barra, h('b', { class: 'num' }, String(t)), h('small', { class: 'num' }, x.pet ? x.pet + ' petição' : '')); })),
+      h('div', { class: 'px3-rel-leg' }, h('span', {}, h('i', { class: 'aj' }), 'ajuizados'), h('span', {}, h('i', { class: 'pet' }), 'petição inicial / protocolo')));
     let corpo;
     if (aba === 'peticao') {
       const lp = pet.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area)).sort((a, b) => (a.criado_em || '') < (b.criado_em || '') ? -1 : 1);
@@ -3292,27 +3316,41 @@
       const lr = prot.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area));
       /* 8.58.3 (pedido da usuária: "muito grande"): uma linha por cliente — nome, área, "Inicial não feita/feita" e UM botão; clicar abre a ficha */
       const linhaP = o => h('div', { class: 'px3-l' + (o.alerta ? ' alerta' : ''), tabindex: 0, role: 'button', onclick: o.abrir, onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) o.abrir(); } },
-        h('div', { class: 'px3-l-t' }, h('b', {}, o.nome || 'Cliente a identificar'), h('div', { class: 'px3-l-i' }, o.area ? h('span', { class: 'px3-area' }, o.area) : null, o.status, o.extra || null)),
+        h('div', { class: 'px3-l-t' }, h('b', {}, o.nome || 'Cliente a identificar'), h('div', { class: 'px3-l-i' }, o.area ? h('span', { class: 'px3-area' }, o.area) : null, o.status, o.extra || null), o.linha2 ? h('div', { class: 'px3-l-i' }, o.linha2) : null),
         h('div', { class: 'px3-l-a', onclick: parar }, o.bts || [], h('span', { class: 'px3-av', title: o.quem ? 'Quem cuida: ' + o.quem : 'Sem responsável' }, o.quem ? iniciaisPx(o.quem) : '—')));
       const areaCurta = p => (p.area || '').replace('Previdenciário', 'Previdenciário').slice(0, 22);
-      const itensPet = lp.map(p => { const d = diasDesde(p.criado_em);
-        return linhaP({ nome: p.cliente_nome, area: areaCurta(p) || 'área a definir', quem: p.responsavel, alerta: d >= 10, abrir: () => { location.hash = '#/processo/' + p.id; },
-          status: chip('Inicial não feita', d >= 10 ? 'verm' : 'cinza'), extra: d >= 10 ? h('small', { class: 'px3-dias verm' }, 'há ' + d + ' dias') : d ? h('small', { class: 'px3-dias' }, 'há ' + d + ' d') : null,
-          bts: [botao('Inicial feita', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Foi para Protocolo.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini sec')] }); })
+      const fechou = p => { const d = diasDesde(p.criado_em); return p.criado_em ? h('small', { class: 'px3-dias' + (d >= 10 ? ' verm' : '') }, 'fechou em ' + dataBR(String(p.criado_em).slice(0, 10)).slice(0, 5) + ' · há ' + d + (d === 1 ? ' dia' : ' dias')) : null; };
+      const docsBt = p => { // 8.58.4: "já tem todos os documentos?" sim / não (aparece no Início quando falta)
+        const w = h('span', { class: 'px3-docs', onclick: parar }, h('span', {}, '📎 Documentos:'));
+        const marcar = ok => async ev => { ev.stopPropagation(); const ant = p.docs_ok; p.docs_ok = ok ? 'sim' : 'nao'; pintar();
+          try { await api('processos.docs', { id: p.id, ok }); } catch (e) { p.docs_ok = ant; pintar(); avisar(e.message, true); } };
+        const bS = h('button', { type: 'button', onclick: marcar(true) }, '✓ completos'), bN = h('button', { type: 'button', onclick: marcar(false) }, '✗ faltam');
+        const pintar = () => { bS.classList.toggle('on', p.docs_ok === 'sim'); bN.classList.toggle('on', p.docs_ok === 'nao'); w.classList.toggle('falta', p.docs_ok !== 'sim'); };
+        w.append(bS, bN); pintar(); return w;
+      };
+      const avisarCli = p => { const link = linkInicialCliente(p.cliente_nome, p.cliente_tel);
+        const ir2 = () => api('processos.inicialEnviada', { id: p.id }).then(() => { avisar('Cliente avisado: foi para Protocolo.'); rota(); }).catch(e => avisar(e.message, true));
+        return link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', title: 'Manda a inicial ao cliente aprovar (anexe o arquivo). Depois vai para Protocolo.', onclick: () => setTimeout(ir2, 400) }, '📄 Mandar ao cliente')
+          : botao('Já avisei o cliente', ir2, 'mini sec'); };
+      const itensPet = lp.map(p => { const d = diasDesde(p.criado_em), feita = !!p.inicial_feita_em;
+        return linhaP({ nome: p.cliente_nome, area: areaCurta(p) || 'área a definir', quem: p.responsavel, alerta: d >= 10 && !feita, abrir: () => { location.hash = '#/processo/' + p.id; },
+          status: feita ? chip('Inicial feita · falta avisar o cliente', 'ambar') : chip('Inicial não feita', d >= 10 ? 'verm' : 'cinza'), extra: fechou(p), linha2: docsBt(p),
+          bts: feita ? [h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para "inicial não feita"', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id, desfazer: true }); rota(); } catch (e) { avisar(e.message, true); } } }, '↩'), avisarCli(p)]
+            : [botao('Inicial feita', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Inicial feita: agora mande ao cliente aprovar.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini')] }); })
         .concat(li.map(x => linhaP({ nome: x.cliente, area: 'INSS', quem: x.responsavel_nome, abrir: () => { location.hash = '#/inss/' + x.id; },
-          status: chip(x.etapa === 'documentos' ? 'Esperando documentos' : 'Pedido não feito', 'ambar'), bts: [botao('Protocolar', () => dialogoProtocoloInss(x), 'mini sec')] })));
-      const itensProt = lr.map(p => { const link = linkInicialCliente(p.cliente_nome, p.cliente_tel), env = !!p.inicial_enviada_em;
-        return linhaP({ nome: p.cliente_nome, area: areaCurta(p), quem: p.responsavel, abrir: () => { location.hash = '#/processo/' + p.id; },
-          status: chip('Inicial feita', 'verde'), extra: env ? h('small', { class: 'px3-dias' }, '✓ cliente avisado') : h('small', { class: 'px3-dias ambar' }, 'falta mandar ao cliente'),
-          bts: [!env && link ? h('a', { class: 'btn mini wa ic', href: link, target: '_blank', rel: 'noopener noreferrer', title: 'Mandar a inicial ao cliente no WhatsApp', onclick: () => { api('processos.inicialEnviada', { id: p.id }).then(() => rota()).catch(e => avisar(e.message, true)); } }, '📄') : null,
-            botao('Protocolar', () => dialogoProtocolar(p, ri.beneficios), 'mini')] }); });
+          status: chip(x.etapa === 'documentos' ? 'Esperando documentos' : 'Pedido não feito', 'ambar'), extra: x.criado_em ? h('small', { class: 'px3-dias' }, 'desde ' + dataBR(String(x.criado_em).slice(0, 10)).slice(0, 5)) : null,
+          bts: [botao('Protocolar no INSS', () => dialogoProtocoloInss(x), 'mini')] })));
+      const itensProt = lr.map(p => linhaP({ nome: p.cliente_nome, area: areaCurta(p), quem: p.responsavel, abrir: () => { location.hash = '#/processo/' + p.id; },
+          status: chip('✓ cliente avisado em ' + dataBR(String(p.inicial_enviada_em).slice(0, 10)).slice(0, 5), 'verde'), extra: fechou(p), linha2: docsBt(p),
+          bts: [h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para Petição inicial', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id, desfazer: true }); rota(); } catch (e) { avisar(e.message, true); } } }, '↩'),
+            botao('Protocolar', () => dialogoProtocolar(p, ri.beneficios), 'mini')] }));
       const quadro = (n, titulo, desc, itens, vazio, cls) => h('section', { class: 'px3-etapa ' + (cls || '') },
         h('header', {}, h('span', { class: 'px3-n' }, n), h('div', {}, h('h3', {}, titulo), h('p', {}, desc)), h('span', { class: 'px3-conta num' }, String(itens.length))),
         h('div', { class: 'px3-ls' }, itens.length ? itens : h('p', { class: 'px3-vazio' }, vazio)));
       corpo = h('div', { class: 'px3-duo' },
-        quadro('1', 'Petição inicial', 'Contrato assinado: fazer a inicial ou o pedido no INSS.', itensPet, 'Nenhuma petição para fazer. Quando o cliente assina, ela aparece aqui sozinha.', 'e1'),
+        quadro('1', 'Petição inicial', 'Fazer a inicial e mandar ao cliente aprovar.', itensPet, 'Nenhuma petição para fazer. Quando o cliente assina, ela aparece aqui sozinha.', 'e1'),
         h('div', { class: 'px3-seta', 'aria-hidden': 'true' }, '→'),
-        quadro('2', 'Protocolo', 'Inicial pronta: o cliente aprova e você protocola.', itensProt, 'Nada esperando protocolo.', 'e2'));
+        quadro('2', 'Protocolo', 'Cliente avisado: protocolar na Justiça ou no INSS.', itensProt, 'Nada esperando protocolo.', 'e2'));
     } else {
       const ehJ = aba === 'ajuizados';
       let base, etapas, chave;
@@ -3361,7 +3399,7 @@
       h('div', { class: 'px3-topo' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, 'Tudo começa na Petição inicial. Protocolou na Justiça, vai para Ajuizados; no INSS, vai para INSS.')),
         h('div', { class: 'px3-topo-bts' }, q && aba === 'peticao' ? h('button', { type: 'button', class: 'link', onclick: () => ir({ q: '' }) }, 'limpar a busca "' + q + '"') : null, aba === 'inss' ? botao('＋ Pedido no INSS', async () => { const clis = await api('clientes.listar', {}).catch(() => []); dialogoNovoInss((Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome })), ri.beneficios || [], rr => { location.hash = '#/inss/' + rr.id; }); }, 'sec') : null,
           h('a', { class: 'btn', href: '#/processo/novo' }, '+ Novo processo'))),
-      abas, corpo));
+      h('div', { class: 'px3-cima' }, abas, relatorio), corpo));
   }
 
   async function telaProcessos(params) {
@@ -4593,7 +4631,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.58.3';
+  const VERSAO_PAINEL = '8.58.4';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5718,8 +5756,7 @@
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao || document.getElementById('assist-bt')) return;
     const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'IA jurídica e assistente do escritório', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '⚡'), ' IA Jurídica');
     const fb = document.getElementById('busca-topo'); if (fb && fb.nextSibling) barra.insertBefore(bt, fb.nextSibling); else barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
-    // 8.58.3: puxador ⚡ na borda direita (abre a IA ao lado, em qualquer tela)
-    if (!document.getElementById('ia-puxar')) document.body.append(h('button', { type: 'button', id: 'ia-puxar', class: 'ia-puxar', title: 'IA Jurídica (abre ao lado)', 'aria-label': 'Abrir a IA Jurídica ao lado', onclick: () => alternarGavetaIA() }, h('span', { 'aria-hidden': 'true' }, '⚡'), h('b', {}, 'IA')));
+
   }
   /* 8.58.1 IA (pedido da usuária: "design muito bonito; sem perguntas prontas; a pessoa pergunta e a IA tira a dúvida; bem inteligente,
      não superficial"). Página inteira #/ia: conversas à esquerda (guardadas só nesta aba do navegador), conversa no centro, caixa grande
@@ -5753,7 +5790,7 @@
     }
     return caixa;
   }
-  function abrirAssistente() { alternarGavetaIA(); }
+  function abrirAssistente() { location.hash = '#/ia'; } // 8.58.4 (pedido da usuária): o botão leva à aba da IA Jurídica, sem tela à direita
   const IA_CHAVE = () => 'ia_conversas_' + (sessao && sessao.usuario ? sessao.usuario.usuario : '');
   function iaLer() { try { return JSON.parse(sessionStorage.getItem(IA_CHAVE()) || '[]'); } catch (e) { return []; } }
   function iaGuardar(l) { try { sessionStorage.setItem(IA_CHAVE(), JSON.stringify(l.slice(0, 30))); } catch (e) { /* cheio */ } }

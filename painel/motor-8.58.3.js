@@ -131,7 +131,7 @@ var ESQUEMA = {
     'indicado_por', 'indicacao_pct', 'indicacao_base', 'indicacao_em', 'ctps', 'pis', 'cnh', 'nome_pai', 'nome_mae', 'naturalidade', 'banco', 'agencia', 'conta', 'pix', 'falecido', 'obito_em'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em', 'docs_ok', 'docs_ok_em', 'docs_ok_por'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
     'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em', 'tratada_em', 'tratada_por', 'tratamento'], // 8.55: caixa de entrada (tratar/descartar) // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
@@ -2630,15 +2630,17 @@ function esperandoMuito_(hoje, clis) {
   });
   var tarefasIni = {};
   tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) tarefasIni[m[1]] = t; });
+  var semDocs = [];
   tabela_('Processos').linhas.forEach(function (p) {
     if (p.numero || p.status === 'arquivado' || p.fase !== 'contratado') return;
+    if (p.docs_ok !== 'sim' && !p.inicial_feita_em) { var cd = clis[p.cliente_id] || {}; semDocs.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: cd.nome || p.cliente_nome || '', telefone: cd.telefone || '', area: p.area || '', dias: dias(p.criado_em), desde: String(p.criado_em || '').slice(0, 10), marcado: p.docs_ok === 'nao', responsavel: p.responsavel || '' }); }
     var n = dias(p.criado_em); if (n < ESPERA_INICIAL_DIAS) return;
     var c = clis[p.cliente_id] || {}, t = tarefasIni[p.id];
     iniciais.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: c.nome || p.cliente_nome || '', area: p.area || '', dias: n, desde: String(p.criado_em).slice(0, 10),
       responsavel: p.responsavel || (t && t.responsavel) || '', tarefa_id: t ? t.id : '' });
   });
   var ord = function (a, b) { return b.dias - a.dias; };
-  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
+  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), semDocs: semDocs.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */

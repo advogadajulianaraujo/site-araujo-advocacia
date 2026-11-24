@@ -48,3 +48,18 @@ assert(out6.texto.includes(pc.numero), 'pergunta pelo cliente já mostra o núme
 const prim = cc.nome.split(' ')[0];
 const ent9 = C.entidadesIA_('como está o processo do ' + prim + '?');
 assert(ent9.mapa['[CLIENTE1]'] && ent9.mapa['[CLIENTE1]'].ids.length >= 1, 'só o primeiro nome (com maiúscula) também encontra o cliente');
+// 8.58.4: documentos da petição (sim/não) aparecem no Início; CRM mostra o processo do cliente; IA consulta o funil
+const pd = C.salvarProcesso_({ processo: { cliente_id: cc.id, area: 'Cível', tipo_acao: 'Indenização', fase: 'contratado' } }, admin);
+const pdid = pd.id || (pd.processo && pd.processo.id);
+let esp = C.esperandoMuito_(C.hojeSP_(), Object.fromEntries(C.tabela_('Clientes').linhas.map(c => [c.id, c])));
+assert(esp.semDocs.some(x => x.processo_id === pdid), 'petição sem documentos conferidos aparece no Início');
+C.processoDocs_({ id: pdid, ok: true }, admin);
+assert(C.tabela_('Processos').linhas.find(p => p.id === pdid).docs_ok === 'sim', 'botão "documentos completos" grava sim');
+esp = C.esperandoMuito_(C.hojeSP_(), Object.fromEntries(C.tabela_('Clientes').linhas.map(c => [c.id, c])));
+assert(!esp.semDocs.some(x => x.processo_id === pdid), 'com os documentos completos sai do Início');
+C.inserirLinha_(C.tabela_('Leads'), { id: 'LX858', nome: cc.nome, cliente_id: cc.id, etapa: 'contato', criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString() });
+const cr = C.crmListar_({}, admin);
+const lx = cr.leads.find(l => l.id === 'LX858');
+assert(lx && lx.processo && lx.processo.id, 'cartão do CRM traz o processo do cliente');
+const oc = C.executarIA_({ ferramenta: 'crm' }, {}, admin, C.hojeSP_());
+assert(/funil/.test(oc.texto) && oc.colunas[1] === 'Etapa', 'IA responde sobre o funil do CRM');

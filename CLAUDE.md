@@ -2129,3 +2129,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   IA integrada: "como está o processo de Fulano" → `executarIA_` processo lista os dados e a IA explica (`SISTEMA_ANDAMENTO_`: resumo, o que aconteceu,
   o que vem agora, o que fazer, como explicar ao cliente) com `casoParaIA_(pa, true)` (andamentos, intimações, prazos; anonimizado); "qual o número do
   processo de Fulano" → cliente com os números no texto; só o primeiro nome com maiúscula também acha o cliente (até 6 → pergunta qual). Pedido de tarefa continua virando tarefa. Teste `.github/motor/teste/etapa858.js`.
+- 8.58.4 (pedidos da usuária, 24/11): o botão "⚡ IA Jurídica" do topo LEVA À PÁGINA #/ia (sem gaveta à direita; o puxador ⚡ saiu).
+  Processos: 3 quadrados MÉDIOS (Petição inicial, Ajuizados, INSS) e, ao lado, "Relatório dos processos" por área (ajuizados + petição/protocolo, barras).
+  Petição inicial → 1 Petição: "Inicial não feita" → "Inicial feita" → "📄 Mandar ao cliente" (grava inicial_enviada_em) e SÓ ENTÃO vai para
+  2 Protocolo ("✓ cliente avisado em dd/mm" + "Protocolar"); cada linha mostra "fechou em dd/mm · há N dias" e "📎 Documentos: ✓ completos / ✗ faltam"
+  (colunas novas Processos.docs_ok/docs_ok_em/docs_ok_por, rota `processos.docs`; ALTER já rodado no Supabase). Início › "⏳ Esperando" ganhou
+  "📎 Faltam documentos" (`esperandoMuito_` → `semDocs`, com "Pedir no WhatsApp").
+  WhatsApp: o modo "automático" confundia o aviso do Chrome ("Abrir WhatsApp?") com o aplicativo aberto e passava a mandar para whatsapp:// em
+  computadores SEM o aplicativo (por isso "num computador funciona e nos outros não"). Agora é SEMPRE o WhatsApp Web na aba fixa `whatsapp_painel`
+  (window.open no clique); "aplicativo" só se escolhido em Configurações; `whats_aprendido` apagado ao abrir. Se o WhatsApp Web também estiver
+  aberto numa aba aberta à mão, aparece "Usar aqui" uma vez. A API oficial (Chatbot) fica para depois.
+  CRM integrado: cartão do funil mostra o processo do cliente ("📁 etapa", link) e "✓ cliente" abre a ficha (`crmListar_` → `processo`);
+  a IA responde sobre o funil (ferramenta `crm`, só administração).

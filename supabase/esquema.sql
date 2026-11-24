@@ -187,6 +187,9 @@ create table if not exists processos (
   "inicial_feita_em" text,
   "inicial_feita_por" text,
   "inicial_enviada_em" text,
+  "docs_ok" text,
+  "docs_ok_em" text,
+  "docs_ok_por" text,
   primary key (escritorio_id, "id")
 );
 alter table processos add column if not exists "id" text;
@@ -220,6 +223,9 @@ alter table processos add column if not exists "fluxo_fase" text;
 alter table processos add column if not exists "inicial_feita_em" text;
 alter table processos add column if not exists "inicial_feita_por" text;
 alter table processos add column if not exists "inicial_enviada_em" text;
+alter table processos add column if not exists "docs_ok" text;
+alter table processos add column if not exists "docs_ok_em" text;
+alter table processos add column if not exists "docs_ok_por" text;
 alter table processos enable row level security;
 drop policy if exists "processos: só o próprio escritório" on processos;
 create policy "processos: só o próprio escritório" on processos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);

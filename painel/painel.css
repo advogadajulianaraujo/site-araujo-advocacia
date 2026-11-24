@@ -3964,3 +3964,40 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 .ia-gaveta .ia.vazia .ia-compor{box-shadow:0 10px 26px rgba(0,0,0,.3)}
 .px3{grid-template-columns:minmax(0,1fr)}
 .px3 > *{min-width:0}
+
+/* ===== 8.58.4 Processos: 3 quadrados médios + relatório por área; documentos na petição ===== */
+.px3-cima{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;align-items:stretch}
+@media (max-width:1100px){.px3-cima{grid-template-columns:1fr}}
+.px3-cima .px3-abas{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:none;border:0;padding:0;box-shadow:none}
+@media (max-width:640px){.px3-cima .px3-abas{grid-template-columns:1fr}}
+.px3-cima .px3-aba{flex-direction:column;align-items:flex-start;gap:6px;background:#fff;border:1px solid #E6DFD3;border-radius:16px;padding:14px;min-height:118px;position:relative}
+.px3-cima .px3-aba:hover{background:#FBF9F5;border-color:#D8CDBB}
+.px3-cima .px3-aba.on{background:#FBF6EC;border-color:#C9A46A;box-shadow:0 0 0 3px #F4EAD8}
+.px3-cima .px3-aba-n{position:absolute;right:12px;top:12px;font-size:20px;background:none;padding:0;min-width:0;color:#1F1C18}
+.px3-cima .px3-aba.on .px3-aba-n{background:none;color:#9C7A43}
+.px3-cima .px3-aba-tx b{font-size:14.5px}
+.px3-cima .px3-aba-tx small{font-size:11.5px}
+.px3-rel{background:#fff;border:1px solid #E6DFD3;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.px3-rel > header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.px3-rel > header b{font-family:Jost,system-ui,sans-serif;font-size:14px;font-weight:600}
+.px3-rel > header small{font-size:11.5px;color:#8A8276}
+.px3-rel-l{display:grid;gap:5px;max-height:160px;overflow:auto}
+.px3-rel-r{display:grid;grid-template-columns:118px minmax(0,1fr) 30px 70px;gap:8px;align-items:center;font-size:12px}
+.px3-rel-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3A332C}
+.px3-rel-b{display:flex;height:8px;background:#F3EFE8;border-radius:5px;overflow:hidden}
+.px3-rel-b i,.px3-rel-leg i{display:block;height:100%}
+.px3-rel-b i.aj,.px3-rel-leg i.aj{background:#9C7A43}
+.px3-rel-b i.pet,.px3-rel-leg i.pet{background:#E3C68C}
+.px3-rel-r b{text-align:right;font-weight:600}
+.px3-rel-r small{color:#8A8276;font-size:11px;white-space:nowrap}
+.px3-rel-leg{display:flex;gap:14px;font-size:11px;color:#8A8276}
+.px3-rel-leg span{display:inline-flex;align-items:center;gap:5px}
+.px3-rel-leg i{width:10px;height:8px;border-radius:3px}
+.px3-docs{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#6B645B}
+.px3-docs button{font:inherit;font-size:11px;border:1px solid #E1DAD0;background:#fff;border-radius:999px;padding:1px 8px;cursor:pointer;color:#6B645B}
+.px3-docs button.on:first-of-type{background:#E3F1E8;border-color:#BFDDC9;color:#2F7D4F;font-weight:600}
+.px3-docs button.on:last-of-type{background:#F8E3E1;border-color:#E7C2BE;color:#B23A33;font-weight:600}
+.px3-l-t > .px3-l-i + .px3-l-i{margin-top:4px}
+.ini-esperando .ini-duas{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.crm-proc{background:#F4EAD8;color:#7A5C2E;text-decoration:none}
+.px3-cima{align-items:start}.px3-cima .px3-aba{min-height:104px}
