@@ -2146,3 +2146,15 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Petição inicial = Documentos → Fazer a inicial → Avisar o cliente → Protocolar; INSS = Fazer o pedido (petição previdenciária sem número +
   pedidos assinado/documentos) → etapas do INSS; Ajuizados = etapas da Justiça (arrastar muda a etapa). TODO o previdenciário fica no INSS
   (petição sem número de área previdenciária sai da aba Petição); indeferido/negado no recurso vai à Justiça (Ajuizados).
+- 8.58.6 (pedidos da usuária, 24/11): Processos SEM os botões de etapa: no lugar, 4 números do que pede atenção em cada aba (`px3-nums`/`px3-inf`;
+  Petição: fecharam em 7 dias, paradas há 10+ dias, esperando documentos, prontas p/ protocolar; Ajuizados: atos em 7 dias, com sentença, em execução,
+  novos em 30 dias; INSS: pedidos a fazer, exigências, perícias, indeferidos). Petição inicial: os cartões se ARRASTAM entre Documentos / Fazer a
+  inicial / Avisar o cliente / Protocolar (rota `processos.inicialEtapa`, `inicialEtapa_`: acerta docs_ok, inicial_feita_em, inicial_enviada_em e a
+  tarefa da inicial, para a frente ou para trás); documentos completos = só "✓ Documentos OK"; em Documentos o botão "Documentos OK" passa para Fazer
+  a inicial. Previdenciário também pelo tipo de ação quando falta a área.
+  Intimações: só as abas Recebidas (principal) · Em execução e aprovação · Andamentos importantes ("Prazos do dia" e "Conferir no tribunal" saíram;
+  links antigos ainda abrem). Recebidas em 4 partes (`intimacoes.caixa` status hoje | proximos | aguardando_ok | descartadas_todas; links antigos st=
+  nao/tratadas/nao_feitas são traduzidos): Resolver hoje (prazo do painel até hoje ou sem prazo) · Próximos dias (de amanhã em diante, por dia) ·
+  Resolvidas (esperando o OK: `marcarTratada_` só dá o OK sozinho para a administração e no descarte; a administração dá "✓ OK"/"OK em todas" com
+  `trabalho.ok` e a intimação sai) · Descartadas (o dia passou sem resolver = nao_feita, ou descartada à mão). O filtro de tribunal agora vale nas
+  Recebidas (`filtroSisOk` com `tribunalPeloNumero`: sem tribunal gravado, sai do nº CNJ .5.12 = TRT12, .8.24 = TJSC, .4.04 = TRF4).
