@@ -792,7 +792,6 @@
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
     ['inss', 'INSS', null, 'inss', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
-    ['horas', 'Horas', null, 'horas', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -802,11 +801,11 @@
   ];
   // sub-abas da barra do topo: [rota, nome, permissão]
   const SUBABAS = {
-    modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['transcricao', 'Gravar e resumir conversa'], ['juridico', 'Jurisprudência e peças (IA)']],
+    modelos: [['modelos', 'Gerar documentos'], ['calculadoras', 'Calculadoras'], ['horas', 'Horas trabalhadas'], ['transcricao', 'Gravar e resumir conversa'], ['juridico', 'Jurisprudência e peças (IA)']],
     crm: [['crm', 'Funil', 'usuarios'], ['conversas', 'Chatbot do WhatsApp', 'usuarios'], ['marketing', 'Marketing', 'usuarios']],
     relatorios: [['relatorios', 'Resumo do mês', 'usuarios'], ['relatorios?ver=equipe', 'Equipe', 'usuarios']]
   };
-  const SECAO_DA_TELA = { juridico: 'modelos', compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
+  const SECAO_DA_TELA = { juridico: 'modelos', horas: 'modelos', compromisso: 'agenda', calculadoras: 'modelos', transcricao: 'modelos', conversas: 'crm', marketing: 'crm',
     processo: 'processos', cliente: 'clientes', organizar: 'clientes', honorario: 'financeiro', prazo: 'prazos' };
   ICONES.chat = 'M3.5 5h12v8.5h-7L3.5 17zM18 9.5h2.5V20L17.5 17.5H11v-2';
   ICONES.predio = 'M5 20.5V4.5h9v16M14 9.5h5v11M8 8h3M8 11.5h3M8 15h3M3.5 20.5h17';
@@ -4323,7 +4322,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.55.0';
+  const VERSAO_PAINEL = '8.56.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -4947,7 +4946,7 @@
      ou DESCARTAR. Nomes do escritório: "Para resolver / Resolvidas / Descartadas" (nunca "não tratadas", a pedido dela).
      ================================================================================================================ */
   const ST_CAIXA = { nao: 'Para resolver', nao_hoje: 'Chegaram hoje', tratadas: 'Resolvidas', tratadas_hoje: 'Resolvidas hoje', descartadas: 'Descartadas',
-    descartadas_hoje: 'Descartadas hoje', todas: 'Todas' };
+    descartadas_hoje: 'Descartadas hoje', nao_feitas: 'Não feitas (baixadas)', todas: 'Todas' };
   const ROT_TRAT = { prazo: 'prazo lançado', audiencia: 'audiência marcada', tarefa: 'tarefa criada', evento: 'evento na agenda', historico: 'histórico anotado',
     concluida: 'concluída', ia: 'sugestão confirmada' };
   const guardarFilaCaixa = ids => { try { sessionStorage.setItem('caixa_fila', JSON.stringify(ids.slice(0, 400))); } catch (e) { /* ok */ } };
@@ -4989,9 +4988,9 @@
         s.prazo && !s.prazo.ato ? 'Prazo ' + (s.prazo.fatal ? 'até ' + dataBR(s.prazo.fatal).slice(0, 5) : 'a definir') : (s.rotulo || 'Ver o ato'),
         s.n_tarefas ? ` + ${s.n_tarefas} tarefa${s.n_tarefas > 1 ? 's' : ''}` : '',
         h('span', { class: 'cx-conf ' + confCls(s.confianca || 0), title: 'Confiança da sugestão' }, (s.confianca || 0) + '%'));
-    const feito = aberta ? null : h('div', { class: 'cx-feito' + (x.status === 'descartada' ? ' desc' : '') },
-      x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
-      x.tratada_por ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
+    const feito = aberta ? null : h('div', { class: 'cx-feito' + (x.status === 'descartada' || x.status === 'nao_feita' ? ' desc' : '') },
+      x.status === 'nao_feita' ? 'Não feita · ' + String(x.tratada_por || '').replace(/^robô \(não feita: |\)$/g, '') : x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
+      x.tratada_por && x.status !== 'nao_feita' ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
     return h('div', { class: 'cx-item' + (aberta ? '' : ' feita'), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
       h('div', { class: 'cx-quando' }, h('b', {}, rec ? dataBR(rec.slice(0, 10)).slice(0, 5) : '—'), h('span', {}, rec.length > 15 ? rec.slice(11, 16) : ''), h('span', { class: 'cx-fonte' }, x.fonte || '')),
       h('div', { class: 'cx-oque' },
@@ -5028,7 +5027,7 @@
     const filtros = h('div', { class: 'cx-filtros' },
       h('select', { 'aria-label': 'Mostrar', onchange: e => ir({ st: e.target.value === 'nao' ? '' : e.target.value }) },
         Object.entries(ST_CAIXA).map(([k, v]) => h('option', { value: k, selected: k === st }, v))),
-      /^(tratadas|descartadas|todas)$/.test(st) ? h('select', { 'aria-label': 'Período', onchange: e => ir({ dias: e.target.value === '7' ? '' : e.target.value }) },
+      /^(tratadas|descartadas|nao_feitas|todas)$/.test(st) ? h('select', { 'aria-label': 'Período', onchange: e => ir({ dias: e.target.value === '7' ? '' : e.target.value }) },
         [7, 15, 30, 90].map(n => h('option', { value: n, selected: n === dias }, 'últimos ' + n + ' dias'))) : null,
       h('label', { class: 'cx-check' }, h('input', { type: 'checkbox', checked: minhas, onchange: e => ir({ minhas: e.target.checked ? '1' : '' }) }), ' Só as minhas'));
     const lista = r.lista || [];

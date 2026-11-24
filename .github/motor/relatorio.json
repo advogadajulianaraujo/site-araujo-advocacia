@@ -1,5 +1,5 @@
 {
- "versao": "8.55.0",
+ "versao": "8.56.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -434,7 +434,7 @@
     "CalendarApp",
     "Utilities"
    ],
-   "funcoes": 54
+   "funcoes": 55
   },
   "fin.painel": {
    "tabelas": [
@@ -483,7 +483,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 54
+   "funcoes": 75
   },
   "intimacoes.obter": {
    "tabelas": [
@@ -513,7 +513,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 19
+   "funcoes": 20
   },
   "inss.listar": {
    "tabelas": [
@@ -574,5 +574,5 @@
    "funcoes": 13
   }
  },
- "funcoes": 202
+ "funcoes": 217
 }

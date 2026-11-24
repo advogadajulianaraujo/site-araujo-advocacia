@@ -39,14 +39,14 @@ async function avisosPendentes(base: string, usuario: string, senha: string) {
   const t0 = Date.now();
   let loc = base + 'ws/controlador_ws.php?srv=intercomunicacao2.2';
   try {
-    const w = await (await fetch(base + 'wsdl.php?srv=intercomunicacao2.2', { signal: AbortSignal.timeout(15000) })).text();
+    const w = await (await fetch(base + 'wsdl.php?srv=intercomunicacao2.2', { signal: AbortSignal.timeout(10000) })).text();
     loc = (w.match(/soap:address location="([^"]+)"/) || [])[1] || loc;
   } catch { /* usa o endereço padrão */ }
   const corpo = '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' +
     'xmlns:ser="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/" xmlns:tip="http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2">' +
     '<soapenv:Header/><soapenv:Body><ser:consultarAvisosPendentes><tip:idConsultante>' + esc(usuario) + '</tip:idConsultante><tip:senhaConsultante>' +
     esc(senha) + '</tip:senhaConsultante></ser:consultarAvisosPendentes></soapenv:Body></soapenv:Envelope>';
-  const r = await fetch(loc, { method: 'POST', body: corpo, headers: { 'content-type': 'text/xml; charset=utf-8', SOAPAction: 'consultarAvisosPendentes' }, signal: AbortSignal.timeout(45000) });
+  const r = await fetch(loc, { method: 'POST', body: corpo, headers: { 'content-type': 'text/xml; charset=utf-8', SOAPAction: 'consultarAvisosPendentes' }, signal: AbortSignal.timeout(35000) });
   const x = await r.text();
   const sucesso = /<[\w:]*sucesso>\s*true/i.test(x);
   const mensagem = desc((/<[\w:]*mensagem>([\s\S]*?)<\/[\w:]*mensagem>/.exec(x) || [])[1] || '').replace(/^-+>/, '').trim();
@@ -67,11 +67,11 @@ async function avisosPendentes(base: string, usuario: string, senha: string) {
 
 async function lerTribunal(trib: string, cred: { usuario: string; senha: string }) {
   const t = TRIBUNAIS[trib]; const partes: any[] = [];
-  for (const [nome, base] of Object.entries(t.bases)) {
+  await Promise.all(Object.entries(t.bases).map(async ([nome, base]) => {
     try { const r = await avisosPendentes(base, cred.usuario, cred.senha); partes.push({ nome, ...r }); }
     catch (e) { partes.push({ nome, ok: false, mensagem: /timed out|Timeout/i.test(String(e)) ? 'o tribunal não respondeu a tempo' : 'não consegui falar com o tribunal: ' + String((e as Error).message || e).slice(0, 120), avisos: [] }); }
-  }
-  return partes;
+  }));
+  return partes.sort((a, b) => Object.keys(t.bases).indexOf(a.nome) - Object.keys(t.bases).indexOf(b.nome));
 }
 
 Deno.serve(async (req: Request) => {
@@ -80,6 +80,25 @@ Deno.serve(async (req: Request) => {
   try { b = await req.json(); } catch { /* corpo vazio */ }
   try {
     if (b.acao === 'ping') return resp({ ok: true });
+    // Robô do painel (Apps Script): prova que tem a chave secreta do banco usando-a para ler o cofre; devolve as pendentes de todos os logins.
+    if (b.acao === 'avisos') {
+      const k = String(req.headers.get('x-painel-chave') || ''), escId = String(b.escritorio || '');
+      if (!k || !/^[0-9a-f-]{36}$/.test(escId)) return resp({ ok: false, erro: 'Pedido inválido.' }, 400);
+      const h: Record<string, string> = { apikey: k, 'Content-Type': 'application/json' }; if (k.startsWith('eyJ')) h.Authorization = 'Bearer ' + k;
+      const rr = await fetch(URL_BANCO + '/rest/v1/rpc/painel_trib_info', { method: 'POST', headers: h, body: JSON.stringify({ p_escritorio: escId }) });
+      if (!rr.ok) return resp({ ok: false, erro: 'Chave do banco recusada.' }, 403);
+      const cr: Record<string, any> = (await rr.json()) || {};
+      const ids = Object.keys(cr).filter(t => TRIBUNAIS[t] && cr[t] && cr[t].usuario);
+      if (!ids.length) return resp({ ok: true, ligado: false, avisos: [] });
+      const st = await estado(escId), todos: any[] = [], partes: any[] = [];
+      for (const t of ids) {
+        const ps = await lerTribunal(t, cr[t]);
+        ps.forEach(p => { partes.push({ nome: p.nome, ok: p.ok, n: (p.avisos || []).length, mensagem: p.ok ? '' : p.mensagem }); (p.avisos || []).forEach((a: any) => todos.push({ ...a, sistema: p.nome })); });
+        st[t] = { em: new Date().toISOString(), por: 'robô', ok: ps.some(p => p.ok), n: ps.reduce((a, p) => a + (p.avisos || []).length, 0), partes: ps.map(p => ({ nome: p.nome, ok: p.ok, n: (p.avisos || []).length, mensagem: p.ok ? '' : p.mensagem })) };
+      }
+      await gravarEstado(escId, st);
+      return resp({ ok: true, ligado: true, avisos: todos, partes });
+    }
     // Só a administração mexe nos logins dos tribunais.
     const quem = await post('/rest/v1/rpc/painel_quem', { p_token: String(b.token || '') });
     if (!quem || !quem.usuario || quem.usuario.perfil !== 'administrador') return resp({ ok: false, erro: 'Só a administração pode ver e mudar os logins dos tribunais.' }, 403);
