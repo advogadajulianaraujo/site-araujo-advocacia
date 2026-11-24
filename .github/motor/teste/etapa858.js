@@ -32,3 +32,6 @@ assert(!out2.juridico, 'no modo jurídico, pedido de tarefa continua virando tar
 
 const out3 = C.assistenteIA_({ pergunta: 'e se ele era MEI?', modo: 'juridico', conversa: [{ p: 'requisitos do vínculo', r: 'Em resumo: são cinco requisitos.' }] }, admin);
 assert(out3.juridico && /CONVERSA ATÉ AGORA/.test(pedido.txt) && /cinco requisitos/.test(pedido.txt), 'a IA recebe a conversa anterior (memória)');
+
+const out4 = C.assistenteIA_({ pergunta: 'o que é litispendência?', modo: 'auto' }, admin);
+assert(out4.juridico, 'caixa única (auto): pergunta de Direito vai para a IA jurídica');

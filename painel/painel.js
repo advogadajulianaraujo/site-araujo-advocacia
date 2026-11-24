@@ -780,7 +780,8 @@
     transcricao: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3ZM6 11.5a6 6 0 0 0 12 0M12 17.5v3M9 20.5h6',
     pecas: 'M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8zM18 15l.9 2.1 2.1.9-2.1.9L18 21l-.9-2.1-2.1-.9 2.1-.9z',
     prompts: 'M4 5.5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5.5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z',
-    recibos: 'M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 11.5h6M9 15h3'
+    recibos: 'M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 11.5h6M9 15h3',
+    ia: 'M13.5 2.5 5 13.5h6.5L10.5 21.5 19 10.5h-6.5z'
   });
   // 8.24 (pedido da usuária, layout "C"): menu lateral CLARO com poucos itens; o resto virou sub-aba no topo (SUBABAS)
   // 8.36 (pedido da usuária: "menu menor, mais abas na esquerda, como o ADVBOX"; "troque o nome de prazos para intimações"):
@@ -791,7 +792,7 @@
     ['processos', 'Processos', null, null, 'Escritório'],
     ['prazos', 'Intimações', null, 'prazos', 'Escritório'],
     ['tarefas', 'Tarefas', null, null, 'Escritório'],
-    ['ia', 'IA Jurídica', null, 'pecas', 'Escritório'],
+    ['ia', 'IA Jurídica', null, 'ia', 'Escritório'],
     ['agenda', 'Agenda', null, null, 'Agenda'],
     ['audiencias', 'Audiências', null, null, 'Agenda'],
     ['financeiro', 'Cobranças', 'financeiro', 'cobranca', 'Gestão'],
@@ -3318,36 +3319,35 @@
         etapas = PX3_ETAPAS_INSS;
       }
       const cont = {}; base.forEach(x => { const k = chave(x); cont[k] = (cont[k] || 0) + 1; });
-      const grade = h('div', { class: 'px3-grade' }, etapas.map(([k, nome, desc, cor], i) => {
-        const b = h('button', { type: 'button', class: 'px3-quad' + (etapa === k ? ' on' : '') + (cont[k] ? '' : ' zero'), 'aria-pressed': String(etapa === k), onclick: () => ir({ etapa: etapa === k ? '' : k }) },
-          h('span', { class: 'px3-quad-n num' }, String(cont[k] || 0)), h('b', {}, nome), h('small', {}, desc), h('span', { class: 'px3-quad-i num' }, String(i + 1).padStart(2, '0')));
-        b.style.setProperty('--cor', cor); return b;
-      }));
       const lista = base.filter(x => !etapa || chave(x) === etapa).filter(x => ehJ || etapa || !['deferido', 'encerrados'].includes(chave(x)))
         .sort((a, b) => ehJ ? ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1) : ((a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1));
-      const POR = 30, pags = Math.max(1, Math.ceil(lista.length / POR)), pag = Math.min(pg, pags);
-      const corDe = k => (etapas.find(e => e[0] === k) || [])[3] || '#9aa0aa', nomeDe = k => (etapas.find(e => e[0] === k) || [])[1] || '';
-      const itens = lista.slice((pag - 1) * POR, pag * POR).map(x => {
-        const k = chave(x), tag = h('span', { class: 'px3-et' }, nomeDe(k)); tag.style.setProperty('--cor', corDe(k));
-        if (ehJ) { const futuro = x.proximo_ato_data && x.proximo_ato_data >= hojeISO();
-          return item({ nome: x.cliente_nome, sub: [x.numero, x.tribunal, x.area].filter(Boolean).join(' · '), quem: x.responsavel, abrir: () => { location.hash = '#/processo/' + x.id; },
-            info: [tag, futuro ? h('span', { class: 'px3-prox' }, atoComData(x.proximo_ato || 'Próximo ato', x.proximo_ato_data), ' ', etiquetaDias(x.proximo_ato_data)) : null],
-            bts: [h('a', { class: 'btn mini sec', href: '#/processo/' + x.id }, 'Abrir')] }); }
-        return item({ nome: x.cliente, sub: [x.beneficio || 'benefício a definir', x.protocolo ? 'protocolo ' + x.protocolo : ''].filter(Boolean).join(' · '), quem: x.responsavel_nome, alerta: x.atrasado,
-          abrir: () => { location.hash = '#/inss/' + x.id; },
-          info: [tag, x.proxima_data ? chip(x.proxima_tipo + ' ' + dataBR(x.proxima_data).slice(0, 5), x.atrasado ? 'verm' : 'ambar') : chip(x.dias_etapa ? x.dias_etapa + ' dias nesta etapa' : 'hoje', 'cinza')],
-          bts: [h('a', { class: 'btn mini sec', href: '#/inss/' + x.id }, 'Abrir o pedido')] });
-      });
+      const POR = 24, pags = Math.max(1, Math.ceil(lista.length / POR)), pag = Math.min(pg, pags);
+      const corDe = k => (etapas.find(e => e[0] === k) || [])[3] || '#9aa0aa', nomeDe = k => (etapas.find(e => e[0] === k) || [])[1] || '', descDe = k => (etapas.find(e => e[0] === k) || [])[2] || '';
+      /* 8.58.2 (pedido da usuária: "quadros de cada pessoa, de cada processo, explicando, como tinha no sistema anterior") */
+      const cartao = x => {
+        const k = chave(x), futuro = ehJ ? (x.proximo_ato_data && x.proximo_ato_data >= hojeISO()) : !!x.proxima_data;
+        const ir2 = () => { location.hash = ehJ ? '#/processo/' + x.id : '#/inss/' + x.id; };
+        const nome = ehJ ? x.cliente_nome : x.cliente, quem = ehJ ? x.responsavel : x.responsavel_nome;
+        const et = h('div', { class: 'px3-pc-et' }, h('i'), h('div', {}, h('b', {}, nomeDe(k)), h('small', {}, ehJ ? (['acordo', 'homologacao'].includes(x.fase) ? FASES[x.fase] : descDe(k)) : (x.etapa_nome || descDe(k)))));
+        et.querySelector('i').style.setProperty('background', corDe(k));
+        const prox = ehJ ? (futuro ? h('div', { class: 'px3-pc-prox' }, h('span', {}, atoComData(x.proximo_ato || 'Próximo ato', x.proximo_ato_data)), etiquetaDias(x.proximo_ato_data)) : h('div', { class: 'px3-pc-prox vazio' }, 'Sem audiência ou ato marcado'))
+          : (x.proxima_data ? h('div', { class: 'px3-pc-prox' + (x.atrasado ? ' atraso' : '') }, h('span', {}, x.proxima_tipo.replace(/^./, c => c.toUpperCase()) + ' ' + dataBR(x.proxima_data)), etiquetaDias(x.proxima_data)) : h('div', { class: 'px3-pc-prox vazio' }, x.dias_etapa ? x.dias_etapa + ' dias nesta etapa' : 'Mudou de etapa hoje'));
+        const c = h('article', { class: 'px3-pc', tabindex: 0, onclick: ir2, onkeydown: ev => { if (ev.key === 'Enter') ir2(); } },
+          h('header', {}, h('span', { class: 'px3-ini' }, iniciaisPx(nome)), h('div', { class: 'px3-pc-t' }, h('b', {}, nome || 'Cliente a identificar'),
+            h('small', { class: 'num' }, ehJ ? (x.numero || '(sem número)') : (x.protocolo ? 'Protocolo ' + x.protocolo : 'Protocolo a informar'))), h('span', { class: 'px3-av', title: quem ? 'Quem cuida: ' + quem : 'Sem responsável' }, quem ? iniciaisPx(quem) : '—')),
+          h('div', { class: 'px3-pc-tags' }, (ehJ ? [x.area, x.tribunal] : [x.beneficio ? x.beneficio.replace(/ \(.*\)$/, '') : 'benefício a definir']).filter(Boolean).map(t => h('span', {}, t))),
+          et, prox, h('footer', {}, h('span', {}, ehJ ? 'Abrir o processo' : 'Abrir o pedido'), h('span', { 'aria-hidden': 'true' }, '→')));
+        c.style.setProperty('--cor', corDe(k)); return c;
+      };
       const areas = ehJ ? [...new Set(ajuiz.map(p => p.area || 'Sem área'))].sort() : [];
-      const filtros = ehJ ? h('div', { class: 'px3-filtros' },
-        h('select', { 'aria-label': 'Área', onchange: e => ir({ area: e.target.value }) }, h('option', { value: '' }, 'Todas as áreas'), areas.map(a => h('option', { value: a, selected: a === area }, a))),
-        h('select', { 'aria-label': 'Situação', onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value }) }, [['ativo', 'Em andamento'], ['arquivado', 'Arquivados'], ['todos', 'Todos']].map(([v, t]) => h('option', { value: v, selected: sit === v }, t))),
-        h('a', { class: 'link', href: '#/processos?visao=quadro' }, 'Ver em quadro')) : null;
-      const titulo = etapa ? nomeDe(etapa) : ehJ ? 'Todos em andamento' : 'Em andamento no INSS';
+      const filtros = h('div', { class: 'px3-filtros' },
+        h('select', { 'aria-label': 'Etapa', onchange: e => ir({ etapa: e.target.value }) }, h('option', { value: '' }, ehJ ? 'Todas as etapas (' + base.length + ')' : 'Em andamento'),
+          etapas.filter(([k]) => cont[k]).map(([k, n]) => h('option', { value: k, selected: k === etapa }, n + ' (' + cont[k] + ')'))),
+        ehJ ? h('select', { 'aria-label': 'Área', onchange: e => ir({ area: e.target.value }) }, h('option', { value: '' }, 'Todas as áreas'), areas.map(a => h('option', { value: a, selected: a === area }, a))) : null,
+        ehJ ? h('select', { 'aria-label': 'Situação', onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value }) }, [['ativo', 'Em andamento'], ['arquivado', 'Arquivados'], ['todos', 'Todos']].map(([v, t]) => h('option', { value: v, selected: sit === v }, t))) : null);
       const pagin = pags > 1 ? h('div', { class: 'cx-paginas' }, Array.from({ length: pags }, (_, i) => h('button', { type: 'button', class: 'cx-pag' + (i + 1 === pag ? ' on' : ''), onclick: () => ir({ pg: String(i + 1) }) }, 'Página ' + (i + 1)))) : null;
-      corpo = [grade, h('section', { class: 'px3-lista' }, h('header', {}, h('h3', {}, titulo, h('span', { class: 'num' }, ' · ' + lista.length)), filtros,
-        etapa ? h('button', { type: 'button', class: 'link', onclick: () => ir({ etapa: '' }) }, 'ver todas as etapas') : null),
-        itens.length ? h('div', { class: 'px3-itens' }, itens) : h('p', { class: 'px3-vazio' }, ehJ ? 'Nenhum processo nesta etapa.' : 'Nenhum pedido nesta etapa. Os pedidos entram aqui quando a petição é protocolada no INSS.'), pagin)];
+      corpo = [h('div', { class: 'px3-barra' }, h('p', {}, h('b', { class: 'num' }, String(lista.length)), ehJ ? ' processo(s)' : ' pedido(s)', etapa ? ' em ' + nomeDe(etapa) : ''), filtros),
+        lista.length ? h('div', { class: 'px3-cards' }, lista.slice((pag - 1) * POR, pag * POR).map(cartao)) : h('p', { class: 'px3-vazio caixa-vazia' }, ehJ ? 'Nenhum processo com esse filtro.' : 'Nenhum pedido no INSS ainda. Os pedidos entram aqui quando a petição é protocolada no INSS.'), pagin];
     }
     const busca = h('input', { type: 'search', class: 'px3-busca', placeholder: aba === 'ajuizados' ? 'Buscar cliente, nº do processo, parte contrária…' : 'Buscar cliente', value: q, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) });
     mostrar(h('div', { class: 'px3' },
@@ -4586,7 +4586,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.58.1';
+  const VERSAO_PAINEL = '8.58.2';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5709,7 +5709,7 @@
      A conversa fica só nesta aba (sessionStorage `assistente_conversa`). Servidor: rota ia.assistente (assistenteIA_). */
   function montarAssistente() {
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao || document.getElementById('assist-bt')) return;
-    const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'IA jurídica e assistente do escritório', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '⚖'), ' IA Jurídica');
+    const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'IA jurídica e assistente do escritório', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '⚡'), ' IA Jurídica');
     barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
   }
   /* 8.58.1 IA (pedido da usuária: "design muito bonito; sem perguntas prontas; a pessoa pergunta e a IA tira a dúvida; bem inteligente,
@@ -5750,23 +5750,21 @@
   function iaGuardar(l) { try { sessionStorage.setItem(IA_CHAVE(), JSON.stringify(l.slice(0, 30))); } catch (e) { /* cheio */ } }
   async function telaIA(params) {
     let convs = iaLer(), atual = params.get('c') || '';
-    let modo = 'juridico'; try { modo = localStorage.getItem('assist_modo') || 'juridico'; } catch (e) { /* ok */ }
+    const modo = 'auto'; // 8.58.2: uma caixa só — a IA entende se é dúvida jurídica ou pergunta sobre os dados do escritório
     let conv = convs.find(c => c.id === atual) || null;
     const nome = primeiroNome(sessao.usuario.nome || sessao.usuario.usuario);
     const raiz = h('div', { class: 'ia' }), lado = h('aside', { class: 'ia-lado' }), centro = h('section', { class: 'ia-centro' });
     const fala = h('div', { class: 'ia-fala', role: 'log', 'aria-live': 'polite' });
     const campo = h('textarea', { id: 'ia-campo', rows: 2, 'aria-label': 'Sua pergunta' });
     const enviar = h('button', { type: 'button', class: 'ia-enviar', 'aria-label': 'Enviar', title: 'Enviar (Enter)' }, '↑');
-    const pilula = (k, rot) => h('button', { type: 'button', class: 'ia-pil', 'data-m': k, onclick: () => { modo = k; try { localStorage.setItem('assist_modo', k); } catch (e) { /* ok */ } marcarModo(); campo.focus(); } }, rot);
-    const pils = h('div', { class: 'ia-pils', role: 'group', 'aria-label': 'Modo' }, pilula('juridico', '⚖ Jurídico'), pilula('escritorio', '📋 Dados do escritório'));
-    const marcarModo = () => { pils.querySelectorAll('.ia-pil').forEach(b => b.classList.toggle('on', b.dataset.m === modo));
-      campo.placeholder = modo === 'juridico' ? 'Escreva a sua dúvida jurídica. Pode citar o cliente ou o nº do processo para aplicar ao caso.' : 'Pergunte sobre prazos, audiências, clientes, tarefas ou cobranças do escritório.'; };
+    const pils = h('span', { class: 'ia-tipo' }, '⚡ Direito, processos e dados do escritório');
+    const marcarModo = () => { campo.placeholder = 'Pergunte qualquer coisa: uma dúvida jurídica, como funciona um procedimento, ou algo do escritório (prazos, audiências, um cliente, um processo)…'; };
     const compor = h('div', { class: 'ia-compor' }, campo, h('div', { class: 'ia-compor-pe' }, pils, h('span', { class: 'ia-dica' }, 'Enter envia · Shift+Enter pula linha'), enviar));
     const salvar = () => { if (!conv) return; conv.em = Date.now(); convs = [conv].concat(convs.filter(c => c.id !== conv.id)); iaGuardar(convs); desenharLado(); };
     function desenharLado() {
       lado.replaceChildren(h('button', { type: 'button', class: 'ia-nova', onclick: () => { conv = null; location.hash = '#/ia'; } }, '＋ Nova conversa'),
         h('div', { class: 'ia-lado-t' }, 'Conversas'),
-        convs.length ? h('nav', { class: 'ia-convs' }, convs.map(c => h('a', { href: '#/ia?c=' + c.id, class: 'ia-conv' + (conv && conv.id === c.id ? ' on' : '') }, h('span', {}, c.titulo), h('small', {}, (c.msgs[0] && c.msgs[0].modo === 'escritorio' ? '📋 ' : '⚖ ') + new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })))))
+        convs.length ? h('nav', { class: 'ia-convs' }, convs.map(c => h('a', { href: '#/ia?c=' + c.id, class: 'ia-conv' + (conv && conv.id === c.id ? ' on' : '') }, h('span', {}, c.titulo), h('small', {}, new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })))))
           : h('p', { class: 'ia-lado-vazio' }, 'As conversas ficam aqui enquanto o navegador estiver aberto.'),
         convs.length ? h('button', { type: 'button', class: 'ia-limpar', onclick: () => { convs = []; iaGuardar(convs); conv = null; location.hash = '#/ia'; } }, 'Apagar o histórico') : null);
     }
@@ -5789,23 +5787,24 @@
           botao('Cancelar', () => { m.feito = 'Cancelada'; salvar(); desenhar(); }, 'mini sec'))));
       }
       corpo.push(acoes);
-      return h('div', { class: 'ia-resp' + (r.juridico ? ' jur' : '') }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, r.juridico ? '⚖' : '✦'),
-        h('b', {}, r.juridico ? 'IA Jurídica' : 'Assistente do escritório'), m.seg ? h('small', {}, 'respondeu em ' + m.seg + ' s') : null), h('div', { class: 'ia-resp-corpo' }, corpo));
+      return h('div', { class: 'ia-resp' + (r.juridico ? ' jur' : '') }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, '⚡'),
+        h('b', {}, r.juridico ? 'IA Jurídica' : 'IA Jurídica · dados do escritório'), m.seg ? h('small', {}, 'respondeu em ' + m.seg + ' s') : null), h('div', { class: 'ia-resp-corpo' }, corpo));
     }
     function desenhar() {
       fala.replaceChildren();
       raiz.classList.toggle('vazia', !conv || !conv.msgs.length);
       if (!conv || !conv.msgs.length) {
-        fala.append(h('div', { class: 'ia-boas' }, h('div', { class: 'ia-emblema', 'aria-hidden': 'true' }, h('span', {}, '⚖')),
+        fala.append(h('div', { class: 'ia-boas' }, h('div', { class: 'ia-emblema', 'aria-hidden': 'true' }, h('span', {}, '⚡')),
+          h('span', { class: 'ia-sobre' }, 'IA JURÍDICA · ARAÚJO ADVOCACIA'),
           h('h1', {}, 'Em que posso ajudar, ' + nome + '?'),
-          h('p', {}, 'Escreva qualquer dúvida jurídica — trabalhista, previdenciário, processo civil, família, consumidor, criminal. A resposta vem com fundamento legal, entendimento dos tribunais, prática, estratégia e riscos. Cite o cliente ou o nº do processo para aplicar ao caso.')));
+          h('p', {}, 'Pergunte sobre qualquer tema do Direito e como funciona cada procedimento. A resposta vem com fundamento legal, entendimento dos tribunais, prática, estratégia e riscos. Também respondo sobre os prazos, audiências, clientes e processos do escritório.')));
         return;
       }
       conv.msgs.forEach(m => {
         fala.append(h('div', { class: 'ia-eu' }, h('div', {}, m.p)));
-        if (m.esperando) fala.append(h('div', { class: 'ia-resp pensando' }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, m.modo === 'escritorio' ? '✦' : '⚖'),
-          h('b', {}, m.modo === 'escritorio' ? 'Procurando no painel' : 'Analisando a lei e os tribunais'), h('span', { class: 'ia-pontos' }, h('i'), h('i'), h('i'))),
-          m.modo === 'escritorio' ? null : h('p', { class: 'ia-espera' }, 'Respostas completas levam de 15 a 60 segundos.')));
+        if (m.esperando) fala.append(h('div', { class: 'ia-resp pensando' }, h('div', { class: 'ia-resp-cab' }, h('span', { class: 'ia-selo', 'aria-hidden': 'true' }, '⚡'),
+          h('b', {}, 'Pensando'), h('span', { class: 'ia-pontos' }, h('i'), h('i'), h('i'))),
+          h('p', { class: 'ia-espera' }, 'Analisando a pergunta, a lei e os tribunais. Respostas completas levam de 15 a 60 segundos.')));
         else if (m.erro) fala.append(h('div', { class: 'ia-resp erro' }, h('p', {}, m.erro), botao('Tentar de novo', () => { conv.msgs.splice(conv.msgs.indexOf(m), 1); perguntar(m.p, m.esc, m.modo); }, 'mini sec')));
         else fala.append(respostaEl(m));
       });
@@ -5815,7 +5814,7 @@
       texto = String(texto || '').trim(); if (!texto) return;
       if (!conv) { conv = { id: 'c' + Date.now().toString(36), titulo: texto.slice(0, 60), em: Date.now(), msgs: [] }; history.replaceState(null, '', '#/ia?c=' + conv.id); }
       const md = modoMsg || modo;
-      const ant = conv.msgs.filter(x => x.r && x.r.texto && x.modo === md).slice(-4).map(x => ({ p: x.p, r: String(x.r.texto).slice(0, 2200) }));
+      const ant = conv.msgs.filter(x => x.r && x.r.texto && x.r.juridico).slice(-4).map(x => ({ p: x.p, r: String(x.r.texto).slice(0, 2200) }));
       const m = { p: texto, esc: escolha || '', modo: md, esperando: true }; conv.msgs.push(m); salvar(); desenhar(); campo.value = ''; campo.style.removeProperty('height');
       const t0 = Date.now();
       try { m.r = await api('ia.assistente', { pergunta: texto, modo: md, conversa: ant, historico: ant.map(x => x.p), escolha_cliente: escolha || '' }); m.seg = Math.round((Date.now() - t0) / 1000); }
@@ -5825,7 +5824,8 @@
     enviar.addEventListener('click', () => perguntar(campo.value));
     campo.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); perguntar(campo.value); } });
     campo.addEventListener('input', () => { campo.style.setProperty('height', 'auto'); campo.style.setProperty('height', Math.min(220, campo.scrollHeight) + 'px'); });
-    centro.append(fala, h('div', { class: 'ia-baixo' }, compor, h('p', { class: 'ia-aviso' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números de processo vão à IA trocados por códigos.')));
+    centro.append(h('header', { class: 'ia-cab' }, h('span', { class: 'ia-raio', 'aria-hidden': 'true' }, '⚡'), h('div', {}, h('b', {}, 'IA Jurídica'), h('small', {}, 'Direito material e processual · procedimentos · dados do escritório')),
+      h('button', { type: 'button', class: 'ia-cab-nova', onclick: () => { conv = null; location.hash = '#/ia'; } }, '＋ Nova conversa')), fala, h('div', { class: 'ia-baixo' }, compor, h('p', { class: 'ia-aviso' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números de processo vão à IA trocados por códigos.')));
     raiz.append(lado, centro);
     desenharLado(); marcarModo(); desenhar();
     mostrar(raiz);
