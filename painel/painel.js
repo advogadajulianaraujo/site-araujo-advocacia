@@ -4241,7 +4241,15 @@
     const G1 = { id: '1g', nome: 'Intimação Eletrônica PJe Primeiro Grau' }, G2 = { id: '2g', nome: 'Intimação Eletrônica PJe Segundo Grau' };
     let opcoes = [['trt12', 'TRT 12 — Santa Catarina'], ['trt6', 'TRT 6 — Pernambuco'], ['trt23', 'TRT 23 — Mato Grosso'], ['trt4', 'TRT 4 — Rio Grande do Sul'], ['trt9', 'TRT 9 — Paraná'], ['trt16', 'TRT 16 — Maranhão']]
       .map(([id, n]) => ({ id, nome: n, graus: [G1, G2] })).concat([{ id: 'tst', nome: 'TST', graus: [{ id: '3g', nome: 'Intimação Eletrônica PJe TST' }] }]);
-    const pintarGraus = () => { const t = opcoes.find(x => x.id === selTrib.value); selGrau.replaceChildren(...(t ? t.graus : []).map(g => h('option', { value: g.id }, g.nome))); };
+    // 8.59: o eproc entra na MESMA tela (pedido da usuária: "no painel não aparece") — usuário e senha do eproc, sem 2FA Seed
+    const EPROC = [{ id: 'eproc:tjsc', nome: 'TJSC — eproc (Justiça Estadual)', graus: [{ id: 'eproc', nome: 'Intimações do eproc (1º e 2º grau)' }] },
+      { id: 'eproc:trf4', nome: 'Justiça Federal — eproc (JFSC e TRF4)', graus: [{ id: 'eproc', nome: 'Intimações do eproc (JFSC e TRF4)' }] }];
+    opcoes = EPROC.concat(opcoes);
+    const ehEproc = () => /^eproc:/.test(selTrib.value);
+    let campoSeed = null, rotLogin = null;
+    const pintarGraus = () => { const t = opcoes.find(x => x.id === selTrib.value); selGrau.replaceChildren(...(t ? t.graus : []).map(g => h('option', { value: g.id }, g.nome)));
+      if (rotLogin) rotLogin.textContent = ehEproc() ? 'o usuário do eproc (o mesmo da tela de entrada do eproc)' : 'o CPF usado no PJe';
+      login.placeholder = ehEproc() ? 'Usuário do eproc' : 'CPF'; senha.placeholder = ehEproc() ? 'Senha do eproc' : 'Senha do PJe'; };
     selTrib.addEventListener('change', pintarGraus);
     const campo = (rot, el, obr, dica) => h('label', { class: 'pje-campo' }, h('span', {}, rot, obr ? h('b', { class: 'pje-obr' }, ' *') : null), el, dica ? h('small', {}, dica) : null);
     const guia = h('details', { class: 'pje-guia' }, h('summary', {}, 'Como pegar a 2FA Seed (a chave do autenticador)'),
@@ -4254,6 +4262,12 @@
     const salvar = botao('Salvar e testar', async ev => {
       const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no PJe… (até 1 minuto)'));
       try {
+        if (ehEproc()) {
+          const r = await B.tribunais({ acao: 'guardar', tribunal: selTrib.value.slice(6), usuario: login.value, senha: senha.value }, 90000);
+          if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.'), h('ul', { class: 'peq' }, (r.partes || []).map(x => h('li', {}, (x.ok ? '✓ ' : '✕ ') + x.nome + (x.mensagem ? ': ' + x.mensagem : ''))))); return; }
+          senha.value = ''; res.replaceChildren(h('p', { class: 'pje-ok' }, '✓ O eproc aceitou o login. ', String((r.avisos || []).length), ' intimação(ões) pendente(s) agora. Acesso guardado no cofre.'));
+          carregarEproc(); avisar('Acesso ao eproc guardado.'); return;
+        }
         const r = await B.tribunais({ acao: 'pje_guardar', tribunal: selTrib.value, grau: selGrau.value, nome: nome.value, login: login.value, senha: senha.value, seed: seed.value }, 90000);
         if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')); return; }
         senha.value = ''; seed.value = '';
@@ -4262,6 +4276,17 @@
       } catch (e) { res.replaceChildren(h('p', { class: 'erro' }, e.message)); } finally { b.disabled = false; }
     });
     const dataBR2 = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+    const listaEproc = h('div', { class: 'pje-lista' });
+    function carregarEproc() {
+      B.tribunais({ acao: 'status' }, 30000).then(r => { const lig = (r.tribunais || []).filter(t => t.ligado);
+        listaEproc.replaceChildren(...lig.map(t => h('div', { class: 'pje-ac' },
+          h('div', {}, h('b', {}, t.nome), ' · eproc', h('br'), h('small', {}, 'usuário ' + t.usuario + ' · guardado por ' + (t.guardado_por || '—') + ' em ' + dataBR2(t.guardado_em)),
+            t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? '✓ ' + t.teste.n + ' pendente(s)' : '✕ não conectou') + ' (' + dataBR2(t.teste.em) + ')') : null),
+          h('div', { class: 'mini-acoes' },
+            botao('Testar', async ev => { const b = ev.currentTarget; b.disabled = true; try { const r2 = await B.tribunais({ acao: 'testar', tribunal: t.id }, 90000); avisar(r2.ok ? (r2.avisos || []).length + ' pendente(s) no eproc.' : r2.erro, !r2.ok); carregarEproc(); } catch (e) { avisar(e.message, true); } finally { b.disabled = false; } }, 'mini'),
+            botao('Apagar', async () => { if (!confirm('Apagar o acesso do eproc (' + t.nome + ') do cofre?')) return; try { await B.tribunais({ acao: 'apagar', tribunal: t.id }); carregarEproc(); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')))));
+      }).catch(() => { /* a lista do PJe continua */ });
+    }
     function desenhar(acessos) {
       lista.replaceChildren(...(acessos.length ? acessos.map(a => {
         const r2 = h('span', { class: 'peq' });
@@ -4274,25 +4299,27 @@
               catch (e) { r2.textContent = ' ' + e.message; } finally { b.disabled = false; } }, 'mini'),
             botao('Apagar', async () => { if (!confirm('Apagar este acesso do cofre? O robô para de ler este PJe.')) return;
               try { const r = await B.tribunais({ acao: 'pje_apagar', chave: a.chave }); desenhar(r.acessos); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')));
-      }) : [h('p', { class: 'peq' }, 'Nenhum acesso guardado ainda.')]));
+      }) : [h('p', { class: 'peq' }, 'PJe: nenhum acesso guardado.')]));
     }
     const caixa = h('dialog', { class: 'dialogo pje-dialogo' },
-      h('h2', {}, 'Adicionar acesso para intimações eletrônicas'),
+      h('h2', {}, 'Intimações eletrônicas'),
       h('p', { class: 'peq' }, 'O robô entra no PJe com estes dados e LISTA os expedientes (intimações) pendentes. ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
         ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o PJe aceitar o login.'),
       h('div', { class: 'pje-form' }, campo('Nome de pesquisa', nome, true), campo('Tribunal', selTrib, true), campo('Consulta', selGrau, true),
-        campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'), campo('Senha de acesso no tribunal', senha, true), campo('2FA Seed', seed, false, 'a chave do aplicativo autenticador (veja abaixo como pegar)')),
+        (() => { const c = campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'); rotLogin = c.querySelector('small'); return c; })(),
+        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso (opcional)', seed, false, 'só para sistemas com autenticação em 2 etapas (o PJe pede; o eproc não). Veja abaixo como pegar'))),
       guia, h('div', { class: 'acoes' }, salvar, botao('Fechar', () => caixa.close(), 'sec')), res,
-      h('h3', {}, 'Acessos guardados'), lista);
-    selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id }, t.nome))); pintarGraus();
+      h('h3', {}, 'Acessos guardados (o que o robô está usando)'), lista, listaEproc);
+    selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === 'trt12' }, t.nome))); pintarGraus();
     caixa.addEventListener('close', () => caixa.remove());
     document.body.append(caixa); caixa.showModal();
     if (!(B && B.tribunais)) { lista.replaceChildren(h('p', { class: 'erro' }, 'O banco novo não está ligado neste computador.')); salvar.disabled = true; return; }
     B.tribunais({ acao: 'pje_status' }, 30000).then(r => {
       if (!r.ok) { lista.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')); return; }
-      if ((r.tribunais || []).length) { const v = selTrib.value; opcoes = r.tribunais; selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === v }, t.nome))); pintarGraus(); }
+      if ((r.tribunais || []).length) { const v = selTrib.value; opcoes = EPROC.concat(r.tribunais); selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === v }, t.nome))); pintarGraus(); }
       desenhar(r.acessos || []);
     }).catch(e => lista.replaceChildren(h('p', { class: 'erro' }, e.message)));
+    carregarEproc();
   }
   function dialogoTribunais() {
     const B = window.PAINEL_BANCO;
@@ -4486,8 +4513,7 @@
           item('🧾', 'Recibos', 'Recibos gerados das parcelas pagas', '#/financeiro?ver=recibos')) : null,
         admin ? grupo('🤖 Robôs e sistema',
           item('🚦', 'Situação dos robôs', 'Gmail, DJEN, andamentos, agenda e IA', '#/prazos'),
-          item('⚖', 'Intimações eletrônicas do PJe', 'Login, senha e 2FA Seed no cofre (igual ao Astrea): o robô lista os expedientes sem dar ciência', () => dialogoPje()),
-          item('⚖', 'Intimações direto do eproc', 'Login do eproc no cofre: o robô lista as pendentes sem dar ciência', () => dialogoTribunais()),
+          item('⚖', 'Intimações eletrônicas', 'PJe (TRT) e eproc (TJSC e Justiça Federal): login, senha e 2FA no cofre; o robô lista sem dar ciência', () => dialogoPje()),
           item('🔐', 'Certificado digital', 'Certificado A1 da advogada, guardado no cofre do banco de dados', () => dialogoCertificado()),
           item('🗄', 'Banco de dados e atualização', 'Supabase, velocidade e atualização automática', '#/usuarios?ver=banco'),
           item('🤖', 'Chatbot do WhatsApp', 'Atendimento automático e conversas', '#/conversas'),
