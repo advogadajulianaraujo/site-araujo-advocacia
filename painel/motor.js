@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.58.7 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.59.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.58.7';
+var MOTOR_VERSAO = '8.59.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.58.7';
+var VERSAO = '8.59.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2606,6 +2606,8 @@ function roboExtrasAtualizar_() {
   try { if (txt !== config_('ROBO_EXTRAS')) setConfig_('ROBO_EXTRAS', txt, 'Estado do robô para as telas (atualizado sozinho de 10 em 10 min)'); } catch (eS) { /* tenta na próxima */ }
   return g;
 }
+/** 8.59: teste SEM senha — os endereços do PJe que listam os expedientes respondem aos servidores do Google? (do Supabase/Amazon dá
+ *  "Request blocked" do CloudFront). Grava em Config PJE_ALCANCE: para cada endereço, o código HTTP e se veio a página de bloqueio. */
 function tempoRoboHoje_() {
   try { var j = JSON.parse(PropertiesService.getScriptProperties().getProperty('TEMPO_ROBO') || '{}'); var porMin = function (o) { var r = {}; Object.keys(o || {}).forEach(function (k) { r[k] = Math.round(o[k] / 6000) / 10; }); return r; };
     return j.dia === hojeSP_() ? { min: Math.round(j.ms / 60000), vezes: j.n, ontem: j.ontem, por: porMin(j.por), porOntem: porMin(j.porOntem) } : { min: 0, vezes: 0, ontem: j.dia ? Math.round((j.ms || 0) / 60000) : null }; }
