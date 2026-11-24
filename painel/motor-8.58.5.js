@@ -1025,7 +1025,7 @@ function itemCaixa_(i, ctx) {
   return { id: i.id, recebido_em: i.recebido_em, fonte: i.fonte, numero: i.numero, tribunal: i.tribunal || p.tribunal || '', movimento: String(i.movimento || '').slice(0, 200),
     texto: String(i.texto || '').slice(0, 280), resumo_ia: String(i.resumo_ia || '').slice(0, 300), processo_id: p.id || '', cliente: c.nome || p.cliente_nome || '', cliente_id: c.id || '',
     responsavel: (z && z.responsavel) || p.responsavel || '', responsavel_nome: ctx.nomes[(z && z.responsavel) || p.responsavel] || '', status: statusCaixa_(i, ctx.prazos), tratamento: i.tratamento || '', tratada_por: i.tratada_por || i.terminada_por || '',
-    tratada_em: i.tratada_em || i.terminada_em || '', gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '',
+    tratada_em: i.tratada_em || i.terminada_em || '', ok_em: i.ok_em || '', ok_por: i.ok_por || '', gmail: i.gmail_apagado_em ? 'apagado' : i.gmail_lido_em ? 'aberto' : i.gmail_id ? 'nao' : '',
     sug: { ato: s.ato, rotulo: s.rotulo, fonte: s.fonte, confianca: s.confianca, outra_parte: s.outra_parte, so_historico: s.so_historico, n_tarefas: s.tarefas.length,
       prazo: s.prazo ? { id: s.prazo.id, fatal: s.prazo.fatal, descricao: String(s.prazo.descricao || '').slice(0, 120), situacao: s.prazo.situacao, fila: s.prazo.fila, ato: s.prazo.ato } : null } };
 }
@@ -1043,7 +1043,11 @@ function caixaIntimacoes_(d, u) {
   var dia = function (iso) { return iso ? diaSP_(String(iso)) : ''; };
   var todas = tabela_('Intimacoes').linhas.filter(function (i) { return naCaixa_(i, desde, ctx.prazos); });
   var stOf = function (i) { return statusCaixa_(i, ctx.prazos); };
-  var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0, nao_feitas: 0 }, semana = [];
+  var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0, nao_feitas: 0, hoje: 0, proximos: 0, aguardando_ok: 0, descartadas7: 0 }, semana = [];
+  // 8.58.6: o dia de FAZER = a data do prazo do painel (sem prazo, ou audiência/perícia = hoje). Resolver hoje = até hoje; Próximos dias = depois.
+  var diaFazer = function (i) { var z = ctx.prazos[i.prazo_id]; return z && z.fatal && !/^ato:/.test(z.observacoes || '') && z.fatal > hoje ? z.fatal : hoje; };
+  var esperaOk = function (i, st) { return st === 'tratada' && !i.ok_em && !!(i.tratada_em || i.terminada_por) && dia(i.tratada_em || i.terminada_em) >= somarDias_(hoje, -30); };
+  var corte7 = somarDias_(hoje, -7);
   for (var k = 6; k >= 0; k--) semana.push({ dia: somarDias_(hoje, -k), recebidas: 0, tratadas: 0 });
   var idx = {}; semana.forEach(function (s, n) { idx[s.dia] = n; });
   todas.forEach(function (i) {
@@ -1052,6 +1056,9 @@ function caixaIntimacoes_(d, u) {
     if (st === 'tratada' && tr === hoje) placar.tratadas_hoje++;
     if (st === 'descartada' && tr === hoje) placar.descartadas_hoje++;
     if (st === 'nao_feita' && tr >= somarDias_(hoje, -30)) placar.nao_feitas++;
+    if (st === 'nao') { if (diaFazer(i) > hoje) placar.proximos++; else placar.hoje++; }
+    if (esperaOk(i, st)) placar.aguardando_ok++;
+    if ((st === 'descartada' || st === 'nao_feita') && (tr || hoje) >= corte7) placar.descartadas7++;
     if (idx[rec] !== undefined) semana[idx[rec]].recebidas++;
     if (st !== 'nao' && idx[tr] !== undefined) semana[idx[tr]].tratadas++;
   });
@@ -1059,6 +1066,10 @@ function caixaIntimacoes_(d, u) {
   var lista = todas.filter(function (i) {
     var st = stOf(i);
     if (status === 'nao' && st !== 'nao') return false;
+    if (status === 'hoje' && (st !== 'nao' || diaFazer(i) > hoje)) return false;
+    if (status === 'proximos' && (st !== 'nao' || diaFazer(i) <= hoje)) return false;
+    if (status === 'aguardando_ok' && !esperaOk(i, st)) return false;
+    if (status === 'descartadas_todas' && (!(st === 'descartada' || st === 'nao_feita') || (dia(i.tratada_em || i.terminada_em) || hoje) < corte)) return false;
     if (status === 'nao_hoje' && (st !== 'nao' || String(i.recebido_em).slice(0, 10) !== hoje)) return false;
     if (status === 'tratadas' && (st !== 'tratada' || dia(i.tratada_em || i.terminada_em) < corte)) return false;
     if (status === 'tratadas_hoje' && (st !== 'tratada' || dia(i.tratada_em || i.terminada_em) !== hoje)) return false;
@@ -1069,7 +1080,7 @@ function caixaIntimacoes_(d, u) {
     if (q && normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto, (ctx.clis[(ctx.procs[i.processo_id] || {}).cliente_id] || {}).nome].join(' ')).indexOf(q) < 0) return false;
     return true;
   }).sort(function (a, b) {
-    if (/^nao/.test(status) && status !== 'nao_feitas') { var fa = ((ctx.prazos[a.prazo_id] || {}).fatal) || '9', fb = ((ctx.prazos[b.prazo_id] || {}).fatal) || '9'; if (fa !== fb) return fa < fb ? -1 : 1; }
+    if ((/^nao/.test(status) && status !== 'nao_feitas') || status === 'hoje' || status === 'proximos') { var fa = ((ctx.prazos[a.prazo_id] || {}).fatal) || '9', fb = ((ctx.prazos[b.prazo_id] || {}).fatal) || '9'; if (fa !== fb) return fa < fb ? -1 : 1; }
     return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, Math.min(+d.limite || 200, 400)).map(function (i) { return itemCaixa_(i, ctx); });
   if (d.minhas) lista = lista.filter(function (x) { return x.responsavel === u.usuario; });
   return { placar: placar, semana: semana, lista: lista, desde: desde };
