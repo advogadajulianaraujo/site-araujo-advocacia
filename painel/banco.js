@@ -592,7 +592,7 @@
     const s = chatSessao(); if (!s) throw new Error('Sem conexão com o banco agora: tente de novo em instantes.');
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms || 120000);
     try {
-      const r = await fetch(s.url + '/functions/v1/tribunais', { method: 'POST', headers: { apikey: s.chave, 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, corpo, { token: s.token })), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal });
+      const r = await fetch(s.url + '/functions/v1/tribunais', { method: 'POST', headers: { apikey: s.chave, 'Content-Type': 'application/json', 'x-region': 'sa-east-1' }, body: JSON.stringify(Object.assign({}, corpo, { token: s.token })), credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctl.signal });
       const j = await r.json().catch(() => ({}));
       if (r.status >= 400 && !j.partes) throw new Error(j.erro || ('erro ' + r.status));
       return j;
