@@ -2158,3 +2158,13 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Resolvidas (esperando o OK: `marcarTratada_` só dá o OK sozinho para a administração e no descarte; a administração dá "✓ OK"/"OK em todas" com
   `trabalho.ok` e a intimação sai) · Descartadas (o dia passou sem resolver = nao_feita, ou descartada à mão). O filtro de tribunal agora vale nas
   Recebidas (`filtroSisOk` com `tribunalPeloNumero`: sem tribunal gravado, sai do nº CNJ .5.12 = TRT12, .8.24 = TJSC, .4.04 = TRF4).
+- 8.58.7 (pedidos da usuária, 24/11, caso do Sávio): "Notificação com documento anexado" do PJe logo depois que NÓS distribuímos (cliente polo ativo ou
+  processo nascido da nossa inicial, cadastrado há ≤ 30 dias, primeiro aviso do número) = notificação inicial da RECLAMADA → "Nada a fazer": não entra nas
+  Recebidas e o robô `notificacoesIniciais858_` (robôs do escritório) cancela o prazo provisório ("se for nosso, reabra"). `poloAtivo_`/`notifInicialNossa_`.
+  Cliente polo ativo: citação/defesa no texto vira "Só ciência" (`atoDaIntimacao_(i, z, ia, proc)`), sem tarefas de contestação. O texto genérico do aviso em
+  PDF ("pode ser notificação inicial ou citação") não conta mais na leitura do ato. ROTULO_ATO = a AÇÃO em 1–2 palavras (Impugnar o laudo, Recurso?,
+  Contestação, Só ciência, Nada a fazer…). Tela da intimação: cartão "A IA explica" (`cartaoIAIntimacao`: 📁 o caso → 📨 o que chegou → o que fazer + prazo
+  final; "⚡ Pedir à IA / Ler de novo" = ia.resumirIntimacao) ANTES das tarefas sugeridas; o texto do documento vem por último. Lista das Recebidas: em
+  destaque a data FINAL do prazo ("prazo final"), "chegou dd/mm" pequeno. Processos: os 4 quadrinhos viraram UMA faixa (`px5`: barra das etapas + legenda
+  + avisos curtos). CRM: o topo virou um painel só (`crm2`: período Dia/Semana/Mês com 6 números em linha + 8 semanas | "Funil agora" em barra colorida,
+  fechamento 180 dias e tempo até o 1º contato); saíram os 5 cartões e o gráfico escuro.

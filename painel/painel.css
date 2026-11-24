@@ -4058,3 +4058,77 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 .px3-inf span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .px3-inf small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cx-filtros .link{color:#8A6A35;text-decoration:underline;font-size:12.5px}
+/* 8.58.7 faixa das etapas (Processos) + cartão "A IA explica" (intimação) + data final na lista */
+.px5{background:#fff;border:1px solid #E6DFD3;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.px5-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.px5-cab b{font-family:Jost,system-ui,sans-serif;font-size:14px;font-weight:600}
+.px5-cab span{font-size:11.5px;color:#8A8276}
+.px5-barra{display:flex;height:12px;border-radius:999px;overflow:hidden;background:#F1ECE3;gap:2px}
+.px5-barra i{display:block;min-width:6px;flex-basis:0}
+.px5-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#4A443D}
+.px5-leg span{display:inline-flex;align-items:center;gap:5px}
+.px5-leg i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.px5-leg b{font-weight:600;color:#1F1C18}
+.px5-leg span.zero{color:#B3AA9C}.px5-leg span.zero b{color:#B3AA9C}
+.px5-als{display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid #F0EAE0;padding-top:9px}
+.px5-al{font-size:11.5px;border-radius:999px;padding:3px 10px;background:#F4EFE6;color:#4A443D}
+.px5-al b{font-weight:700}
+.px5-al.verm{background:#F8E3E1;color:#9E2F29}.px5-al.ambar{background:#FBF0DC;color:#8A5E0A}.px5-al.verde{background:#E3F1E8;color:#2F7D4F}
+.iaf{display:flex;gap:12px;align-items:flex-start}
+.iaf-av{width:38px;height:38px;border-radius:50%;background:#171513;color:#E3C68C;display:grid;place-items:center;font-size:17px;flex:none;box-shadow:0 4px 12px rgba(23,21,19,.18)}
+.iaf-bolha{flex:1;min-width:0;background:linear-gradient(135deg,#FFFDF8,#F8F1E3);border:1px solid #EADFC9;border-radius:4px 16px 16px 16px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.iaf.nada .iaf-bolha{background:linear-gradient(135deg,#FBFDFB,#EEF6F0);border-color:#CFE5D6}
+.iaf-cab{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.iaf-cab b{font-family:Jost,system-ui,sans-serif;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#8A6A35}
+.iaf.nada .iaf-cab b{color:#2F7D4F}
+.iaf-bt{border:1px solid #DCCBA8;background:#fff;color:#6B5228;border-radius:999px;padding:3px 11px;font:inherit;font-size:12px;cursor:pointer}
+.iaf-bt:hover{border-color:#C9A46A}
+.iaf-txt{margin:0;font-size:14.5px;line-height:1.55;color:#1F1C18}
+.iaf-linhas{display:flex;flex-wrap:wrap;gap:10px}
+.iaf-l{display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.75);border:1px solid #EFE5D2;border-radius:12px;padding:8px 12px;min-width:150px}
+.iaf-l > span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#8A8276}
+.iaf-chip{font-size:14px;font-weight:700;color:#7A5C2E}
+.iaf-chip.nada{color:#2F7D4F}
+.iaf-data{font-family:Jost,system-ui,sans-serif;font-size:20px;font-weight:600;color:#1F1C18}
+.iaf-l small{font-size:12px;color:#6E675D}
+.iaf-pe{font-size:11px;color:#A0978A}
+.cx-quando .cx-q-rot{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#9A9286}
+.cx-quando.com-prazo b{color:#9E2F29}
+.cx-ato.nada{background:#E3F1E8;color:#2F7D4F}
+/* 8.58.7 CRM: painel único (período + funil agora) */
+.crm2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);background:#fff;border:1px solid #E6DFD3;border-radius:16px;overflow:hidden;margin-bottom:12px}
+@media (max-width:1000px){.crm2{grid-template-columns:1fr}}
+.crm2-esq,.crm2-dir{padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.crm2-dir{background:#FBF8F2;border-left:1px solid #EFE7D9}
+.crm2-cab{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.crm2-cab b{font-family:Jost,system-ui,sans-serif;font-size:15px;font-weight:600}
+.crm2-cab span{font-size:12px;color:#8A8276}
+.crm2-cab .segmentado button{padding:3px 10px;font-size:12px}
+.crm2-nums{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid #F0EAE0;border-radius:12px}
+@media (max-width:640px){.crm2-nums{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.crm2-n{padding:9px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.crm2-n + .crm2-n{border-left:1px solid #F0EAE0}
+.crm2-n b{font-family:Jost,system-ui,sans-serif;font-size:21px;font-weight:600;color:#1F1C18;line-height:1.1}
+.crm2-n small{font-size:11.5px;color:#8A8276;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crm2-n.verde b{color:#2F7D4F}.crm2-n.cinza b{color:#8A8276}.crm2-n.ouro b{color:#9C7A43}
+.crm2-graf{display:flex;flex-direction:column;gap:4px}
+.crm2-graf > small{font-size:11px;color:#A0978A}
+.crm2-graf .gcol{gap:8px}.crm2-graf .gcol-b{max-width:28px}.crm2-graf .gcol-n,.crm2-graf .gcol-v{font-size:10.5px}
+.crm2-barra{display:flex;height:14px;border-radius:999px;overflow:hidden;background:#EEE7DA;gap:2px}
+.crm2-barra i{display:block;min-width:6px;flex-basis:0}
+.crm2-leg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 14px;font-size:12px;color:#4A443D}
+.crm2-leg span{display:flex;align-items:center;gap:6px;min-width:0}
+.crm2-leg i{width:8px;height:8px;border-radius:50%;flex:none}
+.crm2-leg b{margin-left:auto;font-weight:600;color:#1F1C18}
+.crm2-leg span.zero{color:#B3AA9C}.crm2-leg span.zero b{color:#B3AA9C}
+.crm2-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto}
+.crm2-mini > div{background:#fff;border:1px solid #EFE7D9;border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}
+.crm2-mini b{font-family:Jost,system-ui,sans-serif;font-size:19px;font-weight:600;color:#1F1C18}
+.crm2-mini b.verde{color:#2F7D4F}.crm2-mini b.verm{color:#B23A33}
+.crm2-mini small{font-size:11px;color:#8A8276}
+.crm-alerta{padding:8px 12px;font-size:12.5px}
+.iaf-sec{display:flex;flex-direction:column;gap:4px}
+.iaf-rot{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#8A8276;font-weight:600}
+.iaf-caso{margin:0;font-size:13.5px;color:#3A332C;line-height:1.5}
+.iaf-and{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;font-size:12px;color:#6E675D}
+.iaf-and b{color:#3A332C;font-weight:600}

@@ -911,9 +911,9 @@ function naCaixa_(i, desde, prazos) {
  * apareçam a do dia e as dos próximos dias no Para resolver, não as antigas"): intimação ainda "para resolver" cujo prazo do painel JÁ VENCEU, ou
  * sem prazo e recebida há mais de 5 dias, sai da fila como "Não feita" (com o motivo). Nada é apagado: fica no filtro "Não feitas". O PRAZO em si
  * segue a regra dele (baixarVencidos844_: só sai depois de 10 dias úteis, porque o PJe às vezes dá mais dias). Robôs do escritório + aquecedor. */
-var ROTULO_ATO = { pericia: 'Perícia', laudo: 'Laudo pericial', audiencia: 'Audiência de conciliação', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
-  acordao: 'Acórdão', contrarrazoes: 'Contrarrazões', contestacao: 'Contestação / defesa', replica: 'Réplica', emenda: 'Emenda à inicial', calculos: 'Cálculos',
-  valores: 'Alvará / RPV / precatório', embargos: 'Embargos', acordo: 'Acordo', manifestacao: 'Manifestação', ciencia: 'Só ciência' };
+var ROTULO_ATO = { pericia: 'Quesitos / perícia', laudo: 'Impugnar o laudo', audiencia: 'Audiência', instrucao: 'Audiência de instrução', sentenca: 'Recurso? (sentença)',
+  acordao: 'Recurso? (acórdão)', contrarrazoes: 'Contrarrazões', contestacao: 'Contestação', replica: 'Réplica', emenda: 'Emendar a inicial', calculos: 'Conferir cálculos',
+  valores: 'Levantar valores', embargos: 'Responder embargos', acordo: 'Acordo', manifestacao: 'Manifestação', ciencia: 'Só ciência', nada: 'Nada a fazer' };
 // quem: resp (quem cuida do prazo) | sec (secretaria). antes: dias úteis antes da data final; 'ja' = no próximo dia útil.
 var TAREFAS_ATO = {
   pericia: [['Avisar o cliente sobre a perícia (data, local, o que levar)', 'cliente', 'sec', 'ja', 'alta'], ['Analisar o objeto da perícia', 'prazo', 'resp', 4, 'normal'],
@@ -952,10 +952,26 @@ var TAREFAS_ATO = {
 var CAT_IA_ = { falar_cliente: 'cliente', cliente: 'cliente', peticao: 'peticao', protocolo: 'protocolo', documentos: 'documentos', audiencia: 'audiencia', prazo: 'prazo',
   extrajudicial: 'extrajudicial', financeiro: 'financeiro', administrativo: 'administrativo' };
 function iaDados_(i) { try { var o = JSON.parse(i.ia_dados || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
-/** Qual é o ato da intimação (chave de TAREFAS_ATO). */
-function atoDaIntimacao_(i, z, ia) {
+/* 8.58.7 (pedido da usuária, caso do Sávio): o PJe manda "Notificação com documento anexado" logo depois que NÓS distribuímos a ação — é a
+ * notificação inicial da RECLAMADA, não é para nós. Regra: aviso em PDF do PJe + o nosso cliente é o polo ativo (ou o processo nasceu da nossa
+ * petição inicial) + processo cadastrado há no máximo 30 dias + é o primeiro aviso daquele número = nada a fazer (sem prazo). */
+var RE_NOTIF_PDF_ = /^Notificação com documento anexado/;
+function poloAtivo_(proc) {
+  if (!proc) return false;
+  if (proc.polo) return /ativo|autor|requerente|reclamante|exequente|impetrante/.test(normalizar_(proc.polo));
+  return !!(proc.inicial_feita_em || proc.origem === 'documentos');
+}
+function notifInicialNossa_(i, proc, primeiraDoNum) {
+  if (!RE_NOTIF_PDF_.test(i.movimento || '') || !proc || !proc.id || !poloAtivo_(proc)) return false;
+  var rec = String(i.recebido_em || '').slice(0, 10), cri = String(proc.criado_em || '').slice(0, 10);
+  if (!cri || !rec) return false;
+  var d = diffDias_(rec, cri); if (d < -1 || d > 30) return false;
+  return !primeiraDoNum || primeiraDoNum >= rec;
+}
+/** Robôs do escritório: tira da caixa e cancela o prazo provisório das notificações iniciais da outra parte (processo distribuído por nós). */
+function atoDaIntimacao_(i, z, ia, proc) {
   ia = ia || iaDados_(i);
-  var t = normalizar_([z ? z.descricao : '', ia.ato || '', ia.providencia || '', ia.pericia || '', ia.audiencia || '', i.movimento || '', String(i.texto || '').slice(0, 1500)].join(' '));
+  var t = normalizar_([z ? z.descricao : '', ia.ato || '', ia.providencia || '', ia.pericia || '', ia.audiencia || '', String(i.movimento || '').replace(/\(PDF no e-mail[^)]*\)/, ''), String(i.texto || '').slice(0, 1500)].join(' '));
   if (/^ato:/.test((z && z.observacoes) || '')) return /per[ií]cia/.test(normalizar_(z.observacoes)) ? 'pericia' : (/instru/.test(normalizar_(z.observacoes)) ? 'instrucao' : 'audiencia');
   if (/manifestar_laudo|laudo_apresentado|laudo pericial|sobre o laudo|esclarecimentos do perito/.test(t)) return 'laudo';
   if (/quesitos|nomeacao_perito|pericia|perito/.test(t)) return 'pericia';
@@ -969,7 +985,8 @@ function atoDaIntimacao_(i, z, ia) {
   if (/emenda|emendar/.test(t)) return 'emenda';
   if (/calculos|liquidacao/.test(t)) return 'calculos';
   if (/replica|sobre a contestacao|sobre a defesa/.test(t)) return 'replica';
-  if (/contestac|apresentar defesa|citad|citacao/.test(t)) return 'contestacao';
+  // 8.58.7: quem contesta é o réu/reclamado — se o nosso cliente é o polo ativo, citação/defesa é da OUTRA parte (só ciência)
+  if (/contestac|apresentar defesa|citad|citacao/.test(t)) return poloAtivo_(proc) && proc.polo ? 'ciencia' : 'contestacao';
   if (z && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0) return 'manifestacao';
   return z ? 'manifestacao' : 'ciencia';
 }
@@ -995,24 +1012,29 @@ function venceTarefa_(antes, fatal, hoje, fer) {
 /** O que o painel sugere para tratar a intimação: o prazo (do robô) + as tarefas de preparação, com responsável e data. */
 function sugestaoTratamento_(i, z, proc, ctx) {
   ctx = ctx || {};
-  var ia = iaDados_(i), ato = atoDaIntimacao_(i, z, ia), hoje = hojeSP_(), fer = ctx.fer || (ctx.fer = mapaFeriados_());
+  var ia = iaDados_(i), ato = atoDaIntimacao_(i, z, ia, proc), hoje = hojeSP_(), fer = ctx.fer || (ctx.fer = mapaFeriados_());
   var apr = ctx.apr || (ctx.apr = aprendizado_());
   proc = proc || {};
   var outra = /outra parte/.test(i.terminada_por || '');
+  if (!ctx.primeira) { ctx.primeira = {}; tabela_('Intimacoes').linhas.forEach(function (x) { var d = String(x.recebido_em || '').slice(0, 10); if (x.numero && d && (!ctx.primeira[x.numero] || d < ctx.primeira[x.numero])) ctx.primeira[x.numero] = d; }); }
+  var nada = notifInicialNossa_(i, proc, ctx.primeira[i.numero]);
+  if (nada) { ato = 'nada'; outra = true; }
   var resp = (z && z.responsavel) || proc.responsavel || quemDa_('prazo', proc.area, i.numero) || '';
   var sec = ctx.sec !== undefined ? ctx.sec : (ctx.sec = respSecretaria_() || '');
   var fonte = 'modelo', modelo = TAREFAS_ATO[ato] || [];
   var iaT = Array.isArray(ia.tarefas) ? ia.tarefas.filter(function (x) { return x && x.titulo; }).slice(0, 6) : [];
   if (iaT.length) { fonte = 'ia'; modelo = iaT.map(function (x) { return [String(x.titulo).slice(0, 140), CAT_IA_[x.tipo] || 'outro', x.quem === 'secretaria' ? 'sec' : 'resp', /^\d+$/.test(String(x.dias_antes)) ? +x.dias_antes : 'ja', 'normal']; }); }
   var fatal = z && z.fatal && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 ? z.fatal : '';
-  var tarefas = outra ? [] : modelo.filter(function (m) { return !recusada_(apr, ato, m[0]); }).map(function (m, n) {
+  if (ato === 'contestacao' && poloAtivo_(proc) && proc.polo) modelo = [];
+  var tarefas = outra || ato === 'nada' ? [] : modelo.filter(function (m) { return !recusada_(apr, ato, m[0]); }).map(function (m, n) {
     return { n: n, titulo: m[0], categoria: m[1], quem: m[2], responsavel: m[2] === 'sec' ? (sec || resp) : resp, vence_em: venceTarefa_(m[3], fatal, hoje, fer), prioridade: m[4] };
   });
   // confiança: o ato veio do texto da publicação / IA segura = alta; prazo provisório (sem o texto) = baixa; 👎 no prazo deste ato baixa a confiança
   var conf = !z ? 60 : /PROVIS/i.test(z.descricao || '') ? 35 : ia.confiabilidade === 'alta' ? 92 : ia.confiabilidade === 'baixa' ? 55 : /identificado pelo texto|indicado na intima/.test(z.descricao || '') ? 85 : 75;
   var rp = apr[chaveApr_(ato, '__prazo__')]; if (rp && (+rp.rejeitadas || 0) > (+rp.aceitas || 0)) conf = Math.max(20, conf - 20);
   return {
-    ato: ato, rotulo: ROTULO_ATO[ato] || ato, fonte: fonte, confianca: conf, outra_parte: outra, so_historico: outra || ato === 'ciencia',
+    ato: ato, rotulo: ROTULO_ATO[ato] || ato, fonte: fonte, confianca: conf, outra_parte: outra, so_historico: outra || ato === 'ciencia' || ato === 'nada',
+    nada: nada ? 'Notificação inicial da outra parte: o processo foi distribuído por nós (o cliente é o reclamante). Não há prazo para o escritório.' : '',
     providencia: ia.providencia || '', resumo: ia.resumo || '',
     prazo: z ? { id: z.id, descricao: z.descricao, fatal: z.fatal, dias: z.dias, contagem: z.contagem, situacao: z.situacao, responsavel: z.responsavel || resp,
       fila: filaPrazo_(z), ato: /^ato:/.test(z.observacoes || '') } : null,
@@ -1041,7 +1063,11 @@ function ctxCaixa_() {
 function caixaIntimacoes_(d, u) {
   var hoje = hojeSP_(), desde = caixaDesde_(), ctx = ctxCaixa_(), status = d.status || 'nao', q = normalizar_(d.busca || '');
   var dia = function (iso) { return iso ? diaSP_(String(iso)) : ''; };
-  var todas = tabela_('Intimacoes').linhas.filter(function (i) { return naCaixa_(i, desde, ctx.prazos); });
+  var tudoI = tabela_('Intimacoes').linhas, prim = {};
+  tudoI.forEach(function (x) { var d0 = String(x.recebido_em || '').slice(0, 10); if (x.numero && d0 && (!prim[x.numero] || d0 < prim[x.numero])) prim[x.numero] = d0; });
+  ctx.primeira = prim;
+  // 8.58.7: notificação inicial da outra parte (processo que nós distribuímos) não entra na caixa nem antes de o robô passar
+  var todas = tudoI.filter(function (i) { return naCaixa_(i, desde, ctx.prazos) && !notifInicialNossa_(i, ctx.procs[i.processo_id] || ctx.procsNum[i.numero], prim[i.numero]); });
   var stOf = function (i) { return statusCaixa_(i, ctx.prazos); };
   var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0, nao_feitas: 0, hoje: 0, proximos: 0, aguardando_ok: 0, descartadas7: 0 }, semana = [];
   // 8.58.6: o dia de FAZER = a data do prazo do painel (sem prazo, ou audiência/perícia = hoje). Resolver hoje = até hoje; Próximos dias = depois.

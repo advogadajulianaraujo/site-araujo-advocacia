@@ -1,5 +1,5 @@
 {
- "versao": "8.58.6",
+ "versao": "8.58.7",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -483,7 +483,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 77
+   "funcoes": 80
   },
   "intimacoes.obter": {
    "tabelas": [
@@ -499,7 +499,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 51
+   "funcoes": 55
   },
   "andamentos.importantes": {
    "tabelas": [
@@ -574,5 +574,5 @@
    "funcoes": 13
   }
  },
- "funcoes": 219
+ "funcoes": 222
 }
