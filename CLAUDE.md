@@ -2185,3 +2185,12 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   consegue escanear?" mostra a chave; ler o MESMO QR no celular).
 - FALTA (depois do 1º acesso guardado): o robô ler a lista de expedientes do painel do advogado (o endereço só aparece depois do login real) e
   entrar no robô de hora em hora junto com DJEN, Gmail e eproc.
+- 8.59.1 (pedido da usuária): UMA opção só em Configurações › Robôs e sistema › "⚖ Intimações eletrônicas" (`dialogoPje`): Tribunal = TJSC (eproc),
+  Justiça Federal (eproc, JFSC+TRF4) e os PJe (TRT12, TRT6, TRT23, TRT4, TRT9, TRT16, TST); login, senha e "2FA Seed — chave de acesso (opcional)"
+  (o eproc ignora). eproc → ação `guardar` (MNI, `dialogoTribunais` antigo continua no código, sem item no menu); PJe → `pje_guardar`. "Acessos
+  guardados (o que o robô está usando)" lista os dois. Certificado não é pedido aqui.
+- Resultado no TRT12 (24/11): o robô ENTRA (CPF + senha + código, 1,7 s; token com o id do usuário; /pje-seguranca/api/token/perfis = 200), mas a
+  lista do painel do advogado (/pje-comum-api/api/paineladvogado/{id}/totalizadores e /processos; também /pje-comum-api/api/dominio/*) responde
+  "Request blocked" do CloudFront da Amazon para servidores da Amazon (Supabase). /pje-mni/intercomunicacao também 403; /primeirograu/intercomunicacao
+  não existe. Painel antigo (/primeirograu/Painel/painel_usuario/list.seam) abre, sem a lista. Próximo teste: a mesma API pelos servidores do Google
+  (Apps Script), com a sessão aberta pela função do Supabase (a senha nunca sai do cofre).
