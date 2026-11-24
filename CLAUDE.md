@@ -2112,8 +2112,10 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   ONDE: Na Justiça (nº CNJ + vara → `trabalho.conferir` inicial → Ajuizados) ou No INSS (protocolo + DER + benefício → `processos.protocolarInss` /
   `protocolarNoInss_`: pedido do INSS já em "Pedido feito no INSS"; a petição sem número sai). Pedidos do INSS em assinado/documentos ficam no quadro 1
   ("Protocolar no INSS →"). Ajuizados e INSS: QUADRADOS grandes por etapa (número, nome, descrição, faixa de cor; `PX3_DESC_J`, `PX3_ETAPAS_INSS`);
-  clicar filtra a lista embaixo (30 por página). Classes `px3-*`. Quadro antigo: #/processos?visao=quadro. A barra do topo aparece em Clientes/Processos.
+  8.58.2: os quadrados saíram — Ajuizados e INSS mostram um CARTÃO por processo/pedido (cliente, nº/protocolo, área, etapa com explicação, próximo ato;
+  filtro de etapa num seletor, 24 por página); visual mais harmônico (menos preto). Classes `px3-*`. Quadro antigo: #/processos?visao=quadro. A barra do topo aparece em Clientes/Processos.
 - IA Jurídica (8.58.1: página inteira #/ia, `telaIA`, item "IA Jurídica" no menu e botão no topo; SEM perguntas prontas, pedido da usuária):
+  8.58.2: ⚡ raio no menu, no topo e na página; caixa ÚNICA (`modo: 'auto'`: o planejador decide; o que não é dado do escritório vai para a IA jurídica);
   conversas à esquerda (sessionStorage `ia_conversas_<usuário>`, apagadas ao Sair), caixa grande com o modo ⚖ Jurídico | 📋 Dados do escritório
   (localStorage `assist_modo`), respostas em Markdown com títulos, listas, tabelas e citações (`mdParaDom`), Copiar, "🔎 Buscar julgados reais no STJ",
   "↻ Gerar de novo". Servidor: `juridicoIA_` com o modelo FLASH (Config IA_MODELO_JURIDICO força outro; o padrão lite fica para o resto), 8192 tokens,

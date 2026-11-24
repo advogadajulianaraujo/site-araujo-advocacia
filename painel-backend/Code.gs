@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.58.1';
+var VERSAO = '8.58.2';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -5988,7 +5988,7 @@ var SISTEMA_ASSISTENTE_ = 'Você é o assistente interno do escritório Araújo 
   '"de": "aaaa-mm-dd ou vazio", "ate": "aaaa-mm-dd ou vazio", "pessoa": "eu | todos | nome de alguém da equipe | vazio", "tipo": "audiencia|pericia|conciliacao|instrucao|vazio", ' +
   '"situacao": "vencidos|hoje|atrasadas|abertos|vazio", "alvo": "[CLIENTE1] ou [PROCESSO1] ou vazio", "dias": número ou 0, "titulo": "texto da tarefa ou vazio", "data": "aaaa-mm-dd ou vazio", ' +
   '"resposta": "só para ferramenta conversa: resposta curta e educada, sem inventar dados"}. ' +
-  'Ferramentas: agenda = audiências e perícias marcadas; prazos = prazos processuais (data final); intimacoes = intimações para resolver; tarefas = tarefas da equipe; ' +
+  'Ferramentas: agenda = audiências e perícias marcadas; prazos = os prazos CADASTRADOS no painel do escritório (pergunta do tipo "quantos dias a lei dá", "qual o prazo do recurso" é juridico); intimacoes = intimações para resolver; tarefas = tarefas da equipe; ' +
   'cliente = tudo sobre um cliente citado; processo = situação de um processo citado; cobrancas = honorários/parcelas em atraso ou do mês; parados = processos sem movimentação; ' +
   'aniversarios = clientes que fazem aniversário; criar_tarefa = a pessoa PEDIU para criar/anotar uma tarefa; ' +
   'juridico = qualquer pergunta de DIREITO (lei, requisitos, como funciona um procedimento, prazo legal, recurso cabível, tese, prova, cálculo, estratégia), mesmo citando um cliente ou processo; ' +
@@ -6026,6 +6026,7 @@ function assistenteIA_(d, u) {
   }
   if (!plano || !plano.ferramenta) plano = planoRegrasIA_(pergunta);
   if (d.modo === 'juridico' && plano.ferramenta !== 'criar_tarefa') plano.ferramenta = 'juridico';
+  if (d.modo === 'auto' && (!plano.ferramenta || plano.ferramenta === 'conversa')) plano.ferramenta = 'juridico'; // 8.58.2: uma caixa só; o que não é dado do escritório vai para a IA jurídica
   plano._conversa = (Array.isArray(d.conversa) ? d.conversa : []).slice(-4).map(function (x) { return { p: anonimizar_(String((x && x.p) || '').slice(0, 600), []), r: anonimizar_(String((x && x.r) || '').slice(0, 2200), []) }; });
   plano._pergunta = ent.paraIA; plano._anterior = d.anterior ? anonimizar_(String(d.anterior).slice(0, 2500), []) : ''; plano._hist = Array.isArray(d.historico) ? d.historico.slice(-3) : [];
   var res = executarIA_(plano, ent.mapa, u, hoje);
