@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.55.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.56.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.55.0';
+var MOTOR_VERSAO = '8.56.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.55.0';
+var VERSAO = '8.56.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -505,6 +505,134 @@ function memoriaPrazo_(d) {
    (2) o PJe avisa "Expedido(a) intimação a(o) X" também quando X é a outra parte, e "Mandado de intimação" (oficial de justiça) virava prazo;
    (3) nos prazos do eproc o DJEN publicou o mesmo ato ~10 dias antes da ciência tácita: duas datas para o mesmo prazo. Desde 16/05/2025
    (Res. CNJ 569/2024; cartilha do TJSC sobre o eproc) o prazo do advogado conta da PUBLICAÇÃO no DJEN — e na dúvida vale a mais curta. */
+function semEntidades_(s) {
+  return String(s || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&([a-z])(acute|grave|circ|tilde|cedil|uml);/gi, '$1').replace(/&[a-z]+;/gi, ' ');
+}
+var NUM_EXTENSO_ = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13,
+  quatorze: 14, catorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20, trinta: 30, quarenta: 40, sessenta: 60, noventa: 90 };
+/** 8.43: todos os "prazo (improrrogável/comum/…) de N (por extenso) dias/horas (úteis/corridos)" do texto normalizado. */
+function prazosNoTexto_(t, naFrase) {
+  var ext = Object.keys(NUM_EXTENSO_).sort(function (a, b) { return b.length - a.length; }).join('|');
+  var num = '(\\d{1,3}|(?:(?:vinte|trinta|quarenta) e )?(?:' + ext + '))';
+  var re = new RegExp('prazo(?:\\s+(?:comum|improrrogavel|sucessivo|legal|maximo|derradeiro|ultimo|adicional|suplementar|igual|novo|peremptorio|de ate|ate))*\\s+(?:de\\s+)?' + num + '\\s*(?:\\([^)]{0,30}\\)\\s*)?(dias?|horas?)(\\s+(?:uteis|corridos))?', 'g');
+  var out = [], m;
+  while ((m = re.exec(String(t || '')))) {
+    var n = /^\d/.test(m[1]) ? +m[1] : m[1].split(' e ').reduce(function (a, w) { return a + (NUM_EXTENSO_[w] || 0); }, 0);
+    if (!n || n > 365) continue;
+    if (/hora/.test(m[2])) out.push({ dias: Math.max(1, Math.ceil(n / 24)), horas: n });
+    else out.push({ dias: n, corridos: /corridos/.test(m[3] || '') });
+  }
+  if (naFrase) { // dentro da frase da intimação vale também "para, em 15 (quinze) dias, manifestar-se" e "dentro de 5 dias"
+    var re2 = new RegExp('(?:\\bem|dentro de|ate)\\s+' + num + '\\s*(?:\\([^)]{0,30}\\)\\s*)?(dias?|horas?)(\\s+(?:uteis|corridos))?', 'g');
+    while ((m = re2.exec(String(t || '')))) {
+      var n2 = /^\d/.test(m[1]) ? +m[1] : m[1].split(' e ').reduce(function (a, w) { return a + (NUM_EXTENSO_[w] || 0); }, 0);
+      if (!n2 || n2 > 365) continue;
+      if (/hora/.test(m[2])) out.push({ dias: Math.max(1, Math.ceil(n2 / 24)), horas: n2 }); else out.push({ dias: n2, corridos: /corridos/.test(m[3] || '') });
+    }
+  }
+  return out;
+}
+/** 8.43: a frase "fica(m) … intimado(a)(s) para/a …" até o fim da frase (não corta em "art.", "id.", "v. sa.", "fls."). */
+function fraseIntimado_(t) {
+  var m = /intimad[oa]s?(?:\s*\(\s*a\s*\)\s*(?:\(\s*s\s*\))?)?(?:,[^,]{0,80},)?\s+(?:a|para|de que|acerca)\s/.exec(t);
+  if (!m) return '';
+  var ini = m.index, i = ini + m[0].length, fim = Math.min(t.length, ini + 700);
+  for (; i < fim; i++) {
+    if (t.charAt(i) !== '.' || !/\s/.test(t.charAt(i + 1) || ' ')) continue;
+    var antes = t.slice(Math.max(ini, i - 6), i).split(' ').pop();
+    if (/^(art|arts|id|v|sa|sr|sra|fls|fl|n|no|nº|inc|cpc|clt|ltda|me|s\/a|dr|dra|prov|res|ed)$/.test(antes) || /^\d+$/.test(antes)) continue;
+    fim = i; break;
+  }
+  return t.slice(ini, fim);
+}
+
+/** 8.43: robô que IDENTIFICA o ato dos prazos "ATO NÃO IDENTIFICADO" (aviso do PJe/eproc sem texto). Procura, nesta ordem: 1) publicação com
+ *  texto do MESMO processo até 5 dias da ciência (DJEN); 2) nome do ato nas movimentações do DataJud (sentença/acórdão/laudo) até 10 dias antes.
+ *  Duas leituras diferentes → fica a MAIS CURTA. Não toca em prazo conferido, de audiência/perícia ou lançado à mão. Fica tudo anotado. */
+var RE_JUNTADA_ = /juntad[ao]s?\s+(a\s+|de\s+)?(peti[cç][aã]o|manifesta|quesitos|contrarraz|recurso|embargos|r[ée]plica|impugna|c[áa]lculos|rol|documento)|apresenta[cç][aã]o de quesitos|protocolad[ao] peti/i;
+var RE_ENCERROU_ = /homologa[cç][aã]o de acordo|suspenso o processo por homologa|extinta a execu|extin[cç][aã]o (do processo|da execu)|arquivad[oa]s? definitiv|baixa definitiva|tr[aâ]nsito em julgado/i;
+var RE_FAZER_ = /manifest|apresent|junt|indic|comprov|deposit|recolh|cumpr|pagar|pague|emend|inform|requer|especific|impugn|regulariz|juntar|fornec/;
+/* 8.44.2: prazo vencido que o robô ainda deve retirar. Se alguém REABRIU um prazo que o robô (ou a baixa em lote) já tinha retirado, ele fica
+   aberto: a pessoa disse que não foi feito, e o robô não passa por cima. */
+var RE_JA_RETIRADO_ = /saiu da lista em|baixa autom[aá]tica:|sem prazo: .*\(rob[oô],|baixa em lote em/;
+function vencidoParaRetirar_(z, hoje) {
+  if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || !z.fatal || z.fatal >= hoje) return false;
+  // 8.54: quem reabriu foi o PRÓPRIO robô (correção 8.48/8.49: "saiu antes do fim do prazo no tribunal") e ninguém mexeu depois → pode sair de novo,
+  // agora só com a margem de 10 dias úteis, o "Decorrido o prazo" do PJe ou a petição juntada (antes ficavam vencidos para sempre na lista)
+  var reabertoPeloRobo = /8\.48: reaberto em/.test(z.observacoes || '') && /^robô/.test(z.atualizado_por || '') && z.situacao !== 'conferido';
+  if (RE_JA_RETIRADO_.test(z.observacoes || '') && !reabertoPeloRobo) return false;
+  return /^ato:/.test(z.observacoes || '') || !!z.ciencia; // 8.44.3: audiência/perícia que já aconteceu também sai
+}
+/* 8.44.2 (pedido da usuária): também no robô de 10 em 10 min. Lê só os Prazos; as outras tabelas só quando há vencido para retirar. */
+/* 8.48 (achado no print do PJe da usuária, 18/11/2026): o painel conta o prazo pela regra MAIS CURTA (ex.: 5 dias) e o PJe/eproc às vezes dá
+ * mais tempo (o "Prazo final" do expediente: 19/11 quando o painel dizia 17/11). Retirar um vencido "sem comprovação" ou "só ciência" logo no
+ * dia seguinte tirava da lista prazos que AINDA estavam correndo no tribunal. Agora só sai sozinho depois de 10 dias úteis da data do painel
+ * (ou antes, se a data foi conferida no tribunal). Petição juntada, acordo/extinção e audiência/perícia que já aconteceu continuam na hora. */
+function alemDaMargem_(z, hoje) {
+  if (z.situacao === 'conferido' || /vinculado ao (PJe|eproc)/i.test(z.origem || '')) return true;
+  try { return calcularFatal_(z.fatal, 10, 'uteis', tribunalDoNumero_(z.numero)) < hoje; } catch (e) { return somarDias_(z.fatal, 16) < hoje; }
+}
+var RE_RETOMOU_ = /revogad|encerrad[ao] a suspens|desarquiv|prosseguimento do feito|retomad/i;
+function baixarVencidos844_() {
+  var hoje = hojeSP_(), tabZ = tabela_('Prazos'), tabI = tabela_('Intimacoes'), procs = {}, porNum = {}, porId = {}, agora = new Date().toISOString(), n = { feito: 0, ciencia: 0, sem: 0 };
+  tabela_('Processos').linhas.forEach(function (p) { procs[p.id] = p; });
+  tabI.linhas.forEach(function (i) { porId[i.id] = i; (porNum[i.numero] = porNum[i.numero] || []).push(i); });
+  tabZ.linhas.forEach(function (z) {
+    if (!vencidoParaRetirar_(z, hoje)) return;
+    if (/^ato:/.test(z.observacoes || '')) { // 8.44.3 (pedido da usuária: "o que aconteceu ontem, como audiência, não preciso; só as novas")
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (o ato já aconteceu)', cumprido_em: agora, etapa: 'protocolado', ok_por: 'robô', ok_em: agora,
+        observacoes: z.observacoes + ' | ato de ' + dataBR_(z.fatal) + ' já aconteceu: saiu da lista em ' + dataBR_(hoje), atualizado_em: agora, atualizado_por: 'robô' });
+      intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: 'robô', terminada_em: agora, ok_por: 'sem prazo', ok_em: agora }); });
+      n.atos = (n.atos || 0) + 1; return;
+    }
+    var aviso = String((porId[z.intimacao_id] || {}).recebido_em || '').slice(0, 10) || somarDias_(z.ciencia, -3);
+    var movs = (porNum[z.numero] || []).map(function (i) { return { d: String(i.recebido_em || '').slice(0, 10), n: String(i.movimento || ''), i: i }; });
+    var p = procs[z.processo_id] || {};
+    if (p.andamentos && p.andamentos.charAt(0) === '[') { try { JSON.parse(p.andamentos).forEach(function (m) { movs.push({ d: String(m.d || '').slice(0, 10), n: String(m.n || '') }); }); } catch (e) { /* segue */ } }
+    var depois = movs.filter(function (m) { return m.d && m.d >= aviso && m.d <= hoje; });
+    var junt = depois.filter(function (m) { return m.d > aviso && RE_JUNTADA_.test(m.n); }).sort(function (a, b) { return a.d < b.d ? 1 : -1; })[0]; // a mais recente
+    var fim = movs.filter(function (m) { return m.d && m.d >= somarDias_(aviso, -5) && RE_ENCERROU_.test(m.n); })[0];
+    // 8.48: acordo/suspensão que depois foi revogada (ex.: "Revogada a suspensão", "Encerrada a suspensão") não encerra o prazo
+    if (fim && movs.some(function (m) { return m.d && m.d >= fim.d && RE_RETOMOU_.test(m.n); })) fim = null;
+    // o ato era só para ciência? (frase "fica intimado para ciência…" sem nada a fazer, audiência/perícia marcada, processo novo)
+    var soCiencia = /^(Perícia marcada|Intimação de audiência|Distribuição)/.test(z.descricao || '');
+    if (!soCiencia && /Notificação com documento anexado/.test(z.observacoes || '') && movs.some(function (m) { return /distribu[ií]do/i.test(m.n) && Math.abs(diffDias_(m.d, aviso)) <= 5; })) soCiencia = true;
+    if (!soCiencia) (porNum[z.numero] || []).forEach(function (i) {
+      var dia = String(i.recebido_em || '').slice(0, 10); if (!i.texto || Math.abs(diffDias_(dia, aviso)) > 4) return;
+      var f = fraseIntimado_(normalizar_(semEntidades_(i.texto)));
+      if (f && /ciencia/.test(f) && !prazosNoTexto_(f, true).length && !RE_FAZER_.test(f.replace(/tomar ciencia|para ciencia|a ciencia|da ciencia/g, ''))) soCiencia = true;
+    });
+    var obs = (z.observacoes ? z.observacoes + ' | ' : '');
+    if (fim) junt = null; // acordo/extinção explica melhor que a petição
+    // 8.54: o PJe registrou "Decorrido o prazo de <nosso cliente> em dd/mm/aaaa" na nossa data ou depois → o prazo acabou no tribunal com certeza:
+    // não precisa esperar a margem de 10 dias úteis (ela existe porque o tribunal pode ter dado mais prazo)
+    var cliN = clienteDoProcesso_(p), limDec = (function () { try { return calcularFatal_(z.fatal, 10, 'uteis', tribunalDoNumero_(z.numero)); } catch (e) { return somarDias_(z.fatal, 16); } })();
+    var dec = movs.map(function (m) { var x = /^Decorrido o prazo de (.+?) em (\d{2})\/(\d{2})\/(\d{4})/i.exec(m.n); return x ? { d: x[4] + '-' + x[3] + '-' + x[2], quem: x[1] } : null; })
+      .filter(function (x) { return x && x.d >= z.fatal && x.d <= limDec && (z.ciencia || '') <= x.d && (/JULIAN\s+MARCELINO/i.test(x.quem) || (cliN && (nomeBateTexto_(cliN, x.quem) || nomeBateTexto_(x.quem, cliN)))); })
+      .sort(function (a, b) { return a.d < b.d ? -1 : 1; })[0];
+    if (!junt && !fim && !alemDaMargem_(z, hoje) && !dec) return; // 8.48: "só ciência"/"sem comprovação" esperam 10 dias úteis (o tribunal pode ter dado mais prazo)
+    if (junt) {
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (petição juntada em ' + dataBR_(junt.d) + ')', cumprido_em: agora, etapa: 'protocolado',
+        observacoes: obs + 'baixa automática: "' + junt.n.slice(0, 70) + '" em ' + dataBR_(junt.d) + ' — conferir se foi do escritório', atualizado_em: agora, atualizado_por: 'robô' });
+      n.feito++;
+    } else if (fim || soCiencia) {
+      atualizarLinha_(tabZ, z, { situacao: 'cancelado', observacoes: obs + 'sem prazo: ' + (fim ? '"' + fim.n.slice(0, 60) + '" em ' + dataBR_(fim.d) : 'o ato era só para ciência') + ' (robô, ' + dataBR_(hoje) + ')',
+        atualizado_em: agora, atualizado_por: 'robô' });
+      n.ciencia++;
+    } else {
+      atualizarLinha_(tabZ, z, { situacao: 'cumprido', cumprido_por: 'robô (vencido sem comprovação)', cumprido_em: agora, etapa: 'protocolado', ok_por: 'robô (sem comprovação — conferir)', ok_em: agora,
+        observacoes: obs + 'vencido sem comprovação' + (dec ? ' — o PJe registrou "Decorrido o prazo de ' + dec.quem.slice(0, 50) + ' em ' + dataBR_(dec.d) + '" (prazo encerrado no tribunal)' : '') + ': saiu da lista em ' + dataBR_(hoje) + '; se NÃO foi feito, reabra', atualizado_em: agora, atualizado_por: 'robô' });
+      n.sem++;
+    }
+    if (junt || fim || soCiencia) intimacoesDoPrazo_(tabI, z).forEach(function (i) { if (!i.terminada_por) atualizarLinha_(tabI, i, { terminada_por: 'robô', terminada_em: agora, ok_por: junt ? '' : 'sem prazo', ok_em: junt ? '' : agora }); });
+  });
+  if (n.feito + n.ciencia + n.sem + (n.atos || 0)) registrar_('robô', 'vencidos retirados', n.feito + ' feitos (petição juntada), ' + n.ciencia + ' só ciência, ' + n.sem + ' sem comprovação, ' + (n.atos || 0) + ' audiência(s)/perícia(s) que já aconteceram');
+  return n;
+}
+
+/** 8.48, UMA vez (Config FIX_REABRIR_848): reabre os prazos que o robô (ou a baixa em lote) tirou da lista cedo demais — data do painel há menos
+ *  de 10 dias úteis, sem petição juntada depois do aviso e sem acordo/extinção que continue valendo. Ficam com a marca, para não saírem de novo
+ *  sozinhos; a equipe confere no PJe/eproc e marca Feito (ou usa "📌 Data do PJe/eproc"). */
 var FASES = { contratado: 'Petição inicial (a ajuizar)', ajuizado: 'Ajuizado (citação)', conciliacao: 'Audiência de conciliação',
   andamento: 'Em andamento (defesa e réplica)', pericia: 'Perícia', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
   acordo: 'Acordo', homologacao: 'Homologação', recurso: 'Recurso', execucao: 'Execução / cumprimento', extinto: 'Encerrado / arquivado' };
@@ -548,6 +676,19 @@ function estadoRobo_() {
 }
 
 function hashCurto_(t) { var h1 = 5381, h2 = 52711; t = String(t || ''); for (var i = 0; i < t.length; i++) { var c = t.charCodeAt(i); h1 = (h1 * 33) ^ c; h2 = (h2 * 33) ^ c; h1 |= 0; h2 |= 0; } return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36); }
+function nomeBateTexto_(nome, texto) {
+  var ws = nomeComparavel_(nome).split(' ').filter(function (w) { return w.length > 2 && !/\d/.test(w); });
+  if (!ws.length) return false;
+  var t = ' ' + nomeComparavel_(texto) + ' ';
+  if (t.indexOf(' ' + ws[0] + ' ') < 0) return false;
+  return ws.length === 1 || ws.slice(1).some(function (w) { return t.indexOf(' ' + w + ' ') >= 0; });
+}
+function clienteDoProcesso_(proc) {
+  if (!proc) return '';
+  var n = proc.cliente_nome || '';
+  if ((!n || /a identificar/i.test(n)) && proc.cliente_id) { var c = tabela_('Clientes').linhas.filter(function (x) { return x.id === proc.cliente_id; })[0]; if (c) n = c.nome || ''; }
+  return /a identificar|sigilo|segredo/i.test(n) || n.length < 5 ? '' : n;
+}
 function diffDias_(a, b) {
   return Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000);
 }
@@ -747,6 +888,7 @@ function caixaDesde_() { return config_('CAIXA_DESDE') || CAIXA_DESDE_PADRAO; }
 /** Situação da intimação na caixa: nao | tratada | descartada | robo (o robô já resolveu: outra parte, só movimentação, confirmação…). */
 function statusCaixa_(i, prazos) {
   if (i.tratamento === 'descartada') return 'descartada';
+  if (i.tratamento === 'nao_feita') return 'nao_feita';
   if (i.tratada_em) return 'tratada';
   if (i.terminada_por) return /^robô/.test(i.terminada_por) ? 'robo' : 'tratada';
   var z = prazos && i.prazo_id ? prazos[i.prazo_id] : null; // o prazo ligado já foi cumprido/cancelado = já foi tratada no fluxo antigo
@@ -760,6 +902,10 @@ function naCaixa_(i, desde, prazos) {
   if (String(i.recebido_em || '').slice(0, 10) < desde || statusCaixa_(i, prazos) === 'robo' || movimentoPuro_(i)) return false;
   return !!i.prazo_id || i.fonte === 'DJEN' || RE_INTIM_CAIXA_.test(i.movimento || '');
 }
+/* 8.56 (pedido da usuária, 24/11/2026: "as intimações que não foram feitas, coloque que não foi feito, porém dê baixa, pois já não serve; quero que
+ * apareçam a do dia e as dos próximos dias no Para resolver, não as antigas"): intimação ainda "para resolver" cujo prazo do painel JÁ VENCEU, ou
+ * sem prazo e recebida há mais de 5 dias, sai da fila como "Não feita" (com o motivo). Nada é apagado: fica no filtro "Não feitas". O PRAZO em si
+ * segue a regra dele (baixarVencidos844_: só sai depois de 10 dias úteis, porque o PJe às vezes dá mais dias). Robôs do escritório + aquecedor. */
 var ROTULO_ATO = { pericia: 'Perícia', laudo: 'Laudo pericial', audiencia: 'Audiência de conciliação', instrucao: 'Audiência de instrução', sentenca: 'Sentença',
   acordao: 'Acórdão', contrarrazoes: 'Contrarrazões', contestacao: 'Contestação / defesa', replica: 'Réplica', emenda: 'Emenda à inicial', calculos: 'Cálculos',
   valores: 'Alvará / RPV / precatório', embargos: 'Embargos', acordo: 'Acordo', manifestacao: 'Manifestação', ciencia: 'Só ciência' };
@@ -892,7 +1038,7 @@ function caixaIntimacoes_(d, u) {
   var dia = function (iso) { return iso ? diaSP_(String(iso)) : ''; };
   var todas = tabela_('Intimacoes').linhas.filter(function (i) { return naCaixa_(i, desde, ctx.prazos); });
   var stOf = function (i) { return statusCaixa_(i, ctx.prazos); };
-  var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0 }, semana = [];
+  var placar = { nao_hoje: 0, tratadas_hoje: 0, descartadas_hoje: 0, nao: 0, nao_feitas: 0 }, semana = [];
   for (var k = 6; k >= 0; k--) semana.push({ dia: somarDias_(hoje, -k), recebidas: 0, tratadas: 0 });
   var idx = {}; semana.forEach(function (s, n) { idx[s.dia] = n; });
   todas.forEach(function (i) {
@@ -900,6 +1046,7 @@ function caixaIntimacoes_(d, u) {
     if (st === 'nao') { placar.nao++; if (rec === hoje) placar.nao_hoje++; }
     if (st === 'tratada' && tr === hoje) placar.tratadas_hoje++;
     if (st === 'descartada' && tr === hoje) placar.descartadas_hoje++;
+    if (st === 'nao_feita' && tr >= somarDias_(hoje, -30)) placar.nao_feitas++;
     if (idx[rec] !== undefined) semana[idx[rec]].recebidas++;
     if (st !== 'nao' && idx[tr] !== undefined) semana[idx[tr]].tratadas++;
   });
@@ -912,10 +1059,13 @@ function caixaIntimacoes_(d, u) {
     if (status === 'tratadas_hoje' && (st !== 'tratada' || dia(i.tratada_em || i.terminada_em) !== hoje)) return false;
     if (status === 'descartadas' && (st !== 'descartada' || dia(i.tratada_em) < corte)) return false;
     if (status === 'descartadas_hoje' && (st !== 'descartada' || dia(i.tratada_em) !== hoje)) return false;
+    if (status === 'nao_feitas' && (st !== 'nao_feita' || dia(i.tratada_em) < corte)) return false;
     if (status === 'todas' && String(i.recebido_em).slice(0, 10) < corte) return false;
     if (q && normalizar_([i.numero, i.movimento, i.partes_cliente, i.fonte, i.texto, (ctx.clis[(ctx.procs[i.processo_id] || {}).cliente_id] || {}).nome].join(' ')).indexOf(q) < 0) return false;
     return true;
-  }).sort(function (a, b) { return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, Math.min(+d.limite || 200, 400)).map(function (i) { return itemCaixa_(i, ctx); });
+  }).sort(function (a, b) {
+    if (/^nao/.test(status) && status !== 'nao_feitas') { var fa = ((ctx.prazos[a.prazo_id] || {}).fatal) || '9', fb = ((ctx.prazos[b.prazo_id] || {}).fatal) || '9'; if (fa !== fb) return fa < fb ? -1 : 1; }
+    return a.recebido_em < b.recebido_em ? 1 : -1; }).slice(0, Math.min(+d.limite || 200, 400)).map(function (i) { return itemCaixa_(i, ctx); });
   if (d.minhas) lista = lista.filter(function (x) { return x.responsavel === u.usuario; });
   return { placar: placar, semana: semana, lista: lista, desde: desde };
 }
@@ -1107,7 +1257,7 @@ function andamentosImportantes_(d, u) {
   });
   tabela_('Intimacoes').linhas.forEach(function (i) {
     var p = porNum[i.numero]; if (!p) return;
-    add(p, String(i.recebido_em || '').slice(0, 10), String(i.movimento || '').replace(/\s+—\s+.*$/, ''), i.fonte || '');
+    add(p, diaSP_(i.recebido_em), String(i.movimento || '').replace(/\s+—\s+.*$/, ''), i.fonte || '');
   });
   var lista = Object.keys(itens).map(function (k) { return itens[k]; });
   var expl = {}; try { tabela_('Explicacoes').linhas.forEach(function (e) { if (e.chave) expl[e.chave] = e.situacao; }); } catch (eX) { /* aba nova */ }
@@ -2466,7 +2616,7 @@ function inicioExtras_(d, u) {
  *  na etapa Petição inicial). Mais antigos primeiro. Só nomes, dias e quem cuida (nada de valores). */
 var ESPERA_ASSIN_DIAS = 7, ESPERA_INICIAL_DIAS = 10;
 function esperandoMuito_(hoje, clis) {
-  var dias = function (iso) { return iso ? diffDias_(hoje, String(iso).slice(0, 10)) : 0; }, assin = [], iniciais = [];
+  var dias = function (iso) { return iso ? diffDias_(hoje, diaSP_(iso)) : 0; }, assin = [], iniciais = [];
   tabela_('Assinaturas').linhas.forEach(function (a) {
     if (a.situacao !== 'aguardando' || !a.gerado_em) return;
     var n = dias(a.gerado_em); if (n < ESPERA_ASSIN_DIAS) return;
@@ -2487,6 +2637,11 @@ function esperandoMuito_(hoje, clis) {
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
+function intimacoesDoPrazo_(tabI, z) {
+  return tabI.linhas.filter(function (i) { return (z.intimacao_id && i.id === z.intimacao_id) || (i.prazo_id && i.prazo_id === z.id); });
+}
+
+/** Quem trabalha no escritório (para escolher quem fez). */
 function listarEquipe_() {
   return usuarios_().filter(function (x) { return x.ativo === 'sim'; })
     .map(function (x) { return { usuario: x.usuario, nome: x.nome || x.usuario, perfil: x.perfil }; })

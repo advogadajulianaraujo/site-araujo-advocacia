@@ -2055,7 +2055,7 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   Sem senha e sem abrir expediente (não dá ciência). Diego (0000011-37): ajustado à mão para 24/11 a pedido da usuária.
 - Teste: `.github/motor/teste/etapa855.js` (caixa, sugestão, aprendizado, INSS, comissão, horas/fatura, lista do PJe, CRM, atos sem data, ficha).
 
-## 8.56 Intimações direto do eproc (pedido da usuária, 23/11/2026: "monitorar as intimações que saem só nos portais", como o Astrea)
+## 8.56.0 Intimações direto do eproc (pedido da usuária, 23/11/2026: "monitorar as intimações que saem só nos portais", como o Astrea)
 
 - Testado do Supabase (us-east e sa-east-1): o eproc do TJSC (1º e 2º grau), da JFSC e do TRF4 RESPONDE ao serviço oficial (MNI 2.2.2,
   `…/ws/controlador_ws.php?srv=intercomunicacao2.2`) e autentica com USUÁRIO + SENHA do eproc (não precisa de certificado). O PJe do TRT12 e do
@@ -2067,5 +2067,16 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   REGRA DE OURO: só `consultarAvisosPendentes` (lista sem dar ciência); NUNCA `consultarTeorComunicacao` nem `confirmarRecebimento`.
 - Painel: Configurações › Robôs e sistema › "⚖ Intimações direto do eproc" (`dialogoTribunais`, `PAINEL_BANCO.tribunais`). A senha vai do
   navegador direto à função (não passa pelo Google nem pela planilha).
-- Falta (depois do teste com o login real): o robô de hora em hora importar as pendentes como intimações (cruzando com o DJEN) e a extensão
-  ler o PJe do TRT12 sozinha.
+- Robô (`eprocDireto_`, toda rodada do robô de hora em hora, no máx. 1×/50 min, Properties EPROC_DIRETO_EM): chama a função `tribunais` com
+  acao=avisos e header x-painel-chave = SUPABASE_CHAVE (a função confere a chave usando-a para ler o cofre). Cada pendente vira intimação (fonte
+  "eproc TJSC (portal)"/"eproc JFSC (portal)", chave eproc-portal|sistema|idAviso) com ciência TÁCITA = disponibilização + 10 dias; sem texto →
+  "ATO NÃO IDENTIFICADO" até o DJEN trazer o texto; o mesmo ato já chegado pelo e-mail do eproc (±3 dias) não repete. Aviso no chat da equipe.
+  Status em Config EPROC_DIRETO. Teste `.github/motor/teste/etapa856.js`.
+- Falta: a extensão ler o PJe do TRT12 sozinha (o tribunal recusa servidores).
+- Intimações › "Para resolver" (pedido da usuária, 24/11): `baixarCaixaVencida_` (robôs do escritório) dá baixa como "Não feita" (tratamento
+  nao_feita, motivo em tratada_por) na intimação cujo prazo do painel já venceu ou que está sem prazo há mais de 5 dias; o PRAZO segue a regra
+  dele (10 dias úteis). Filtro "Não feitas (baixadas)". A fila sai em ordem da data do prazo (hoje primeiro).
+- Horas trabalhadas saiu do menu: sub-aba de Documentos, ao lado de Calculadoras. Datas de Greenwich × Brasília corrigidas em andamentos
+  importantes, "esperando há muito tempo" e comissão (`diaSP_`).
+- 24/11: tarefas de processo (177), prazos abertos (112) e a distribuição trabalhista (prazos e iniciais) passaram da Lara para a Taina; avisos
+  ao cliente e secretaria ficaram com a Lara (49 tarefas). Os PROCESSOS com responsável Lara não foram mudados (falta o OK da usuária).
