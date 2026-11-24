@@ -2121,4 +2121,11 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "↻ Gerar de novo". Servidor: `juridicoIA_` com o modelo FLASH (Config IA_MODELO_JURIDICO força outro; o padrão lite fica para o resto), 8192 tokens,
   `SISTEMA_JURIDICO_` de advogado sênior (resumo, fundamento legal, entendimento dos tribunais, prática, estratégia e argumentos, riscos, o que conferir;
   tabelas e exemplos de cálculo; escreve o texto quando pedem cláusula/tópico/quesitos), memória das 4 últimas trocas (`conversa`), caso do painel
-  ANONIMIZADO (`casoParaIA_`). Nunca inventa julgado nem calcula data fatal. Pedido de tarefa continua virando tarefa. Teste `.github/motor/teste/etapa858.js`.
+  ANONIMIZADO (`casoParaIA_`). Nunca inventa julgado nem calcula data fatal.
+- 8.58.3: Petição inicial em LINHAS curtas (nome, área, "Inicial não feita/feita", um botão; clicar abre a ficha). Ajuizados e INSS em QUADRO POR ETAPA
+  (modelo antigo: coluna com o nome da etapa e os cartões de cada cliente embaixo; arrastar muda a etapa em Ajuizados, `processos.fase`).
+  A busca do topo voltou em Clientes/Processos (em Processos filtra a aba aberta, `?q=`). IA ao lado: botão "⚡ IA Jurídica" junto da busca e puxador
+  ⚡ na borda direita (`ia-puxar`) abrem a GAVETA (`abrirGavetaIA`/`iaMontar({compacto})`, mesmas conversas da página; ⤢ abre em tela inteira).
+  IA integrada: "como está o processo de Fulano" → `executarIA_` processo lista os dados e a IA explica (`SISTEMA_ANDAMENTO_`: resumo, o que aconteceu,
+  o que vem agora, o que fazer, como explicar ao cliente) com `casoParaIA_(pa, true)` (andamentos, intimações, prazos; anonimizado); "qual o número do
+  processo de Fulano" → cliente com os números no texto; só o primeiro nome com maiúscula também acha o cliente (até 6 → pergunta qual). Pedido de tarefa continua virando tarefa. Teste `.github/motor/teste/etapa858.js`.
