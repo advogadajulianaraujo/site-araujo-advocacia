@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.58.3 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.58.3';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.58.4 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.58.4';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.58.3';
+var VERSAO = '8.58.4';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -117,7 +117,7 @@ var ESQUEMA = {
     'indicado_por', 'indicacao_pct', 'indicacao_base', 'indicacao_em', 'ctps', 'pis', 'cnh', 'nome_pai', 'nome_mae', 'naturalidade', 'banco', 'agencia', 'conta', 'pix', 'falecido', 'obito_em'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em', 'docs_ok', 'docs_ok_em', 'docs_ok_por'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
     'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em', 'tratada_em', 'tratada_por', 'tratamento'], // 8.55: caixa de entrada (tratar/descartar) // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
@@ -566,6 +566,7 @@ var ROTAS = {
   'processos.fase': { fn: mudarFaseProcesso_ },
   'processos.inicialFeita': { fn: inicialFeita_ },     // 8.47: Petição inicial → Protocolar (mandar ao cliente, depois protocolar)
   'processos.inicialEnviada': { fn: inicialEnviada_ },
+  'processos.docs': { fn: processoDocs_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
   'future.resumo': { future: true, fn: futureResumo_ },
   'future.unidade': { future: true, fn: futureUnidade_ },
@@ -2071,6 +2072,18 @@ function inicialEnviada_(d, u) {
     atualizarLinha_(tab, p, { inicial_enviada_em: agora, inicial_feita_em: p.inicial_feita_em || agora, inicial_feita_por: p.inicial_feita_por || (u.nome || u.usuario), atualizado_em: agora, atualizado_por: u.usuario });
     registrar_(u.usuario, 'WhatsApp ao cliente', 'petição inicial para o cliente aprovar · ' + (p.cliente_nome || p.id));
     return { ok: true };
+  });
+}
+
+/** 8.58.4 (pedido da usuária: "um botão: já tem todos os documentos? sim ou não; e aparecer no início"): marca se a petição já tem os documentos. */
+function processoDocs_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Processos'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Processo não encontrado.');
+    var agora = new Date().toISOString(), ok = d.ok === true || d.ok === 'sim';
+    atualizarLinha_(tab, p, { docs_ok: ok ? 'sim' : 'nao', docs_ok_em: agora, docs_ok_por: u.nome || u.usuario, atualizado_em: agora, atualizado_por: u.usuario });
+    registrar_(u.usuario, 'petição inicial: documentos', (ok ? 'documentos completos · ' : 'faltam documentos · ') + (p.cliente_nome || p.id));
+    return { ok: true, docs_ok: ok ? 'sim' : 'nao' };
   });
 }
 
@@ -6039,13 +6052,13 @@ function entidadesIA_(pergunta) {
   return { paraIA: anonimizar_(paraIA, []), mapa: mapa };
 }
 var SISTEMA_ASSISTENTE_ = 'Você é o assistente interno do escritório Araújo Advocacia (painel de gestão). Converta a pergunta da equipe numa consulta. ' +
-  'Responda SOMENTE em JSON: {"ferramenta": "agenda|prazos|intimacoes|tarefas|cliente|processo|cobrancas|parados|aniversarios|criar_tarefa|juridico|conversa", ' +
+  'Responda SOMENTE em JSON: {"ferramenta": "agenda|prazos|intimacoes|tarefas|cliente|processo|cobrancas|parados|aniversarios|crm|criar_tarefa|juridico|conversa", ' +
   '"de": "aaaa-mm-dd ou vazio", "ate": "aaaa-mm-dd ou vazio", "pessoa": "eu | todos | nome de alguém da equipe | vazio", "tipo": "audiencia|pericia|conciliacao|instrucao|vazio", ' +
   '"situacao": "vencidos|hoje|atrasadas|abertos|vazio", "alvo": "[CLIENTE1] ou [PROCESSO1] ou vazio", "dias": número ou 0, "titulo": "texto da tarefa ou vazio", "data": "aaaa-mm-dd ou vazio", ' +
   '"resposta": "só para ferramenta conversa: resposta curta e educada, sem inventar dados"}. ' +
   'Ferramentas: agenda = audiências e perícias marcadas; prazos = os prazos CADASTRADOS no painel do escritório (pergunta do tipo "quantos dias a lei dá", "qual o prazo do recurso" é juridico); intimacoes = intimações para resolver; tarefas = tarefas da equipe; ' +
   'cliente = dados e lista de processos de um cliente citado (inclusive "qual o número do processo de Fulano"); processo = como está / andamento / o que aconteceu num processo (pelo número ou pelo cliente citado); cobrancas = honorários/parcelas em atraso ou do mês; parados = processos sem movimentação; ' +
-  'aniversarios = clientes que fazem aniversário; criar_tarefa = a pessoa PEDIU para criar/anotar uma tarefa; ' +
+  'aniversarios = clientes que fazem aniversário; crm = funil de atendimento / contatos novos / quem não fechou / quem está para fechar; criar_tarefa = a pessoa PEDIU para criar/anotar uma tarefa; ' +
   'juridico = qualquer pergunta de DIREITO (lei, requisitos, como funciona um procedimento, prazo legal, recurso cabível, tese, prova, cálculo, estratégia), mesmo citando um cliente ou processo; ' +
   'conversa = saudação ou ajuda sobre o painel. ' +
   'Converta "hoje", "amanhã", "esta semana", "próxima semana", "este mês" em datas a partir de HOJE. "meus/minhas/eu" = pessoa "eu". Nunca invente dados.';
@@ -6055,6 +6068,7 @@ function planoRegrasIA_(q) { // sem IA: regras para as perguntas mais comuns
   else if (/prazo/.test(n)) p = { ferramenta: 'prazos', situacao: /vencid/.test(n) ? 'vencidos' : '' }; else if (/tarefa/.test(n)) p = { ferramenta: /cri|anot|lembr/.test(n) ? 'criar_tarefa' : 'tarefas', titulo: q };
   else if (/cobran|atras|honorar|parcela|devendo/.test(n)) p = { ferramenta: 'cobrancas' }; else if (/parad|sem moviment/.test(n)) p = { ferramenta: 'parados' };
   else if (/aniversar/.test(n)) p = { ferramenta: 'aniversarios' };
+  else if (/\b(crm|funil|lead|leads|contatos novos|nao fechou|nao fecharam)\b/.test(n)) p = { ferramenta: 'crm' };
   if (RE_JURIDICO_IA_.test(n)) p = { ferramenta: 'juridico' };
   if (/\bmeu|\bminha|\beu\b/.test(n)) p.pessoa = 'eu';
   return p;
@@ -6251,6 +6265,17 @@ function executarIA_(p, mapa, u, hoje) {
     out.texto = ps.length + (atr ? ' parcela(s) em atraso' : ' parcela(s) vencendo neste mês') + (semValor ? '.' : ', total R$ ' + tot.toFixed(2).replace('.', ',') + '.');
     out.colunas = ['Vencimento', 'Cliente', 'Parcela', semValor ? 'Atraso' : 'Valor'];
     out.linhas = ps.slice(0, 40).map(function (q) { return { c: [br(q.vencimento), (clis[q.cliente_id] || {}).nome || '—', q.numero ? 'nº ' + q.numero : '—', semValor ? Math.max(0, diffDias_(hoje, q.vencimento)) + ' dias' : 'R$ ' + dinheiro_(q.valor).toFixed(2).replace('.', ',')], link: '#/financeiro' }; });
+    return out;
+  }
+  if (f === 'crm') { // 8.58.4: o funil do CRM (só administração)
+    if (!admin) { out.texto = 'O funil do CRM é só da administração.'; return out; }
+    var ets = {}; ETAPAS_CRM.forEach(function (e) { ets[e[0]] = e[1]; });
+    var ls = tabela_('Leads').linhas.filter(function (l) { return l.id && ['ganho', 'perdido'].indexOf(l.etapa) < 0 && (!cli || l.cliente_id === cli.id); })
+      .sort(function (a, b) { return String(a.atualizado_em || a.criado_em) < String(b.atualizado_em || b.criado_em) ? -1 : 1; });
+    var cont = {}; ls.forEach(function (l) { cont[l.etapa] = (cont[l.etapa] || 0) + 1; });
+    out.texto = ls.length + ' contato(s) em aberto no funil' + (ls.length ? ': ' + Object.keys(cont).map(function (k) { return cont[k] + ' em ' + (ets[k] || k); }).join(', ') : '') + '. Os parados há mais tempo vêm primeiro.';
+    out.colunas = ['Contato', 'Etapa', 'Parado há', 'Próximo passo'];
+    out.linhas = ls.slice(0, 40).map(function (l) { return { c: [l.nome || '—', ets[l.etapa] || l.etapa, Math.max(0, diffDias_(hoje, diaSP_(l.atualizado_em || l.criado_em))) + ' dias', String(l.proxima_acao || '—').slice(0, 60)], link: '#/crm' }; });
     return out;
   }
   if (f === 'parados') {
@@ -12831,15 +12856,17 @@ function esperandoMuito_(hoje, clis) {
   });
   var tarefasIni = {};
   tabela_('Tarefas').linhas.forEach(function (t) { var m = /\[inicial:([^\]]+)\]/.exec(t.descricao || ''); if (m && abertaT_(t)) tarefasIni[m[1]] = t; });
+  var semDocs = [];
   tabela_('Processos').linhas.forEach(function (p) {
     if (p.numero || p.status === 'arquivado' || p.fase !== 'contratado') return;
+    if (p.docs_ok !== 'sim' && !p.inicial_feita_em) { var cd = clis[p.cliente_id] || {}; semDocs.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: cd.nome || p.cliente_nome || '', telefone: cd.telefone || '', area: p.area || '', dias: dias(p.criado_em), desde: String(p.criado_em || '').slice(0, 10), marcado: p.docs_ok === 'nao', responsavel: p.responsavel || '' }); }
     var n = dias(p.criado_em); if (n < ESPERA_INICIAL_DIAS) return;
     var c = clis[p.cliente_id] || {}, t = tarefasIni[p.id];
     iniciais.push({ processo_id: p.id, cliente_id: p.cliente_id, cliente: c.nome || p.cliente_nome || '', area: p.area || '', dias: n, desde: String(p.criado_em).slice(0, 10),
       responsavel: p.responsavel || (t && t.responsavel) || '', tarefa_id: t ? t.id : '' });
   });
   var ord = function (a, b) { return b.dias - a.dias; };
-  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
+  return { assinatura: assin.sort(ord).slice(0, 40), iniciais: iniciais.sort(ord).slice(0, 40), semDocs: semDocs.sort(ord).slice(0, 40), assinDias: ESPERA_ASSIN_DIAS, inicialDias: ESPERA_INICIAL_DIAS };
 }
 
 /** "Avisei o cliente" da audiência (quando = semana | vespera | dia): fica marcado na ficha (e em Eventos) e fecha a tarefa do aviso. */
@@ -16172,8 +16199,14 @@ function crmSincronizar_() {
 function crmListar_(d, u) {
   try { crmSincronizar_(); } catch (e) { /* a lista abre mesmo assim */ }
   var hoje = hojeSP_(), agora = Date.now();
+  // 8.58.4 (pedido da usuária: "CRM mais integrado a tudo"): cada cartão com cliente mostra o processo dele (etapa) e se já tem honorário
+  var procCli = {}, ordemF = function (p) { return p.status === 'arquivado' ? 0 : p.numero ? 2 : 1; };
+  tabela_('Processos').linhas.forEach(function (p) { if (!p.cliente_id) return; var a = procCli[p.cliente_id]; if (!a || ordemF(p) > ordemF(a)) procCli[p.cliente_id] = p; });
+  var nProc = {}; tabela_('Processos').linhas.forEach(function (p) { if (p.cliente_id && p.status !== 'arquivado') nProc[p.cliente_id] = (nProc[p.cliente_id] || 0) + 1; });
   var leads = tabela_('Leads').linhas.map(function (l) {
     var o = limpar_(l);
+    var pp = l.cliente_id ? procCli[l.cliente_id] : null;
+    if (pp) o.processo = { id: pp.id, numero: pp.numero || '', etapa: pp.status === 'arquivado' ? 'Arquivado' : (FASES[faseDe_(pp)] || ''), protocolar: !pp.numero && !!pp.inicial_feita_em, total: nProc[l.cliente_id] || 0 };
     o.dias_parado = Math.floor((agora - Date.parse(l.atualizado_em || l.criado_em || new Date().toISOString())) / 86400000);
     o.atrasado = !!(l.proxima_data && l.proxima_data < hoje && ['ganho', 'perdido'].indexOf(l.etapa) < 0);
     return o;
