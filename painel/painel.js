@@ -3375,8 +3375,16 @@
         ['Com sentença', conta(ajAtivos, p => p.fase === 'sentenca'), 'ver recurso ou cumprimento', ''],
         ['Em execução', conta(ajAtivos, p => p.fase === 'execucao'), 'valores a receber', 'verde'],
         ['Novos em 30 dias', conta(ajAtivos, p => String(p.criado_em || '').slice(0, 10) >= isoSoma(hj, -30)), 'processos ajuizados', '']];
-    const etapasBts = h('div', { class: 'px3-nums' }, INFO.map(([rot, n, sub, cor]) => h('div', { class: 'px3-inf' + (n && cor ? ' ' + cor : '') + (n ? '' : ' zero') },
-      h('b', { class: 'num' }, String(n)), h('span', {}, rot), h('small', {}, sub))));
+    // 8.58.7 (pedido da usuária: "isso é feio"): UMA faixa — a barra das etapas (cada cor do tamanho da quantidade) e, ao lado, os avisos curtos
+    const totalCols = cols.reduce((a, c) => a + c[5], 0) || 1;
+    const barraEt = h('div', { class: 'px5-barra', role: 'img', 'aria-label': cols.map(c => c[1] + ': ' + c[5]).join(', ') }, cols.filter(c => c[5]).map(c => {
+      const seg = h('i', { title: c[1] + ': ' + c[5] }); seg.style.setProperty('flex-grow', String(c[5])); seg.style.setProperty('background', c[3]); return seg; }));
+    const legenda = h('div', { class: 'px5-leg' }, cols.map(c => { const b = h('span', { class: c[5] ? '' : 'zero' }, h('i'), c[1], ' ', h('b', {}, String(c[5])));
+      b.querySelector('i').style.setProperty('background', c[3]); return b; }));
+    const alertas = INFO.filter(x => x[1]).map(([rot, n, , cor]) => h('span', { class: 'px5-al ' + (cor || 'neutro') }, h('b', {}, String(n)), ' ', rot));
+    const etapasBts = h('section', { class: 'px5' }, h('div', { class: 'px5-cab' }, h('b', {}, (aba === 'peticao' ? 'Petições' : aba === 'inss' ? 'Pedidos no INSS' : 'Processos na Justiça') + ' por etapa'),
+        h('span', {}, totalCols === 1 && !cols.some(c => c[5]) ? 'nenhum' : String(cols.reduce((a, c) => a + c[5], 0)) + ' no total')),
+      barraEt, legenda, alertas.length ? h('div', { class: 'px5-als' }, alertas) : null);
     // gráfico de colunas por área (à direita)
     const ordemA = ['Trabalhista', 'Previdenciário', 'Cível', 'Família', 'Consumidor', 'Criminal', 'Empresarial', 'Federal'];
     const porArea = {}; ajAtivos.concat(semNum).forEach(p => { const a = p.area || 'Sem área'; porArea[a] = (porArea[a] || 0) + 1; });
@@ -4635,7 +4643,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.58.6';
+  const VERSAO_PAINEL = '8.58.7';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5310,9 +5318,12 @@
       x.status === 'nao_feita' ? [h('span', { class: 'cx-naofeita' }, 'Descartada · o dia passou'), ' ', h('small', {}, x.tratada_por ? String(x.tratada_por).replace(/^robô \(não feita: |\)$/g, '') : 'o prazo venceu sem ser resolvida')] : x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
       x.tratada_por && x.status !== 'nao_feita' ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
     return h('div', { class: 'cx-item' + (aberta ? '' : ' feita'), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
-      h('div', { class: 'cx-quando' }, h('b', {}, rec ? dataBR(rec.slice(0, 10)).slice(0, 5) : '—'), h('span', {}, rec.length > 15 ? rec.slice(11, 16) : ''), h('span', { class: 'cx-fonte' }, x.fonte || '')),
+      (() => { // 8.58.7 (pedido da usuária): em destaque a data FINAL do prazo; a data em que chegou fica pequena embaixo
+        const fat = s.prazo && !s.prazo.ato && s.prazo.fatal && !s.so_historico ? s.prazo.fatal : '';
+        return h('div', { class: 'cx-quando' + (fat ? ' com-prazo' : '') }, h('span', { class: 'cx-q-rot' }, fat ? 'prazo final' : s.so_historico ? 'sem prazo' : 'prazo'),
+          h('b', {}, fat ? dataBR(fat).slice(0, 5) : '—'), h('span', { class: 'cx-fonte' }, 'chegou ' + (rec ? dataBR(rec.slice(0, 10)).slice(0, 5) : '—')), h('span', { class: 'cx-fonte' }, x.fonte || '')); })(),
       h('div', { class: 'cx-oque' },
-        h('div', { class: 'cx-l1' }, h('span', { class: 'ix-cli' }, x.cliente || 'Cliente a identificar'), s.rotulo ? h('span', { class: 'cx-ato' }, s.rotulo) : null),
+        h('div', { class: 'cx-l1' }, h('span', { class: 'ix-cli' }, x.cliente || 'Cliente a identificar'), s.rotulo ? h('span', { class: 'cx-ato' + (s.ato === 'nada' || s.ato === 'ciencia' ? ' nada' : '') }, s.rotulo) : null),
         h('div', { class: 'ix-proc' }, x.numero || '', x.tribunal ? ' · ' + x.tribunal : '', x.gmail ? ' · ' : '', seloGmail(x.gmail)),
         h('div', { class: 'cx-txt' }, String(x.resumo_ia || x.movimento || x.texto || '').replace(/^⚠[^.]*\.\s*/, '').slice(0, 220))),
       h('div', { class: 'cx-lado' }, sug || feito,
@@ -5447,6 +5458,43 @@
     const fim = Math.min(t.length, i + tr.length);
     el.append(t.slice(0, i), h('mark', { title: 'Trecho que o painel usou' }, t.slice(i, fim)), t.slice(fim));
     return el;
+  }
+  /* 8.58.7 (pedido da usuária: "quero que a IA resuma o que aconteceu e o que fazer, de um jeito bonito, como se ela estivesse falando"):
+     cartão com o que aconteceu, o que fazer (1–2 palavras + a providência) e o prazo final; "Ler de novo" pede outra leitura à IA. */
+  function cartaoIAIntimacao(x, s, ia, aberta, p, cli, andamentos) {
+    const limpa = t => String(t || '').replace(/^⚠[^.]*\.\s*/, '').trim();
+    const corpo = h('div', { class: 'iaf-corpo' });
+    const pintar = resumo => {
+      const aconteceu = s.nada || limpa(resumo) || limpa(ia.resumo) || '';
+      const nada = s.nada || s.so_historico;
+      const oque = nada ? (s.nada ? 'Nada a fazer' : s.outra_parte ? 'Nada a fazer (é da outra parte)' : 'Só ciência') : (s.rotulo || 'Ver o ato');
+      const prov = nada ? (s.nada ? 'É só concluir: não há prazo para o escritório.' : 'É só tomar ciência e concluir.') : (ia.providencia || s.providencia || '');
+      const fatal = !nada && s.prazo && !s.prazo.ato && s.prazo.fatal ? s.prazo.fatal : '';
+      // 8.58.7 (pedido da usuária: "primeiro um resumo do caso e depois a sugestão do que fazer")
+      p = p || {};
+      const polo = /ativo|autor|reclamante|requerente|exequente/i.test(p.polo || '') ? (/^TRT|TST/.test(p.tribunal || '') ? 'reclamante' : 'autor(a)') : /passivo|r[ée]u|reclamad|requerid|executad/i.test(p.polo || '') ? (/^TRT|TST/.test(p.tribunal || '') ? 'reclamado(a)' : 'réu/ré') : '';
+      const nomeCli = cli ? primeiroNome(cli.nome) : 'O cliente';
+      const caso = [nomeCli + (polo ? ' é ' + polo : '') + (p.area ? ' num processo ' + ({ 'família': 'de família', 'cível': 'cível', 'criminal': 'criminal', 'consumidor': 'do consumidor' }[p.area.toLowerCase()] || p.area.toLowerCase()) : ''),
+        p.parte_contraria ? ' contra ' + String(p.parte_contraria).replace(/^[\d.\/-]+\s*/, '') : '', p.orgao ? ', na ' + String(p.orgao).split('/')[0].trim() : '', '.',
+        p.fase && FASES[p.fase] ? ' Etapa: ' + FASES[p.fase] + '.' : ''].join('');
+      const ult = (andamentos || []).slice(0, 3);
+      corpo.replaceChildren(
+        h('div', { class: 'iaf-sec' }, h('span', { class: 'iaf-rot' }, '📁 O caso'), h('p', { class: 'iaf-caso' }, caso),
+          ult.length ? h('ul', { class: 'iaf-and' }, ult.map(m => h('li', {}, h('b', {}, m.d ? dataBR(m.d).slice(0, 5) : ''), ' ', String(m.n || '').slice(0, 110)))) : null),
+        h('div', { class: 'iaf-sec' }, h('span', { class: 'iaf-rot' }, '📨 O que chegou'),
+          h('p', { class: 'iaf-txt' }, aconteceu || 'Ainda não li esta intimação. Peça para eu ler o texto (quando o tribunal manda só o PDF, abra o documento no PJe).')),
+        h('div', { class: 'iaf-linhas' },
+          h('div', { class: 'iaf-l' }, h('span', {}, 'O que fazer'), h('b', { class: 'iaf-chip' + (nada ? ' nada' : '') }, oque), prov ? h('small', {}, prov) : null),
+          fatal ? h('div', { class: 'iaf-l' }, h('span', {}, 'Prazo final'), h('b', { class: 'iaf-data' }, dataBR(fatal)), h('small', {}, new Date(fatal + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' }))) : null));
+    };
+    pintar(x.resumo_ia);
+    const ler = h('button', { type: 'button', class: 'iaf-bt', onclick: async () => { ler.disabled = true; ler.textContent = 'lendo…';
+      try { const r = await api('ia.resumirIntimacao', { id: x.id }); pintar(r.resumo_ia || ''); ler.textContent = '⚡ Ler de novo'; } catch (e) { avisar(e.message, true); ler.textContent = '⚡ Pedir à IA'; } finally { ler.disabled = false; } } },
+      x.resumo_ia ? '⚡ Ler de novo' : '⚡ Pedir à IA');
+    return h('section', { class: 'iaf' + (s.nada || s.so_historico ? ' nada' : '') },
+      h('div', { class: 'iaf-av', 'aria-hidden': 'true' }, '⚡'),
+      h('div', { class: 'iaf-bolha' }, h('div', { class: 'iaf-cab' }, h('b', {}, 'A IA explica'), aberta ? ler : null), corpo,
+        h('small', { class: 'iaf-pe' }, 'A IA ajuda a ler; quem decide é você. Confira sempre no tribunal.')));
   }
   async function telaIntimacao(id) {
     carregando();
@@ -5599,12 +5647,12 @@
             h('div', {}, h('h1', {}, cli ? cli.nome : 'Cliente a identificar'), h('div', { class: 'in-sub' },
               s.rotulo ? h('span', { class: 'cx-ato' }, s.rotulo) : null, ' ', x.fonte || '', rec ? ' · chegou ' + dataBR(rec.slice(0, 10)) + (rec.length > 15 ? ' às ' + rec.slice(11, 16) : '') : '',
               x.ciencia ? ' · ciência ' + dataBR(x.ciencia) : '', x.gmail_id ? ' · ' : '', seloGmail(x.gmail_apagado_em ? 'apagado' : x.gmail_lido_em ? 'aberto' : x.gmail_id ? 'nao' : ''))),
-            s.outra_parte ? h('div', { class: 'ix-alerta' }, 'O painel leu que esta intimação é para a OUTRA parte. Confira e conclua se não houver nada a fazer.') : null),
-          x.resumo_ia ? h('div', { class: 'in-resumo' + (/⚠/.test(x.resumo_ia) ? ' alerta' : '') }, h('b', {}, '✨ Resumo: '), x.resumo_ia) : null,
+            s.outra_parte && !s.nada ? h('div', { class: 'ix-alerta' }, 'O painel leu que esta intimação é para a OUTRA parte. Confira e conclua se não houver nada a fazer.') : null),
+          cartaoIAIntimacao(x, s, ia, aberta, p, cli, r.andamentos),
+          caixaSug,
           h('section', { class: 'in-doc' }, h('div', { class: 'in-doc-cab' }, h('b', {}, x.movimento ? String(x.movimento).slice(0, 160) : 'Texto da intimação'),
             h('button', { type: 'button', class: 'link', onclick: () => copiar(x.texto || '', 'Texto copiado.') }, 'copiar o texto')),
-            marcarTrecho(x.texto, ia.trecho)),
-          caixaSug),
+            marcarTrecho(x.texto, ia.trecho))),
         lado));
   }
 

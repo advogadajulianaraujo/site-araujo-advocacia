@@ -92,3 +92,18 @@ C.tratarIntimacao_({ id: 'I8586p', acao: 'concluir' }, admin);
 assert(!C.caixaIntimacoes_({ status: 'aguardando_ok' }, admin).lista.some(x => x.id === 'I8586p'), 'resolvida pela administração já sai com o OK');
 C.tratarIntimacao_({ id: 'I8586p', acao: 'reabrir' }, admin);
 assert(C.statusCaixa_(tI8.linhas.find(x => x.id === 'I8586p')) === 'nao', 'Reabrir volta para resolver');
+// 8.58.7: notificação com documento anexado logo depois de NÓS distribuirmos (cliente reclamante) = nada a fazer; polo ativo não contesta
+const cliS = C.tabela_('Clientes').linhas.find(c => c.nome && c.id !== cc.id) || cc, agS = new Date().toISOString();
+const numS = '0009998-11.2026.5.12.0006';
+C.inserirLinha_(C.tabela_('Processos'), { id: 'PS858', cliente_id: cliS.id, cliente_nome: cliS.nome, numero: numS, tribunal: 'TRT12', area: 'Trabalhista', polo: 'ativo', fase: 'ajuizado', status: 'ativo', criado_em: C.somarDias_(C.hojeSP_(), -5) + 'T12:00:00.000Z' });
+C.inserirLinha_(C.tabela_('Intimacoes'), { id: 'IS858', chave: 'IS858', fonte: 'PJe TRT12', recebido_em: agS, numero: numS, tribunal: 'TRT12', movimento: 'Notificação com documento anexado (PDF no e-mail: pode ser notificação inicial ou citação) — 1ª VT', texto: 'O PJe enviou o documento em PDF.', criado_em: agS });
+C.inserirLinha_(C.tabela_('Prazos'), { id: 'ZS858', processo_id: 'PS858', numero: numS, intimacao_id: 'IS858', descricao: 'Intimação sem prazo fixado no texto: 5 dias', dias: '5', contagem: 'uteis', ciencia: C.hojeSP_(), fatal: C.somarDias_(C.hojeSP_(), 7), situacao: 'calculado', origem: 'robô', criado_em: agS });
+C.atualizarLinha_(C.tabela_('Intimacoes'), C.tabela_('Intimacoes').linhas.find(x => x.id === 'IS858'), { prazo_id: 'ZS858' });
+const sgS = C.sugestaoTratamento_(C.tabela_('Intimacoes').linhas.find(x => x.id === 'IS858'), C.tabela_('Prazos').linhas.find(x => x.id === 'ZS858'), C.tabela_('Processos').linhas.find(p => p.id === 'PS858'), {});
+assert(sgS.ato === 'nada' && sgS.rotulo === 'Nada a fazer' && !sgS.tarefas.length && sgS.nada, 'notificação inicial da outra parte: "Nada a fazer", sem tarefas');
+assert(!C.caixaIntimacoes_({ status: 'todas', dias: 7 }, admin).lista.some(x => x.id === 'IS858'), 'não aparece nas Recebidas');
+C.notificacoesIniciais858_();
+assert(C.tabela_('Prazos').linhas.find(x => x.id === 'ZS858').situacao === 'cancelado' && /notificação inicial/.test(C.tabela_('Intimacoes').linhas.find(x => x.id === 'IS858').terminada_por), 'o robô cancela o prazo provisório e tira a intimação');
+const pAt = { polo: 'reclamante', id: 'x' }, iCit = { movimento: 'Expedido(a) intimação', texto: 'Fica a parte citada para apresentar defesa.' };
+assert(C.atoDaIntimacao_(iCit, null, {}, pAt) === 'ciencia', 'cliente reclamante: citação/defesa da outra parte vira "Só ciência"');
+assert(C.atoDaIntimacao_(iCit, null, {}, { polo: 'passivo', id: 'y' }) === 'contestacao', 'cliente réu: continua contestação');

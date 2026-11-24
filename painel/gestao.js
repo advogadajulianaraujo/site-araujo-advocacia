@@ -222,29 +222,37 @@
     for (let k = 7; k >= 0; k--) { const ini = segunda(new Date(hojeD.getTime() - k * 7 * 86400000)), fim = new Date(ini.getTime() + 7 * 86400000), i0 = isoD(ini), i1 = isoD(fim);
       const dentro = iso => iso && String(iso).slice(0, 10) >= i0 && String(iso).slice(0, 10) < i1;
       semanas.push({ nome: i0.slice(8, 10) + '/' + i0.slice(5, 7), novos: r.leads.filter(l => dentro(l.criado_em)).length, ganhos: r.leads.filter(l => l.etapa === 'ganho' && dentro(l.ganho_em)).length }); }
-    const blocoPeriodo = h('section', { class: 'pc-card crm-periodo' },
-      h('header', { class: 'crm-per-cab' }, h('h3', {}, nomePer),
-        h('div', { class: 'segmentado', role: 'group', 'aria-label': 'Período' }, [['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']].map(([v, t]) => h('button', { type: 'button', class: v === per ? 'ativo' : '', onclick: () => ir({ per: v }) }, t)))),
-      h('div', { class: 'crm-per-nums' }, [['Novos contatos', nPer.novos], ['Respondidos', nPer.resp], ['Consultas marcadas', nPer.consultas], ['Fecharam', nPer.ganhos], ['Não fecharam', nPer.perdidos],
-        ['Taxa de fechamento', nPer.ganhos + nPer.perdidos ? Math.round(nPer.ganhos / (nPer.ganhos + nPer.perdidos) * 100) + '%' : '—']].map(([t, v]) => h('div', { class: 'crm-per-n' }, h('b', {}, String(v)), h('small', {}, t)))),
-      K().grafCols ? h('div', {}, h('p', { class: 'peq' }, 'Últimas 8 semanas — novos contatos por semana (✓ = contratos fechados)'),
-        K().grafCols(semanas.map(x => ({ nome: x.nome + (x.ganhos ? ' · ' + x.ganhos + '✓' : ''), valor: x.novos, extra: x.ganhos + ' fechado(s)', cor: '#C9A46A' })), { alto: 110 })) : null);
+    // 8.58.7 (pedido da usuária: "o CRM está horrível, mude o design"): UM painel — à esquerda o período (números em linha + 8 semanas),
+    // à direita o funil de agora numa barra colorida, com a taxa de fechamento e o tempo de resposta
+    const contaEt = {}; (r.leads || []).forEach(l => { contaEt[l.etapa] = (contaEt[l.etapa] || 0) + 1; });
+    const etapasT = (r.etapas || []).filter(([id]) => id !== 'perdido');
+    const corEt = id => id === 'ganho' ? '#3F9163' : (COR_ETAPA[id] || '#C9A46A');
+    const totEt = etapasT.reduce((a2, [id]) => a2 + (contaEt[id] || 0), 0);
+    const barraF = h('div', { class: 'crm2-barra' }, etapasT.filter(([id]) => contaEt[id]).map(([id, nome]) => { const i2 = h('i', { title: nome + ': ' + contaEt[id] });
+      i2.style.setProperty('flex-grow', String(contaEt[id])); i2.style.setProperty('background', corEt(id)); return i2; }));
+    const legF = h('div', { class: 'crm2-leg' }, etapasT.map(([id, nome]) => { const sp = h('span', { class: contaEt[id] ? '' : 'zero' }, h('i'), nome, h('b', {}, String(contaEt[id] || 0)));
+      sp.querySelector('i').style.setProperty('background', corEt(id)); return sp; }));
+    const taxaPer = nPer.ganhos + nPer.perdidos ? Math.round(nPer.ganhos / (nPer.ganhos + nPer.perdidos) * 100) + '%' : '—';
+    const tResp = m.respostaHoras === null ? '—' : (m.respostaHoras < 1 ? Math.round(m.respostaHoras * 60) + ' min' : m.respostaHoras + ' h');
+    const blocoPeriodo = h('section', { class: 'crm2' },
+      h('div', { class: 'crm2-esq' },
+        h('header', { class: 'crm2-cab' }, h('b', {}, nomePer),
+          h('div', { class: 'segmentado', role: 'group', 'aria-label': 'Período' }, [['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']].map(([v, t]) => h('button', { type: 'button', class: v === per ? 'ativo' : '', onclick: () => ir({ per: v }) }, t)))),
+        h('div', { class: 'crm2-nums' }, [['Novos', nPer.novos, ''], ['Respondidos', nPer.resp, ''], ['Consultas', nPer.consultas, ''], ['Fecharam', nPer.ganhos, 'verde'], ['Não fecharam', nPer.perdidos, 'cinza'], ['Fechamento', taxaPer, 'ouro']]
+          .map(([t, v, c]) => h('div', { class: 'crm2-n ' + c }, h('b', {}, String(v)), h('small', {}, t)))),
+        K().grafCols ? h('div', { class: 'crm2-graf' }, h('small', {}, 'Novos contatos por semana · ✓ fechados'),
+          K().grafCols(semanas.map(x => ({ nome: x.nome + (x.ganhos ? ' · ' + x.ganhos + '✓' : ''), valor: x.novos, extra: x.ganhos + ' fechado(s)', cor: '#C9A46A' })), { alto: 84 })) : null),
+      h('div', { class: 'crm2-dir' },
+        h('header', { class: 'crm2-cab' }, h('b', {}, 'Funil agora'), h('span', {}, m.abertos + ' em aberto' + (!rh && m.valorAberto ? ' · ' + din(m.valorAberto) : ''))),
+        totEt ? barraF : h('div', { class: 'crm2-barra vazia' }), legF,
+        h('div', { class: 'crm2-mini' },
+          h('div', {}, h('b', { class: m.conversao !== null && m.conversao < 30 ? 'verm' : 'verde' }, m.conversao === null ? '—' : m.conversao + '%'), h('small', {}, 'fechamento · 180 dias')),
+          h('div', {}, h('b', { class: m.respostaHoras !== null && m.respostaHoras > 2 ? 'verm' : '' }, tResp), h('small', {}, 'tempo até o 1º contato')))));
     const sinal = m.atrasados ? h('div', { class: 'nota alerta crm-alerta' }, `⚠ ${m.atrasados} contato(s) com a próxima ação atrasada`, m.parados ? ` e ${m.parados} parado(s) há 7 dias ou mais` : '', '. Quem responde primeiro fecha mais: comece por eles.') : null;
     mostrar(
       topo('Relacionamento', 'CRM', 'Do primeiro contato ao contrato assinado.',
         botao('+ Novo contato', () => dialogoLead(null, r, equipe, recarregar), 'dourado'),
         botao('Proposta de honorários', () => dialogoProposta(null, recarregar), 'sec')),
-      h('section', { class: 'fin-nums crm-nums' },
-        numero('azul', String(m.abertos), 'Em aberto', rh ? 'no funil' : (m.valorAberto ? din(m.valorAberto) + ' em propostas/estimativas' : 'no funil')),
-        numero('dourado', String(nPer.novos), 'Novos — ' + nomePer.toLowerCase(), 'contatos que chegaram'),
-        numero('verde', String(nPer.ganhos), 'Fechados — ' + nomePer.toLowerCase(), 'contratos assinados'),
-        numero(m.conversao !== null && m.conversao < 30 ? 'vermelho' : 'verde', m.conversao === null ? '—' : m.conversao + '%', 'Taxa de fechamento', 'últimos 180 dias'),
-        numero(m.respostaHoras !== null && m.respostaHoras > 2 ? 'vermelho' : 'azul', m.respostaHoras === null ? '—' : (m.respostaHoras < 1 ? Math.round(m.respostaHoras * 60) + ' min' : m.respostaHoras + ' h'), 'Tempo de resposta', 'mediana até o 1º contato')),
-      // 8.37 (pedido da usuária: "gráfico em barra no CRM, como no processo e nos clientes"): onde estão os contatos, por etapa
-      (() => { const conta = {}; (r.leads || []).forEach(l => { conta[l.etapa] = (conta[l.etapa] || 0) + 1; });
-        const G = K().grafCols; if (!G) return null;
-        return h('section', { class: 'pc-card pc-escuro crm-grafico' }, h('header', {}, h('h3', {}, 'Contatos por etapa')),
-          G((r.etapas || []).map(([id, nome]) => ({ nome, valor: conta[id] || 0, cor: id === 'ganho' ? '#5FA37A' : id === 'perdido' ? '#8C8274' : (COR_ETAPA[id] || '#C9A46A') })), { alto: 140 })); })(),
       blocoPeriodo,
       sinal,
       h('section', { class: 'caixa crm-corpo' },
