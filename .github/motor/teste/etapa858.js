@@ -35,3 +35,16 @@ assert(out3.juridico && /CONVERSA ATÉ AGORA/.test(pedido.txt) && /cinco requisi
 
 const out4 = C.assistenteIA_({ pergunta: 'o que é litispendência?', modo: 'auto' }, admin);
 assert(out4.juridico, 'caixa única (auto): pergunta de Direito vai para a IA jurídica');
+
+// 8.58.3: "como está o processo de Fulano" → dados do painel + a IA explica (caso anonimizado); só o primeiro nome com maiúscula também acha
+const pc = C.tabela_('Processos').linhas.find(p => p.numero && p.cliente_id && p.status !== 'arquivado');
+const cc = C.tabela_('Clientes').linhas.find(c => c.id === pc.cliente_id);
+pedido = null;
+const out5 = C.executarIA_({ ferramenta: 'processo', alvo: '[CLIENTE1]', _pergunta: 'como está o processo de [CLIENTE1]?' }, { '[CLIENTE1]': { tipo: 'cliente', ids: [cc.id] } }, admin, C.hojeSP_());
+assert(out5.md && out5.texto.includes(pc.numero) && pedido && /O que a equipe precisa fazer/.test(pedido.sis) && !pedido.txt.includes(pc.numero), 'andamento explicado pela IA com os dados do painel (sem o número ir à IA)');
+assert(out5.linhas.length >= 0 && out5.abrir === '#/processo/' + pc.id, 'resposta traz o link do processo');
+const out6 = C.executarIA_({ ferramenta: 'cliente', alvo: '[CLIENTE1]' }, { '[CLIENTE1]': { tipo: 'cliente', ids: [cc.id] } }, admin, C.hojeSP_());
+assert(out6.texto.includes(pc.numero), 'pergunta pelo cliente já mostra o número do processo no texto');
+const prim = cc.nome.split(' ')[0];
+const ent9 = C.entidadesIA_('como está o processo do ' + prim + '?');
+assert(ent9.mapa['[CLIENTE1]'] && ent9.mapa['[CLIENTE1]'].ids.length >= 1, 'só o primeiro nome (com maiúscula) também encontra o cliente');

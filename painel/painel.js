@@ -594,6 +594,7 @@
     if (BANCO) BANCO.sair(!expirou);
     clearInterval(chatTimer); if (chatF) { chatF.raiz.remove(); chatF = null; }
     esquecerTudo();
+    ['ia-gaveta', 'ia-puxar', 'assist-bt'].forEach(i => { const e = document.getElementById(i); if (e) e.remove(); }); document.body.classList.remove('ia-gaveta-on');
     try { sessionStorage.removeItem('painel_memoria'); Object.keys(sessionStorage).filter(k => /^ia_conversas_|^assistente_conversa/.test(k)).forEach(k => sessionStorage.removeItem(k)); } catch (e) { /* ok */ }
     guardar('painel_sessao', null);
     if (token && !expirou) fetch(API, { method: 'POST', body: JSON.stringify({ acao: 'logout', token }) }).catch(() => {});
@@ -1404,7 +1405,11 @@
   }
   (function montarBuscaTopo() {
     const form = document.getElementById('busca-topo'); if (!form) return;
-    form.addEventListener('submit', ev => { ev.preventDefault(); const v = form.q.value.trim(); if (!v) return; location.hash = '#/clientes?busca=' + encodeURIComponent(v); form.q.blur(); });
+    form.addEventListener('submit', ev => { ev.preventDefault(); const v = form.q.value.trim(); if (!v) return;
+      // 8.58.3: em Processos a busca do topo filtra a aba aberta (Petição inicial, Ajuizados ou INSS)
+      if (/^#\/processos(\?|$)/.test(location.hash)) { const u = new URLSearchParams(location.hash.split('?')[1] || ''); u.set('q', v); u.delete('pg'); u.delete('visao'); location.hash = '#/processos?' + u; }
+      else location.hash = '#/clientes?busca=' + encodeURIComponent(v);
+      form.q.blur(); });
     document.addEventListener('keydown', ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); form.q.focus(); form.q.select(); } });
   })();
 
@@ -3285,27 +3290,29 @@
       const lp = pet.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area)).sort((a, b) => (a.criado_em || '') < (b.criado_em || '') ? -1 : 1);
       const li = inssPet.filter(x => bate(x.cliente, x.beneficio));
       const lr = prot.filter(p => bate(p.cliente_nome, p.tipo_acao, p.area));
+      /* 8.58.3 (pedido da usuária: "muito grande"): uma linha por cliente — nome, área, "Inicial não feita/feita" e UM botão; clicar abre a ficha */
+      const linhaP = o => h('div', { class: 'px3-l' + (o.alerta ? ' alerta' : ''), tabindex: 0, role: 'button', onclick: o.abrir, onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) o.abrir(); } },
+        h('div', { class: 'px3-l-t' }, h('b', {}, o.nome || 'Cliente a identificar'), h('div', { class: 'px3-l-i' }, o.area ? h('span', { class: 'px3-area' }, o.area) : null, o.status, o.extra || null)),
+        h('div', { class: 'px3-l-a', onclick: parar }, o.bts || [], h('span', { class: 'px3-av', title: o.quem ? 'Quem cuida: ' + o.quem : 'Sem responsável' }, o.quem ? iniciaisPx(o.quem) : '—')));
+      const areaCurta = p => (p.area || '').replace('Previdenciário', 'Previdenciário').slice(0, 22);
       const itensPet = lp.map(p => { const d = diasDesde(p.criado_em);
-        return item({ nome: p.cliente_nome, sub: [p.area, p.tipo_acao].filter(Boolean).join(' · ') || 'área a definir', quem: p.responsavel, alerta: d >= 10,
-          info: [d >= 10 ? chip('parada há ' + d + ' dias', 'verm') : chip(d ? 'há ' + d + ' dia' + (d > 1 ? 's' : '') : 'chegou hoje', 'cinza'), /previd/i.test(p.area || '') ? chip('pode ir ao INSS', 'ouro') : null],
-          abrir: () => { location.hash = '#/processo/' + p.id; },
-          bts: [botaoNaoFechou(p, 'sec'), botao('Inicial feita →', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Foi para Protocolo: mande ao cliente e protocole.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini')] }); })
-        .concat(li.map(x => item({ nome: x.cliente, sub: 'Pedido no INSS · ' + (x.beneficio || 'benefício a definir'), quem: x.responsavel_nome,
-          info: [chip(x.etapa === 'documentos' ? 'esperando documentos' : 'montar o pedido', 'ambar'), chip('INSS', 'ouro')], abrir: () => { location.hash = '#/inss/' + x.id; },
-          bts: [botao('Protocolar no INSS →', () => dialogoProtocoloInss(x), 'mini')] })));
+        return linhaP({ nome: p.cliente_nome, area: areaCurta(p) || 'área a definir', quem: p.responsavel, alerta: d >= 10, abrir: () => { location.hash = '#/processo/' + p.id; },
+          status: chip('Inicial não feita', d >= 10 ? 'verm' : 'cinza'), extra: d >= 10 ? h('small', { class: 'px3-dias verm' }, 'há ' + d + ' dias') : d ? h('small', { class: 'px3-dias' }, 'há ' + d + ' d') : null,
+          bts: [botao('Inicial feita', async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id }); avisar('Foi para Protocolo.'); rota(); } catch (e) { avisar(e.message, true); ev.currentTarget.disabled = false; } }, 'mini sec')] }); })
+        .concat(li.map(x => linhaP({ nome: x.cliente, area: 'INSS', quem: x.responsavel_nome, abrir: () => { location.hash = '#/inss/' + x.id; },
+          status: chip(x.etapa === 'documentos' ? 'Esperando documentos' : 'Pedido não feito', 'ambar'), bts: [botao('Protocolar', () => dialogoProtocoloInss(x), 'mini sec')] })));
       const itensProt = lr.map(p => { const link = linkInicialCliente(p.cliente_nome, p.cliente_tel), env = !!p.inicial_enviada_em;
-        return item({ nome: p.cliente_nome, sub: [p.area, p.tipo_acao].filter(Boolean).join(' · '), quem: p.responsavel,
-          info: [env ? chip('✓ cliente aprovou / avisado', 'verde') : chip('falta mandar ao cliente', 'ambar')], abrir: () => { location.hash = '#/processo/' + p.id; },
-          bts: [h('button', { type: 'button', class: 'btn mini sec', title: 'Voltar para Petição inicial', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('processos.inicialFeita', { id: p.id, desfazer: true }); rota(); } catch (e) { avisar(e.message, true); } } }, '←'),
-            !env && link ? h('a', { class: 'btn mini wa', href: link, target: '_blank', rel: 'noopener noreferrer', onclick: () => { api('processos.inicialEnviada', { id: p.id }).then(() => rota()).catch(e => avisar(e.message, true)); } }, '📄 Mandar ao cliente') : null,
-            botao('Protocolar →', () => dialogoProtocolar(p, ri.beneficios), 'mini')] }); });
+        return linhaP({ nome: p.cliente_nome, area: areaCurta(p), quem: p.responsavel, abrir: () => { location.hash = '#/processo/' + p.id; },
+          status: chip('Inicial feita', 'verde'), extra: env ? h('small', { class: 'px3-dias' }, '✓ cliente avisado') : h('small', { class: 'px3-dias ambar' }, 'falta mandar ao cliente'),
+          bts: [!env && link ? h('a', { class: 'btn mini wa ic', href: link, target: '_blank', rel: 'noopener noreferrer', title: 'Mandar a inicial ao cliente no WhatsApp', onclick: () => { api('processos.inicialEnviada', { id: p.id }).then(() => rota()).catch(e => avisar(e.message, true)); } }, '📄') : null,
+            botao('Protocolar', () => dialogoProtocolar(p, ri.beneficios), 'mini')] }); });
       const quadro = (n, titulo, desc, itens, vazio, cls) => h('section', { class: 'px3-etapa ' + (cls || '') },
         h('header', {}, h('span', { class: 'px3-n' }, n), h('div', {}, h('h3', {}, titulo), h('p', {}, desc)), h('span', { class: 'px3-conta num' }, String(itens.length))),
-        h('div', { class: 'px3-itens' }, itens.length ? itens : h('p', { class: 'px3-vazio' }, vazio)));
+        h('div', { class: 'px3-ls' }, itens.length ? itens : h('p', { class: 'px3-vazio' }, vazio)));
       corpo = h('div', { class: 'px3-duo' },
-        quadro('1', 'Petição inicial', 'Contrato assinado: fazer a inicial (ou o pedido no INSS).', itensPet, 'Nenhuma petição para fazer. Quando o cliente assina, ela aparece aqui sozinha.', 'e1'),
+        quadro('1', 'Petição inicial', 'Contrato assinado: fazer a inicial ou o pedido no INSS.', itensPet, 'Nenhuma petição para fazer. Quando o cliente assina, ela aparece aqui sozinha.', 'e1'),
         h('div', { class: 'px3-seta', 'aria-hidden': 'true' }, '→'),
-        quadro('2', 'Protocolo', 'Inicial pronta: o cliente aprova e você protocola na Justiça ou no INSS.', itensProt, 'Nada esperando protocolo.', 'e2'));
+        quadro('2', 'Protocolo', 'Inicial pronta: o cliente aprova e você protocola.', itensProt, 'Nada esperando protocolo.', 'e2'));
     } else {
       const ehJ = aba === 'ajuizados';
       let base, etapas, chave;
@@ -3318,41 +3325,41 @@
         chave = x => ['judicial', 'arquivado'].includes(x.etapa) ? 'encerrados' : x.etapa === 'recurso_negado' ? 'recurso' : x.etapa;
         etapas = PX3_ETAPAS_INSS;
       }
-      const cont = {}; base.forEach(x => { const k = chave(x); cont[k] = (cont[k] || 0) + 1; });
-      const lista = base.filter(x => !etapa || chave(x) === etapa).filter(x => ehJ || etapa || !['deferido', 'encerrados'].includes(chave(x)))
-        .sort((a, b) => ehJ ? ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1) : ((a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1));
-      const POR = 24, pags = Math.max(1, Math.ceil(lista.length / POR)), pag = Math.min(pg, pags);
-      const corDe = k => (etapas.find(e => e[0] === k) || [])[3] || '#9aa0aa', nomeDe = k => (etapas.find(e => e[0] === k) || [])[1] || '', descDe = k => (etapas.find(e => e[0] === k) || [])[2] || '';
-      /* 8.58.2 (pedido da usuária: "quadros de cada pessoa, de cada processo, explicando, como tinha no sistema anterior") */
+      /* 8.58.3 (pedido da usuária: "igual ao modelo antigo: o nome da etapa e os quadrados de cada pessoa embaixo dela") */
+      const corDe = k => (etapas.find(e => e[0] === k) || [])[3] || '#9aa0aa';
+      const mover = async (x, para, el) => { if (el) el.classList.add('movendo'); try { const r = await api('processos.fase', { id: x.id, fase: para }); avisar('Etapa: ' + (r.nome || FASES[para] || para)); rota(); } catch (e) { avisar(e.message, true); if (el) el.classList.remove('movendo'); } };
       const cartao = x => {
-        const k = chave(x), futuro = ehJ ? (x.proximo_ato_data && x.proximo_ato_data >= hojeISO()) : !!x.proxima_data;
         const ir2 = () => { location.hash = ehJ ? '#/processo/' + x.id : '#/inss/' + x.id; };
         const nome = ehJ ? x.cliente_nome : x.cliente, quem = ehJ ? x.responsavel : x.responsavel_nome;
-        const et = h('div', { class: 'px3-pc-et' }, h('i'), h('div', {}, h('b', {}, nomeDe(k)), h('small', {}, ehJ ? (['acordo', 'homologacao'].includes(x.fase) ? FASES[x.fase] : descDe(k)) : (x.etapa_nome || descDe(k)))));
-        et.querySelector('i').style.setProperty('background', corDe(k));
-        const prox = ehJ ? (futuro ? h('div', { class: 'px3-pc-prox' }, h('span', {}, atoComData(x.proximo_ato || 'Próximo ato', x.proximo_ato_data)), etiquetaDias(x.proximo_ato_data)) : h('div', { class: 'px3-pc-prox vazio' }, 'Sem audiência ou ato marcado'))
-          : (x.proxima_data ? h('div', { class: 'px3-pc-prox' + (x.atrasado ? ' atraso' : '') }, h('span', {}, x.proxima_tipo.replace(/^./, c => c.toUpperCase()) + ' ' + dataBR(x.proxima_data)), etiquetaDias(x.proxima_data)) : h('div', { class: 'px3-pc-prox vazio' }, x.dias_etapa ? x.dias_etapa + ' dias nesta etapa' : 'Mudou de etapa hoje'));
-        const c = h('article', { class: 'px3-pc', tabindex: 0, onclick: ir2, onkeydown: ev => { if (ev.key === 'Enter') ir2(); } },
-          h('header', {}, h('span', { class: 'px3-ini' }, iniciaisPx(nome)), h('div', { class: 'px3-pc-t' }, h('b', {}, nome || 'Cliente a identificar'),
-            h('small', { class: 'num' }, ehJ ? (x.numero || '(sem número)') : (x.protocolo ? 'Protocolo ' + x.protocolo : 'Protocolo a informar'))), h('span', { class: 'px3-av', title: quem ? 'Quem cuida: ' + quem : 'Sem responsável' }, quem ? iniciaisPx(quem) : '—')),
-          h('div', { class: 'px3-pc-tags' }, (ehJ ? [x.area, x.tribunal] : [x.beneficio ? x.beneficio.replace(/ \(.*\)$/, '') : 'benefício a definir']).filter(Boolean).map(t => h('span', {}, t))),
-          et, prox, h('footer', {}, h('span', {}, ehJ ? 'Abrir o processo' : 'Abrir o pedido'), h('span', { 'aria-hidden': 'true' }, '→')));
-        c.style.setProperty('--cor', corDe(k)); return c;
+        const futuro = ehJ ? (x.proximo_ato_data && x.proximo_ato_data >= hojeISO()) : !!x.proxima_data;
+        const c = h('article', { class: 'px3-k' + (x.atrasado ? ' atraso' : ''), tabindex: 0, draggable: ehJ ? 'true' : null, onclick: ir2, onkeydown: ev => { if (ev.key === 'Enter') ir2(); },
+            ondragstart: ehJ ? ev => { ev.dataTransfer.setData('text/plain', x.id); c.classList.add('arrastando'); } : null, ondragend: () => c.classList.remove('arrastando') },
+          h('div', { class: 'px3-k-t' }, h('b', {}, nome || 'Cliente a identificar'), h('span', { class: 'px3-av', title: quem ? 'Quem cuida: ' + quem : 'Sem responsável' }, quem ? iniciaisPx(quem) : '—')),
+          h('small', { class: 'num' }, ehJ ? [x.numero || '(sem número)', x.area].filter(Boolean).join(' · ') : (x.beneficio || 'benefício a definir').replace(/ \(.*\)$/, '')),
+          futuro ? h('div', { class: 'px3-k-p' }, ehJ ? atoComData(x.proximo_ato || 'Próximo ato', x.proximo_ato_data) : x.proxima_tipo + ' ' + dataBR(x.proxima_data).slice(0, 5), ' ', etiquetaDias(ehJ ? x.proximo_ato_data : x.proxima_data)) : null);
+        return c;
       };
+      const lista = base;
+      const colunas = etapas.map(([k, nome, desc]) => {
+        const itens = lista.filter(x => chave(x) === k).sort((a, b) => ehJ ? ((a.proximo_ato_data || '9999') < (b.proximo_ato_data || '9999') ? -1 : 1) : ((a.proxima_data || '9') < (b.proxima_data || '9') ? -1 : 1));
+        const col = h('section', { class: 'px3-col' + (itens.length ? '' : ' vazia'),
+            ondragover: ehJ ? ev => { ev.preventDefault(); col.classList.add('alvo'); } : null, ondragleave: () => col.classList.remove('alvo'),
+            ondrop: ehJ ? ev => { ev.preventDefault(); col.classList.remove('alvo'); const id = ev.dataTransfer.getData('text/plain'); const x = lista.find(y => y.id === id); if (x && chave(x) !== k) mover(x, k); } : null },
+          h('header', {}, h('i'), h('div', {}, h('b', {}, nome), h('small', {}, desc)), h('span', { class: 'num' }, String(itens.length))),
+          h('div', { class: 'px3-col-c' }, itens.length ? itens.map(cartao) : h('p', { class: 'px3-col-v' }, '—')));
+        col.style.setProperty('--cor', corDe(k)); return col;
+      });
       const areas = ehJ ? [...new Set(ajuiz.map(p => p.area || 'Sem área'))].sort() : [];
-      const filtros = h('div', { class: 'px3-filtros' },
-        h('select', { 'aria-label': 'Etapa', onchange: e => ir({ etapa: e.target.value }) }, h('option', { value: '' }, ehJ ? 'Todas as etapas (' + base.length + ')' : 'Em andamento'),
-          etapas.filter(([k]) => cont[k]).map(([k, n]) => h('option', { value: k, selected: k === etapa }, n + ' (' + cont[k] + ')'))),
-        ehJ ? h('select', { 'aria-label': 'Área', onchange: e => ir({ area: e.target.value }) }, h('option', { value: '' }, 'Todas as áreas'), areas.map(a => h('option', { value: a, selected: a === area }, a))) : null,
-        ehJ ? h('select', { 'aria-label': 'Situação', onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value }) }, [['ativo', 'Em andamento'], ['arquivado', 'Arquivados'], ['todos', 'Todos']].map(([v, t]) => h('option', { value: v, selected: sit === v }, t))) : null);
-      const pagin = pags > 1 ? h('div', { class: 'cx-paginas' }, Array.from({ length: pags }, (_, i) => h('button', { type: 'button', class: 'cx-pag' + (i + 1 === pag ? ' on' : ''), onclick: () => ir({ pg: String(i + 1) }) }, 'Página ' + (i + 1)))) : null;
-      corpo = [h('div', { class: 'px3-barra' }, h('p', {}, h('b', { class: 'num' }, String(lista.length)), ehJ ? ' processo(s)' : ' pedido(s)', etapa ? ' em ' + nomeDe(etapa) : ''), filtros),
-        lista.length ? h('div', { class: 'px3-cards' }, lista.slice((pag - 1) * POR, pag * POR).map(cartao)) : h('p', { class: 'px3-vazio caixa-vazia' }, ehJ ? 'Nenhum processo com esse filtro.' : 'Nenhum pedido no INSS ainda. Os pedidos entram aqui quando a petição é protocolada no INSS.'), pagin];
+      const filtros = ehJ ? h('div', { class: 'px3-filtros' },
+        h('select', { 'aria-label': 'Área', onchange: e => ir({ area: e.target.value }) }, h('option', { value: '' }, 'Todas as áreas'), areas.map(a => h('option', { value: a, selected: a === area }, a))),
+        h('select', { 'aria-label': 'Situação', onchange: e => ir({ sit: e.target.value === 'ativo' ? '' : e.target.value }) }, [['ativo', 'Em andamento'], ['arquivado', 'Arquivados'], ['todos', 'Todos']].map(([v, t]) => h('option', { value: v, selected: sit === v }, t))),
+        q ? h('button', { type: 'button', class: 'link', onclick: () => ir({ q: '' }) }, 'limpar a busca "' + q + '"') : null) : (q ? h('button', { type: 'button', class: 'link', onclick: () => ir({ q: '' }) }, 'limpar a busca "' + q + '"') : null);
+      corpo = [h('div', { class: 'px3-barra' }, h('p', {}, h('b', { class: 'num' }, String(lista.length)), ehJ ? ' processo(s) · arraste o cartão para mudar a etapa' : ' pedido(s) no INSS · clique para abrir e mudar a etapa'), filtros),
+        comSetas(h('div', { class: 'px3-kanban' }, colunas))];
     }
-    const busca = h('input', { type: 'search', class: 'px3-busca', placeholder: aba === 'ajuizados' ? 'Buscar cliente, nº do processo, parte contrária…' : 'Buscar cliente', value: q, 'aria-label': 'Buscar', onchange: e => ir({ q: e.target.value.trim() }) });
     mostrar(h('div', { class: 'px3' },
       h('div', { class: 'px3-topo' }, h('div', {}, h('h1', {}, 'Processos'), h('p', {}, 'Tudo começa na Petição inicial. Protocolou na Justiça, vai para Ajuizados; no INSS, vai para INSS.')),
-        h('div', { class: 'px3-topo-bts' }, busca, aba === 'inss' ? botao('＋ Pedido no INSS', async () => { const clis = await api('clientes.listar', {}).catch(() => []); dialogoNovoInss((Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome })), ri.beneficios || [], rr => { location.hash = '#/inss/' + rr.id; }); }, 'sec') : null,
+        h('div', { class: 'px3-topo-bts' }, q && aba === 'peticao' ? h('button', { type: 'button', class: 'link', onclick: () => ir({ q: '' }) }, 'limpar a busca "' + q + '"') : null, aba === 'inss' ? botao('＋ Pedido no INSS', async () => { const clis = await api('clientes.listar', {}).catch(() => []); dialogoNovoInss((Array.isArray(clis) ? clis : clis.lista || []).map(c => ({ id: c.id, nome: c.nome })), ri.beneficios || [], rr => { location.hash = '#/inss/' + rr.id; }); }, 'sec') : null,
           h('a', { class: 'btn', href: '#/processo/novo' }, '+ Novo processo'))),
       abas, corpo));
   }
@@ -4586,7 +4593,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.58.2';
+  const VERSAO_PAINEL = '8.58.3';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5710,7 +5717,9 @@
   function montarAssistente() {
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao || document.getElementById('assist-bt')) return;
     const bt = h('button', { type: 'button', id: 'assist-bt', class: 'assist-bt', title: 'IA jurídica e assistente do escritório', onclick: () => abrirAssistente() }, h('span', { class: 'assist-brilho', 'aria-hidden': 'true' }, '⚡'), ' IA Jurídica');
-    barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
+    const fb = document.getElementById('busca-topo'); if (fb && fb.nextSibling) barra.insertBefore(bt, fb.nextSibling); else barra.insertBefore(bt, document.getElementById('crono') || document.getElementById('subabas'));
+    // 8.58.3: puxador ⚡ na borda direita (abre a IA ao lado, em qualquer tela)
+    if (!document.getElementById('ia-puxar')) document.body.append(h('button', { type: 'button', id: 'ia-puxar', class: 'ia-puxar', title: 'IA Jurídica (abre ao lado)', 'aria-label': 'Abrir a IA Jurídica ao lado', onclick: () => alternarGavetaIA() }, h('span', { 'aria-hidden': 'true' }, '⚡'), h('b', {}, 'IA')));
   }
   /* 8.58.1 IA (pedido da usuária: "design muito bonito; sem perguntas prontas; a pessoa pergunta e a IA tira a dúvida; bem inteligente,
      não superficial"). Página inteira #/ia: conversas à esquerda (guardadas só nesta aba do navegador), conversa no centro, caixa grande
@@ -5744,29 +5753,32 @@
     }
     return caixa;
   }
-  function abrirAssistente(modo) { if (modo) { try { localStorage.setItem('assist_modo', modo); } catch (e) { /* ok */ } } location.hash = '#/ia'; }
+  function abrirAssistente() { alternarGavetaIA(); }
   const IA_CHAVE = () => 'ia_conversas_' + (sessao && sessao.usuario ? sessao.usuario.usuario : '');
   function iaLer() { try { return JSON.parse(sessionStorage.getItem(IA_CHAVE()) || '[]'); } catch (e) { return []; } }
   function iaGuardar(l) { try { sessionStorage.setItem(IA_CHAVE(), JSON.stringify(l.slice(0, 30))); } catch (e) { /* cheio */ } }
-  async function telaIA(params) {
-    let convs = iaLer(), atual = params.get('c') || '';
+  async function telaIA(params) { const x = iaMontar({ convId: params.get('c') || '' }); mostrar(x.raiz); setTimeout(x.foco, 50); }
+  /** 8.58.3: a mesma IA serve à página #/ia e à gaveta lateral (botão ⚡ ao lado da busca, em todas as telas). */
+  function iaMontar(opc) {
+    const compacto = !!opc.compacto;
+    let convs = iaLer(), atual = opc.convId || '';
     const modo = 'auto'; // 8.58.2: uma caixa só — a IA entende se é dúvida jurídica ou pergunta sobre os dados do escritório
     let conv = convs.find(c => c.id === atual) || null;
     const nome = primeiroNome(sessao.usuario.nome || sessao.usuario.usuario);
-    const raiz = h('div', { class: 'ia' }), lado = h('aside', { class: 'ia-lado' }), centro = h('section', { class: 'ia-centro' });
+    const raiz = h('div', { class: 'ia' + (compacto ? ' compacto' : '') }), lado = h('aside', { class: 'ia-lado' }), centro = h('section', { class: 'ia-centro' });
     const fala = h('div', { class: 'ia-fala', role: 'log', 'aria-live': 'polite' });
-    const campo = h('textarea', { id: 'ia-campo', rows: 2, 'aria-label': 'Sua pergunta' });
+    const campo = h('textarea', { id: compacto ? 'ia-campo-g' : 'ia-campo', rows: 2, 'aria-label': 'Sua pergunta' });
     const enviar = h('button', { type: 'button', class: 'ia-enviar', 'aria-label': 'Enviar', title: 'Enviar (Enter)' }, '↑');
     const pils = h('span', { class: 'ia-tipo' }, '⚡ Direito, processos e dados do escritório');
     const marcarModo = () => { campo.placeholder = 'Pergunte qualquer coisa: uma dúvida jurídica, como funciona um procedimento, ou algo do escritório (prazos, audiências, um cliente, um processo)…'; };
     const compor = h('div', { class: 'ia-compor' }, campo, h('div', { class: 'ia-compor-pe' }, pils, h('span', { class: 'ia-dica' }, 'Enter envia · Shift+Enter pula linha'), enviar));
     const salvar = () => { if (!conv) return; conv.em = Date.now(); convs = [conv].concat(convs.filter(c => c.id !== conv.id)); iaGuardar(convs); desenharLado(); };
     function desenharLado() {
-      lado.replaceChildren(h('button', { type: 'button', class: 'ia-nova', onclick: () => { conv = null; location.hash = '#/ia'; } }, '＋ Nova conversa'),
+      lado.replaceChildren(h('button', { type: 'button', class: 'ia-nova', onclick: () => novaConversa() }, '＋ Nova conversa'),
         h('div', { class: 'ia-lado-t' }, 'Conversas'),
         convs.length ? h('nav', { class: 'ia-convs' }, convs.map(c => h('a', { href: '#/ia?c=' + c.id, class: 'ia-conv' + (conv && conv.id === c.id ? ' on' : '') }, h('span', {}, c.titulo), h('small', {}, new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })))))
           : h('p', { class: 'ia-lado-vazio' }, 'As conversas ficam aqui enquanto o navegador estiver aberto.'),
-        convs.length ? h('button', { type: 'button', class: 'ia-limpar', onclick: () => { convs = []; iaGuardar(convs); conv = null; location.hash = '#/ia'; } }, 'Apagar o histórico') : null);
+        convs.length ? h('button', { type: 'button', class: 'ia-limpar', onclick: () => { convs = []; iaGuardar(convs); novaConversa(); } }, 'Apagar o histórico') : null);
     }
     function respostaEl(m) {
       const r = m.r || {};
@@ -5812,25 +5824,36 @@
     }
     async function perguntar(texto, escolha, modoMsg) {
       texto = String(texto || '').trim(); if (!texto) return;
-      if (!conv) { conv = { id: 'c' + Date.now().toString(36), titulo: texto.slice(0, 60), em: Date.now(), msgs: [] }; history.replaceState(null, '', '#/ia?c=' + conv.id); }
+      if (!conv) { conv = { id: 'c' + Date.now().toString(36), titulo: texto.slice(0, 60), em: Date.now(), msgs: [] }; if (!compacto) history.replaceState(null, '', '#/ia?c=' + conv.id); }
       const md = modoMsg || modo;
       const ant = conv.msgs.filter(x => x.r && x.r.texto && x.r.juridico).slice(-4).map(x => ({ p: x.p, r: String(x.r.texto).slice(0, 2200) }));
       const m = { p: texto, esc: escolha || '', modo: md, esperando: true }; conv.msgs.push(m); salvar(); desenhar(); campo.value = ''; campo.style.removeProperty('height');
       const t0 = Date.now();
       try { m.r = await api('ia.assistente', { pergunta: texto, modo: md, conversa: ant, historico: ant.map(x => x.p), escolha_cliente: escolha || '' }); m.seg = Math.round((Date.now() - t0) / 1000); }
       catch (e) { m.erro = e.message || 'Não consegui responder agora.'; }
-      delete m.esperando; salvar(); if (location.hash.startsWith('#/ia')) desenhar();
+      delete m.esperando; salvar(); if (raiz.isConnected) desenhar();
     }
     enviar.addEventListener('click', () => perguntar(campo.value));
     campo.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); perguntar(campo.value); } });
     campo.addEventListener('input', () => { campo.style.setProperty('height', 'auto'); campo.style.setProperty('height', Math.min(220, campo.scrollHeight) + 'px'); });
     centro.append(h('header', { class: 'ia-cab' }, h('span', { class: 'ia-raio', 'aria-hidden': 'true' }, '⚡'), h('div', {}, h('b', {}, 'IA Jurídica'), h('small', {}, 'Direito material e processual · procedimentos · dados do escritório')),
-      h('button', { type: 'button', class: 'ia-cab-nova', onclick: () => { conv = null; location.hash = '#/ia'; } }, '＋ Nova conversa')), fala, h('div', { class: 'ia-baixo' }, compor, h('p', { class: 'ia-aviso' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números de processo vão à IA trocados por códigos.')));
-    raiz.append(lado, centro);
+      compacto ? h('div', { class: 'ia-cab-bts' }, h('button', { type: 'button', class: 'ia-cab-nova', title: 'Nova conversa', onclick: () => novaConversa() }, '＋'), h('a', { class: 'ia-cab-nova', href: '#/ia', title: 'Abrir em tela inteira', onclick: () => { fecharGavetaIA(); if (conv) setTimeout(() => { location.hash = '#/ia?c=' + conv.id; }, 0); } }, '⤢'), h('button', { type: 'button', class: 'ia-cab-nova', title: 'Fechar', 'aria-label': 'Fechar', onclick: () => fecharGavetaIA() }, '✕'))
+        : h('button', { type: 'button', class: 'ia-cab-nova', onclick: () => novaConversa() }, '＋ Nova conversa')), fala, h('div', { class: 'ia-baixo' }, compor, h('p', { class: 'ia-aviso' }, 'A IA auxilia; a decisão é sempre da advogada. Nomes e números de processo vão à IA trocados por códigos.')));
+    function novaConversa() { conv = null; if (!compacto) { if (location.hash !== '#/ia') location.hash = '#/ia'; } desenharLado(); desenhar(); campo.focus(); }
+    raiz.append(compacto ? null : lado, centro);
     desenharLado(); marcarModo(); desenhar();
-    mostrar(raiz);
-    setTimeout(() => campo.focus(), 50);
+    return { raiz, foco: () => campo.focus(), recarregar: () => { convs = iaLer(); if (conv) conv = convs.find(c => c.id === conv.id) || conv; desenhar(); } };
   }
+  function abrirGavetaIA() {
+    let g = document.getElementById('ia-gaveta');
+    if (!g) { const x = iaMontar({ compacto: true }); g = h('aside', { id: 'ia-gaveta', class: 'ia-gaveta', 'aria-label': 'IA Jurídica' }, x.raiz); g.foco = x.foco; g.recarregar = x.recarregar; document.body.append(g); }
+    else if (g.recarregar) g.recarregar();
+    requestAnimationFrame(() => g.classList.add('aberta')); document.body.classList.add('ia-gaveta-on'); setTimeout(() => g.foco && g.foco(), 120);
+  }
+  function fecharGavetaIA() { const g = document.getElementById('ia-gaveta'); if (g) g.classList.remove('aberta'); document.body.classList.remove('ia-gaveta-on'); }
+  function alternarGavetaIA() { const g = document.getElementById('ia-gaveta'); if (g && g.classList.contains('aberta')) fecharGavetaIA(); else if (location.hash.startsWith('#/ia')) document.getElementById('ia-campo') && document.getElementById('ia-campo').focus(); else abrirGavetaIA(); }
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && document.body.classList.contains('ia-gaveta-on')) fecharGavetaIA(); });
+  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/ia')) fecharGavetaIA(); });
   function montarCronometro() {
     const barra = document.getElementById('barra-topo'); if (!barra || !sessao) return;
     let el = document.getElementById('crono'); if (!el) { el = h('div', { id: 'crono', class: 'crono' }); barra.insertBefore(el, document.getElementById('subabas')); }
