@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://jnjyzmzvwxaghunjxofz.supabase.co; form-action 'none'; base-uri 'none'">
+<title>Diagnóstico protegido eproc | Araújo Advocacia</title>
+<style>body{font:16px system-ui;background:#f5f3ef;color:#27221c;max-width:860px;margin:40px auto;padding:0 20px}h1{font-size:25px}section{background:white;padding:24px;border:1px solid #d7cdbd;border-radius:12px;margin:20px 0}label{display:block;margin:16px 0}input{box-sizing:border-box;display:block;width:100%;padding:12px;margin:7px 0;border:1px solid #b5aa99;border-radius:5px;font:inherit}button{font:inherit;padding:12px;background:#28221c;color:white;border:0;border-radius:6px;cursor:pointer}button:disabled{opacity:.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.5 ui-monospace}small{color:#625b51}[hidden]{display:none!important}</style>
+<h1>Diagnóstico eproc/TJSC — somente leitura</h1>
+<p>Teste manual pelo servidor do robô em São Paulo. Não salva acesso no cofre, não importa dados e não abre o teor de intimações.</p>
+<p id="status" role="status">Conferindo a sessão de administrador…</p>
+<section id="access" hidden><p>Abra esta tela pela mesma aba em que você já entrou no <a href="/painel/">painel</a> como administrador. A sessão é exclusiva desta aba.</p></section>
+<section id="test" hidden>
+<button id="connection" type="button">Testar conexão sem credenciais</button>
+<form id="credentials" autocomplete="off">
+<label>Login eproc<input id="login" name="login" autocomplete="off" placeholder="sc seguido do número da OAB" required pattern="[sS][cC][0-9]{5,8}"></label>
+<label>Senha eproc<input id="password" name="senha" type="password" autocomplete="off" required maxlength="200"></label>
+<label>Código temporário do autenticador<input id="otp" name="codigo" inputmode="numeric" autocomplete="off" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="6 dígitos" required></label>
+<p><small>Digite um código novo e clique imediatamente. Não informe a chave permanente. Senha e código ficam somente na memória durante esta tentativa e os campos são limpos ao enviar.</small></p>
+<button id="submit" type="submit">Testar login e localizar listas</button>
+</form></section>
+<section id="output" hidden><h2>Resultado do servidor</h2><pre id="result"></pre></section>
+<script>
+(() => {
+ 'use strict';
+ const $ = id => document.getElementById(id);
+ let session = null;
+ try { session = JSON.parse(sessionStorage.getItem('painel_banco') || 'null'); } catch {}
+ const endpoint = 'https://jnjyzmzvwxaghunjxofz.supabase.co/functions/v1/diagnosticoeproc';
+ async function call(body) {
+  const r = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json', 'x-region':'sa-east-1', ...(session?.chave ? {apikey:session.chave} : {})}, body:JSON.stringify({...body,token:session.token}), credentials:'omit', cache:'no-store', referrerPolicy:'no-referrer', signal:AbortSignal.timeout(150000) });
+  const result = await r.json(); return {...result, http_diagnostico:r.status};
+ }
+ function show(result) { $('result').textContent = JSON.stringify(result,null,2); $('output').hidden = false; }
+ function busy(value) { $('submit').disabled=value; $('connection').disabled=value; }
+ async function run(body) { busy(true); $('status').textContent='Teste em andamento no servidor…'; try { const result=await call(body); show(result); $('status').textContent=result.ok ? 'Servidor respondeu. Confira a etapa e o resultado abaixo.' : 'Teste interrompido na etapa: '+result.etapa; } catch { $('status').textContent='Não foi possível receber o resultado do servidor. Isso não comprova falha de login no tribunal.'; } finally { body.senha=''; body.codigo=''; busy(false); } }
+ $('connection').addEventListener('click',()=>run({acao:'conexao'}));
+ $('credentials').addEventListener('submit',ev=>{ev.preventDefault(); const body={acao:'login',login:$('login').value.trim(),senha:$('password').value,codigo:$('otp').value}; $('password').value=''; $('otp').value=''; run(body);});
+ if(!session?.token) { $('status').textContent='Sessão do banco não disponível nesta aba. Entre primeiro no painel.'; $('access').hidden=false; return; }
+ call({acao:'validar'}).then(r=>{if(r.ok){$('status').textContent='Sessão de administrador validada. Teste temporário até '+new Date(r.expira).toLocaleString('pt-BR')+'.';$('test').hidden=false;}else{$('status').textContent=r.mensagem || 'Sessão não validada.';$('access').hidden=false;}}).catch(()=>{$('status').textContent='Não foi possível validar a sessão. Nenhuma credencial foi enviada.';});
+ addEventListener('pagehide',()=>{$('password').value='';$('otp').value='';session=null;});
+})();
+</script></html>
