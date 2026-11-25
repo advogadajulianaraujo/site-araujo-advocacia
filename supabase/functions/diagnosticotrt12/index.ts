@@ -41,7 +41,7 @@ export async function totp(seed: { secret: string; period: number; digits: numbe
 const UA_PJE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
 /** Navegador mínimo: guarda os cookies por site e segue os redirecionamentos. */
 class Nav {
-  trace: any[] = [];
+  constructor(public trace: any[] = []) {}
   jar: Record<string, Record<string, string>> = {};
   cookie(u: string) { const h = new URL(u).host; return Object.entries(this.jar[h] || {}).map(([k, v]) => k + '=' + v).join('; '); }
   guardar(u: string, r: Response) { const h = new URL(u).host; const sc = (r.headers as any).getSetCookie ? (r.headers as any).getSetCookie() : [];
@@ -49,7 +49,9 @@ class Nav {
   async ir(u: string, init: RequestInit = {}, max = 10) {
     let url = u, opts: RequestInit = init;
     for (let i = 0; i <= max; i++) {
-      const dest = new URL(url); if (dest.protocol !== 'https:' || !/(^|\.)jus\.br$/.test(dest.hostname)) throw new Error('DESTINO_FORA_TRIBUNAL');
+      const dest = new URL(url);
+      if (dest.protocol === 'http:' && dest.hostname === 'pje.trt12.jus.br' && dest.pathname === '/pjekz/') { this.trace.push({ etapa: fase, ajuste: 'redirecionamento_para_http_normalizado_para_https', host: dest.hostname, caminho: dest.pathname }); dest.protocol = 'https:'; url = dest.href; }
+      if (dest.protocol !== 'https:' || !/(^|\.)jus\.br$/.test(dest.hostname)) throw new Error('DESTINO_FORA_TRIBUNAL: '+dest.protocol+'//'+dest.hostname+dest.pathname);
       const r = await fetch(url, { ...opts, redirect: 'manual', headers: { 'User-Agent': UA_PJE, Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'pt-BR,pt;q=0.9', ...(opts.headers || {}), cookie: this.cookie(url) }, signal: AbortSignal.timeout(25000) });
       this.trace.push({ etapa: fase, instante: new Date().toISOString(), host: new URL(url).hostname, caminho: new URL(url).pathname.replace(/\/paineladvogado\/\d+/g, '/paineladvogado/{advogado}'), http: r.status, resposta: Object.fromEntries(['date','server','content-type','x-cache','x-amz-cf-id','x-amz-cf-pop','x-amzn-requestid'].map(k=>[k,r.headers.get(k)]).filter(x=>x[1])) });
       this.guardar(url, r);
@@ -78,8 +80,8 @@ const titulo = (html: string) => deHtml((/<title>([^<]*)/i.exec(html) || [])[1] 
 const ehSso = (u: string) => /sso\.cloud\.pje\.jus\.br|\/auth\/realms\//.test(u);
 
 /** Entra no PJe (CPF + senha + código do autenticador). Devolve o navegador já logado ou o motivo exato. */
-export async function entrarPje(base: string, cred: { login: string; senha: string; seed: string; period?: number }) {
-  const seed = lerSeed(cred.seed || ''); const nav = new Nav();
+export async function entrarPje(base: string, cred: { login: string; senha: string; seed: string; period?: number }, trace: any[] = []) {
+  const seed = lerSeed(cred.seed || ''); const nav = new Nav(trace);
   if (cred.seed && !seed) return { ok: false, etapa: 'seed', mensagem: 'A 2FA Seed não parece uma chave do autenticador (letras A–Z e números 2–7).' };
   if (seed && cred.period) seed.period = cred.period;
   let p = await nav.ir(base + 'authenticateSSO.seam');
@@ -120,11 +122,11 @@ Deno.serve(async(req:Request)=>{
  if(regiao!=='sa-east-1')return reply({ok:false,etapa:'regiao',regiao},409);
  const now=Date.now();for(const[k,v]of calls)if(now-v>60000)calls.delete(k);
  if(calls.has(b.token))return reply({ok:false,etapa:'limite'},429);calls.set(b.token,now);
- let cred:any,nav:any;const result:any={regiao,inicio:new Date().toISOString(),ok:false};
+ let cred:any,nav:any;const trace:any[]=[];const result:any={regiao,inicio:new Date().toISOString(),ok:false};
  try{
   const all=await rpc('painel_trib_info',{p_escritorio:who.escritorio_id});cred=all.pjetrt121g;
   if(!cred?.login||!cred?.senha)return reply({...result,etapa:'acesso_nao_guardado'});
-  fase='login';const r:any=await entrarPje(PJE.trt12.graus['1g'],cred);
+  fase='login';const r:any=await entrarPje(PJE.trt12.graus['1g'],cred,trace);
   if(!r.ok)return reply({...result,etapa:'login_'+r.etapa,mensagem:r.mensagem});
   nav=r.nav;result.autenticacao_aceita=true;
   const jar=nav.jar['pje.trt12.jus.br']||{};let id='';
@@ -134,7 +136,13 @@ Deno.serve(async(req:Request)=>{
   const x=await nav.ir('https://pje.trt12.jus.br/pje-comum-api/api/paineladvogado/'+id+'/totalizadores',{headers:{Accept:'application/json, text/plain, */*',Referer:'https://pje.trt12.jus.br/pjekz/','X-XSRF-TOKEN':decodeURIComponent(jar['Xsrf-Token']||'')}});
   result.http=x.status;result.etapa=x.status===403?'bloqueio_contadores':x.status===200?'contadores_acessiveis':'resposta_contadores';
   result.cloudfront=/Request blocked|cloudfront/i.test(x.html);result.requisicoes=nav.trace;result.primeiro403=nav.trace.find((x:any)=>x.http===403)||null;
-  result.ok=x.status===200;return reply(result);
- }catch(e){return reply({...result,etapa:fase,erro:(e as Error).name==='TimeoutError'?'TEMPO_LIMITE':'FALHA_TECNICA',requisicoes:nav?.trace||[]});}
+  result.ok=x.status===200;
+  if(x.status===403 && jar.access_token){
+    fase='contadores_autorizacao_explicita';
+    const y=await nav.ir('https://pje.trt12.jus.br/pje-comum-api/api/paineladvogado/'+id+'/totalizadores',{headers:{Accept:'application/json, text/plain, */*',Referer:'https://pje.trt12.jus.br/pjekz/',Origin:'https://pje.trt12.jus.br',Authorization:'Bearer '+decodeURIComponent(jar.access_token),'X-XSRF-TOKEN':decodeURIComponent(jar['Xsrf-Token']||'')}});
+    result.comparacao_autorizacao_explicita={http:y.status,cloudfront:/Request blocked|cloudfront/i.test(y.html)};
+  }
+  return reply(result);
+ }catch(e){return reply({...result,etapa:fase,erro:(e as Error).name==='TimeoutError'?'TEMPO_LIMITE':'FALHA_TECNICA',detalhe:String((e as Error).message||'').startsWith('DESTINO_FORA_TRIBUNAL:')?String((e as Error).message).split('?')[0].slice(0,200):(e as Error).name,requisicoes:trace});}
  finally{if(cred){cred.senha='';cred.seed='';}if(nav)nav.jar={};b.token='';}
 });
