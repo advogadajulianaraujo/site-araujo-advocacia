@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.60.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.60.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.61.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.61.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.60.1';
+var VERSAO = '8.61.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3418,6 +3418,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ep = eprocDireto_(ctx); novas += ep.intimacoes; prazosNovos += ep.prazos; } catch (eE) { erros.push('eproc direto do tribunal: ' + (eE.message || eE)); }
     try { var epp = eprocPainel_(ctx); novas += epp.intimacoes; prazosNovos += epp.prazos + epp.audiencias; } catch (eEP) { erros.push('eproc (Painel do Advogado): ' + (eEP.message || eEP)); }
+    try { var pjp = pjePainel_(ctx); novas += pjp.intimacoes; prazosNovos += pjp.prazos + pjp.audiencias; } catch (ePJ) { erros.push('PJe (Painel do Advogado): ' + (ePJ.message || ePJ)); }
     try { limparAtosImpossiveis_(ctx); } catch (eLA) { erros.push('Agenda (limpeza): ' + (eLA.message || eLA)); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
@@ -4234,15 +4235,17 @@ function eprocDireto_(ctx) {
 var ROBO_EPROC_U_ = { usuario: 'robô', nome: 'Robô (eproc)', perfil: 'administrador' };
 function semAtoEproc_(t) { return String(t || 'intimação').replace(/^Expedida\/certificada a\s*/i, ''); }
 /** 8.60.1: o texto da intimação com TUDO o que o eproc mostra na lista (sem abrir): ato, prazo e data final, processo, classe, assunto, partes, juízo. A IA resume este texto. */
-function textoEproc_(x, sigla, tipo) {
-  var env = String(x.envio || ''), l = ['Intimação eletrônica do eproc ' + sigla + ' (' + x.grau + '), lida no Painel do Advogado sem abrir (não demos ciência).', 'Ato: ' + semAtoEproc_(x.evento) + '.'];
-  if (tipo === 'prazo') l.push('Prazo: ' + (x.dias || '?') + ' dias ' + (x.corridos ? 'corridos' : 'úteis') + ', de ' + dataBR_(x.inicio) + ' até ' + dataBR_(x.fim) + ' (data final mostrada pelo eproc).');
+function textoEproc_(x, sigla, tipo, sis) {
+  sis = sis || 'eproc';
+  var env = String(x.envio || ''), l = [(sis === 'PJe' ? 'Expediente do PJe ' : 'Intimação eletrônica do eproc ') + sigla + ' (' + x.grau + '), lido no Painel do Advogado sem abrir (não demos ciência).', 'Ato: ' + semAtoEproc_(x.evento) + '.'];
+  if (tipo === 'prazo') l.push('Prazo: ' + (x.dias || '?') + ' dias ' + (x.corridos ? 'corridos' : 'úteis') + (sis === 'PJe' ? ', ciência em ' : ', de ') + dataBR_(x.inicio) + ' até ' + dataBR_(x.fim) + ' (data final mostrada pelo ' + sis + ').');
+  if (x.destinatario) l.push('Destinatário: ' + x.destinatario + (x.polo === 'ativo' ? ' (polo ativo)' : x.polo === 'passivo' ? ' (polo passivo)' : '') + '.');
   if (tipo === 'pendente') l.push('Prazo: ' + (x.dias ? x.dias + ' dias ' + (x.corridos ? 'corridos' : 'úteis') : 'não informado') + ', contados da ciência — aguardando abertura; se ninguém abrir, a ciência é tácita em ' + dataBR_(somarDias_(env.slice(0, 10), 10)) + '.');
   if (tipo === 'pauta') l.push('Pauta de julgamento virtual de ' + dataBR_(x.ini) + (x.fim && x.fim !== x.ini ? ' a ' + dataBR_(x.fim) : '') + '.');
   l.push('Processo ' + x.numero + (x.classe ? ' — ' + x.classe : '') + (x.assunto ? ' — assunto: ' + x.assunto : '') + '.');
   if (x.partes) l.push('Partes: ' + x.partes + '.');
   if (x.vara || x.juizo) l.push('Juízo: ' + (x.vara || x.juizo) + '.');
-  if (env) l.push('Enviada pelo eproc em ' + dataBR_(env.slice(0, 10)) + (env.length > 10 ? ' às ' + env.slice(11, 16) : '') + '.');
+  if (env) l.push((sis === 'PJe' ? 'Expedida pelo PJe em ' : 'Enviada pelo eproc em ') + dataBR_(env.slice(0, 10)) + (env.length > 10 ? ' às ' + env.slice(11, 16) : '') + '.');
   return l.join('\n');
 }
 /** 8.60.1 (pedido da usuária: "quando aparecer uma intimação nova, já fazer o checklist"): cria as tarefas sugeridas para o ato (as mesmas do
@@ -4266,14 +4269,14 @@ function fichaAtoEproc_(ato, numero, x, proc, criar) {
   var chave = 'E:' + numero + ':' + ato.data + ':' + tipoAtoDe_(ato.tipo), fichas = fichasAtos_(), f = fichas.porChave[chave], agora = new Date().toISOString();
   var mL = /(https?:\/\/[^\s|]+|(?:meet\.google\.com|zoom\.us|teams\.microsoft\.com)\/[^\s|]+)/i.exec((x.obs || '') + ' ' + (x.sala || '')), link = mL ? (/^https?:/.test(mL[1]) ? mL[1] : 'https://' + mL[1]) : '';
   var modo = link || /virtual|videoconfer|v[ií]deo|online|telepresen/i.test((x.sala || '') + ' ' + (x.evento || '')) ? 'online' : '';
-  var obs = ['Do eproc: ' + (x.evento || ''), x.partes ? 'Partes: ' + x.partes : '', x.vara ? 'Juízo: ' + x.vara : '', x.obs && !link ? 'Obs.: ' + x.obs : ''].filter(String).join(' | ');
+  var obs = ['Do ' + (x._sis || 'eproc') + ': ' + (x.evento || ''), x.partes ? 'Partes: ' + x.partes : '', x.vara ? 'Juízo: ' + x.vara : '', x.obs && !link ? 'Obs.: ' + x.obs : ''].filter(String).join(' | ');
   if (!f) inserirLinha_(fichas.tab, { chave: chave, numero: numero, data: ato.data, hora: ato.hora || '', tipo: tipoAtoDe_(ato.tipo), modo: modo, link: link, testemunhas: '[]', obs: obs, forum: x.vara || '', sala: x.sala || '',
-    visto_em: agora, criado_em: agora, atualizado_em: agora, atualizado_por: 'robô (eproc)' });
+    visto_em: agora, criado_em: agora, atualizado_em: agora, atualizado_por: 'robô (' + (x._sis || 'eproc') + ')' });
   else {
     var m = {};
     if (!f.forum && x.vara) m.forum = x.vara; if (!f.sala && x.sala) m.sala = x.sala; if (!f.link && link) m.link = link; if (!f.modo && modo) m.modo = modo;
-    if (String(f.obs || '').indexOf('Do eproc:') < 0) m.obs = (f.obs ? f.obs + ' | ' : '') + obs;
-    if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = 'robô (eproc)'; atualizarLinha_(fichas.tab, f, m); }
+    if (String(f.obs || '').indexOf('Do ' + (x._sis || 'eproc') + ':') < 0) m.obs = (f.obs ? f.obs + ' | ' : '') + obs;
+    if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = 'robô (' + (x._sis || 'eproc') + ')'; atualizarLinha_(fichas.tab, f, m); }
   }
   if (!criar || !proc) return 0;
   var marca = '[prepato:' + chave + ']';
@@ -4281,26 +4284,43 @@ function fichaAtoEproc_(ato, numero, x, proc, criar) {
   var tipoT = ato.ehPericia ? 'pericia' : /instru/.test(ato.tipo) ? 'instrucao' : 'audiencia', hoje = hojeSP_(), fer = mapaFeriados_(), n = 0;
   var resp = proc.responsavel || quemDa_('prazo', proc.area, numero) || config_('RESP_EPROC') || respSecretaria_() || '', sec = respSecretaria_() || resp;
   (TAREFAS_ATO[tipoT] || []).filter(function (m) { return !/^Avisar o cliente/i.test(m[0]); }).forEach(function (m) {
-    try { salvarTarefa_({ tarefa: { titulo: m[0], descricao: 'Checklist automático — ' + ato.tipo + ' em ' + dataBR_(ato.data) + (ato.hora ? ' às ' + ato.hora : '') + ' (eproc' + (x.partes ? ': ' + x.partes.slice(0, 120) : '') + ')\n' + marca,
+    try { salvarTarefa_({ tarefa: { titulo: m[0], descricao: 'Checklist automático — ' + ato.tipo + ' em ' + dataBR_(ato.data) + (ato.hora ? ' às ' + ato.hora : '') + ' (' + (x._sis || 'eproc') + (x.partes ? ': ' + x.partes.slice(0, 120) : '') + ')\n' + marca,
       responsavel: m[2] === 'sec' ? sec : resp, vence_em: venceTarefa_(m[3], ato.data, hoje, fer), processo_id: proc.id, cliente_id: proc.cliente_id || '', prioridade: m[4], categoria: m[1] } }, ROBO_EPROC_U_); n++; } catch (e) { /* segue */ }
   });
   return n;
 }
-function eprocPainel_(ctx, forcar) {
+function eprocPainel_(ctx, forcar) { return painelPortal_(ctx, forcar, { acao: 'painel_eproc', prop: 'EPROC_PAINEL_EM', cfg: 'EPROC_PAINEL', nome: 'eproc' }); }
+/** 8.61 PJe pelo painel do advogado (TRT6 e os outros que deixam): expedientes com a DATA FINAL do PJe e audiências marcadas. Só lista. */
+function pjePainel_(ctx, forcar) { return painelPortal_(ctx, forcar, { acao: 'painel_pje', prop: 'PJE_PAINEL_EM', cfg: 'PJE_PAINEL', nome: 'PJe' }); }
+/** 8.61: o PJe lista os expedientes de TODAS as partes. Só entra o que é para o nosso cliente (nome do cadastro) — sem cliente, o polo do processo. */
+function pjeParaNos_(ctx, x) {
+  var dest = nomeComparavel_(x.destinatario || ''); if (!dest) return false;
+  if (/\bjulian\b.*\baraujo\b|araujo advocacia/.test(dest)) return true;
+  var proc = ctx.porNumero[x.numero] || null, cli = null;
+  if (proc && proc.cliente_id) { ctx._cliPorId = ctx._cliPorId || (function () { var m = {}; tabela_('Clientes').linhas.forEach(function (c) { m[c.id] = c; }); return m; })(); cli = ctx._cliPorId[proc.cliente_id]; }
+  if (cli && cli.nome) {
+    var a = dest.split(' '), b = nomeComparavel_(cli.nome).split(' ');
+    if (a.join(' ') === b.join(' ')) return true;
+    return a[0] === b[0] && a.slice(1).some(function (w) { return w.length > 2 && b.indexOf(w) >= 0; });
+  }
+  if (x.polo === 'ativo') return !(proc && proc.polo && !poloAtivo_(proc));
+  return x.polo === 'passivo' && !!(proc && proc.polo && !poloAtivo_(proc));
+}
+function painelPortal_(ctx, forcar, o) {
   var res = { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 };
   if (!sbLigado_()) return res;
-  var P = PropertiesService.getScriptProperties(), ult = +P.getProperty('EPROC_PAINEL_EM') || 0;
+  var P = PropertiesService.getScriptProperties(), ult = +P.getProperty(o.prop) || 0;
   if (!forcar && Date.now() - ult < 50 * 60000) return res;
-  P.setProperty('EPROC_PAINEL_EM', String(Date.now()));
+  P.setProperty(o.prop, String(Date.now()));
   var c = sbConf_(), j = {};
   try {
     var r = UrlFetchApp.fetch(c.url + '/functions/v1/tribunais', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ acao: 'painel_eproc', escritorio: sbEscritorio_() }), headers: { 'x-painel-chave': c.chave, 'x-region': 'sa-east-1' } });
+      payload: JSON.stringify({ acao: o.acao, escritorio: sbEscritorio_() }), headers: { 'x-painel-chave': c.chave, 'x-region': 'sa-east-1' } });
     try { j = JSON.parse(r.getContentText() || '{}'); } catch (eJ) { j = {}; }
     if (!j.ok && !j.erro) j.erro = 'o banco respondeu ' + r.getResponseCode();
   } catch (e) { j = { ok: false, erro: 'não consegui falar com o banco: ' + String(e.message || e).slice(0, 120) }; }
   var st = { em: new Date().toISOString(), contas: [] };
-  if (!j.ok) { st.erro = String(j.erro || 'erro').slice(0, 200); setConfig_('EPROC_PAINEL', JSON.stringify(st), 'eproc pelo Painel do Advogado (última leitura)'); return res; }
+  if (!j.ok) { st.erro = String(j.erro || 'erro').slice(0, 200); setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)'); return res; }
   if (!j.ligado) return res;
   var novidades = [];
   (j.contas || []).forEach(function (conta) {
@@ -4308,49 +4328,52 @@ function eprocPainel_(ctx, forcar) {
     if (conta.ok) { try { a = aplicarPainelEproc_(ctx, conta, res, novidades); } catch (eA) { a = { erro: String(eA.message || eA).slice(0, 160) }; } }
     st.contas.push({ chave: conta.chave, sigla: conta.sigla, ok: !!conta.ok, mensagem: conta.mensagem || '', etapa: conta.etapa || '', contagens: conta.contagens || {}, avisos: conta.avisos || [], aplicado: a });
   });
-  setConfig_('EPROC_PAINEL', JSON.stringify(st), 'eproc pelo Painel do Advogado (última leitura)');
-  if (novidades.length) chatRobo_('⚖ eproc (Painel do Advogado): ' + novidades.slice(0, 10).join(' · ') + (novidades.length > 10 ? ' · e mais ' + (novidades.length - 10) : '') + '. Nada foi aberto no eproc (não demos ciência).');
+  setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)');
+  if (novidades.length) chatRobo_('⚖ ' + o.nome + ' (Painel do Advogado): ' + novidades.slice(0, 10).join(' · ') + (novidades.length > 10 ? ' · e mais ' + (novidades.length - 10) : '') + '. Nada foi aberto no ' + o.nome + ' (não demos ciência).');
   return res;
 }
 function aplicarPainelEproc_(ctx, conta, res, novidades) {
-  var hoje = hojeSP_(), agora = new Date().toISOString(), sigla = conta.sigla || 'TJSC', fonte = 'eproc ' + sigla + ' (painel do advogado)';
+  var SIS = conta.sistema === 'PJe' ? 'PJe' : 'eproc', ROB = 'robô (' + SIS + ')';
+  var hoje = hojeSP_(), agora = new Date().toISOString(), sigla = conta.sigla || 'TJSC', fonte = SIS + ' ' + sigla + ' (painel do advogado)';
   var a = { iguais: 0, ajustados: 0, novos: 0, ja_feitos: 0, intimacoes: 0, dias_acertados: 0, audiencias: 0, remarcadas: 0, pauta: 0, textos: 0, checklist: 0 };
-  var completarTexto = function (intim, x, tipo) { if (intim && String(intim.texto || '').length < 40) { atualizarLinha_(ctx.intim, intim, { texto: textoEproc_(x, sigla, tipo) }); a.textos++; } };
+  var completarTexto = function (intim, x, tipo) { if (intim && String(intim.texto || '').length < 40) { atualizarLinha_(ctx.intim, intim, { texto: textoEproc_(x, sigla, tipo, SIS) }); a.textos++; } };
   var dia = function (v) { return String(v || '').slice(0, 10); };
   var num = function (v) { return mascaraCnj_(String(v || '').replace(/\D/g, '')); };
-  var procDe = function (numero, cliente) { return processoDoNumero_(ctx, numero, tribunalDoNumero_(numero) || sigla, 'eproc', cliente ? [cliente] : [], null); };
+  var procDe = function (numero, cliente) { return processoDoNumero_(ctx, numero, tribunalDoNumero_(numero) || sigla, SIS, cliente ? [cliente] : [], null); };
   var aberto = function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; };
   var semAto = function (t) { return String(t || 'intimação').replace(/^Expedida\/certificada a\s*/i, ''); };
 
-  // 1) PRAZOS EM ABERTO — a data final do eproc
-  (conta.prazos || []).forEach(function (x) {
+  // 1) PRAZOS EM ABERTO — a data final do eproc/PJe (no PJe, só os expedientes para o nosso cliente)
+  var prazosConta = conta.prazos || [];
+  if (SIS === 'PJe') { prazosConta = prazosConta.filter(function (x) { var ok = pjeParaNos_(ctx, x); if (!ok) a.outra_parte = (a.outra_parte || 0) + 1; return ok; }); }
+  prazosConta.forEach(function (x) {
     var numero = num(x.numero);
     if (!RE_CNJ.test(numero) || !/^\d{4}-\d{2}-\d{2}$/.test(x.fim || '')) return;
-    var marca = '[eprocp:' + numero + '|' + String(x.envio || x.inicio) + ']';
-    var desc = 'Prazo do eproc: ' + semAto(x.evento) + (x.dias ? ' — ' + x.dias + ' dias' + (x.corridos ? ' corridos' : '') : '');
-    var nota = 'eproc (' + x.grau + '): ' + semAto(x.evento) + ', ' + (x.dias || '?') + ' dias, início ' + dataBR_(x.inicio) + ', fim ' + dataBR_(x.fim);
+    var marca = SIS === 'PJe' ? '[pjep:' + numero + '|' + x.expediente + ']' : '[eprocp:' + numero + '|' + String(x.envio || x.inicio) + ']';
+    var desc = 'Prazo do ' + SIS + ': ' + semAto(x.evento) + (x.dias ? ' — ' + x.dias + ' dias' + (x.corridos ? ' corridos' : '') : '');
+    var nota = SIS + ' ' + sigla + ' (' + x.grau + '): ' + semAto(x.evento) + ', ' + (x.dias || '?') + ' dias, ' + (SIS === 'PJe' ? 'ciência ' : 'início ') + dataBR_(x.inicio) + ', fim ' + dataBR_(x.fim);
     var doNum = ctx.prazos.linhas.filter(function (z) { return z.numero === numero && !/^ato:/.test(z.observacoes || ''); });
-    var livre = function (z) { return !/\[eprocp:/.test(z.observacoes || ''); };
+    var livre = function (z) { return !/\[(eprocp|pjep):/.test(z.observacoes || ''); };
     var perto = function (z) { return z.fatal === x.fim || (z.ciencia && x.inicio && Math.abs(diffDias_(z.ciencia, x.inicio)) <= 15); };
     var alvo = doNum.filter(function (z) { return (z.observacoes || '').indexOf(marca) >= 0; })[0];
     if (alvo && !aberto(alvo)) return; // a equipe já fechou: fica como está
     if (!alvo) alvo = doNum.filter(function (z) { return aberto(z) && livre(z) && perto(z); })
-      .sort(function (p, q) { return Math.abs(Date.parse(p.fatal || hoje) - Date.parse(x.fim)) - Math.abs(Date.parse(q.fatal || hoje) - Date.parse(x.fim)); })[0];
+      .sort(function (p, q) { var sc = function (z) { return Math.abs(Date.parse(z.fatal || hoje) - Date.parse(x.fim)) + (z.ciencia && x.inicio ? Math.abs(Date.parse(z.ciencia) - Date.parse(x.inicio)) : 864e6); }; return sc(p) - sc(q); })[0];
     if (!alvo) {
       var feito = doNum.filter(function (z) { return !aberto(z) && livre(z) && perto(z); })[0];
-      if (feito) { atualizarLinha_(ctx.prazos, feito, { observacoes: (feito.observacoes || '') + ' | ' + nota + ' — o eproc ainda mostra o prazo aberto; aqui já estava ' + feito.situacao + ' ' + marca }); a.ja_feitos++; return; }
+      if (feito) { atualizarLinha_(ctx.prazos, feito, { observacoes: (feito.observacoes || '') + ' | ' + nota + ' — o ' + SIS + ' ainda mostra o prazo aberto; aqui já estava ' + feito.situacao + ' ' + marca }); a.ja_feitos++; return; }
     }
     if (alvo) {
       var m = {};
       if (alvo.fatal !== x.fim) { m.fatal = x.fim; a.ajustados++; res.ajustados++; } else a.iguais++;
       if ((alvo.observacoes || '').indexOf(marca) < 0) m.observacoes = (alvo.observacoes ? alvo.observacoes + ' | ' : '') + nota + (alvo.fatal && alvo.fatal !== x.fim ? ' (o painel tinha ' + dataBR_(alvo.fatal) + ')' : '') + ' ' + marca;
-      if (!/vinculado ao eproc/.test(alvo.origem || '') || alvo.situacao !== 'conferido') {
-        m.origem = 'vinculado ao eproc (painel do advogado)'; m.situacao = 'conferido'; m.conferido_por = 'robô (eproc)'; m.conferido_em = agora;
-        m.conferido_fonte = 'Painel do Advogado do eproc ' + sigla + (alvo.fatal && alvo.fatal !== x.fim ? ' (o painel tinha ' + dataBR_(alvo.fatal) + ')' : '');
+      if (!new RegExp('vinculado ao ' + SIS).test(alvo.origem || '') || alvo.situacao !== 'conferido') {
+        m.origem = 'vinculado ao ' + SIS + ' (painel do advogado)'; m.situacao = 'conferido'; m.conferido_por = ROB; m.conferido_em = agora;
+        m.conferido_fonte = 'Painel do Advogado do ' + SIS + ' ' + sigla + (alvo.fatal && alvo.fatal !== x.fim ? ' (o painel tinha ' + dataBR_(alvo.fatal) + ')' : '');
       }
       if (!alvo.descricao || /PROVIS|a definir|ATO N[ÃA]O IDENTIFICADO/i.test(alvo.descricao)) m.descricao = desc;
       if (x.dias && String(alvo.dias) !== String(x.dias)) { m.dias = String(x.dias); m.contagem = x.corridos ? 'corridos' : 'uteis'; }
-      if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = 'robô (eproc)'; atualizarLinha_(ctx.prazos, alvo, m); }
+      if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = ROB; atualizarLinha_(ctx.prazos, alvo, m); }
       completarTexto(alvo.intimacao_id ? ctx.intim.linhas.filter(function (i) { return i.id === alvo.intimacao_id; })[0] : null, x, 'prazo');
       return;
     }
@@ -4358,16 +4381,16 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     var proc = procDe(numero, x.cliente), envio = dia(x.envio);
     var intim = ctx.intim.linhas.filter(function (i) { return i.numero === numero && !i.prazo_id && envio && dia(i.recebido_em) >= somarDias_(envio, -3) && dia(i.recebido_em) <= somarDias_(envio, 15); })[0];
     if (!intim) {
-      var chaveI = 'eproc-painel|' + numero + '|' + x.envio;
-      if (!ctx.chaves[chaveI]) registrarIntimacao_(ctx, { fonte: fonte, chave: chaveI, recebido_em: (envio || hoje) + 'T12:00:00.000Z', numero: numero, tribunal: tribunalDoNumero_(numero) || sigla, sistema: 'eproc',
-        movimento: semAto(x.evento) + ' (' + x.grau + ') — prazo em aberto no eproc até ' + dataBR_(x.fim), evento: '', texto: textoEproc_(x, sigla, 'prazo'), nomes: x.cliente ? [x.cliente] : [], tipo: '' });
+      var chaveI = SIS === 'PJe' ? 'pje-painel|' + numero + '|' + x.expediente : 'eproc-painel|' + numero + '|' + x.envio;
+      if (!ctx.chaves[chaveI]) registrarIntimacao_(ctx, { fonte: fonte, chave: chaveI, recebido_em: (envio || hoje) + 'T12:00:00.000Z', numero: numero, tribunal: tribunalDoNumero_(numero) || sigla, sistema: SIS,
+        movimento: semAto(x.evento) + ' (' + x.grau + ') — prazo em aberto no ' + SIS + ' até ' + dataBR_(x.fim), evento: '', texto: textoEproc_(x, sigla, 'prazo', SIS), nomes: x.cliente ? [x.cliente] : [], tipo: '' });
       intim = ctx.intim.linhas.filter(function (i) { return i.chave === chaveI; })[0];
       if (intim) intim._novaEproc = true;
     } else completarTexto(intim, x, 'prazo');
     var z = { id: novoId_('Z'), processo_id: proc.id, numero: numero, intimacao_id: intim ? intim.id : '', descricao: desc, dias: x.dias ? String(x.dias) : '', contagem: x.corridos ? 'corridos' : 'uteis',
-      ciencia: x.inicio || '', ciencia_tipo: 'início do prazo no eproc (' + dataBR_(x.inicio) + ')', fatal: x.fim, situacao: 'conferido', origem: 'vinculado ao eproc (painel do advogado)',
+      ciencia: x.inicio || '', ciencia_tipo: (SIS === 'PJe' ? 'ciência no PJe (' : 'início do prazo no eproc (') + dataBR_(x.inicio) + ')', fatal: x.fim, situacao: 'conferido', origem: 'vinculado ao ' + SIS + ' (painel do advogado)',
       responsavel: proc.responsavel || quemDa_('prazo', proc.area, numero) || '', observacoes: nota + ' ' + marca,
-      conferido_por: 'robô (eproc)', conferido_em: agora, conferido_fonte: 'Painel do Advogado do eproc ' + sigla, criado_em: agora, atualizado_em: agora, atualizado_por: 'robô (eproc)' };
+      conferido_por: ROB, conferido_em: agora, conferido_fonte: 'Painel do Advogado do ' + SIS + ' ' + sigla, criado_em: agora, atualizado_em: agora, atualizado_por: ROB };
     inserirLinha_(ctx.prazos, z);
     if (intim) atualizarLinha_(ctx.intim, intim, { prazo_id: z.id });
     a.novos++; res.prazos++; novidades.push(numero + ': prazo até ' + dataBR_(x.fim));
@@ -4386,7 +4409,7 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
       ctx.intim.linhas.filter(function (i) { return i.numero === numero && /^eproc/.test(i.fonte || '') && /expedida|intima|pendente/i.test(i.movimento || '') && Math.abs(diffDias_(dia(i.recebido_em), envio)) <= 3; })[0];
     if (!ja) {
       registrarIntimacao_(ctx, { fonte: fonte, chave: chaveI, recebido_em: envio + 'T12:00:00.000Z', numero: numero, tribunal: tribunalDoNumero_(numero) || sigla, sistema: 'eproc',
-        movimento: semAto(x.evento) + (dias ? ' — ' + dias + ' dias' : '') + ' (' + x.grau + ', aguardando abertura no eproc)', evento: '', texto: textoEproc_(x, sigla, 'pendente'), nomes: x.cliente ? [x.cliente] : [],
+        movimento: semAto(x.evento) + (dias ? ' — ' + dias + ' dias' : '') + ' (' + x.grau + ', aguardando abertura no eproc)', evento: '', texto: textoEproc_(x, sigla, 'pendente', SIS), nomes: x.cliente ? [x.cliente] : [],
         tipo: 'expedida', segundoGrau: /2º grau/.test(x.grau), ciencia: somarDias_(envio, 10), ciencia_tipo: 'tácita: 10 dias após o envio no eproc (' + dataBR_(envio) + ')' });
       ja = ctx.intim.linhas.filter(function (i) { return i.chave === chaveI; })[0];
       if (ja) { ja._novaEproc = true; a.intimacoes++; res.intimacoes++; novidades.push(numero + ': intimação nova' + (dias ? ' (' + dias + ' dias)' : '')); }
@@ -4409,7 +4432,7 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     var chaveI = 'eproc-pauta|' + numero + '|' + x.ini;
     if (ctx.chaves[chaveI]) return;
     registrarIntimacao_(ctx, { fonte: fonte, chave: chaveI, recebido_em: (dia(x.envio) || hoje) + 'T12:00:00.000Z', numero: numero, tribunal: tribunalDoNumero_(numero) || sigla, sistema: 'eproc',
-      movimento: 'Intimação de pauta (' + x.grau + '): julgamento virtual de ' + dataBR_(x.ini) + (x.fim && x.fim !== x.ini ? ' a ' + dataBR_(x.fim) : ''), evento: '', texto: textoEproc_(x, sigla, 'pauta'), nomes: x.cliente ? [x.cliente] : [], tipo: '' });
+      movimento: 'Intimação de pauta (' + x.grau + '): julgamento virtual de ' + dataBR_(x.ini) + (x.fim && x.fim !== x.ini ? ' a ' + dataBR_(x.fim) : ''), evento: '', texto: textoEproc_(x, sigla, 'pauta', SIS), nomes: x.cliente ? [x.cliente] : [], tipo: '' });
     a.pauta++;
   });
 
@@ -4425,6 +4448,7 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
       var tipo = per ? 'perícia' : /instru|\buna\b|julgamento/.test(t) ? 'audiência de instrução' : /concilia|mediac|cejusc|preliminar|transac|suspens/.test(t) ? 'audiência de conciliação' : 'audiência (tipo a conferir no processo)';
       var ato = { ehPericia: per, tipo: tipo, agenda: per ? 'PERÍCIAS' : /instru/.test(tipo) ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO', data: x.data, hora: x.hora || '' };
       proc = proc || procDe(numero, x.cliente);
+      x._sis = SIS;
       var nova = marcarAto_(ctx, ato, { numero: numero, fonte: fonte, movimento: (x.evento || '') + (x.partes ? ' — ' + x.partes : '') + (x.vara ? ' — ' + x.vara : '') + (x.sala ? ' — ' + x.sala : '') + (x.obs ? ' — ' + x.obs : ''), ciencia: hoje }, proc);
       if (nova) { a.audiencias++; res.audiencias++; novidades.push(numero + ': ' + tipo + ' em ' + dataBR_(x.data) + (x.hora ? ' às ' + x.hora : '')); }
       try { a.checklist += fichaAtoEproc_(ato, numero, x, proc, nova); } catch (eF) { /* a agenda já está certa */ }
@@ -4432,7 +4456,7 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     if (!/redesign|remarc/.test(normalizar_(lista.map(function (x) { return x.evento; }).join(' ')))) return;
     var datas = lista.map(function (x) { return x.data; });
     tabela_('Eventos').linhas.filter(function (e) { return e.numero === numero && e.data > hoje && datas.indexOf(e.data) < 0 && !/per[ií]cia/.test(e.tipo || '') && !/apagado/.test(e.evento_id || ''); })
-      .forEach(function (e) { cancelarEventoAto_(e, 'audiência remarcada no eproc para ' + datas.map(dataBR_).join(', ')); a.remarcadas++; });
+      .forEach(function (e) { cancelarEventoAto_(e, 'audiência remarcada no ' + SIS + ' para ' + datas.map(dataBR_).join(', ')); a.remarcadas++; });
   });
   return a;
 }

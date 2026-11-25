@@ -179,6 +179,83 @@ export async function entrarPje(base: string, cred: { login: string; senha: stri
 }
 
 /* =====================================================================================================================
+   8.61 PJe pelo PAINEL DO ADVOGADO (API do próprio PJe, a mesma que a tela usa) — pedido da usuária (25/11/2026, TRT6).
+   Depois do login (CPF + senha + 2FA) o robô lê, SÓ LISTANDO: o acervo do advogado (/paineladvogado/{id}/processos), os expedientes de
+   cada processo (/processos/id/{id}/expedientes: tipo, meio, dias, ciência e a DATA FINAL do PJe, aberto/fechado, destinatário) e as
+   audiências (/processos/id/{id}/audiencias: data, hora, tipo, situação, sala). NUNCA chama darCiencia (PUT), documentos nem o teor.
+   O TRT12 (e outros) bloqueiam essa API para servidores ("Request blocked" do CloudFront): aí o robô avisa e o resto continua.
+   ===================================================================================================================== */
+const PJE_MAX_PROC = 150, PJE_TEMPO = 100000;
+export async function lerPainelPje(cred: any) {
+  const t0 = Date.now(), base = PJE[cred.trib] && PJE[cred.trib].graus[cred.grau];
+  if (!base) return { ok: false, etapa: 'tribunal', mensagem: 'Tribunal/grau desconhecido.' };
+  let r: any = await entrarPje(base, cred);
+  let period = 0;
+  if (!r.ok && r.etapa === 'codigo' && !cred.period) { const r2: any = await entrarPje(base, { ...cred, period: 60 }); if (r2.ok) { r = r2; period = 60; } }
+  if (!r.ok) return { ok: false, etapa: r.etapa, mensagem: r.mensagem };
+  const nav: Nav = r.nav, u0 = new URL(base), jar = nav.jar[u0.host] || {}, origem = u0.origin;
+  let id = '';
+  try { const tok = decodeURIComponent(jar.access_token || ''); id = String(JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).id || ''); } catch { /* sem token */ }
+  if (!/^\d+$/.test(id)) return { ok: false, period, etapa: 'token', mensagem: 'Entrou no PJe, mas o PJe não devolveu a identificação do advogado.' };
+  const api = origem + '/pje-comum-api/api', instancia = cred.grau === '2g' ? '2' : cred.grau === '3g' ? '3' : '1';
+  const H = { Accept: 'application/json, text/plain, */*', Referer: origem + '/pjekz/', 'X-XSRF-TOKEN': decodeURIComponent(jar['Xsrf-Token'] || '') };
+  const jget = async (caminho: string) => {
+    const x = await nav.ir(api + caminho, { headers: H });
+    if (x.status === 403 && /Request blocked|cloudfront/i.test(x.html)) throw new Error('BLOQUEIO');
+    let j: any = null; try { j = JSON.parse(x.html); } catch { /* não é json */ }
+    if (x.status >= 400 || j === null) throw new Error('O PJe respondeu ' + x.status + ' em ' + caminho.split('?')[0].replace(/\d{3,}/g, '{id}'));
+    return j;
+  };
+  const sigla = cred.trib.toUpperCase(), grauNome = cred.grau === '2g' ? '2º grau' : cred.grau === '3g' ? 'TST' : '1º grau';
+  const out: any = { ok: true, sigla, sistema: 'PJe', grau: grauNome, contagens: {}, prazos: [], pendentes: [], pauta: [], audiencias: [], avisos: [], processos: 0, outros_destinos: 0 };
+  try {
+    const tots = await jget('/paineladvogado/' + id + '/totalizadores');
+    const c: any = {}; (Array.isArray(tots) ? tots : []).forEach((t: any) => { c[String(t.nomeAgrupamentoTarefa || t.idAgrupamentoProcessoTarefa)] = +t.quantidadeProcessos || 0; });
+    out.contagens[grauNome] = c;
+    const procs: any[] = [];
+    for (let pg = 1; pg <= 10 && procs.length < PJE_MAX_PROC; pg++) {
+      const j = await jget('/paineladvogado/' + id + '/processos?pagina=' + pg + '&tamanhoPagina=100');
+      const arr = (j && j.resultado) || []; procs.push(...arr);
+      if (arr.length < 100 || procs.length >= (+j.totalRegistros || 0)) break;
+    }
+    if (procs.length > PJE_MAX_PROC) out.avisos.push('O acervo tem ' + procs.length + ' processos: li os ' + PJE_MAX_PROC + ' primeiros nesta rodada.');
+    const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+    const fila = procs.slice(0, PJE_MAX_PROC);
+    const um = async (p: any) => {
+      const numero = String(p.numeroProcesso || ''), vara = String(p.descricaoOrgaoJulgador || '');
+      const partes = [p.nomeParteAutora ? p.nomeParteAutora + (p.qtdeParteAutora > 1 ? ' e outros' : '') : '', p.nomeParteRe ? p.nomeParteRe + (p.qtdeParteRe > 1 ? ' e outros' : '') : ''].filter(Boolean).join(' × ');
+      const base0 = { numero, grau: grauNome, classe: String(p.classeJudicial || ''), vara, partes, sigilo: !!p.segredoDeJustica };
+      const ex = await jget('/processos/id/' + p.id + '/expedientes?pagina=1&tamanhoPagina=100&instancia=' + instancia);
+      ((ex && ex.resultado) || (Array.isArray(ex) ? ex : [])).forEach((e: any) => {
+        if (e.fechado || !e.fimDoPrazoLegal) return;
+        const dest = String(e.nomePessoaParte || ''), polo = dest && dest === p.nomeParteAutora ? 'ativo' : dest && dest === p.nomeParteRe ? 'passivo' : 'outro';
+        out.prazos.push({ ...base0, evento: String(e.tipoExpediente || 'Intimação') + (e.meioExpediente ? ' (' + e.meioExpediente + ')' : ''), dias: +e.prazoLegal || 0,
+          corridos: /CORRID/i.test(String(e.tipoPrazoEnum || e.tipoPrazo || '')), envio: String(e.dataCriacao || '').slice(0, 16), inicio: String(e.dataCiencia || '').slice(0, 10),
+          fim: String(e.fimDoPrazoLegal).slice(0, 10), destinatario: dest, polo, expediente: e.id, vencido: !!e.prazoVencido });
+      });
+      const au = await jget('/processos/id/' + p.id + '/audiencias?canceladas=true');
+      (Array.isArray(au) ? au : []).forEach((a: any) => {
+        const ini = String(a.dataInicio || ''), st = String(a.status || '');
+        if (!/^\d{4}-\d{2}-\d{2}T/.test(ini) || ini.slice(0, 10) < hoje) return;
+        out.audiencias.push({ ...base0, evento: String((a.tipo && (a.tipo.descricao || a.tipo)) || 'Audiência') + (/designad/i.test(st) ? '' : ' — ' + st), situacao: st,
+          data: ini.slice(0, 10), hora: ini.slice(11, 16), sala: String((a.salaFisica && a.salaFisica.nome) || ''), obs: '' });
+      });
+    };
+    for (let i = 0; i < fila.length; i += 4) {
+      if (Date.now() - t0 > PJE_TEMPO) { out.avisos.push('Tempo esgotado: li ' + i + ' de ' + fila.length + ' processos; o resto na próxima rodada.'); break; }
+      await Promise.all(fila.slice(i, i + 4).map(p => um(p).catch((e: Error) => { if (e.message === 'BLOQUEIO') throw e; out.avisos.push(String(p.numeroProcesso) + ': ' + String(e.message).slice(0, 100)); })));
+    }
+    out.processos = fila.length;
+  } catch (e) {
+    const m = String((e as Error).message || e);
+    if (m === 'BLOQUEIO') return { ok: false, period, etapa: 'bloqueio', mensagem: 'o ' + sigla + ' bloqueia a lista do painel do advogado para servidores (proteção do tribunal). Os avisos dele continuam chegando pelo e-mail e pelo DJEN.' };
+    return { ok: false, period, etapa: 'lista', mensagem: m.slice(0, 200) };
+  }
+  out.ms = Date.now() - t0; if (period) out.period = period;
+  return out;
+}
+
+/* =====================================================================================================================
    8.60 eproc pelo LOGIN NOVO (SSO + 2FA), como a pessoa entra — pedido da usuária (25/11/2026: "coloque os prazos certos, calculados
    certos, porque dá para ver pelo eproc, e as audiências corretas"). O TJSC passou o login para sso.tjsc.jus.br: o webservice antigo
    (MNI) recusa a senha de tela; com usuário + senha + 2FA Seed o robô entra no PAINEL DO ADVOGADO e LÊ as listas:
@@ -306,7 +383,7 @@ export async function lerPainelEproc(cfg: typeof SSO_EPROC[string], cred: { logi
   }
   const ua = /href="(controlador\.php\?acao=audiencia_futura_listar&(?:amp;)?acao_origem[^"]*)"/.exec(painel);
   if (ua) { try { const q = await ir(base + deHtml(ua[1])); out.audiencias = lerAudiencias(q.html); } catch (x) { out.avisos.push('audiências: ' + String((x as Error).message || x).slice(0, 80)); } }
-  out.ms = Date.now() - t0;
+  out.ms = Date.now() - t0; if (period) out.period = period;
   return out;
 }
 
@@ -351,6 +428,26 @@ Deno.serve(async (req: Request) => {
         st[t] = { em: new Date().toISOString(), por: 'robô', ok: !!c.ok, etapa: c.etapa || '', ms: c.ms || 0, contagens: c.contagens || {},
           mensagem: c.ok ? (c.prazos.length + ' prazo(s) em aberto, ' + c.pendentes.length + ' aguardando abertura, ' + c.audiencias.length + ' audiência(s)') : c.mensagem };
         contas.push({ chave: t, sigla: SSO_EPROC[t].sigla, ...c, nav: undefined, html: undefined });
+      }
+      await gravarEstado(escId, st);
+      return resp({ ok: true, ligado: true, contas });
+    }
+    // 8.61 robô do painel: PJe (login + senha + 2FA) pelo painel do advogado — só lista
+    if (b.acao === 'painel_pje') {
+      const k = String(req.headers.get('x-painel-chave') || ''), escId = String(b.escritorio || '');
+      if (!k || !/^[0-9a-f-]{36}$/.test(escId)) return resp({ ok: false, erro: 'Pedido inválido.' }, 400);
+      const h: Record<string, string> = { apikey: k, 'Content-Type': 'application/json' }; if (k.startsWith('eyJ')) h.Authorization = 'Bearer ' + k;
+      const rr = await fetch(URL_BANCO + '/rest/v1/rpc/painel_trib_info', { method: 'POST', headers: h, body: JSON.stringify({ p_escritorio: escId }) });
+      if (!rr.ok) return resp({ ok: false, erro: 'Chave do banco recusada.' }, 403);
+      const cr: Record<string, any> = (await rr.json()) || {};
+      const ids = Object.keys(cr).filter(t => /^pje/.test(t) && cr[t] && cr[t].login && PJE[cr[t].trib]);
+      if (!ids.length) return resp({ ok: true, ligado: false, contas: [] });
+      const st = await estado(escId), contas: any[] = [];
+      for (const t of ids) {
+        let c: any; try { c = await lerPainelPje(cr[t]); } catch (x) { c = { ok: false, etapa: 'erro', mensagem: String((x as Error).message || x).slice(0, 200) }; }
+        st[t] = { ...(st[t] || {}), em: new Date().toISOString(), por: 'robô', ok: !!c.ok, etapa: c.etapa || '', ms: c.ms || 0, contagens: c.contagens || {},
+          mensagem: c.ok ? (c.processos + ' processo(s), ' + c.prazos.length + ' expediente(s) com prazo em aberto, ' + c.audiencias.length + ' audiência(s) marcada(s)') : /bloqueio|lista|token/.test(c.etapa || '') ? 'entrou no PJe, mas ' + c.mensagem : c.mensagem };
+        contas.push({ chave: t, ...c, sigla: c.sigla || String(cr[t].trib || '').toUpperCase(), sistema: 'PJe' });
       }
       await gravarEstado(escId, st);
       return resp({ ok: true, ligado: true, contas });
@@ -450,22 +547,22 @@ Deno.serve(async (req: Request) => {
         if (seed && !lerSeed(seed)) return resp({ ok: false, erro: 'A 2FA Seed não parece uma chave do autenticador: são letras de A a Z e números de 2 a 7 (às vezes em grupos com espaço).' }, 400);
         cred = { trib: t, grau: g, nome: String(b.nome || '').trim().slice(0, 80), login, senha, seed };
       } else { cred = creds[String(b.chave || '')]; if (!cred || !cred.login) return resp({ ok: false, erro: 'Este acesso não está guardado.' }, 400); }
-      const base = PJE[cred.trib].graus[cred.grau];
       const t0 = Date.now();
-      let r: any = await entrarPje(base, cred);
-      // período do código: o padrão é 30 s; se o PJe recusar o código, tenta UMA vez com 60 s (alguns tribunais falam em "a cada minuto")
-      if (!r.ok && r.etapa === 'codigo' && !cred.period) { const r2: any = await entrarPje(base, { ...cred, period: 60 }); if (r2.ok) { r = r2; cred.period = 60; } }
+      // 8.61: o teste já lê o painel do advogado (o mesmo que o robô); lista bloqueada pelo tribunal = o login vale e é guardado
+      const c: any = await lerPainelPje(cred);
+      const entrou = !!c.ok || c.etapa === 'bloqueio' || c.etapa === 'lista' || c.etapa === 'token';
+      const r: any = entrou ? { ok: true } : { ok: false, etapa: c.etapa, mensagem: c.mensagem };
+      if (c.period) cred.period = c.period;
       const k = chavePje(cred.trib, cred.grau);
-      st[k] = { em: new Date().toISOString(), por, ok: !!r.ok, etapa: r.etapa || '', mensagem: r.ok ? 'entrou no PJe' : r.mensagem, ms: Date.now() - t0 };
+      st[k] = { em: new Date().toISOString(), por, ok: !!c.ok, etapa: c.etapa || '', contagens: c.contagens || {}, ms: Date.now() - t0,
+        mensagem: c.ok ? (c.processos + ' processo(s), ' + c.prazos.length + ' expediente(s) com prazo em aberto, ' + c.audiencias.length + ' audiência(s) marcada(s)') : entrou ? 'entrou no PJe, mas ' + c.mensagem : c.mensagem };
       await gravarEstado(escId, st);
-      if (!r.ok) return resp({ ok: false, erro: r.mensagem + (b.acao === 'pje_guardar' ? ' Nada foi guardado.' : ''), etapa: r.etapa, campos: r.campos || [], acessos: acessosPje() });
+      if (!r.ok) return resp({ ok: false, erro: r.mensagem + (b.acao === 'pje_guardar' ? ' Nada foi guardado.' : ''), etapa: r.etapa, acessos: acessosPje() });
       if (b.acao === 'pje_guardar') {
         await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: k, p_valor: JSON.stringify({ ...cred, em: new Date().toISOString(), por }) });
         creds[k] = { ...cred, em: new Date().toISOString(), por };
       }
-      // o que a tela inicial do PJe mostra (só nomes e links do painel — nenhum expediente é aberto)
-      const links = [...String(r.html || '').matchAll(/href="([^"#]*(?:[Ee]xpediente|[Pp]ainel|[Aa]dvogado)[^"]*)"/g)].map(m => m[1]).slice(0, 12);
-      return resp({ ok: true, mensagem: 'Entrou no PJe (' + PJE[cred.trib].nome + ', ' + (GRAU_NOME[cred.grau] || cred.grau) + ').', pagina: { titulo: r.titulo, caminho: new URL(r.url).pathname, links }, acessos: acessosPje() });
+      return resp({ ok: true, mensagem: 'Entrou no PJe (' + PJE[cred.trib].nome + ', ' + (GRAU_NOME[cred.grau] || cred.grau) + '): ' + st[k].mensagem + '.', acessos: acessosPje() });
     }
     const trib = String(b.tribunal || '');
     if (!TRIBUNAIS[trib]) return resp({ ok: false, erro: 'Escolha o tribunal.' }, 400);

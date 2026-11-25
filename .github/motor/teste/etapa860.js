@@ -76,4 +76,33 @@ assert(tA.length >= 3 && !tA.some(t => /^Avisar o cliente/.test(t.titulo)), 'aud
 const nT = C.tabela_('Tarefas').linhas.length;
 C.aplicarPainelEproc_(ctx, conta, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
 assert(C.tabela_('Tarefas').linhas.length === nT, 'nova leitura não repete checklist');
+
+// 8.61: PJe pelo painel do advogado — só os expedientes para o nosso cliente; data final do PJe; audiência marcada
+const M = k => '0000' + k + '99-11.2026.5.06.0171';
+add('Clientes', [{ id: 'C861', nome: 'Maria Inventada da Silva', criado_em: new Date().toISOString() }]);
+add('Processos', [{ id: 'P861a', numero: M(1), tribunal: 'TRT6', sistema: 'PJe', status: 'ativo', area: 'Trabalhista', cliente_id: 'C861', responsavel: 'ana', criado_em: new Date().toISOString() },
+  { id: 'P861b', numero: M(2), tribunal: 'TRT6', sistema: 'PJe', status: 'ativo', area: 'Trabalhista', polo: 'reclamante', responsavel: 'ana', criado_em: new Date().toISOString() }]);
+add('Prazos', [{ id: 'Z861a', processo_id: 'P861a', numero: M(1), descricao: 'Prazo indicado na intimação', dias: '8', contagem: 'uteis', ciencia: dia(-6), fatal: dia(3), situacao: 'calculado', origem: 'robô', observacoes: 'DJEN', criado_em: new Date().toISOString() }]);
+const ctxP = C.contextoRobo_();
+const contaP = { chave: 'pjetrt61g', sigla: 'TRT6', sistema: 'PJe', ok: true, contagens: {}, pendentes: [], pauta: [],
+  prazos: [
+    { numero: M(1), grau: '1º grau', classe: 'ATOrd', vara: '1ª Vara do Trabalho Inventada', partes: 'MARIA INVENTADA DA SILVA × EMPRESA FICTÍCIA LTDA', evento: 'Intimação (Diário Eletrônico)', dias: 8, corridos: false, envio: dia(-8) + 'T16:00', inicio: dia(-6), fim: dia(2), destinatario: 'MARIA INVENTADA DA SILVA', polo: 'ativo', expediente: 111 },
+    { numero: M(1), grau: '1º grau', classe: 'ATOrd', vara: '1ª Vara do Trabalho Inventada', partes: 'MARIA INVENTADA DA SILVA × EMPRESA FICTÍCIA LTDA', evento: 'Intimação (Diário Eletrônico)', dias: 8, corridos: false, envio: dia(-8) + 'T16:00', inicio: dia(-6), fim: dia(2), destinatario: 'EMPRESA FICTÍCIA LTDA', polo: 'passivo', expediente: 112 },
+    { numero: M(2), grau: '1º grau', classe: 'ATOrd', vara: '1ª Vara do Trabalho Inventada', partes: 'JOSE TESTE × OUTRA EMPRESA SA', evento: 'Alvará (Em Mãos)', dias: 15, corridos: true, envio: dia(-20) + 'T08:05', inicio: dia(-10), fim: dia(5), destinatario: 'JOSE TESTE', polo: 'ativo', expediente: 113 }],
+  audiencias: [{ numero: M(2), grau: '1º grau', classe: 'ATOrd', vara: '1ª Vara do Trabalho Inventada', partes: 'JOSE TESTE × OUTRA EMPRESA SA', evento: 'Instrução por videoconferência', situacao: 'Designada', data: dia(9), hora: '10:00', sala: 'Sala_Titular', obs: '' }] };
+const aP = C.aplicarPainelEproc_(ctxP, contaP, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
+const zP = ctxP.prazos.linhas.find(z => z.id === 'Z861a');
+assert(zP.fatal === dia(2) && /vinculado ao PJe/.test(zP.origem) && zP.situacao === 'conferido' && /\[pjep:/.test(zP.observacoes) && /o painel tinha/.test(zP.observacoes),
+  'PJe: o prazo do DJEN ganha a data final do PJe (' + zP.fatal + '), conferido e marcado');
+assert(aP.outra_parte === 1 && !ctxP.prazos.linhas.some(z => (z.observacoes || '').indexOf('|112]') >= 0), 'PJe: expediente para a EMPRESA (outra parte) não vira prazo nosso');
+const zAlv = ctxP.prazos.linhas.find(z => z.numero === M(2) && /Prazo do PJe: Alvará/.test(z.descricao || ''));
+const iAlv = zAlv && ctxP.intim.linhas.find(i => i.id === zAlv.intimacao_id);
+assert(zAlv && zAlv.fatal === dia(5) && zAlv.contagem === 'corridos' && iAlv && /Expediente do PJe TRT6/.test(iAlv.texto) && /Destinatário: JOSE TESTE \(polo ativo\)/.test(iAlv.texto),
+  'PJe sem cliente cadastrado: expediente do polo ativo (o processo é nosso, reclamante) vira prazo + intimação com o texto do PJe');
+assert(aP.audiencias === 1 && ctxP.eventos.linhas.some(e => e.numero === M(2) && e.data === dia(9) && /instru/.test(e.tipo)), 'PJe: audiência designada vai para a agenda');
+const fP = C.tabela_('Audiencias').linhas.find(f => f.numero === M(2));
+assert(fP && fP.modo === 'online' && /Do PJe:/.test(fP.obs) && fP.forum === '1ª Vara do Trabalho Inventada', 'PJe: ficha da audiência com vara, modo online e "Do PJe"');
+const nP = ctxP.prazos.linhas.length;
+const aP2 = C.aplicarPainelEproc_(ctxP, contaP, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
+assert(ctxP.prazos.linhas.length === nP && aP2.novos === 0 && aP2.audiencias === 0, 'PJe: a 2ª leitura não duplica nada');
 console.log('resumo', JSON.stringify(a), 'novidades', nov.length);

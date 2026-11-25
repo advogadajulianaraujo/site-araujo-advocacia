@@ -4330,7 +4330,8 @@
         const r2 = h('span', { class: 'peq' });
         return h('div', { class: 'pje-ac' },
           h('div', {}, h('b', {}, a.tribunal_nome), ' · ', a.consulta, h('br'), h('small', {}, (a.nome ? a.nome + ' · ' : '') + 'CPF ' + a.login + (a.com_seed ? ' · com 2FA' : ' · sem 2FA') + ' · guardado por ' + (a.guardado_por || '—') + ' em ' + dataBR2(a.guardado_em)),
-            a.teste ? h('div', { class: a.teste.ok ? 'pje-ok' : 'erro' }, (a.teste.ok ? '✓ ' : '✕ ') + a.teste.mensagem + ' (' + dataBR2(a.teste.em) + ')') : null, r2),
+            a.teste ? h('div', { class: a.teste.ok ? 'pje-ok' : /^entrou/.test(a.teste.mensagem || '') ? 'peq' : 'erro' }, (a.teste.ok ? '✓ ' : /^entrou/.test(a.teste.mensagem || '') ? '⚠ ' : '✕ ') + a.teste.mensagem + ' (' + (a.teste.por === 'robô' ? 'robô, ' : '') + dataBR2(a.teste.em) + ')') : null,
+            a.teste && a.teste.ok && a.teste.contagens ? h('small', {}, Object.entries(a.teste.contagens).map(([g, v]) => g + ': ' + Object.entries(v || {}).map(([n, q]) => n + ' ' + q).join(', ')).join(' · ')) : null, r2),
           h('div', { class: 'mini-acoes' },
             botao('Testar', async ev => { const b = ev.currentTarget; b.disabled = true; r2.textContent = ' entrando…';
               try { const r = await B.tribunais({ acao: 'pje_testar', chave: a.chave }, 90000); r2.textContent = ''; desenhar(r.acessos || acessos); if (!r.ok) avisar(r.erro, true); else avisar(r.mensagem); }
@@ -4776,7 +4777,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.60.1';
+  const VERSAO_PAINEL = '8.61.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
