@@ -8,6 +8,24 @@ const allowed = new Set(['eproc1g.tjsc.jus.br', 'sso.tjsc.jus.br']);
 const recent = new Map<string, number>();
 const headers = { 'Access-Control-Allow-Origin': ORIGIN, 'Access-Control-Allow-Headers': 'content-type, apikey, x-region', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store', 'Content-Type': 'application/json', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', Vary: 'Origin' };
 const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers });
+async function rpc(name: string, body: unknown) {
+  const h: Record<string, string> = { apikey: KEY, 'Content-Type': 'application/json' }; if (KEY.startsWith('eyJ')) h.Authorization = 'Bearer ' + KEY;
+  const r = await fetch(DB + '/rest/v1/rpc/' + name, { method: 'POST', headers: h, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error('COFRE_INDISPONIVEL'); const raw = await r.text(); return raw ? JSON.parse(raw) : null;
+}
+export function normalizeSeed(raw: unknown) {
+  const s = String(raw || '').replace(/[\s-]/g, '').toUpperCase().replace(/=+$/, '');
+  return /^[A-Z2-7]{16,128}$/.test(s) ? s : '';
+}
+export async function totp(secret: string, now = Date.now()) {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = 0, value = 0; const out: number[] = [];
+  for (const c of secret) { value = (value << 5) | abc.indexOf(c); bits += 5; if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; } }
+  const key = await crypto.subtle.importKey('raw', new Uint8Array(out), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const counter = new Uint8Array(8); let n = Math.floor(now / 30000); for (let i = 7; i >= 0; i--) { counter[i] = n & 255; n = Math.floor(n / 256); }
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, counter)); const offset = mac[mac.length - 1] & 15;
+  const code = ((mac[offset] & 127) << 24) | (mac[offset + 1] << 16) | (mac[offset + 2] << 8) | mac[offset + 3];
+  return String(code % 1000000).padStart(6, '0');
+}
 export const decode = (s: string) => String(s).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
 export const text = (s: string) => decode(s.replace(/<script\b[\s\S]*?<\/script>/gi, '').replace(/<style\b[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 export function attr(tag: string, name: string) { const m = new RegExp('(?:^|\\s)' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(tag); return decode(m ? m[1] ?? m[2] ?? m[3] ?? '' : ''); }
@@ -87,26 +105,44 @@ export async function handler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return reply({ ok: false, etapa: 'metodo' }, 405);
   if (req.headers.get('origin') && req.headers.get('origin') !== ORIGIN) return reply({ ok: false, etapa: 'origem' }, 403);
-  if (Date.now() > EXPIRES) return reply({ ok: false, etapa: 'expirado', mensagem: 'Diagnóstico temporário encerrado.' }, 410);
   if (Number(req.headers.get('content-length') || 0) > 6000) return reply({ ok: false, etapa: 'corpo' }, 413);
   let b: any; try { const raw = await req.text(); if (raw.length > 6000) return reply({ ok: false, etapa: 'corpo' }, 413); b = JSON.parse(raw); } catch { return reply({ ok: false, etapa: 'corpo' }, 400); }
   const token = typeof b.token === 'string' ? b.token : '';
   if (!token || token.length > 1024) return reply({ ok: false, etapa: 'sessao', mensagem: 'Entre no painel como administrador.' }, 401);
+  let office = '', admin = '';
   try {
     const h: Record<string, string> = { apikey: KEY, 'Content-Type': 'application/json' }; if (KEY.startsWith('eyJ')) h.Authorization = 'Bearer ' + KEY;
     const r = await fetch(DB + '/rest/v1/rpc/painel_quem', { method: 'POST', headers: h, body: JSON.stringify({ p_token: token }), signal: AbortSignal.timeout(10000) });
     const who = r.ok ? await r.json() : null;
     if (!who?.usuario || who.usuario.perfil !== 'administrador') return reply({ ok: false, etapa: 'sessao', mensagem: 'Sessão inválida ou sem perfil de administrador.' }, 403);
+    office = String(who.escritorio_id || ''); admin = String(who.usuario.nome || who.usuario.usuario || '');
   } catch { return reply({ ok: false, etapa: 'sessao', mensagem: 'Não foi possível validar a sessão do painel.' }, 503); }
   const region = Deno.env.get('DENO_REGION') || 'desconhecida';
-  if (b.acao === 'validar') return reply({ ok: true, etapa: 'sessao_validada', regiao: region, expira: new Date(EXPIRES).toISOString() });
+  if (b.acao === 'validar') return reply({ ok: true, etapa: 'sessao_validada', regiao: region, expira: new Date(EXPIRES).toISOString(), cofre_disponivel: true });
   if (region !== 'sa-east-1') return reply({ ok: false, etapa: 'regiao', regiao: region, mensagem: 'Não enviadas credenciais: execução fora de São Paulo.' }, 409);
-  if (!['conexao', 'login'].includes(b.acao)) return reply({ ok: false, etapa: 'acao' }, 400);
-  if (b.seed !== undefined) return reply({ ok: false, etapa: 'entrada', mensagem: 'Chaves permanentes não são aceitas.' }, 400);
-  if (b.acao === 'login' && (!/^sc\d{5,8}$/i.test(b.login || '') || typeof b.senha !== 'string' || !b.senha || b.senha.length > 200 || !/^\d{6}$/.test(b.codigo || ''))) return reply({ ok: false, etapa: 'entrada', mensagem: 'Informe login, senha e código temporário de seis dígitos.' }, 400);
+  if (['status_guardado', 'apagar_guardado'].includes(b.acao)) {
+    if (!/^[0-9a-f-]{36}$/i.test(office)) return reply({ ok: false, etapa: 'sessao' }, 403);
+    try {
+      if (b.acao === 'apagar_guardado') { await rpc('painel_trib_gravar', { p_escritorio: office, p_trib: 'ssotjsc', p_valor: '' }); return reply({ ok: true, etapa: 'acesso_removido', acesso: null }); }
+      const all = await rpc('painel_trib_info', { p_escritorio: office }); const c = all?.ssotjsc;
+      return reply({ ok: true, etapa: 'status_cofre', acesso: c?.login && c?.senha && c?.seed ? { usuario: String(c.login).replace(/^(.{2}).*(.{2})$/, '$1•••$2'), com_seed: true, em: c.em || '', por: c.por || '' } : null });
+    } catch { return reply({ ok: false, etapa: 'cofre', mensagem: 'Não foi possível consultar o acesso no cofre.' }, 503); }
+  }
+  if (!['conexao', 'login', 'guardar', 'login_guardado'].includes(b.acao)) return reply({ ok: false, etapa: 'acao' }, 400);
+  if (Date.now() > EXPIRES && ['conexao', 'login'].includes(b.acao)) return reply({ ok: false, etapa: 'expirado', mensagem: 'Diagnóstico temporário encerrado. O acesso guardado permanece no cofre.' }, 410);
+  if (b.seed !== undefined && b.acao !== 'guardar') return reply({ ok: false, etapa: 'entrada', mensagem: 'Chave permanente só é aceita na ação expressa de guardar no cofre.' }, 400);
+  const save = b.acao === 'guardar', stored = b.acao === 'login_guardado';
+  if ((save || stored) && !/^[0-9a-f-]{36}$/i.test(office)) return reply({ ok: false, etapa: 'sessao' }, 403);
+  if (stored) {
+    try { const all = await rpc('painel_trib_info', { p_escritorio: office }); const cred = all?.ssotjsc; if (!cred?.login || !cred?.senha || !normalizeSeed(cred.seed)) return reply({ ok: false, etapa: 'cofre_vazio', mensagem: 'Ainda não há acesso SSO TJSC validado no cofre.' }, 404); b.login = cred.login; b.senha = cred.senha; b.codigo = await totp(normalizeSeed(cred.seed)); cred.senha = ''; cred.seed = ''; }
+    catch { return reply({ ok: false, etapa: 'cofre', mensagem: 'Não foi possível ler o acesso guardado.' }, 503); }
+  }
+  if (save) { b.seed = normalizeSeed(b.seed); if (!b.seed || b.aceito !== true) return reply({ ok: false, etapa: 'entrada', mensagem: 'Informe a chave permanente e marque a autorização de armazenamento no cofre.' }, 400); b.codigo = await totp(b.seed); }
+  if (b.acao !== 'conexao' && (!/^sc\d{5,8}$/i.test(b.login || '') || typeof b.senha !== 'string' || !b.senha || b.senha.length > 200 || !/^\d{6}$/.test(b.codigo || ''))) return reply({ ok: false, etapa: 'entrada', mensagem: 'Dados de acesso incompletos ou inválidos.' }, 400);
   const now = Date.now(); for (const [k, v] of recent) if (now - v > 60000) recent.delete(k);
-  if (b.acao === 'login' && recent.has(token)) return reply({ ok: false, etapa: 'limite', mensagem: 'Aguarde um minuto antes de outra tentativa.' }, 429);
-  if (b.acao === 'login') recent.set(token, now);
+  if (b.acao !== 'conexao' && recent.has(token)) return reply({ ok: false, etapa: 'limite', mensagem: 'Aguarde um minuto antes de outra tentativa.' }, 429);
+  if (b.acao !== 'conexao') recent.set(token, now);
+  let credentialToSave = save ? { login: b.login, senha: b.senha, seed: b.seed, em: new Date().toISOString(), por: admin, finalidade: 'SSO TJSC; consultas de leitura' } : null;
   const nav = new Nav(); let stage = 'conexao';
   const result: any = { ok: false, regiao: region, instante: new Date().toISOString(), passos: nav.steps, listas: [] };
   try {
@@ -139,12 +175,18 @@ export async function handler(req: Request) {
     stage = 'retorno_eproc';
     if (p.status >= 400 || new URL(p.url).hostname !== 'eproc1g.tjsc.jus.br' || forms(p.html).some(x => 'password' in x.fields) || !/sair|logout|encerrar sess[aã]o/i.test(p.html)) return reply({ ...result, etapa: 'login_nao_confirmado', pagina: summary(p) });
     result.ok = true; result.etapa = 'entrou_eproc'; result.pagina = summary(p);
+    if (credentialToSave) {
+      stage = 'guardar_cofre';
+      try { await rpc('painel_trib_gravar', { p_escritorio: office, p_trib: 'ssotjsc', p_valor: JSON.stringify(credentialToSave) }); }
+      catch { return reply({ ...result, ok: false, etapa: 'guardar_cofre', erro: 'COFRE_INDISPONIVEL', mensagem: 'Login aceito, mas o acesso não foi guardado. Tente novamente mais tarde.' }, 503); }
+      credentialToSave.senha = ''; credentialToSave.seed = ''; credentialToSave = null; result.acesso_guardado = true; result.mensagem_cofre = 'Acesso SSO TJSC validado e guardado no cofre privado; códigos gerados no servidor.';
+    }
     stage = 'localizar_listas';
     const candidates = links(p).filter(safeList); const seen = new Set<string>();
     for (const link of candidates) { if (seen.has(link.acao)) continue; seen.add(link.acao); if (seen.size > 4) break; const list = await nav.go(link.href); result.listas.push({ nome: link.nome, acao: link.acao, ...summary(list) }); }
     result.etapa = result.listas.length ? 'listas_consultadas' : 'listas_nao_localizadas_com_seguranca';
     return reply(result);
   } catch (e) { return reply({ ...result, etapa: stage, erro: /Timeout|timed out|abort/i.test(String(e)) ? 'TEMPO_LIMITE' : ['DESTINO_NAO_PERMITIDO', 'FORMULARIO_FORA_SSO', 'REDIRECIONAMENTOS_EXCEDIDOS', 'RESPOSTA_GRANDE', 'LEITURA_POTENCIALMENTE_COM_CIENCIA'].includes((e as Error).message) ? (e as Error).message : 'FALHA_DE_TRANSPORTE', mensagem: 'A etapa indicada não foi concluída; nenhuma importação foi realizada.' }); }
-  finally { b.senha = ''; b.codigo = ''; b.token = ''; nav.clear(); }
+  finally { b.senha = ''; b.codigo = ''; b.seed = ''; b.token = ''; if (credentialToSave) { credentialToSave.senha = ''; credentialToSave.seed = ''; } nav.clear(); }
 }
 Deno.serve(handler);
