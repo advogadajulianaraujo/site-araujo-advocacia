@@ -43,7 +43,9 @@ class Nav {
         const next = assertUrl(new URL(loc, url).href); if ([301, 302, 303].includes(response.status)) opts = {};
         url = next; await response.body?.cancel(); continue;
       }
-      const html = await response.text(); if (html.length > 2500000) throw new Error('RESPOSTA_GRANDE');
+      const bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.length > 2500000) throw new Error('RESPOSTA_GRANDE');
+      let html = new TextDecoder().decode(bytes);
+      if (/charset\s*=\s*["']?(?:iso-8859-1|windows-1252|latin1)/i.test(response.headers.get('content-type') || '') || /charset\s*=\s*["']?(?:iso-8859-1|windows-1252|latin1)/i.test(html.slice(0, 4000))) html = new TextDecoder('windows-1252').decode(bytes);
       return { url: url.href, status: response.status, html };
     }
     throw new Error('REDIRECIONAMENTOS_EXCEDIDOS');
@@ -53,23 +55,33 @@ class Nav {
 export function links(p: Page) {
   const result: { nome: string; acao: string; href: string }[] = [];
   for (const m of p.html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
-    const name = text(m[2]) || attr(m[1], 'title'); if (!/audi[eê]ncia|intima|pendente|cita[cç][aã]o|j[aá] lid|ci[eê]ncia|prazo/i.test(name)) continue;
+    const name = text(m[2]) || attr(m[1], 'title') || attr(m[1], 'aria-label');
+    if (!/audi[eê]ncia|intima|pendente|cita[cç][aã]o|j[aá] lid|ci[eê]ncia|prazo/i.test(name + ' ' + attr(m[1], 'href'))) continue;
     try { const u = assertUrl(new URL(attr(m[1], 'href'), p.url).href); if (u.hostname !== 'eproc1g.tjsc.jus.br') continue; result.push({ nome: name.slice(0, 180), acao: u.searchParams.get('acao') || '', href: u.href }); } catch { /* ignora links externos ou scripts */ }
   }
-  return result.slice(0, 60);
+  // O eproc também monta os links no JavaScript da página. Somente URLs literais
+  // fornecidas pelo tribunal; nunca executar JavaScript ou fabricar URLs com hashes.
+  for (const m of p.html.matchAll(/["']([^"'<>\s]*controlador(?:_ajax)?\.php\?[^"'<>\s]+)["']/gi)) {
+    try { const u = assertUrl(new URL(decode(m[1]), p.url).href); const action = u.searchParams.get('acao') || u.searchParams.get('acao_ajax') || ''; if (u.hostname !== 'eproc1g.tjsc.jus.br' || !/audi[eê]ncia|intima|cita[cç][aã]o|prazo/i.test(action)) continue; if (!result.some(x => x.href === u.href)) result.push({ nome: 'Link fornecido pelo eproc: ' + action, acao: action, href: u.href }); } catch { /* não seguir scripts nem destinos externos */ }
+  }
+  return result.slice(0, 100);
 }
 // Apenas ações de LISTAGEM já presentes na página. Nenhum detalhe, documento ou abertura de comunicação.
 export function safeList(l: { acao: string; nome: string; href: string }) {
   if (/teor|abrir|ciencia|ciência|confirmar|receber|registrar|documento|evento|processo|detalh|consultar_comunicacao/i.test(l.acao)) return false;
   const u = new URL(l.href);
   if ([...u.searchParams.keys()].some(k => /^(?:id|num|numero)_?(?:intimacao|comunicacao|processo|documento|evento)$/i.test(k))) return false;
-  return /^(?:audiencia_listar|intimacao_listar|intimacao_eletronica_listar|aviso_listar|prazo_listar|comunicacao_listar)$/.test(l.acao);
+  if (u.searchParams.has('acao_ajax')) return false; // exige revisão antes de consultar rotas AJAX
+  return /^(?:(?:[a-z0-9]+_)*(?:audiencia|intimacao|citacao|prazo)(?:_[a-z0-9]+)*_listar|aviso_listar|comunicacao_listar)$/.test(l.acao);
 }
 function summary(p: Page) {
   const heads = [...p.html.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map(m => text(m[1])).filter(Boolean).slice(0, 100);
   const labels = [...p.html.matchAll(/<(?:label|legend)\b[^>]*>([\s\S]*?)<\/(?:label|legend)>/gi)].map(m => text(m[1])).filter(Boolean).slice(0, 70);
   const rows = [...p.html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].slice(0, 45).map(m => [...m[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(c => text(c[1]).slice(0, 600))).filter(r => r.length);
-  return { titulo: title(p.html), http: p.status, campos: heads, filtros: labels, linhas: rows, avisos: feedback(p.html), links: links(p).map(({ nome, acao }) => ({ nome, acao })) };
+  const menu = [...p.html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)].map(m => { let acao = ''; try { acao = new URL(attr(m[1], 'href'), p.url).searchParams.get('acao') || ''; } catch {} return { nome: (text(m[2]) || attr(m[1], 'title')).slice(0, 120), acao }; }).filter(x => x.nome && x.acao).slice(0, 100);
+  const acoes = [...new Set([...p.html.matchAll(/(?:acao(?:_ajax)?=|["']acao(?:_ajax)?["']\s*:\s*["'])([a-z][a-z0-9_\/]{2,90})/gi)].map(m => m[1]))];
+  const scripts = [...p.html.matchAll(/<script\b([^>]*)>/gi)].map(m => attr(m[1], 'src')).filter(Boolean).map(s => { try { return new URL(s, p.url).pathname; } catch { return ''; } }).filter(Boolean).slice(0, 40);
+  return { titulo: title(p.html), http: p.status, campos: heads, filtros: labels, linhas: rows, avisos: feedback(p.html), links: links(p).map(({ nome, acao, href }) => ({ nome, acao, parametros: [...new URL(href).searchParams.keys()] })), menu, acoes_encontradas: acoes.slice(0, 120), scripts };
 }
 export async function handler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
