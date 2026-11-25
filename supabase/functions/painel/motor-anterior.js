@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.58.7 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.58.7';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.59.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.59.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.58.7';
+var VERSAO = '8.59.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -12807,6 +12807,22 @@ function roboExtrasAtualizar_() {
   try { if (txt !== config_('ROBO_EXTRAS')) setConfig_('ROBO_EXTRAS', txt, 'Estado do robô para as telas (atualizado sozinho de 10 em 10 min)'); } catch (eS) { /* tenta na próxima */ }
   return g;
 }
+/** 8.59: teste SEM senha — os endereços do PJe que listam os expedientes respondem aos servidores do Google? (do Supabase/Amazon dá
+ *  "Request blocked" do CloudFront). Grava em Config PJE_ALCANCE: para cada endereço, o código HTTP e se veio a página de bloqueio. */
+function pjeAlcanceGoogle_() {
+  var urls = ['https://pje.trt12.jus.br/pje-comum-api/api/paineladvogado/0/totalizadores', 'https://pje.trt12.jus.br/pje-comum-api/api/dominio/tiposexpediente',
+    'https://pje.trt12.jus.br/pjekz/', 'https://pje.trt12.jus.br/primeirograu/login.seam'];
+  var res = urls.map(function (u) { return { url: u, muteHttpExceptions: true, followRedirects: false, headers: { Accept: 'application/json, text/html' } }; });
+  var out = { em: new Date().toISOString(), de: 'Google (Apps Script)', r: [] };
+  try {
+    UrlFetchApp.fetchAll(res).forEach(function (r, i) {
+      var t = String(r.getContentText() || '').slice(0, 2000);
+      out.r.push({ url: urls[i].replace('https://pje.trt12.jus.br', ''), st: r.getResponseCode(), bloqueado: /Request blocked|could not be satisfied/i.test(t), inicio: t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 90) });
+    });
+  } catch (e) { out.erro = String(e.message || e).slice(0, 200); }
+  setConfig_('PJE_ALCANCE', JSON.stringify(out), 'teste: o PJe aceita os servidores do Google na lista de expedientes? (8.59)');
+  return out;
+}
 function aquecerGatilho() {
   var agora = new Date(), hora = +Utilities.formatDate(agora, TZ, 'H'), dsem = +Utilities.formatDate(agora, TZ, 'u'); // 1 = segunda … 7 = domingo
   var util = (dsem <= 5 && hora >= 7 && hora < 19) || (dsem === 6 && hora >= 8 && hora < 13);
@@ -12828,6 +12844,8 @@ function aquecerGatilho() {
     P.setProperty('AQUECER_PESADO_EM', String(Date.now()));
     try { roboExtrasAtualizar_(); } catch (eX2) { /* segue */ }
   }
+  // 8.59: o PJe aceita os servidores do Google na parte que lista os expedientes? (a Amazon/Supabase é bloqueada) — teste sem senha, de 6 em 6 h
+  if (Date.now() - (+(PQ.getProperty('PJE_ALCANCE_EM') || 0)) >= 6 * 3600000) { PQ.setProperty('PJE_ALCANCE_EM', String(Date.now())); try { pjeAlcanceGoogle_(); } catch (ePj) { /* segue */ } }
   if (Date.now() - (+(PQ.getProperty('AQUECER_LEVE_EM') || 0)) >= 19 * 60000) { // 8.53.3: de 20 em 20 min (antes 10)
     PQ.setProperty('AQUECER_LEVE_EM', String(Date.now()));
     try { vencidosRapido_(); } catch (eVc) { /* o robô de hora em hora tenta de novo */ }

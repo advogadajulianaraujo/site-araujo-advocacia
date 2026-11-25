@@ -129,7 +129,8 @@ class Nav {
       this.guardar(url, r);
       const loc = r.headers.get('location');
       if (loc && r.status >= 300 && r.status < 400) { url = new URL(loc, url).toString(); opts = {}; await r.body?.cancel(); continue; }
-      return { url, status: r.status, html: await r.text() };
+      const ct = r.headers.get('content-type') || '', buf = new Uint8Array(await r.arrayBuffer());
+      return { url, status: r.status, html: new TextDecoder(/8859-1|latin1|windows-1252/i.test(ct) ? 'iso-8859-1' : 'utf-8').decode(buf) };
     }
     throw new Error('redirecionamentos demais');
   }
@@ -177,6 +178,107 @@ export async function entrarPje(base: string, cred: { login: string; senha: stri
   return { ok: true, nav, url: p.url, titulo: titulo(p.html), html: p.html };
 }
 
+/* =====================================================================================================================
+   8.60 eproc pelo LOGIN NOVO (SSO + 2FA), como a pessoa entra — pedido da usuária (25/11/2026: "coloque os prazos certos, calculados
+   certos, porque dá para ver pelo eproc, e as audiências corretas"). O TJSC passou o login para sso.tjsc.jus.br: o webservice antigo
+   (MNI) recusa a senha de tela; com usuário + senha + 2FA Seed o robô entra no PAINEL DO ADVOGADO e LÊ as listas:
+   prazos em aberto (com a data FINAL do eproc), intimações aguardando abertura (com os dias), pauta e audiências futuras.
+   REGRA DE OURO: só listas. Nunca "Abrir Prazo" (preparar_processo_citado), nunca "Visualizar"/confirmar — abrir = ciência.
+   ===================================================================================================================== */
+export const SSO_EPROC: Record<string, { nome: string; sigla: string; auth: string; client: string; redirect: string; base: string; graus: Record<string, string> }> = {
+  ssotjsc: { nome: 'TJSC — eproc (1º e 2º grau)', sigla: 'TJSC', auth: 'https://sso.tjsc.jus.br/realms/eproc/protocol/openid-connect/auth', client: 'eproc-tjsc-1g',
+    redirect: 'https://eproc1g.tjsc.jus.br/eproc/externo_controlador.php?acao=SSO/callback', base: 'https://eproc1g.tjsc.jus.br/eproc/', graus: { SC: '1º grau', TJSC: '2º grau' } },
+};
+const NUNCA_ABRIR = /preparar_processo_citado|confirma|ciencia|abrir_prazo|marcar_visualiz/i;
+const reCnj = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
+const textoH = (h: string) => deHtml(String(h || '').replace(/<br\s*\/?>/gi, ' | ').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<[^>]+>/g, ' ')).replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').replace(/(\s*\|\s*)+/g, ' | ').replace(/^\s*\|\s*|\s*\|\s*$/g, '').trim();
+const datasH = (s: string) => [...String(s).matchAll(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/g)].map(m => ({ d: m[3] + '-' + m[2] + '-' + m[1], h: m[4] ? m[4] + ':' + m[5] : '' }));
+const linhasH = (html: string) => [...String(html).matchAll(/<tr class="infraTr(?:Clara|Escura)"[\s\S]*?<\/tr>/gi)].map(m => m[0]);
+const celulasH = (tr: string) => [...tr.matchAll(/<td[^>]*>([\s\S]*?)(?=<td[\s>]|<\/tr>)/gi)].map(m => m[1]);
+const registros = (html: string) => +((/\((\d+)\s+registros?\)/i.exec(html) || [])[1] || 0);
+function basicoLinha(tr: string) {
+  return { numero: (reCnj.exec(tr) || [''])[0], cliente: deHtml((/id="lblAtencao">([^<]+)</.exec(tr) || [])[1] || '').trim(), juizo: deHtml((/Ju[ií]zo:\s*<\/b>\s*([^<]+)/i.exec(tr) || [])[1] || '').trim() };
+}
+/** "Processos com prazo em aberto": [chk, processo, classe, assunto, "evento | N dias", envio, início, fim]. */
+function lerPrazosAbertos(html: string, grau: string) {
+  return linhasH(html).map(tr => { const c = celulasH(tr), i = c.findIndex(x => /\d+\s*dias?/i.test(textoH(x))); if (i < 0) return null;
+    const ev = textoH(c[i]), ds = datasH(c.slice(i + 1).join(' '));
+    return { ...basicoLinha(tr), grau, classe: textoH(c[i - 2] || ''), evento: ev.replace(/\s*\|?\s*\d+\s*dias?.*$/i, '').trim(), dias: +((/(\d+)\s*dias?/i.exec(ev) || [])[1] || 0),
+      corridos: /corrid/i.test(ev), envio: ds[0] ? ds[0].d + (ds[0].h ? ' ' + ds[0].h : '') : '', inicio: (ds[1] || {}).d || '', fim: (ds[2] || {}).d || '' }; }).filter(x => x && x.numero);
+}
+/** "Aguardando abertura" (pendentes de ciência): [chk, processo, classe, assunto, "evento | N dias", envio, (Abrir Prazo — NUNCA), início]. */
+function lerPendentes(html: string, grau: string) {
+  return linhasH(html).map(tr => { const c = celulasH(tr), i = c.findIndex(x => /\d+\s*dias?|intima|cita/i.test(textoH(x)) && !reCnj.test(x)); if (i < 0) return null;
+    const ev = textoH(c[i]), ds = datasH(c.slice(i + 1).join(' '));
+    return { ...basicoLinha(tr), grau, classe: textoH(c[i - 2] || ''), evento: ev.replace(/\s*\|?\s*\d+\s*dias?.*$/i, '').trim(), dias: +((/(\d+)\s*dias?/i.exec(ev) || [])[1] || 0),
+      corridos: /corrid/i.test(ev), envio: ds[0] ? ds[0].d + (ds[0].h ? ' ' + ds[0].h : '') : '' }; }).filter(x => x && x.numero);
+}
+/** "Intimações de pauta": [processo, assunto, "Intimação... Sessão virtual... período", período, sequencial, julgadores, (Visualizar — NUNCA)]. */
+function lerPauta(html: string, grau: string) {
+  return linhasH(html).map(tr => { const c = celulasH(tr), ev = textoH(c[2] || '');
+    const per = datasH((/Per[ií]odo da sess[aã]o:?([\s\S]*?)(?:Sequencial|\(|$)/i.exec(ev) || [])[1] || textoH(c[3] || '')), env = datasH((/\((\d{2}\/\d{2}\/\d{4}[^)]*)\)/.exec(ev) || [])[1] || '')[0];
+    return { ...basicoLinha(tr), grau, evento: ev.replace(/\s*\(\d{2}\/\d{2}\/\d{4}[^)]*\)\s*/, ' ').slice(0, 220).trim(), ini: (per[0] || {}).d || '', fim: (per[1] || per[0] || {}).d || '',
+      envio: env ? env.d + (env.h ? ' ' + env.h : '') : '' }; }).filter(x => x.numero);
+}
+/** "Audiências futuras": [processo, evento, "Sala … Início dd/mm/aaaa hh:mm … Previsão Término …", observação]. */
+function lerAudiencias(html: string) {
+  return linhasH(html).map(tr => { const c = celulasH(tr), local = c[2] || '', ini = datasH(((/In[ií]cio([\s\S]*?)(?:Previs|$)/i.exec(local) || [])[1]) || local)[0];
+    return { ...basicoLinha(tr), evento: textoH(c[1] || ''), sala: textoH(((/Sala<\/b>:?([\s\S]*?)<p/i.exec(local) || [])[1]) || '').replace(/^\|\s*/, ''), data: ini ? ini.d : '', hora: ini ? ini.h : '', obs: textoH(c[3] || '') }; })
+    .filter(x => x.numero && x.data);
+}
+/** Entra no eproc pelo login novo: usuário + senha + código do autenticador (TOTP da 2FA Seed). */
+export async function entrarEprocSso(cfg: typeof SSO_EPROC[string], cred: { login: string; senha: string; seed: string }) {
+  const seed = lerSeed(cred.seed || ''), nav = new Nav();
+  if (cred.seed && !seed) return { ok: false, etapa: 'seed', mensagem: 'A 2FA Seed não parece uma chave do autenticador (letras A–Z e números 2–7).' };
+  let p = await nav.ir(cfg.auth + '?response_type=code&redirect_uri=' + encodeURIComponent(cfg.redirect) + '&client_id=' + cfg.client + '&scope=profile+openid');
+  if (p.status === 403) return { ok: false, etapa: 'bloqueio', mensagem: 'O eproc recusou o servidor (403). Tente de novo mais tarde.' };
+  let f = formulario(p.html);
+  if (!f || !('username' in f.campos)) return { ok: false, etapa: 'login', mensagem: 'A tela de login do eproc mudou (' + titulo(p.html) + ').' };
+  p = await nav.ir(new URL(f.action, p.url).toString(), { method: 'POST', body: new URLSearchParams({ ...f.campos, username: String(cred.login).trim(), password: cred.senha }), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  for (let passo = 0; passo < 2 && /\/realms\//.test(p.url); passo++) {
+    f = formulario(p.html);
+    const otp = f && Object.keys(f.campos).find(k => /^(otp|totp|code|codigo|token)$/i.test(k));
+    if (f && 'password' in f.campos && !otp) return { ok: false, etapa: 'senha', mensagem: (msgErro(p.html) || 'O eproc recusou o usuário ou a senha').replace(/PJe/g, 'eproc') + '.' };
+    if (!otp) return { ok: false, etapa: 'desconhecida', mensagem: 'Depois da senha o eproc mostrou uma tela que o robô não conhece: "' + titulo(p.html) + '".' };
+    if (!seed) return { ok: false, etapa: 'seed', mensagem: 'O eproc pediu o código do autenticador: preencha a 2FA Seed.' };
+    p = await nav.ir(new URL(f!.action, p.url).toString(), { method: 'POST', body: new URLSearchParams({ ...f!.campos, [otp]: await totp(seed) }), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const f2 = /\/realms\//.test(p.url) && formulario(p.html);
+    if (f2 && otp in f2.campos) return { ok: false, etapa: 'codigo', mensagem: (msgErro(p.html) || 'O código do autenticador não foi aceito') + ' — confira a 2FA Seed (a do eproc, não a do PJe).' };
+  }
+  if (/\/realms\//.test(p.url)) return { ok: false, etapa: 'sso', mensagem: 'O login do eproc não voltou ao sistema: ' + (msgErro(p.html) || titulo(p.html)) };
+  if (!/Painel do Advogado/i.test(titulo(p.html))) return { ok: false, etapa: 'eproc', mensagem: 'Entrou no eproc, mas não abriu o Painel do Advogado (' + titulo(p.html) + ').' };
+  return { ok: true, nav, html: p.html, url: p.url };
+}
+/** Lê o Painel do Advogado: contagens + as listas (1º e 2º grau) + audiências futuras. Nunca abre intimação. */
+export async function lerPainelEproc(cfg: typeof SSO_EPROC[string], cred: { login: string; senha: string; seed: string }) {
+  const t0 = Date.now(), e: any = await entrarEprocSso(cfg, cred);
+  if (!e.ok) return { ...e, ms: Date.now() - t0 };
+  const nav: Nav = e.nav, painel: string = e.html, base = cfg.base;
+  const ir = async (u: string, init: RequestInit = {}) => { if (NUNCA_ABRIR.test(u)) throw new Error('endereço proibido (daria ciência)'); let ult: unknown;
+    for (let t = 0; t < 3; t++) { try { return await nav.ir(u, init); } catch (x) { ult = x; await new Promise(r => setTimeout(r, 1500)); } } throw ult; };
+  const out: any = { ok: true, prazos: [], pendentes: [], pauta: [], audiencias: [], contagens: {}, avisos: [] };
+  const ajax = [...painel.matchAll(/controlador_ajax\.php\?acao_ajax=retornar_citacao_intimacao_estado[^"'\s]*/gi)].map(m => deHtml(m[0])).filter((x, i, a) => a.indexOf(x) === i);
+  for (const u of ajax) {
+    try {
+      const r = await ir(base + u, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = JSON.parse(r.html);
+      const us = (j.usuarios || [])[0]; if (!us) continue;
+      const uf = String((j.requestInfo || {}).uf || ''), grau = cfg.graus[uf] || uf, R = us.resultados || {}, L = us.links || {};
+      out.contagens[grau] = { aguardando_abertura: +R.numCitacaoIntimacaoPendente || 0, prazos_em_aberto: +R.numCitacaoIntimacaoAberto || 0, pauta: +R.numCitacaoIntimacaoPauta || 0, decurso: +R.numDecursoPrazo || 0 };
+      const lista = async (k: string, fn: (h: string, g: string) => any[], chave: string) => {
+        if (!L[k]) return; try { const q = await ir(base + L[k]); const itens = fn(q.html, grau); out[chave].push(...itens);
+          const n = registros(q.html); if (n > itens.length) out.avisos.push(grau + ': ' + k + ' mostrou ' + itens.length + ' de ' + n + ' (o resto fica para a próxima leitura)'); }
+        catch (x) { out.avisos.push(grau + ': não consegui ler ' + k + ' — ' + String((x as Error).message || x).slice(0, 80)); } };
+      if (out.contagens[grau].prazos_em_aberto) await lista('intimacaoAberto', lerPrazosAbertos, 'prazos');
+      if (out.contagens[grau].aguardando_abertura) await lista('intimacaoPendente', lerPendentes, 'pendentes');
+      if (out.contagens[grau].pauta) await lista('intimacaoPauta', lerPauta, 'pauta');
+    } catch (x) { out.avisos.push('contagens: ' + String((x as Error).message || x).slice(0, 80)); }
+  }
+  const ua = /href="(controlador\.php\?acao=audiencia_futura_listar&(?:amp;)?acao_origem[^"]*)"/.exec(painel);
+  if (ua) { try { const q = await ir(base + deHtml(ua[1])); out.audiencias = lerAudiencias(q.html); } catch (x) { out.avisos.push('audiências: ' + String((x as Error).message || x).slice(0, 80)); } }
+  out.ms = Date.now() - t0;
+  return out;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   let b: any = {};
@@ -201,6 +303,26 @@ Deno.serve(async (req: Request) => {
       }
       await gravarEstado(escId, st);
       return resp({ ok: true, ligado: true, avisos: todos, partes });
+    }
+    // 8.60 robô do painel: entra no eproc pelo login novo (SSO + 2FA) e devolve as listas do Painel do Advogado
+    if (b.acao === 'painel_eproc') {
+      const k = String(req.headers.get('x-painel-chave') || ''), escId = String(b.escritorio || '');
+      if (!k || !/^[0-9a-f-]{36}$/.test(escId)) return resp({ ok: false, erro: 'Pedido inválido.' }, 400);
+      const h: Record<string, string> = { apikey: k, 'Content-Type': 'application/json' }; if (k.startsWith('eyJ')) h.Authorization = 'Bearer ' + k;
+      const rr = await fetch(URL_BANCO + '/rest/v1/rpc/painel_trib_info', { method: 'POST', headers: h, body: JSON.stringify({ p_escritorio: escId }) });
+      if (!rr.ok) return resp({ ok: false, erro: 'Chave do banco recusada.' }, 403);
+      const cr: Record<string, any> = (await rr.json()) || {};
+      const ids = Object.keys(cr).filter(t => SSO_EPROC[t] && cr[t] && cr[t].login);
+      if (!ids.length) return resp({ ok: true, ligado: false, contas: [] });
+      const st = await estado(escId), contas: any[] = [];
+      for (const t of ids) {
+        let c: any; try { c = await lerPainelEproc(SSO_EPROC[t], cr[t]); } catch (x) { c = { ok: false, etapa: 'erro', mensagem: String((x as Error).message || x).slice(0, 200) }; }
+        st[t] = { em: new Date().toISOString(), por: 'robô', ok: !!c.ok, etapa: c.etapa || '', ms: c.ms || 0, contagens: c.contagens || {},
+          mensagem: c.ok ? (c.prazos.length + ' prazo(s) em aberto, ' + c.pendentes.length + ' aguardando abertura, ' + c.audiencias.length + ' audiência(s)') : c.mensagem };
+        contas.push({ chave: t, sigla: SSO_EPROC[t].sigla, ...c, nav: undefined, html: undefined });
+      }
+      await gravarEstado(escId, st);
+      return resp({ ok: true, ligado: true, contas });
     }
     // Só a administração mexe nos logins dos tribunais.
     const quem = await post('/rest/v1/rpc/painel_quem', { p_token: String(b.token || '') });
@@ -250,6 +372,37 @@ Deno.serve(async (req: Request) => {
       chave: k, tribunal: v.trib, grau: v.grau, tribunal_nome: (PJE[v.trib] || { nome: v.trib }).nome, consulta: GRAU_NOME[v.grau] || v.grau, nome: v.nome || '',
       login: String(v.login).replace(/^(.{3}).*(.{2})$/, '$1•••••$2'), com_seed: !!v.seed, guardado_em: v.em || '', guardado_por: v.por || '', teste: st[k] || null }));
     const opcoesPje = () => Object.entries(PJE).map(([id, t]) => ({ id, nome: t.nome, graus: Object.keys(t.graus).map(g => ({ id: g, nome: GRAU_NOME[g] })) }));
+    // 8.60 eproc pelo login novo (SSO + 2FA)
+    const acessosSso = () => Object.entries(SSO_EPROC).map(([k, t]) => ({ chave: k, nome: t.nome, ligado: !!(creds[k] && creds[k].login),
+      login: creds[k] && creds[k].login ? String(creds[k].login).replace(/^(.{3}).*(.{2})$/, '$1•••$2') : '', com_seed: !!(creds[k] && creds[k].seed),
+      guardado_em: (creds[k] && creds[k].em) || '', guardado_por: (creds[k] && creds[k].por) || '', teste: st[k] || null }));
+    if (b.acao === 'sso_status') return resp({ ok: true, sso: acessosSso() });
+    if (b.acao === 'sso_apagar') {
+      const k = String(b.chave || ''); if (!SSO_EPROC[k]) return resp({ ok: false, erro: 'Acesso inválido.' }, 400);
+      await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: k, p_valor: '' }); delete creds[k]; delete st[k]; await gravarEstado(escId, st);
+      return resp({ ok: true, sso: acessosSso() });
+    }
+    if (b.acao === 'sso_guardar' || b.acao === 'sso_testar') {
+      const k = String(b.chave || ''); if (!SSO_EPROC[k]) return resp({ ok: false, erro: 'Escolha o tribunal.' }, 400);
+      let cred: any = creds[k];
+      if (b.acao === 'sso_guardar') {
+        const login = String(b.login || '').trim().slice(0, 40), senha = String(b.senha || '').slice(0, 200), seed = String(b.seed || '').trim().slice(0, 400);
+        if (!login || !senha) return resp({ ok: false, erro: 'Preencha o usuário e a senha do eproc.' }, 400);
+        if (seed && !lerSeed(seed)) return resp({ ok: false, erro: 'A 2FA Seed não parece uma chave do autenticador: são letras de A a Z e números de 2 a 7.' }, 400);
+        cred = { login, senha, seed };
+      }
+      if (!cred || !cred.login) return resp({ ok: false, erro: 'Este acesso não está guardado.' }, 400);
+      const c: any = await lerPainelEproc(SSO_EPROC[k], cred);
+      st[k] = { em: new Date().toISOString(), por, ok: !!c.ok, etapa: c.etapa || '', ms: c.ms || 0, contagens: c.contagens || {},
+        mensagem: c.ok ? (c.prazos.length + ' prazo(s) em aberto, ' + c.pendentes.length + ' aguardando abertura, ' + c.audiencias.length + ' audiência(s)') : c.mensagem };
+      await gravarEstado(escId, st);
+      if (!c.ok) return resp({ ok: false, erro: c.mensagem + (b.acao === 'sso_guardar' ? ' Nada foi guardado.' : ''), etapa: c.etapa, sso: acessosSso() });
+      if (b.acao === 'sso_guardar') {
+        await post('/rest/v1/rpc/painel_trib_gravar', { p_escritorio: escId, p_trib: k, p_valor: JSON.stringify({ ...cred, em: new Date().toISOString(), por }) });
+        creds[k] = { ...cred, em: new Date().toISOString(), por };
+      }
+      return resp({ ok: true, mensagem: 'Entrou no eproc (' + SSO_EPROC[k].nome + '): ' + st[k].mensagem + '.', contagens: c.contagens, avisos: c.avisos, sso: acessosSso() });
+    }
     if (b.acao === 'pje_status') return resp({ ok: true, acessos: acessosPje(), tribunais: opcoesPje() });
     if (b.acao === 'pje_apagar') {
       const k = String(b.chave || ''); if (!/^pje[a-z0-9]{2,9}$/.test(k)) return resp({ ok: false, erro: 'Acesso inválido.' }, 400);
