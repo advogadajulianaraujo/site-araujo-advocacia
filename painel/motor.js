@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.60.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.60.1 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.60.0';
+var MOTOR_VERSAO = '8.60.1';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.60.0';
+var VERSAO = '8.60.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -1026,6 +1026,10 @@ function sugestaoTratamento_(i, z, proc, ctx) {
   if (iaT.length) { fonte = 'ia'; modelo = iaT.map(function (x) { return [String(x.titulo).slice(0, 140), CAT_IA_[x.tipo] || 'outro', x.quem === 'secretaria' ? 'sec' : 'resp', /^\d+$/.test(String(x.dias_antes)) ? +x.dias_antes : 'ja', 'normal']; }); }
   var fatal = z && z.fatal && SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 ? z.fatal : '';
   if (ato === 'contestacao' && poloAtivo_(proc) && proc.polo) modelo = [];
+  // 8.60.1: o robô já criou o checklist desta intimação ([prep:ID]) — a tela mostra "checklist já criado" e não repete
+  if (!ctx.prep) { ctx.prep = {}; try { tabela_('Tarefas').linhas.forEach(function (t) { var mp = /\[prep:([^\]]+)\]/.exec(t.descricao || ''); if (mp && t.situacao !== 'cancelada') ctx.prep[mp[1]] = (ctx.prep[mp[1]] || 0) + 1; }); } catch (eP) { /* sem tarefas */ } }
+  var jaCriadas = ctx.prep[i.id] || 0;
+  if (jaCriadas) modelo = [];
   var tarefas = outra || ato === 'nada' ? [] : modelo.filter(function (m) { return !recusada_(apr, ato, m[0]); }).map(function (m, n) {
     return { n: n, titulo: m[0], categoria: m[1], quem: m[2], responsavel: m[2] === 'sec' ? (sec || resp) : resp, vence_em: venceTarefa_(m[3], fatal, hoje, fer), prioridade: m[4] };
   });
@@ -1035,7 +1039,7 @@ function sugestaoTratamento_(i, z, proc, ctx) {
   return {
     ato: ato, rotulo: ROTULO_ATO[ato] || ato, fonte: fonte, confianca: conf, outra_parte: outra, so_historico: outra || ato === 'ciencia' || ato === 'nada',
     nada: nada ? 'Notificação inicial da outra parte: o processo foi distribuído por nós (o cliente é o reclamante). Não há prazo para o escritório.' : '',
-    providencia: ia.providencia || '', resumo: ia.resumo || '',
+    providencia: ia.providencia || '', resumo: ia.resumo || '', checklist_criado: jaCriadas,
     prazo: z ? { id: z.id, descricao: z.descricao, fatal: z.fatal, dias: z.dias, contagem: z.contagem, situacao: z.situacao, responsavel: z.responsavel || resp,
       fila: filaPrazo_(z), ato: /^ato:/.test(z.observacoes || '') } : null,
     tarefas: tarefas
