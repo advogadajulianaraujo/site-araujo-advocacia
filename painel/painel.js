@@ -4231,13 +4231,25 @@
      à função "tribunais" do Supabase (em São Paulo) e ficam no COFRE; só são guardados se o PJe aceitar o login. O robô só LISTA. */
   function dialogoPje() {
     const B = window.PAINEL_BANCO;
+    // SSO TJSC isolado: reaproveita o campo 2FA existente; não altera a função compartilhada tribunais.
+    async function tjscSso(corpo) {
+      let s; try { s = JSON.parse(sessionStorage.getItem('painel_banco') || 'null'); } catch {}
+      if (!s || !s.token) throw new Error('Entre novamente no painel para validar a sessão do banco.');
+      const resp = await fetch('https://jnjyzmzvwxaghunjxofz.supabase.co/functions/v1/diagnosticoeproc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: s.chave, 'x-region': 'sa-east-1' },
+        body: JSON.stringify({ ...corpo, token: s.token }), credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(150000)
+      });
+      const r = await resp.json();
+      return { ...r, sso: true, diagnostico: r, mensagem: r.mensagem_cofre || (r.ok && r.etapa !== 'status_cofre' ? 'O servidor entrou no eproc com o acesso do cofre.' : ''),
+        erro: r.ok ? '' : (r.mensagem || r.erro || ('Teste interrompido: ' + r.etapa)) };
+    }
     const lista = h('div', { class: 'pje-lista' }, h('p', { class: 'peq' }, 'Carregando…'));
     const res = h('div', { class: 'pje-res' });
     const selTrib = h('select', { 'aria-label': 'Tribunal' }), selGrau = h('select', { 'aria-label': 'Consulta' });
     const nome = h('input', { type: 'text', placeholder: 'Nome da advogada, como aparece no PJe', autocomplete: 'off' });
     const login = h('input', { type: 'text', inputmode: 'numeric', placeholder: 'CPF', autocomplete: 'off' });
     const senha = h('input', { type: 'password', placeholder: 'Senha do PJe', autocomplete: 'new-password' });
-    const seed = h('input', { type: 'text', placeholder: 'ex.: JBSW Y3DP EHPK 3PXP …', autocomplete: 'off', spellcheck: 'false' });
+    const seed = h('input', { type: 'password', placeholder: 'ex.: JBSW Y3DP EHPK 3PXP …', autocomplete: 'off', spellcheck: 'false' });
     const G1 = { id: '1g', nome: 'Intimação Eletrônica PJe Primeiro Grau' }, G2 = { id: '2g', nome: 'Intimação Eletrônica PJe Segundo Grau' };
     let opcoes = [['trt12', 'TRT 12 — Santa Catarina'], ['trt6', 'TRT 6 — Pernambuco'], ['trt23', 'TRT 23 — Mato Grosso'], ['trt4', 'TRT 4 — Rio Grande do Sul'], ['trt9', 'TRT 9 — Paraná'], ['trt16', 'TRT 16 — Maranhão']]
       .map(([id, n]) => ({ id, nome: n, graus: [G1, G2] })).concat([{ id: 'tst', nome: 'TST', graus: [{ id: '3g', nome: 'Intimação Eletrônica PJe TST' }] }]);
@@ -4254,6 +4266,7 @@
     selTrib.addEventListener('change', pintarGraus);
     const campo = (rot, el, obr, dica) => h('label', { class: 'pje-campo' }, h('span', {}, rot, obr ? h('b', { class: 'pje-obr' }, ' *') : null), el, dica ? h('small', {}, dica) : null);
     const guia = h('details', { class: 'pje-guia' }, h('summary', {}, 'Como pegar a 2FA Seed (a chave do autenticador)'),
+      h('p', {}, 'Se você já tem a chave permanente do TJSC ou do PJe, use a chave existente. Não é necessário remover nem reconfigurar o autenticador. As instruções abaixo são para o PJe quando a chave ainda não foi guardada.'),
       h('ol', {},
         h('li', {}, 'Entre na sua conta do login nacional do PJe: ', h('a', { href: 'https://sso.cloud.pje.jus.br/auth/realms/pje/account/', target: '_blank', rel: 'noopener noreferrer' }, 'sso.cloud.pje.jus.br › Minha conta'), ' (mesmo CPF e senha do PJe).'),
         h('li', {}, 'Vá em ', h('b', {}, 'Autenticação / Como entrar'), ' › ', h('b', {}, 'Aplicativo autenticador'), '. Para ver a chave é preciso configurar de novo: remova o autenticador atual e clique em configurar.'),
@@ -4263,7 +4276,7 @@
         h('li', {}, h('b', {}, 'eproc do TJSC: '), 'a chave é OUTRA (a do eproc). Em ', h('a', { href: 'https://sso.tjsc.jus.br/realms/eproc/account/', target: '_blank', rel: 'noopener noreferrer' }, 'sso.tjsc.jus.br › Minha conta'),
           ' › Autenticação em dois fatores › configurar › "Não consegue escanear?" — copie a chave e leia o mesmo QR no celular.')));
     const salvar = botao('Salvar e testar', async ev => {
-      const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no PJe… (até 1 minuto)'));
+      const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Testando o acesso ao tribunal… (até 2 minutos)'));
       try {
         if (selTrib.value === 'eproc:tjsc') { // 8.60: login novo do TJSC (SSO + 2FA)
           res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no eproc do TJSC… (até 1 minuto)'));
@@ -4273,9 +4286,9 @@
           carregarEproc(); avisar('Acesso ao eproc do TJSC guardado.'); return;
         }
         if (ehEproc()) {
-          const r = await B.tribunais({ acao: 'guardar', tribunal: selTrib.value.slice(6), usuario: login.value, senha: senha.value }, 90000);
+          const r = selTrib.value === 'eproc:tjsc' ? await tjscSso({ acao: 'guardar', login: login.value, senha: senha.value, seed: seed.value, aceito: true }) : await B.tribunais({ acao: 'guardar', tribunal: selTrib.value.slice(6), usuario: login.value, senha: senha.value }, 90000);
           if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.'), h('ul', { class: 'peq' }, (r.partes || []).map(x => h('li', {}, (x.ok ? '✓ ' : '✕ ') + x.nome + (x.mensagem ? ': ' + x.mensagem : ''))))); return; }
-          senha.value = ''; res.replaceChildren(h('p', { class: 'pje-ok' }, '✓ O eproc aceitou o login. ', String((r.avisos || []).length), ' intimação(ões) pendente(s) agora. Acesso guardado no cofre.'));
+          senha.value = ''; seed.value = ''; res.replaceChildren(h('p', { class: 'pje-ok' }, r.sso ? '✓ ' + r.mensagem : '✓ O eproc aceitou o login. ' + String((r.avisos || []).length) + ' intimação(ões) pendente(s) agora. Acesso guardado no cofre.'), r.sso ? h('pre', { class: 'peq' }, JSON.stringify(r.diagnostico, null, 2)) : null);
           carregarEproc(); avisar('Acesso ao eproc guardado.'); return;
         }
         const r = await B.tribunais({ acao: 'pje_guardar', tribunal: selTrib.value, grau: selGrau.value, nome: nome.value, login: login.value, senha: senha.value, seed: seed.value }, 90000);
@@ -4305,10 +4318,10 @@
       B.tribunais({ acao: 'status' }, 30000).then(r => { const lig = (r.tribunais || []).filter(t => t.ligado);
         listaEproc.replaceChildren(...lig.map(t => h('div', { class: 'pje-ac' },
           h('div', {}, h('b', {}, t.nome), ' · eproc', h('br'), h('small', {}, 'usuário ' + t.usuario + ' · guardado por ' + (t.guardado_por || '—') + ' em ' + dataBR2(t.guardado_em)),
-            t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? '✓ ' + t.teste.n + ' pendente(s)' : '✕ não conectou') + ' (' + dataBR2(t.teste.em) + ')') : null),
+            t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? (t.sso ? '✓ SSO e autenticador validados; listas em diagnóstico' : '✓ ' + t.teste.n + ' pendente(s)') : '✕ não conectou') + ' (' + dataBR2(t.teste.em) + ')') : null),
           h('div', { class: 'mini-acoes' },
-            botao('Testar', async ev => { const b = ev.currentTarget; b.disabled = true; try { const r2 = await B.tribunais({ acao: 'testar', tribunal: t.id }, 90000); avisar(r2.ok ? (r2.avisos || []).length + ' pendente(s) no eproc.' : r2.erro, !r2.ok); carregarEproc(); } catch (e) { avisar(e.message, true); } finally { b.disabled = false; } }, 'mini'),
-            botao('Apagar', async () => { if (!confirm('Apagar o acesso do eproc (' + t.nome + ') do cofre?')) return; try { await B.tribunais({ acao: 'apagar', tribunal: t.id }); carregarEproc(); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')))));
+            botao('Testar', async ev => { const b = ev.currentTarget; b.disabled = true; try { const r2 = t.sso ? await tjscSso({ acao: 'login_guardado' }) : await B.tribunais({ acao: 'testar', tribunal: t.id }, 90000); avisar(r2.ok ? (r2.sso ? r2.mensagem : (r2.avisos || []).length + ' pendente(s) no eproc.') : r2.erro, !r2.ok); if (r2.sso) res.replaceChildren(h('p', { class: r2.ok ? 'pje-ok' : 'erro' }, r2.mensagem || r2.erro), h('pre', { class: 'peq' }, JSON.stringify(r2.diagnostico, null, 2))); carregarEproc(); } catch (e) { avisar(e.message, true); } finally { b.disabled = false; } }, 'mini'),
+            botao('Apagar', async () => { if (!confirm('Apagar o acesso do eproc (' + t.nome + ') do cofre?')) return; try { if (t.sso) await tjscSso({ acao: 'apagar_guardado' }); else await B.tribunais({ acao: 'apagar', tribunal: t.id }); carregarEproc(); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')))));
       }).catch(() => { /* a lista do PJe continua */ });
     }
     function desenhar(acessos) {
@@ -4327,11 +4340,11 @@
     }
     const caixa = h('dialog', { class: 'dialogo pje-dialogo' },
       h('h2', {}, 'Intimações eletrônicas'),
-      h('p', { class: 'peq' }, 'O robô entra no PJe com estes dados e LISTA os expedientes (intimações) pendentes. ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
-        ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o PJe aceitar o login.'),
+      h('p', { class: 'peq' }, 'O robô usa estes dados para LISTAR as intimações. No eproc do TJSC ele entra com usuário, senha e 2FA e lê o Painel do Advogado (prazos em aberto com a data final, intimações aguardando abertura e audiências). ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
+        ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o tribunal aceitar o login.'),
       h('div', { class: 'pje-form' }, campo('Nome de pesquisa', nome, true), campo('Tribunal', selTrib, true), campo('Consulta', selGrau, true),
         (() => { const c = campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'); rotLogin = c.querySelector('small'); return c; })(),
-        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso', seed, false, 'para sistemas com autenticação em 2 etapas (o PJe e o eproc do TJSC pedem; a Justiça Federal ainda não). Veja abaixo como pegar'))),
+        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso', seed, false, 'Obrigatória para o eproc do TJSC e para o PJe com autenticador. Use a chave permanente do QR Code (a que você já tem), não o código de seis dígitos.'))),
       guia, h('div', { class: 'acoes' }, salvar, botao('Fechar', () => caixa.close(), 'sec')), res,
       h('h3', {}, 'Acessos guardados (o que o robô está usando)'), lista, listaSso, listaEproc);
     selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === 'trt12' }, t.nome))); pintarGraus();
