@@ -2254,3 +2254,19 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   Meet/Zoom/Teams, modo online, partes em obs; só preenche o vazio) + checklist do tipo (`[prepato:chave]`, sem o "avisar o cliente", que já tem
   os 4 avisos). Tela da intimação: botão "✨ Avisar o cliente" (dialogoAvisoCliente) sempre que há prazo e não é da outra parte.
 - Intimações eletrônicas: "Portais ligados" no topo; Justiça Federal salva por `sso_guardar` (chave ssotrf4).
+
+## 8.61.0 PJe pelo painel do advogado (TRT6) — pedido da usuária, 25/11/2026
+
+- PJe do TRT6: mesmo login nacional do TRT12 (CPF + senha + a MESMA 2FA Seed; chave do cofre `pjetrt61g`). Testado em 25/11 a partir do Supabase
+  de São Paulo: entra e a API do painel do advogado RESPONDE (o TRT12 entra, mas bloqueia a lista para servidores — "Request blocked").
+- Função `tribunais`: `lerPainelPje(cred)` — depois do login lê, SÓ LISTANDO, `/pje-comum-api/api/paineladvogado/{id}/totalizadores` e `/processos`
+  (acervo, até 150 processos, 100 s), e de cada processo `/processos/id/{id}/expedientes?instancia=N` (tipo, meio, prazoLegal, tipoPrazoEnum,
+  dataCiencia, fimDoPrazoLegal = DATA FINAL DO PJe, fechado, nomePessoaParte = destinatário) e `/processos/id/{id}/audiencias?canceladas=true`
+  (dataInicio, tipo, status Designada/Cancelada/Realizada, sala). NUNCA `darCiencia` (PUT), documentos nem teor. O id do advogado vem do JWT do
+  cookie `access_token`. Ação do robô `painel_pje` (x-painel-chave, como `painel_eproc`); "Testar"/"Guardar" do PJe já leem o painel (mesma mensagem).
+- Code.gs: `pjePainel_` (robô de hora em hora, 1×/50 min, Properties PJE_PAINEL_EM, status em Config PJE_PAINEL) = `painelPortal_` (o mesmo do
+  `eprocPainel_`). `aplicarPainelEproc_` serve aos dois (`conta.sistema` = PJe): marca `[pjep:número|idExpediente]`, origem "vinculado ao PJe (painel
+  do advogado)", texto "Expediente do PJe TRT6 …" com o destinatário, checklist e ficha da audiência "Do PJe". `pjeParaNos_`: o PJe lista os
+  expedientes de TODAS as partes — só entra o do nosso cliente (nome do cadastro: 1º nome + outro igual) ou, sem cliente, o polo do processo.
+- Em 25/11 no TRT6: 3 processos; 0000330 com dois expedientes até 26/11 (o painel tinha um em 27/11), 0000299 com Alvará (15 dias corridos) até
+  25/11 que o painel não tinha, e a instrução de 26/11 10h do 0000353 (já estava na agenda).
