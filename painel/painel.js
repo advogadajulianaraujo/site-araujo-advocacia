@@ -4273,17 +4273,18 @@
         h('li', {}, 'Quando aparecer o QR Code, clique em ', h('b', {}, '"Não consegue escanear?"'), ': aparece a CHAVE em letras e números (grupos de 4). Copie e cole aqui no campo 2FA Seed.'),
         h('li', {}, 'Leia o MESMO QR Code no celular (Google Authenticator), digite o código de 6 dígitos para confirmar e dê um nome (ex.: "celular").'),
         h('li', {}, 'Pronto: o celular e o painel geram o mesmo código. Se um dia trocar o autenticador no PJe, cole a chave nova aqui.'),
+        h('li', {}, h('b', {}, 'eproc da Justiça Federal: '), 'a chave é a do login do TRF4 (vale para JFSC, JFRS, JFPR e TRF4).'),
         h('li', {}, h('b', {}, 'eproc do TJSC: '), 'a chave é OUTRA (a do eproc). Em ', h('a', { href: 'https://sso.tjsc.jus.br/realms/eproc/account/', target: '_blank', rel: 'noopener noreferrer' }, 'sso.tjsc.jus.br › Minha conta'),
           ' › Autenticação em dois fatores › configurar › "Não consegue escanear?" — copie a chave e leia o mesmo QR no celular.')));
     const salvar = botao('Salvar e testar', async ev => {
       const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Testando o acesso ao tribunal… (até 2 minutos)'));
       try {
-        if (selTrib.value === 'eproc:tjsc') { // 8.60: login novo do TJSC (SSO + 2FA)
-          res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no eproc do TJSC… (até 1 minuto)'));
-          const r = await B.tribunais({ acao: 'sso_guardar', chave: 'ssotjsc', login: login.value, senha: senha.value, seed: seed.value }, 120000);
+        if (selTrib.value === 'eproc:tjsc' || selTrib.value === 'eproc:trf4') { // 8.60: login novo (SSO + 2FA) — TJSC e, desde 8.60.1, Justiça Federal (TRF4)
+          res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no eproc… (até 1 minuto)'));
+          const r = await B.tribunais({ acao: 'sso_guardar', chave: selTrib.value === 'eproc:tjsc' ? 'ssotjsc' : 'ssotrf4', login: login.value, senha: senha.value, seed: seed.value }, 120000);
           if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')); return; }
           senha.value = ''; seed.value = ''; res.replaceChildren(h('p', { class: 'pje-ok' }, '✓ ', r.mensagem, ' Acesso guardado no cofre.'));
-          carregarEproc(); avisar('Acesso ao eproc do TJSC guardado.'); return;
+          carregarEproc(); avisar('Acesso ao eproc guardado.'); return;
         }
         if (ehEproc()) {
           const r = selTrib.value === 'eproc:tjsc' ? await tjscSso({ acao: 'guardar', login: login.value, senha: senha.value, seed: seed.value, aceito: true }) : await B.tribunais({ acao: 'guardar', tribunal: selTrib.value.slice(6), usuario: login.value, senha: senha.value }, 90000);
@@ -4342,11 +4343,12 @@
       h('h2', {}, 'Intimações eletrônicas'),
       h('p', { class: 'peq' }, 'O robô usa estes dados para LISTAR as intimações. No eproc do TJSC ele entra com usuário, senha e 2FA e lê o Painel do Advogado (prazos em aberto com a data final, intimações aguardando abertura e audiências). ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
         ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o tribunal aceitar o login.'),
+      h('h3', {}, 'Portais ligados (o que o robô está lendo)'), listaSso, lista, listaEproc,
+      h('h3', {}, 'Ligar ou atualizar um portal'),
       h('div', { class: 'pje-form' }, campo('Nome de pesquisa', nome, true), campo('Tribunal', selTrib, true), campo('Consulta', selGrau, true),
         (() => { const c = campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'); rotLogin = c.querySelector('small'); return c; })(),
-        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso', seed, false, 'Obrigatória para o eproc do TJSC e para o PJe com autenticador. Use a chave permanente do QR Code (a que você já tem), não o código de seis dígitos.'))),
-      guia, h('div', { class: 'acoes' }, salvar, botao('Fechar', () => caixa.close(), 'sec')), res,
-      h('h3', {}, 'Acessos guardados (o que o robô está usando)'), lista, listaSso, listaEproc);
+        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso', seed, false, 'Obrigatória para o eproc (TJSC e Justiça Federal — cada um tem a sua) e para o PJe com autenticador. Use a chave permanente do QR Code (a que você já tem), não o código de seis dígitos.'))),
+      guia, h('div', { class: 'acoes' }, salvar, botao('Fechar', () => caixa.close(), 'sec')), res);
     selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === 'trt12' }, t.nome))); pintarGraus();
     caixa.addEventListener('close', () => caixa.remove());
     document.body.append(caixa); caixa.showModal();
@@ -4774,7 +4776,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.60.0';
+  const VERSAO_PAINEL = '8.60.1';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5676,7 +5678,8 @@
             pz.fila === 'conferir' ? h('span', { class: 'tag conferir' }, 'conferir no tribunal') : null),
           pz.ato ? null : h('div', { class: 'sg-pz-acoes' }, 'Está certo?', votoPrazo, h('a', { href: '#/prazo/' + pz.id, class: 'link' }, 'abrir o prazo'))) :
           h('p', { class: 'peq' }, 'O robô não criou prazo para esta intimação. Se tiver prazo, use "Lançar prazo".'),
-        h('div', { class: 'sg-sub' }, h('b', {}, 'Tarefas de preparação'), h('span', { class: 'peq' }, ' — confira quem faz e até quando; desmarque o que não precisa')),
+        s.checklist_criado ? h('p', { class: 'pje-ok' }, '✓ Checklist já criado pelo robô: ' + s.checklist_criado + ' tarefa(s) de preparação. ', h('a', { href: '#/tarefas', class: 'link' }, 'ver em Tarefas')) : null,
+        h('div', { class: 'sg-sub' }, h('b', {}, s.checklist_criado ? 'Mais alguma tarefa?' : 'Tarefas de preparação'), h('span', { class: 'peq' }, s.checklist_criado ? ' — se precisar, acrescente abaixo' : ' — confira quem faz e até quando; desmarque o que não precisa')),
         linhasT,
         h('div', { class: 'acoes' }, botao('＋ Outra tarefa', () => linhasT.append(linhaT({ titulo: '', responsavel: p.responsavel, vence_em: pz && pz.fatal ? pz.fatal : '', categoria: 'outro' })), 'mini sec')),
         h('div', { class: 'sg-fim' },
@@ -5778,7 +5781,10 @@
             h('div', {}, h('h1', {}, cli ? cli.nome : 'Cliente a identificar'), h('div', { class: 'in-sub' },
               s.rotulo ? h('span', { class: 'cx-ato' }, s.rotulo) : null, ' ', x.fonte || '', rec ? ' · chegou ' + dataBR(rec.slice(0, 10)) + (rec.length > 15 ? ' às ' + rec.slice(11, 16) : '') : '',
               x.ciencia ? ' · ciência ' + dataBR(x.ciencia) : '', x.gmail_id ? ' · ' : '', seloGmail(x.gmail_apagado_em ? 'apagado' : x.gmail_lido_em ? 'aberto' : x.gmail_id ? 'nao' : ''))),
-            s.outra_parte && !s.nada ? h('div', { class: 'ix-alerta' }, 'O painel leu que esta intimação é para a OUTRA parte. Confira e conclua se não houver nada a fazer.') : null),
+            s.outra_parte && !s.nada ? h('div', { class: 'ix-alerta' }, 'O painel leu que esta intimação é para a OUTRA parte. Confira e conclua se não houver nada a fazer.') : null,
+            // 8.60.1 (pedido da usuária: "aparecer um botão para avisar o cliente"): a IA escreve o que aconteceu, a pessoa confere e manda
+            s.prazo && !s.outra_parte ? h('button', { type: 'button', class: 'btn wa', title: 'A IA escreve o que aconteceu, em linguagem simples; você confere e manda no WhatsApp',
+              onclick: () => dialogoAvisoCliente(s.prazo.id, { telefone: cli && cli.telefone, cliente: cli && cli.nome, numero: x.numero, tipo: s.rotulo || '' }) }, '✨ Avisar o cliente') : null),
           cartaoIAIntimacao(x, s, ia, aberta, p, cli, r.andamentos),
           caixaSug,
           h('section', { class: 'in-doc' }, h('div', { class: 'in-doc-cab' }, h('b', {}, x.movimento ? String(x.movimento).slice(0, 160) : 'Texto da intimação'),

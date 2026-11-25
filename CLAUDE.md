@@ -9,6 +9,20 @@
 
 Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
 
+## Portais dos tribunais: regra permanente da usuária (25/11/2026 — "LEMBRE-SE TODA VEZ")
+
+Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
+1. Ele aparece em Configurações › **Intimações eletrônicas**, no topo, em "Portais ligados": qual é, quem guardou, se o robô entrou e o que leu
+   (prazos em aberto, aguardando abertura, pauta, por grau).
+2. TUDO o que o portal mostra vai para o painel, vinculado ao processo e ao cliente:
+   - intimação: o que é (ato, classe, assunto, partes, juízo) no texto da intimação + o RESUMO DA IA ("A IA explica");
+   - prazo com a DATA FINAL que o próprio site mostra (vinculado, conferido; o provisório vira o ato certo);
+   - audiência: data/hora, tipo, sobre o que é, COM QUEM (partes), vara, sala, link/modalidade — na Agenda e em Audiências (ficha);
+   - qualquer outra informação que o portal tiver (pauta, perícia, observações) também vai.
+3. Intimação NOVA já nasce com o CHECKLIST (tarefas do ato, com responsável e data); se é audiência/perícia, entra em Audiências com os
+   avisos e o checklist do tipo; e tem o botão "✨ Avisar o cliente" (a IA escreve, a pessoa confere e manda).
+4. Nunca abrir intimação/expediente no portal (abrir = ciência). Senha e 2FA só no cofre; nada no repositório.
+
 ## Prazos: nunca sem data (regra do escritório)
 
 - Nenhum prazo pode ficar sem data fatal. 8.43 (decisão da usuária, 17/11/2026: "não deveria ter prazo provisório; veja e entenda
@@ -2225,3 +2239,18 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   `/seguranca/token/pdpj`, `/jte/config-api/trt12/session/token-interno-pje`, `idTribunal` 512, base de produção jte.trt12.jus.br/mobileservices),
   mas em 25/11 o serviço interno do TRT12 respondia 500 ("Serviços indisponíveis" — o mesmo erro que a usuária viu no app). Tentar de novo depois.
 - Teste: `.github/motor/teste/etapa860.js` (dados inventados).
+
+## 8.60.1 Justiça Federal (eproc JFSC/TRF4) + tudo do portal no painel (pedido da usuária, 25/11/2026)
+
+- Login da JF: eproc.jfsc.jus.br/eprocV2 → login nacional (sso.cloud.pje.jus.br, kc_idp_hint=trf4) → eproc-sso.trf4.jus.br (usuário + senha + 2FA do
+  TRF4, chave própria; vale para JFSC, JFRS, JFPR e TRF4). `SSO_EPROC.ssotrf4` (`inicio` = página do eproc; o robô segue os redirecionamentos e
+  manda a senha ao Keycloak que pedir). Quem tem mais de um perfil cai em "Seleção de perfil": o robô entra no ADVOGADO (POST
+  `pessoa_usuario_logar&id_usuario=`; guarda `perfis`). Em 25/11: JFSC 2 prazos em aberto, 3 aguardando abertura, 1 pauta; TRF4/JFRS/JFPR vazios.
+- Cada linha das listas traz também `partes` (Autor × Réu, com o papel, sem CPF/CNPJ), `vara` e `assunto`.
+- Code.gs: `textoEproc_` grava no texto da intimação tudo o que a lista mostra (ato, prazo e data final, processo, classe, assunto, partes, juízo,
+  envio) → entra na fila do resumo da IA; intimação vazia que veio pelo e-mail ganha esse texto. `checklistEproc_`: intimação NOVA já nasce com as
+  tarefas sugeridas do ato (marca `[prep:ID]`, responsável = do processo › distribuição › RESP_EPROC › secretaria); `sugestaoTratamento_` devolve
+  `checklist_criado` e a tela mostra "✓ Checklist já criado". `fichaAtoEproc_`: audiência → ficha em Audiencias (forum = vara, sala, link do
+  Meet/Zoom/Teams, modo online, partes em obs; só preenche o vazio) + checklist do tipo (`[prepato:chave]`, sem o "avisar o cliente", que já tem
+  os 4 avisos). Tela da intimação: botão "✨ Avisar o cliente" (dialogoAvisoCliente) sempre que há prazo e não é da outra parte.
+- Intimações eletrônicas: "Portais ligados" no topo; Justiça Federal salva por `sso_guardar` (chave ssotrf4).
