@@ -2194,3 +2194,34 @@ Leia também docs/PLANO-PAINEL.md antes de mexer no painel.
   "Request blocked" do CloudFront da Amazon para servidores da Amazon (Supabase). /pje-mni/intercomunicacao também 403; /primeirograu/intercomunicacao
   não existe. Painel antigo (/primeirograu/Painel/painel_usuario/list.seam) abre, sem a lista. Próximo teste: a mesma API pelos servidores do Google
   (Apps Script), com a sessão aberta pela função do Supabase (a senha nunca sai do cofre).
+
+## 8.60.0 eproc do TJSC pelo Painel do Advogado (login novo com 2FA) — pedido da usuária, 25/11/2026
+
+- O TJSC passou o login para sso.tjsc.jus.br (Keycloak, realm eproc, client eproc-tjsc-1g) com código do autenticador. O webservice antigo (MNI,
+  ação `guardar`) recusa a senha de tela ("Senha ou usuário inválidos"). Agora o robô entra COMO A PESSOA (usuário do eproc + senha + 2FA Seed
+  do eproc — outra chave, não a do PJe), igual ao Astrea/ADVBOX, e lê o PAINEL DO ADVOGADO.
+- Função `tribunais` (Supabase): `SSO_EPROC` (chave do cofre `ssotjsc`), `entrarEprocSso`, `lerPainelEproc`. Contagens pelo mesmo pedido da página
+  (`controlador_ajax.php?acao_ajax=retornar_citacao_intimacao_estado`, estado SC = 1º grau, TJSC = 2º grau) e as listas pelos links que ele devolve:
+  `citacao_intimacao_prazo_aberto_listar` (prazos em aberto: evento, N dias, envio, INÍCIO e FIM do prazo), `citacao_intimacao_pendente_listar`
+  (aguardando abertura: evento, N dias, envio), `intimacao_de_pauta_listar` (sessão virtual) e `audiencia_futura_listar` (tipo, sala, início).
+  NUNCA abre: `NUNCA_ABRIR` recusa preparar_processo_citado ("Abrir Prazo"), confirma/"Visualizar" e afins. Ações: `painel_eproc` (robô, chave do
+  banco em x-painel-chave, como `avisos`), `sso_status`/`sso_guardar`/`sso_testar`/`sso_apagar` (administração). Nav decodifica pelo charset
+  (o eproc é ISO-8859-1). Leitura completa ~4 s.
+- Code.gs `eprocPainel_` (no `rodarRobo_`, depois do `eprocDireto_`; 1× a cada 50 min, Properties EPROC_PAINEL_EM; status em Config EPROC_PAINEL)
+  + `aplicarPainelEproc_`:
+  - prazo em aberto → o prazo do mesmo processo (marca `[eprocp:número|envio]`, senão o aberto perto da data: ciência ±15 dias do início ou mesmo
+    fatal) recebe a DATA FINAL do eproc, os dias, origem "vinculado ao eproc (painel do advogado)", situação conferido; provisório/"a definir"/ATO NÃO
+    IDENTIFICADO vira "Prazo do eproc: <ato> — N dias". Prazo que a equipe já fechou NÃO reabre (só anota). Sem prazo no painel → cria, ligado ao
+    processo e à intimação (cria a intimação se faltar). Mudou a data no eproc → acompanha.
+  - aguardando abertura → intimação nova (fonte "eproc TJSC (painel do advogado)", chave `eproc-painel|número|envio`), ciência tácita = envio + 10
+    dias, e os DIAS do eproc no prazo; se o mesmo ato já veio pelo e-mail do eproc (±3 dias), não repete — só acerta os dias do prazo dele.
+  - audiências futuras → `marcarAto_` (agenda + 4 avisos); preliminar/transação/suspensão/mediação = conciliação; instrução/una = instrução.
+    "redesignada" tira da agenda (`cancelarEventoAto_`) a data futura velha do mesmo processo.
+  - pauta → intimação "Intimação de pauta: julgamento virtual de … a …", sem prazo.
+- Tela Configurações › Intimações eletrônicas: "TJSC — eproc" salva por `sso_guardar` (usuário + senha + 2FA Seed; só guarda se entrar) e mostra o que
+  o robô leu (prazos em aberto, aguardando abertura, pauta por grau). Justiça Federal (JFSC/TRF4) continua pelo MNI até termos a chave dela.
+- Em 25/11/2026: 1º grau 22 prazos em aberto, 7 aguardando abertura, 2 de pauta; 2º grau 3 prazos em aberto, 3 de pauta; 10 audiências futuras.
+- JTe (TRT12): o app oficial responde ao servidor, o login PDPJ e os tokens funcionam (`/pje/integracao-api/trt12/seguranca/parametros/pdpj`,
+  `/seguranca/token/pdpj`, `/jte/config-api/trt12/session/token-interno-pje`, `idTribunal` 512, base de produção jte.trt12.jus.br/mobileservices),
+  mas em 25/11 o serviço interno do TRT12 respondia 500 ("Serviços indisponíveis" — o mesmo erro que a usuária viu no app). Tentar de novo depois.
+- Teste: `.github/motor/teste/etapa860.js` (dados inventados).

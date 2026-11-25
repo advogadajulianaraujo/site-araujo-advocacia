@@ -4254,13 +4254,14 @@
     let opcoes = [['trt12', 'TRT 12 — Santa Catarina'], ['trt6', 'TRT 6 — Pernambuco'], ['trt23', 'TRT 23 — Mato Grosso'], ['trt4', 'TRT 4 — Rio Grande do Sul'], ['trt9', 'TRT 9 — Paraná'], ['trt16', 'TRT 16 — Maranhão']]
       .map(([id, n]) => ({ id, nome: n, graus: [G1, G2] })).concat([{ id: 'tst', nome: 'TST', graus: [{ id: '3g', nome: 'Intimação Eletrônica PJe TST' }] }]);
     // 8.59: o eproc entra na MESMA tela (pedido da usuária: "no painel não aparece") — usuário e senha do eproc, sem 2FA Seed
-    const EPROC = [{ id: 'eproc:tjsc', nome: 'TJSC — eproc (Justiça Estadual)', graus: [{ id: 'eproc', nome: 'Intimações do eproc (1º e 2º grau)' }] },
+    // 8.60: o TJSC passou o login para sso.tjsc.jus.br (com 2FA): usuário + senha + 2FA Seed do eproc, como a pessoa entra
+    const EPROC = [{ id: 'eproc:tjsc', nome: 'TJSC — eproc (Justiça Estadual)', graus: [{ id: 'eproc', nome: 'Painel do Advogado do eproc (1º e 2º grau)' }] },
       { id: 'eproc:trf4', nome: 'Justiça Federal — eproc (JFSC e TRF4)', graus: [{ id: 'eproc', nome: 'Intimações do eproc (JFSC e TRF4)' }] }];
     opcoes = EPROC.concat(opcoes);
     const ehEproc = () => /^eproc:/.test(selTrib.value);
     let campoSeed = null, rotLogin = null;
     const pintarGraus = () => { const t = opcoes.find(x => x.id === selTrib.value); selGrau.replaceChildren(...(t ? t.graus : []).map(g => h('option', { value: g.id }, g.nome)));
-      if (rotLogin) rotLogin.textContent = ehEproc() ? 'o usuário do eproc (o mesmo da tela de entrada do eproc)' : 'o CPF usado no PJe';
+      if (rotLogin) rotLogin.textContent = ehEproc() ? 'o usuário do eproc (a OAB, ex.: SC012345), o mesmo da tela de entrada' : 'o CPF usado no PJe';
       login.placeholder = ehEproc() ? 'Usuário do eproc' : 'CPF'; senha.placeholder = ehEproc() ? 'Senha do eproc' : 'Senha do PJe'; };
     selTrib.addEventListener('change', pintarGraus);
     const campo = (rot, el, obr, dica) => h('label', { class: 'pje-campo' }, h('span', {}, rot, obr ? h('b', { class: 'pje-obr' }, ' *') : null), el, dica ? h('small', {}, dica) : null);
@@ -4271,10 +4272,19 @@
         h('li', {}, 'Vá em ', h('b', {}, 'Autenticação / Como entrar'), ' › ', h('b', {}, 'Aplicativo autenticador'), '. Para ver a chave é preciso configurar de novo: remova o autenticador atual e clique em configurar.'),
         h('li', {}, 'Quando aparecer o QR Code, clique em ', h('b', {}, '"Não consegue escanear?"'), ': aparece a CHAVE em letras e números (grupos de 4). Copie e cole aqui no campo 2FA Seed.'),
         h('li', {}, 'Leia o MESMO QR Code no celular (Google Authenticator), digite o código de 6 dígitos para confirmar e dê um nome (ex.: "celular").'),
-        h('li', {}, 'Pronto: o celular e o painel geram o mesmo código. Se um dia trocar o autenticador no PJe, cole a chave nova aqui.')));
+        h('li', {}, 'Pronto: o celular e o painel geram o mesmo código. Se um dia trocar o autenticador no PJe, cole a chave nova aqui.'),
+        h('li', {}, h('b', {}, 'eproc do TJSC: '), 'a chave é OUTRA (a do eproc). Em ', h('a', { href: 'https://sso.tjsc.jus.br/realms/eproc/account/', target: '_blank', rel: 'noopener noreferrer' }, 'sso.tjsc.jus.br › Minha conta'),
+          ' › Autenticação em dois fatores › configurar › "Não consegue escanear?" — copie a chave e leia o mesmo QR no celular.')));
     const salvar = botao('Salvar e testar', async ev => {
       const b = ev.currentTarget; b.disabled = true; res.replaceChildren(h('p', { class: 'peq' }, 'Testando o acesso ao tribunal… (até 2 minutos)'));
       try {
+        if (selTrib.value === 'eproc:tjsc') { // 8.60: login novo do TJSC (SSO + 2FA)
+          res.replaceChildren(h('p', { class: 'peq' }, 'Entrando no eproc do TJSC… (até 1 minuto)'));
+          const r = await B.tribunais({ acao: 'sso_guardar', chave: 'ssotjsc', login: login.value, senha: senha.value, seed: seed.value }, 120000);
+          if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')); return; }
+          senha.value = ''; seed.value = ''; res.replaceChildren(h('p', { class: 'pje-ok' }, '✓ ', r.mensagem, ' Acesso guardado no cofre.'));
+          carregarEproc(); avisar('Acesso ao eproc do TJSC guardado.'); return;
+        }
         if (ehEproc()) {
           const r = selTrib.value === 'eproc:tjsc' ? await tjscSso({ acao: 'guardar', login: login.value, senha: senha.value, seed: seed.value, aceito: true }) : await B.tribunais({ acao: 'guardar', tribunal: selTrib.value.slice(6), usuario: login.value, senha: senha.value }, 90000);
           if (!r.ok) { res.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.'), h('ul', { class: 'peq' }, (r.partes || []).map(x => h('li', {}, (x.ok ? '✓ ' : '✕ ') + x.nome + (x.mensagem ? ': ' + x.mensagem : ''))))); return; }
@@ -4290,11 +4300,22 @@
     });
     const dataBR2 = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
     const listaEproc = h('div', { class: 'pje-lista' });
+    const listaSso = h('div', { class: 'pje-lista' });
+    const contagensTxt = c => Object.entries(c || {}).map(([g, v]) => g + ': ' + v.prazos_em_aberto + ' prazo(s) em aberto, ' + v.aguardando_abertura + ' aguardando abertura' + (v.pauta ? ', ' + v.pauta + ' de pauta' : '')).join(' · ');
+    function carregarSso() {
+      B.tribunais({ acao: 'sso_status' }, 30000).then(r => { const lig = (r.sso || []).filter(t => t.ligado);
+        listaSso.replaceChildren(...lig.map(t => h('div', { class: 'pje-ac' },
+          h('div', {}, h('b', {}, t.nome), ' · login novo com 2FA', h('br'), h('small', {}, 'usuário ' + t.login + (t.com_seed ? ' · com 2FA' : ' · sem 2FA') + ' · guardado por ' + (t.guardado_por || '—') + ' em ' + dataBR2(t.guardado_em)),
+            t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? '✓ ' : '✕ ') + (t.teste.mensagem || '') + ' (' + (t.teste.por === 'robô' ? 'robô, ' : '') + dataBR2(t.teste.em) + ')') : null,
+            t.teste && t.teste.ok && t.teste.contagens ? h('small', {}, contagensTxt(t.teste.contagens)) : null),
+          h('div', { class: 'mini-acoes' },
+            botao('Testar', async ev => { const b = ev.currentTarget; b.disabled = true; try { const r2 = await B.tribunais({ acao: 'sso_testar', chave: t.chave }, 120000); avisar(r2.ok ? r2.mensagem : r2.erro, !r2.ok); carregarSso(); } catch (e) { avisar(e.message, true); } finally { b.disabled = false; } }, 'mini'),
+            botao('Apagar', async () => { if (!confirm('Apagar o acesso do eproc (' + t.nome + ') do cofre? O robô para de ler o Painel do Advogado.')) return; try { await B.tribunais({ acao: 'sso_apagar', chave: t.chave }); carregarSso(); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')))));
+      }).catch(() => { /* a lista do PJe continua */ });
+    }
     function carregarEproc() {
-      Promise.allSettled([B.tribunais({ acao: 'status' }, 30000), tjscSso({ acao: 'status_guardado' })]).then(rs => {
-        const r = rs[0].status === 'fulfilled' ? rs[0].value : {}, ss = rs[1].status === 'fulfilled' ? rs[1].value.acesso : null;
-        let lig = (r.tribunais || []).filter(t => t.ligado);
-        if (ss) { lig = lig.filter(t => t.id !== 'tjsc'); lig.unshift({ id: 'tjsc', nome: 'TJSC (Justiça Estadual de SC)', ligado: true, sso: true, usuario: ss.usuario, guardado_por: ss.por, guardado_em: ss.em, teste: { ok: true, em: ss.em } }); }
+      carregarSso();
+      B.tribunais({ acao: 'status' }, 30000).then(r => { const lig = (r.tribunais || []).filter(t => t.ligado);
         listaEproc.replaceChildren(...lig.map(t => h('div', { class: 'pje-ac' },
           h('div', {}, h('b', {}, t.nome), ' · eproc', h('br'), h('small', {}, 'usuário ' + t.usuario + ' · guardado por ' + (t.guardado_por || '—') + ' em ' + dataBR2(t.guardado_em)),
             t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? (t.sso ? '✓ SSO e autenticador validados; listas em diagnóstico' : '✓ ' + t.teste.n + ' pendente(s)') : '✕ não conectou') + ' (' + dataBR2(t.teste.em) + ')') : null),
@@ -4319,13 +4340,13 @@
     }
     const caixa = h('dialog', { class: 'dialogo pje-dialogo' },
       h('h2', {}, 'Intimações eletrônicas'),
-      h('p', { class: 'peq' }, 'O PJe usa estes dados para listar expedientes. No TJSC, o SSO e o autenticador são validados pelo servidor; as listas estão em diagnóstico. ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
+      h('p', { class: 'peq' }, 'O robô usa estes dados para LISTAR as intimações. No eproc do TJSC ele entra com usuário, senha e 2FA e lê o Painel do Advogado (prazos em aberto com a data final, intimações aguardando abertura e audiências). ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
         ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o tribunal aceitar o login.'),
       h('div', { class: 'pje-form' }, campo('Nome de pesquisa', nome, true), campo('Tribunal', selTrib, true), campo('Consulta', selGrau, true),
         (() => { const c = campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'); rotLogin = c.querySelector('small'); return c; })(),
-        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso (opcional)', seed, false, 'Obrigatória para o SSO do TJSC e para o PJe com autenticador. Use a chave permanente do QR Code, não o código temporário de seis dígitos.'))),
+        campo('Senha de acesso no tribunal', senha, true), (campoSeed = campo('2FA Seed — chave de acesso', seed, false, 'Obrigatória para o eproc do TJSC e para o PJe com autenticador. Use a chave permanente do QR Code (a que você já tem), não o código de seis dígitos.'))),
       guia, h('div', { class: 'acoes' }, salvar, botao('Fechar', () => caixa.close(), 'sec')), res,
-      h('h3', {}, 'Acessos guardados (o que o robô está usando)'), lista, listaEproc);
+      h('h3', {}, 'Acessos guardados (o que o robô está usando)'), lista, listaSso, listaEproc);
     selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === 'trt12' }, t.nome))); pintarGraus();
     caixa.addEventListener('close', () => caixa.remove());
     document.body.append(caixa); caixa.showModal();
@@ -4753,7 +4774,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.59.0';
+  const VERSAO_PAINEL = '8.60.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
