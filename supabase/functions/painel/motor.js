@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.61.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.61.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.62.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.62.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.61.0';
+var VERSAO = '8.62.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2157,6 +2157,44 @@ function iniciaisComNumero_() {
   return n;
 }
 
+/** 8.62 (pedido da usuária: "veja por que ainda estão em avisar o cliente" — Lucas, Aílton): o e-mail "Processo protocolado (peticionamento
+ *  eletrônico)" é o NOSSO protocolo. O robô criava o processo com número à parte e a petição inicial sem número ficava parada no quadro
+ *  (Documentos → Fazer → Avisar o cliente → Protocolar). Agora: cliente com UMA inicial sem número criada antes do protocolo → a inicial foi
+ *  esta; ela sai do quadro (arquivada, com a anotação), a tarefa da inicial fecha, honorários e tarefas abertas passam para o processo com
+ *  número e, se o protocolo é dos últimos 7 dias, nasce o "📣 Avisar o cliente: processo protocolado". Duas iniciais do mesmo cliente: só a
+ *  da MESMA área; se ainda houver dúvida, não mexe. */
+function iniciaisProtocoladas862_() {
+  var tabP = tabela_('Processos'), hoje = hojeSP_(), agora = new Date().toISOString(), robo = { usuario: 'robô', nome: 'robô' }, n = 0, prot = {};
+  tabela_('Intimacoes').linhas.forEach(function (i) {
+    if (!i.numero || !/^Processo protocolado \(peticionamento/i.test(i.movimento || '')) return;
+    var d = String(i.recebido_em || '').slice(0, 10); if (!d || diffDias_(hoje, d) > 120) return;
+    if (!prot[i.numero] || d < prot[i.numero]) prot[i.numero] = d;
+  });
+  var semNum = tabP.linhas.filter(function (x) { return !x.numero && x.cliente_id && x.status !== 'arquivado' && x.fase === 'contratado'; });
+  Object.keys(prot).forEach(function (num) {
+    var pn = tabP.linhas.filter(function (x) { return x.numero === num; })[0]; if (!pn || !pn.cliente_id) return;
+    var c = semNum.filter(function (x) { return x.cliente_id === pn.cliente_id && !x._juntou && String(x.criado_em || '').slice(0, 10) <= prot[num]; });
+    if (c.length > 1) c = c.filter(function (x) { return x.area && pn.area && normalizar_(x.area) === normalizar_(pn.area); });
+    if (c.length !== 1) return;
+    var ini = c[0]; ini._juntou = 1;
+    atualizarLinha_(tabP, ini, { status: 'arquivado', fase: 'extinto', proximo_ato: '', observacoes: (ini.observacoes ? ini.observacoes + ' | ' : '') + 'Inicial protocolada como ' + num + ' em ' + dataBR_(prot[num]) +
+      ' (o robô juntou: o processo com número continua; se NÃO era esta inicial, reabra)', atualizado_em: agora, atualizado_por: 'robô' });
+    var m = {}; if (!pn.responsavel && ini.responsavel) m.responsavel = ini.responsavel; if (!pn.parte_contraria && ini.parte_contraria) m.parte_contraria = ini.parte_contraria;
+    if (!pn.polo) m.polo = ini.polo || 'ativo'; if (!pn.docs_ok && ini.docs_ok) m.docs_ok = ini.docs_ok;
+    if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = 'robô'; atualizarLinha_(tabP, pn, m); }
+    var tabT = tabela_('Tarefas'), marca = '[inicial:' + ini.id + ']', quem = '';
+    tabT.linhas.forEach(function (t) {
+      if ((t.descricao || '').indexOf(marca) >= 0) { quem = quem || t.responsavel || ''; if (!t.concluida_em) atualizarLinha_(tabT, t, { etapa: 'protocolado', concluida_em: agora, concluida_por: t.responsavel || 'robô', numero: num,
+        historico: historicoMais_(t.historico, robo, 'protocolada como ' + num + ' (o robô juntou)'), atualizado_em: agora, atualizado_por: 'robô' }); return; }
+      if (t.processo_id === ini.id && !t.concluida_em) atualizarLinha_(tabT, t, { processo_id: pn.id, numero: num, atualizado_em: agora, atualizado_por: 'robô' });
+    });
+    var tabH = tabela_('Honorarios'); tabH.linhas.forEach(function (h) { if (h.processo_id === ini.id) atualizarLinha_(tabH, h, { processo_id: pn.id }); });
+    if (diffDias_(hoje, prot[num]) <= 7) tarefaAvisarProtocolo_(pn, quem || pn.responsavel || respSecretaria_(), robo);
+    n++;
+  });
+  if (n) registrar_('robô', 'inicial protocolada', n + ' petição(ões) inicial(is) juntada(s) ao processo protocolado (peticionamento eletrônico)');
+  return n;
+}
 /** Trocou o responsável do processo "a ajuizar": a tarefa da inicial vai junto. */
 function passarPeticaoInicial_(proc, resp, u) {
   var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']';
@@ -3417,8 +3455,10 @@ function rodarRobo_(quem) {
     try { if (!ctx.gmailParcial && !navRecente) { var j = lerDjen_(ctx); novas += j.intimacoes; prazosNovos += j.prazos; } }
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ep = eprocDireto_(ctx); novas += ep.intimacoes; prazosNovos += ep.prazos; } catch (eE) { erros.push('eproc direto do tribunal: ' + (eE.message || eE)); }
-    try { var epp = eprocPainel_(ctx); novas += epp.intimacoes; prazosNovos += epp.prazos + epp.audiencias; } catch (eEP) { erros.push('eproc (Painel do Advogado): ' + (eEP.message || eEP)); }
-    try { var pjp = pjePainel_(ctx); novas += pjp.intimacoes; prazosNovos += pjp.prazos + pjp.audiencias; } catch (ePJ) { erros.push('PJe (Painel do Advogado): ' + (ePJ.message || ePJ)); }
+    var epp = null, pjp = null;
+    try { epp = eprocPainel_(ctx); novas += epp.intimacoes; prazosNovos += epp.prazos + epp.audiencias; } catch (eEP) { erros.push('eproc (Painel do Advogado): ' + (eEP.message || eEP)); }
+    try { pjp = pjePainel_(ctx); novas += pjp.intimacoes; prazosNovos += pjp.prazos + pjp.audiencias; } catch (ePJ) { erros.push('PJe (Painel do Advogado): ' + (ePJ.message || ePJ)); }
+    try { if ((epp && epp.rodou) || (pjp && pjp.rodou)) resumoPortaisChat_(ctx, epp, pjp); } catch (eRP) { erros.push('Resumo dos portais: ' + (eRP.message || eRP)); }
     try { limparAtosImpossiveis_(ctx); } catch (eLA) { erros.push('Agenda (limpeza): ' + (eLA.message || eLA)); }
     try { var ag = varrerAgenda_(ctx, 60000); if (ag.marcados) prazosNovos += ag.marcados; } catch (eA) { erros.push('Agenda: ' + (eA.message || eA)); }
     try { lembrarAudiencias_(ctx); } catch (eL) { erros.push('Lembretes de audiência: ' + (eL.message || eL)); }
@@ -3763,6 +3803,66 @@ function cancelarEventoAto_(e, motivo) {
   var marca = '[horaato:' + e.numero + ':' + e.data + ']';
   tabT.linhas.filter(function (t) { return (t.descricao || '').indexOf(marca) >= 0 && !t.concluida_em && t.situacao !== 'cancelada'; }).forEach(function (t) {
     atualizarLinha_(tabT, t, { situacao: 'cancelada', atualizado_em: agora, atualizado_por: 'robô', historico: ((t.historico || '') + '\n' + motivo).trim() }); });
+}
+/** 8.62 (pedido da usuária: indicações da Dra. Juliana Cachoeira — "nem todos que estão na lista estão no sistema; os que fecharem,
+ *  coloque que foi indicação"): Config INDICACOES_PENDENTES = [{tel, nome, indicadora, pct, base}] (só na planilha/banco, nunca no código).
+ *  Cliente cadastrado com um desses telefones (8 últimos dígitos de qualquer número do cadastro) ganha a indicação e sai da lista. */
+function indicacoesPendentes862_() {
+  var lista = []; try { lista = JSON.parse(config_('INDICACOES_PENDENTES') || '[]'); } catch (e) { return 0; }
+  if (!Array.isArray(lista) || !lista.length) return 0;
+  var tabC = tabela_('Clientes'), porTel = {}, n = 0, agora = new Date().toISOString();
+  tabC.linhas.forEach(function (c) { String(c.telefone || '').split(/\/|\bou\b|,|;/).forEach(function (t) { var d = t.replace(/\D/g, ''); if (d.length >= 8) (porTel[d.slice(-8)] = porTel[d.slice(-8)] || []).push(c); }); });
+  var resto = lista.filter(function (x) {
+    var cs = porTel[String(x.tel || '').replace(/\D/g, '').slice(-8)] || [];
+    if (cs.length !== 1) return true;
+    var c = cs[0];
+    if (!String(c.indicado_por || '').trim()) { atualizarLinha_(tabC, c, { indicado_por: x.indicadora || 'indicação', indicacao_pct: String(x.pct || ''), indicacao_base: x.base || 'todos', indicacao_em: agora, atualizado_em: agora, atualizado_por: 'robô' });
+      registrar_('robô', 'indicação marcada', c.nome + ' — ' + (x.indicadora || '') + ' (' + (x.pct || '?') + '%)'); n++; }
+    return false;
+  });
+  if (resto.length !== lista.length) setConfig_('INDICACOES_PENDENTES', JSON.stringify(resto), 'Telefones indicados (ainda não clientes): o robô marca a indicação quando virarem cliente');
+  return n;
+}
+/** 8.62 ("quando o processo terminar e foi indicação, lembrar no processo/honorários para ser dividido"): processo de cliente indicado que
+ *  chegou a Acordo, Execução ou Encerrado → tarefa da administração "🤝 Dividir honorários com <indicadora>" (uma vez por processo e etapa). */
+function indicacaoFimProcesso862_() {
+  var clis = {}; tabela_('Clientes').linhas.forEach(function (c) { if (String(c.indicado_por || '').trim()) clis[c.id] = c; });
+  if (!Object.keys(clis).length) return 0;
+  var tabT = tabela_('Tarefas'), n = 0, hoje = hojeSP_(), agora = new Date().toISOString();
+  var admin = (usuarios_().filter(function (u) { return u.ativo === 'sim' && u.perfil === 'administrador'; })[0] || {}).usuario || '';
+  tabela_('Processos').linhas.forEach(function (p) {
+    var c = clis[p.cliente_id]; if (!c || ['acordo', 'execucao', 'extinto'].indexOf(p.fase) < 0) return;
+    var marca = '[indicacao:' + p.id + '|' + p.fase + ']';
+    if (tabT.linhas.some(function (t) { return (t.descricao || '').indexOf(marca) >= 0; })) return;
+    var etapa = { acordo: 'fechou acordo', execucao: 'foi para a execução', extinto: 'terminou' }[p.fase];
+    inserirLinha_(tabT, { id: novoId_('T'), titulo: '🤝 Dividir honorários com ' + c.indicado_por + ' — ' + c.nome + ' (' + (p.numero || 'sem número') + ')',
+      descricao: 'O processo ' + etapa + '. O cliente foi indicado por ' + c.indicado_por + ' (' + (c.indicacao_pct || '?') + '% dos honorários' + (c.indicacao_base === 'exito' ? ' de êxito' : '') + '). ' +
+        'Confira em Cobranças › Comissões de indicação o que já foi gerado e acerte o repasse quando os honorários forem recebidos.\n' + marca,
+      responsavel: admin, processo_id: p.id, numero: p.numero || '', cliente_id: c.id, vence_em: somarDias_(hoje, 7), etapa: 'afazer', peso: '1', situacao: 'ativa', categoria: 'financeiro',
+      concluida_por: '', concluida_em: '', historico: '', criado_em: agora, criado_por: 'robô', atualizado_em: agora, atualizado_por: 'robô', prioridade: 'alta', checklist: '', repetir: '', ok_por: '', ok_em: '' });
+    n++;
+  });
+  return n;
+}
+/** 8.62 (uma vez, Config FIX_INTAUD_862): audiências que o robô criou lendo "Intimado em audiência" (a audiência que JÁ aconteceu) com a
+ *  data FINAL do prazo como se fosse uma audiência nova (caso 5015898-88.2023.8.24.0075: "audiência" em 17/12). Saem da agenda; o próximo ato
+ *  do processo é limpo. O prazo verdadeiro (15 dias, data do eproc) fica. */
+function atosFalsosIntimadoAudiencia862_() {
+  if (config_('FIX_INTAUD_862')) return 0;
+  var tabZ = tabela_('Prazos'), tabE = tabela_('Eventos'), tabP = tabela_('Processos'), hoje = hojeSP_(), n = 0, ints = tabela_('Intimacoes').linhas;
+  tabZ.linhas.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0 && /^ato:/.test(z.observacoes || '') && z.fatal >= hoje; }).forEach(function (z) {
+    var fim = dataBR_(z.fatal);
+    var falso = ints.some(function (i) { return i.numero === z.numero && (/intimad[oa]s? em audi/i.test(i.movimento || '') || /Ato: Intimad[oa]s? em audi/i.test(i.texto || '')) && String(i.texto || '').indexOf('até ' + fim) >= 0; });
+    if (!falso) return;
+    var mot = 'não era audiência: "Intimado em audiência" (a audiência já aconteceu); ' + fim + ' é a data final do prazo';
+    tabE.linhas.filter(function (e) { return e.numero === z.numero && e.data === z.fatal && !/apagado/.test(e.evento_id || ''); }).forEach(function (e) { cancelarEventoAto_(e, mot); });
+    var z2 = tabZ.linhas.filter(function (x) { return x.id === z.id; })[0];
+    if (z2 && SITUACOES_ABERTAS.indexOf(z2.situacao) >= 0) atualizarLinha_(tabZ, z2, { situacao: 'cancelado', observacoes: (z2.observacoes || '') + ' | ' + mot + ' (robô)', atualizado_em: new Date().toISOString(), atualizado_por: 'robô' });
+    tabP.linhas.filter(function (p) { return p.numero === z.numero && p.proximo_ato_data === z.fatal; }).forEach(function (p) { atualizarLinha_(tabP, p, { proximo_ato: '', proximo_ato_data: '', atualizado_em: new Date().toISOString(), atualizado_por: 'robô' }); });
+    n++;
+  });
+  setConfig_('FIX_INTAUD_862', new Date().toISOString() + ' · ' + n + ' audiência(s) falsa(s) tirada(s)', 'Correção 8.62: "Intimado em audiência" não é audiência nova (uma vez)');
+  return n;
 }
 /** 8.50.3 (toda rodada dos robôs do escritório): ato que o aviso do PJe dá como cancelado/redesignado sai da agenda. E, uma vez
  *  (Config FIX_PROXATO_850), os atos que o robô tirou do "próximo ato" em 18/11 são conferidos nos e-mails [PUSH] do PJe: cancelado →
@@ -4181,11 +4281,22 @@ function gmailSituacao_() {
  * cofre e usa SÓ consultarAvisosPendentes (lista o que está pendente SEM abrir: não dá ciência). Cada pendente vira intimação com a
  * ciência TÁCITA (10 dias corridos da disponibilização, Lei 11.419, art. 5º, § 3º), como o aviso do eproc por e-mail; sem o texto do ato,
  * o prazo nasce "ATO NÃO IDENTIFICADO" (data de segurança mais curta) e é trocado quando a publicação do DJEN chegar. De hora em hora. */
+/** 8.62 (decisão da usuária, 27/11/2026: "ler duas vezes é melhor, para não sobrecarregar e não ficar bloqueando os portais"): os portais
+ *  (PJe e eproc pelo login) são lidos às 7h30 e às 13h30 de Brasília — na 1ª rodada do robô depois de cada horário. Gmail e DJEN continuam
+ *  de hora em hora (não entram nos portais). Devolve true se já passou um horário desde a última leitura. */
+var HORARIOS_PORTAIS_ = ['07:30', '13:30'];
+function horaDosPortais_(ultimaMs) {
+  var agora = new Date(), dia = Utilities.formatDate(agora, 'America/Sao_Paulo', 'yyyy-MM-dd'), ontem = somarDias_(dia, -1);
+  var marcos = [ontem, dia].reduce(function (l, d) { return l.concat(HORARIOS_PORTAIS_.map(function (h) { return new Date(d + 'T' + h + ':00-03:00').getTime(); })); }, [])
+    .filter(function (t) { return t <= agora.getTime(); });
+  var ultimoMarco = Math.max.apply(null, marcos);
+  return !(ultimaMs >= ultimoMarco);
+}
 function eprocDireto_(ctx) {
   var res = { intimacoes: 0, prazos: 0 };
   if (!sbLigado_()) return res;
   var P = PropertiesService.getScriptProperties(), ult = +P.getProperty('EPROC_DIRETO_EM') || 0;
-  if (Date.now() - ult < 50 * 60000) return res;
+  if (!horaDosPortais_(ult)) return res;
   P.setProperty('EPROC_DIRETO_EM', String(Date.now()));
   var c = sbConf_(), r;
   try {
@@ -4294,6 +4405,8 @@ function eprocPainel_(ctx, forcar) { return painelPortal_(ctx, forcar, { acao: '
 function pjePainel_(ctx, forcar) { return painelPortal_(ctx, forcar, { acao: 'painel_pje', prop: 'PJE_PAINEL_EM', cfg: 'PJE_PAINEL', nome: 'PJe' }); }
 /** 8.61: o PJe lista os expedientes de TODAS as partes. Só entra o que é para o nosso cliente (nome do cadastro) — sem cliente, o polo do processo. */
 function pjeParaNos_(ctx, x) {
+  // mandado (oficial de justiça / central de mandados) nunca é prazo do advogado (regra 8.54)
+  if (/^mandado|central de mandados/i.test(String(x.evento || ''))) return false;
   var dest = nomeComparavel_(x.destinatario || ''); if (!dest) return false;
   if (/\bjulian\b.*\baraujo\b|araujo advocacia/.test(dest)) return true;
   var proc = ctx.porNumero[x.numero] || null, cli = null;
@@ -4310,8 +4423,8 @@ function painelPortal_(ctx, forcar, o) {
   var res = { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 };
   if (!sbLigado_()) return res;
   var P = PropertiesService.getScriptProperties(), ult = +P.getProperty(o.prop) || 0;
-  if (!forcar && Date.now() - ult < 50 * 60000) return res;
-  P.setProperty(o.prop, String(Date.now()));
+  if (!forcar && !horaDosPortais_(ult)) return res;
+  P.setProperty(o.prop, String(Date.now())); res.rodou = true; res.nome = o.nome;
   var c = sbConf_(), j = {};
   try {
     var r = UrlFetchApp.fetch(c.url + '/functions/v1/tribunais', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
@@ -4320,7 +4433,7 @@ function painelPortal_(ctx, forcar, o) {
     if (!j.ok && !j.erro) j.erro = 'o banco respondeu ' + r.getResponseCode();
   } catch (e) { j = { ok: false, erro: 'não consegui falar com o banco: ' + String(e.message || e).slice(0, 120) }; }
   var st = { em: new Date().toISOString(), contas: [] };
-  if (!j.ok) { st.erro = String(j.erro || 'erro').slice(0, 200); setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)'); return res; }
+  if (!j.ok) { st.erro = String(j.erro || 'erro').slice(0, 200); setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)'); res.st = st; return res; }
   if (!j.ligado) return res;
   var novidades = [];
   (j.contas || []).forEach(function (conta) {
@@ -4328,7 +4441,7 @@ function painelPortal_(ctx, forcar, o) {
     if (conta.ok) { try { a = aplicarPainelEproc_(ctx, conta, res, novidades); } catch (eA) { a = { erro: String(eA.message || eA).slice(0, 160) }; } }
     st.contas.push({ chave: conta.chave, sigla: conta.sigla, ok: !!conta.ok, mensagem: conta.mensagem || '', etapa: conta.etapa || '', contagens: conta.contagens || {}, avisos: conta.avisos || [], aplicado: a });
   });
-  setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)');
+  setConfig_(o.cfg, JSON.stringify(st), o.nome + ' pelo Painel do Advogado (última leitura)'); res.st = st; res.novidades = novidades;
   if (novidades.length) chatRobo_('⚖ ' + o.nome + ' (Painel do Advogado): ' + novidades.slice(0, 10).join(' · ') + (novidades.length > 10 ? ' · e mais ' + (novidades.length - 10) : '') + '. Nada foi aberto no ' + o.nome + ' (não demos ciência).');
   return res;
 }
@@ -6357,31 +6470,51 @@ function importarListaPje_(d, u) {
 var PALAVRAS_FRACAS_IA_ = { dos: 1, das: 1, de: 1, da: 1, do: 1, e: 1 };
 function palavrasIA_(s) { return normalizar_(s).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(function (w) { return w.length >= 3 && !PALAVRAS_FRACAS_IA_[w]; }); }
 /** Troca nº de processo e nome de cliente da pergunta por marcadores; devolve o texto para a IA e o mapa (que fica no servidor). */
+/* 8.62 (pedido da usuária: "se coloco o nome de alguém ele não procura, quer o nome completo; processo de uma pessoa contra outra ele
+   não entende"): acha o cliente por QUALQUER parte do nome (só o primeiro nome, minúsculo ou maiúsculo, sem acento: "janaina" acha todas as
+   Janaínas), e entende "contra X" (a parte contrária do processo). Várias pessoas com o mesmo nome → todas vão para a resposta, com os processos. */
+var NAO_NOME_IA_ = /^(qual|quais|como|onde|quando|quem|crie|criar|anote|prazo|prazos|processo|processos|cliente|clientes|audiencia|audiencias|tarefa|tarefas|todos|todas|nossas|nossos|nosso|nossa|tem|teve|esta|estao|sobre|contra|numero|trabalhista|previdenciario|civel|familia|criminal|inss|clt|cpc|stj|tst|stf|trt|tjsc|trf|semana|hoje|amanha|mes|ano|dia|dias|parado|parados|aberto|abertos|vencido|vencidos|cobranca|cobrancas|honorario|honorarios|parcela|parcelas|intimacao|intimacoes|pericia|pericias|andamento|situacao|caso|casos|acao|acoes|pedido|recurso|sentenca|acordo|empresa|reclamada|reclamante|autor|autora|reu|para|pela|pelo|com|sem|que|uma|um|ele|ela|eles|elas|esse|essa|isso|aqui|ainda|ja|mais|menos|muito|pouco|bem|mal|fala|falar|traga|trazer|mostre|mostrar|diga|dizer|veja|ver|liste|listar|existe|existem|alguma|algum|tudo|nada|ola|bom|boa|obrigado|obrigada|por|favor)$/;
 function entidadesIA_(pergunta) {
   var mapa = {}, np = 0;
   var txt = String(pergunta).replace(/\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}/g, function (m) { var k = '[PROCESSO' + (++np) + ']'; mapa[k] = { tipo: 'processo', numero: mascaraCnj_(m.replace(/\D/g, '')) }; return ' ' + k + ' '; });
-  var qn = ' ' + palavrasIA_(txt).join(' ') + ' ', melhores = [], max = 0;
-  tabela_('Clientes').linhas.forEach(function (c) {
-    var p = palavrasIA_(c.nome || ''); if (p.length < 2 || qn.indexOf(' ' + p[0] + ' ') < 0) return;
+  // "contra X": a parte contrária (até o fim da frase)
+  var mc = /\bcontra\s+(?:a|o|as|os)?\s*([^?.!,;\n]{3,80})/i.exec(txt), contra = [];
+  if (mc) { contra = palavrasIA_(mc[1]).filter(function (w) { return !NAO_NOME_IA_.test(w) && !/^(ltda|eireli|me|sa|cia|companhia)$/.test(w); }).slice(0, 5);
+    if (contra.length) mapa['[CONTRA]'] = { tipo: 'contra', palavras: contra, texto: mc[1].trim() }; }
+  var semContra = mc ? txt.slice(0, mc.index) + ' ' + txt.slice(mc.index + mc[0].length) : txt;
+  var qn = ' ' + palavrasIA_(semContra).join(' ') + ' ', melhores = [], max = 0;
+  var clientes = tabela_('Clientes').linhas.filter(function (c) { return c.nome; });
+  clientes.forEach(function (c) {
+    var p = palavrasIA_(c.nome); if (p.length < 2 || qn.indexOf(' ' + p[0] + ' ') < 0) return;
     var n = p.slice(1).filter(function (w) { return qn.indexOf(' ' + w + ' ') >= 0; }).length; if (!n) return;
     var nota = n + (qn.indexOf(' ' + p.join(' ') + ' ') >= 0 ? 10 : 0);
     if (nota > max) { max = nota; melhores = [c]; } else if (nota === max) melhores.push(c);
   });
-  if (!melhores.length) { // 8.58.3: "do Bruno", "da Maria" — só o primeiro nome, escrito com maiúscula na pergunta
-    var maius = (String(txt).match(/(?:^|[^\wÀ-ú])([A-ZÀ-Ý][a-zà-ÿ]{2,})/g) || []).map(function (w) { return normalizar_(w.replace(/^[^A-Za-zÀ-ÿ]+/, '')); })
-      .filter(function (w) { return !/^(qual|quais|como|onde|quando|quem|crie|criar|prazo|prazos|processo|cliente|audiencia|tarefa|o|a|os|as|me|eu|ele|ela|inss|clt|cpc|stj|tst|stf|trt|tjsc|trf)$/.test(w); });
-    if (maius.length) {
-      var porPrimeiro = tabela_('Clientes').linhas.filter(function (c) { var pc = palavrasIA_(c.nome || ''); return pc.length && maius.indexOf(pc[0]) >= 0; });
-      if (porPrimeiro.length && porPrimeiro.length <= 6) melhores = porPrimeiro;
-    }
+  if (!melhores.length) { // só o primeiro nome (qualquer caixa, sem acento): TODOS os clientes com esse primeiro nome
+    var equipe = {}; usuarios_().forEach(function (q) { var w = palavrasIA_(q.nome || q.usuario)[0]; if (w) equipe[w] = 1; });
+    var citaCliente = /\bclientes?\b/.test(normalizar_(semContra));
+    var cands = palavrasIA_(semContra).filter(function (w) { return w.length >= 3 && !NAO_NOME_IA_.test(w) && (citaCliente || !equipe[w]); });
+    var porPrimeiro = [];
+    cands.some(function (w) { porPrimeiro = clientes.filter(function (c) { return palavrasIA_(c.nome)[0] === w; }); return porPrimeiro.length > 0; });
+    if (!porPrimeiro.length) cands.some(function (w) { porPrimeiro = w.length >= 4 ? clientes.filter(function (c) { return palavrasIA_(c.nome).slice(1).indexOf(w) >= 0; }) : []; return porPrimeiro.length > 0 && porPrimeiro.length <= 30; });
+    melhores = porPrimeiro.slice(0, 60);
   }
-  var paraIA = normalizar_(txt);
+  var paraIA = normalizar_(semContra) + (contra.length ? ' contra [PARTE CONTRARIA]' : '');
   if (melhores.length) {
-    mapa['[CLIENTE1]'] = { tipo: 'cliente', ids: melhores.slice(0, 6).map(function (c) { return c.id; }) };
-    palavrasIA_(melhores[0].nome).forEach(function (w) { paraIA = paraIA.replace(new RegExp('\\b' + w + '\\b', 'g'), ' '); });
+    mapa['[CLIENTE1]'] = { tipo: 'cliente', ids: melhores.map(function (c) { return c.id; }) };
+    melhores.slice(0, 5).forEach(function (c) { palavrasIA_(c.nome).forEach(function (w) { paraIA = paraIA.replace(new RegExp('\\b' + w + '\\b', 'g'), ' '); }); });
     paraIA = paraIA.replace(/\s+/g, ' ').trim() + ' (cliente citado: [CLIENTE1])';
   }
   return { paraIA: anonimizar_(paraIA, []), mapa: mapa };
+}
+/** 8.62: processo do cliente cuja parte contrária bate com as palavras do "contra X" (ou o primeiro ativo). */
+function procContraIA_(cliId, contra) {
+  var seus = tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cliId; });
+  if (contra && contra.length) {
+    var bate = seus.filter(function (x) { var pc = ' ' + palavrasIA_((x.parte_contraria || '') + ' ' + (x.partes || '')).join(' ') + ' '; return contra.some(function (w) { return pc.indexOf(' ' + w + ' ') >= 0; }); });
+    if (bate.length) return bate.sort(function (a, b) { return (a.status === 'arquivado') - (b.status === 'arquivado'); })[0];
+  }
+  return seus.filter(function (x) { return x.status !== 'arquivado'; })[0] || null;
 }
 var SISTEMA_ASSISTENTE_ = 'Você é o assistente interno do escritório Araújo Advocacia (painel de gestão). Converta a pergunta da equipe numa consulta. ' +
   'Responda SOMENTE em JSON: {"ferramenta": "agenda|prazos|intimacoes|tarefas|cliente|processo|cobrancas|parados|aniversarios|crm|criar_tarefa|juridico|conversa", ' +
@@ -6416,18 +6549,25 @@ function assistenteIA_(d, u) {
   var hoje = hojeSP_(), ent = entidadesIA_(pergunta), plano = null, viaIA = false;
   if (d.escolha_cliente) ent.mapa['[CLIENTE1]'] = { tipo: 'cliente', ids: [String(d.escolha_cliente)] };
   var soJuridico = d.modo === 'juridico' && !/\b(crie|criar|anote|anotar|lembre)\b.*\btarefa|\btarefa\b.*\b(para|pra)\b/i.test(pergunta);
+  var nq = normalizar_(pergunta), temEnt = !!(ent.mapa['[CLIENTE1]'] || ent.mapa['[PROCESSO1]'] || ent.mapa['[CONTRA]']);
+  var pedeAcao = /\b(crie|criar|anote|anotar|lembre|agende)\b/.test(nq);
+  var dadosEscritorio = /\b(audienc|pericia|prazo|intima|tarefa|cobran|atras|parcela|honorar|aniversar|funil|crm|lead|parado|agenda|semana|amanha|hoje)/.test(nq);
   if (soJuridico) plano = { ferramenta: 'juridico' };
+  // 8.62: sem precisar da IA para planejar (uma ida a menos ao Google = resposta mais rápida)
+  else if (d.modo !== 'dados' && !temEnt && !pedeAcao && !dadosEscritorio && RE_JURIDICO_IA_.test(nq)) plano = { ferramenta: 'juridico' };
+  else if (temEnt && !pedeAcao && !dadosEscritorio && !RE_JURIDICO_IA_.test(nq))
+    plano = { ferramenta: /\b(processo|andamento|como (esta|anda|ta)|situacao|o que aconteceu|movimenta|contra)\b/.test(nq) || ent.mapa['[PROCESSO1]'] ? 'processo' : 'cliente', alvo: ent.mapa['[PROCESSO1]'] ? '[PROCESSO1]' : '[CLIENTE1]' };
   else if (chaveIA_()) {
     try {
       var equipe = usuarios_().filter(function (q) { return q.ativo === 'sim'; }).map(function (q) { return (q.nome || q.usuario).split(' ')[0]; }).join(', ');
       var hist = (Array.isArray(d.historico) ? d.historico : []).slice(-3).map(function (x) { return 'antes: ' + anonimizar_(String(x || '').slice(0, 200), []); }).join('\n');
-      var r = geminiTexto_([{ text: 'HOJE: ' + hojeExtenso_() + '\nEQUIPE: ' + equipe + (hist ? '\n' + hist : '') + '\nPERGUNTA: ' + ent.paraIA }], { sistema: SISTEMA_ASSISTENTE_, max: 400, temp: 0 });
+      var r = geminiTexto_([{ text: 'HOJE: ' + hojeExtenso_() + '\nEQUIPE: ' + equipe + (hist ? '\n' + hist : '') + '\nPERGUNTA: ' + ent.paraIA }], { sistema: SISTEMA_ASSISTENTE_, max: 400, temp: 0, pensar: 'minimo' });
       var m = /\{[\s\S]*\}/.exec(String(r.texto || '')); if (m) { plano = JSON.parse(m[0]); viaIA = true; }
     } catch (e) { plano = null; }
   }
   if (!plano || !plano.ferramenta) plano = planoRegrasIA_(pergunta);
   if (d.modo === 'juridico' && plano.ferramenta !== 'criar_tarefa') plano.ferramenta = 'juridico';
-  if (d.modo === 'auto' && (!plano.ferramenta || plano.ferramenta === 'conversa')) plano.ferramenta = 'juridico'; // 8.58.2: uma caixa só; o que não é dado do escritório vai para a IA jurídica
+  if (d.modo === 'auto' && (!plano.ferramenta || plano.ferramenta === 'conversa')) plano.ferramenta = temEnt && !RE_JURIDICO_IA_.test(nq) ? (ent.mapa['[PROCESSO1]'] || ent.mapa['[CONTRA]'] ? 'processo' : 'cliente') : 'juridico'; // 8.58.2: uma caixa só; o que não é dado do escritório vai para a IA jurídica
   plano._conversa = (Array.isArray(d.conversa) ? d.conversa : []).slice(-4).map(function (x) { return { p: anonimizar_(String((x && x.p) || '').slice(0, 600), []), r: anonimizar_(String((x && x.r) || '').slice(0, 2200), []) }; });
   plano._pergunta = ent.paraIA; plano._anterior = d.anterior ? anonimizar_(String(d.anterior).slice(0, 2500), []) : ''; plano._hist = Array.isArray(d.historico) ? d.historico.slice(-3) : [];
   var res = executarIA_(plano, ent.mapa, u, hoje);
@@ -6478,13 +6618,13 @@ function juridicoIA_(p, mapa, cli, procNum, procs, u, hoje, opc) {
   if (!chaveIA_()) { out.md = false; out.texto = 'A IA jurídica precisa da chave do Gemini (Configurações › Robôs e sistema).'; return out; }
   var pa = opc.pa || null;
   if (!pa && mapa['[PROCESSO1]']) pa = procNum[mapa['[PROCESSO1]'].numero] || null;
-  if (!pa && cli) pa = tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cli.id && x.status !== 'arquivado'; })[0] || null;
+  if (!pa && cli) pa = procContraIA_(cli.id, (mapa['[CONTRA]'] || {}).palavras);
   var caso = casoParaIA_(pa, !!opc.sistema);
   var conv = (p._conversa || []).map(function (x) { return 'EQUIPE: ' + x.p + '\nVOCÊ: ' + x.r; }).join('\n\n');
   if (!conv) { var hist = (p._hist || []).map(function (x) { return 'pergunta anterior: ' + anonimizar_(String(x || '').slice(0, 300), []); }).join('\n'); conv = hist + (p._anterior ? '\nSUA RESPOSTA ANTERIOR:\n' + p._anterior : ''); }
   var txt = 'HOJE: ' + hojeExtenso_() + (conv ? '\n\nCONVERSA ATÉ AGORA:\n' + conv : '') + (caso ? '\n\n' + caso : '') + '\n\nPERGUNTA AGORA: ' + (p._pergunta || '');
   var modeloJ = config_('IA_MODELO_JURIDICO') || modeloIA_().replace(/-lite$/, '');
-  var r = geminiTexto_([{ text: txt }], { sistema: opc.sistema || SISTEMA_JURIDICO_, max: 6144, temp: opc.sistema ? 0.2 : 0.35, modelo: modeloJ });
+  var r = geminiTexto_([{ text: txt }], { sistema: opc.sistema || SISTEMA_JURIDICO_, max: 6144, temp: opc.sistema ? 0.2 : 0.35, modelo: modeloJ, pensar: opc.sistema ? 'minimo' : 'low' });
   var t = String(r.texto || '').trim();
   if (!t) throw falha_('A IA não respondeu agora. Tente de novo em alguns segundos.');
   if (cli) t = t.replace(/\[CLIENTE1\]|\[PARTE\]/g, primeiroNomeProprio_(cli.nome));
@@ -6503,14 +6643,38 @@ function executarIA_(p, mapa, u, hoje) {
   var br = function (iso) { return iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—'; };
   var periodo = function (padraoDias) { var a = de || hoje, b = ate || somarDias_(a, padraoDias); return [a, b]; };
   var out = { texto: '', colunas: [], linhas: [], acao: null, opcoes: null };
-  var cli = null, alvo = mapa[p.alvo] || mapa['[CLIENTE1]'];
+  var cli = null, alvo = mapa[p.alvo] || mapa['[CLIENTE1]'], contra = (mapa['[CONTRA]'] || {}).palavras || [];
+  var procsDe = {}; tabela_('Processos').linhas.forEach(function (x) { if (x.cliente_id) (procsDe[x.cliente_id] = procsDe[x.cliente_id] || []).push(x); });
+  var bateContra = function (x) { var pc = ' ' + palavrasIA_(x.parte_contraria || '').join(' ') + ' '; return contra.some(function (w) { return pc.indexOf(' ' + w + ' ') >= 0; }); };
+  var linhaProc = function (x) { return (x.numero || 'sem número') + ' · ' + (x.area || '?') + ' · ' + (FASES[x.fase] || x.fase || '') + (x.parte_contraria ? ' · contra ' + String(x.parte_contraria).slice(0, 40) : '') + (x.status === 'arquivado' ? ' (arquivado)' : ''); };
   if (alvo && alvo.tipo === 'cliente') {
-    if (alvo.ids.length > 1 && !/^(agenda|prazos|tarefas|intimacoes|cobrancas|parados|aniversarios)$/.test(p.ferramenta)) {
-      out.texto = 'Encontrei ' + alvo.ids.length + ' clientes com esse nome. Qual deles?';
-      out.opcoes = alvo.ids.map(function (id) { var c = clis[id] || {}; return { id: id, nome: c.nome, extra: [c.cidade, c.telefone].filter(Boolean).join(' · ') }; });
+    var idsC = alvo.ids;
+    if (idsC.length > 1 && contra.length) { var comC = idsC.filter(function (id) { return (procsDe[id] || []).some(bateContra); }); if (comC.length) idsC = comC; }
+    if (idsC.length > 1 && !/^(agenda|prazos|tarefas|intimacoes|cobrancas|parados|aniversarios)$/.test(p.ferramenta)) {
+      // 8.62: todas as pessoas com esse nome, dizendo quais têm processo (pedido da usuária: "puxe o nome de todas as Janaínas")
+      var ordem = idsC.slice().sort(function (x, y) { return ((procsDe[y] || []).length > 0) - ((procsDe[x] || []).length > 0) || String((clis[x] || {}).nome).localeCompare(String((clis[y] || {}).nome)); });
+      var comProc = ordem.filter(function (id) { return (procsDe[id] || []).length; }).length;
+      out.texto = 'Encontrei ' + idsC.length + ' clientes com esse nome' + (contra.length ? ' (com processo contra "' + mapa['[CONTRA]'].texto + '")' : '') + ': ' + comProc + (comProc === 1 ? ' tem processo.' : ' têm processo.') +
+        ' Clique no nome para abrir a ficha, ou escolha abaixo para eu responder sobre ele(a).';
+      out.colunas = ['Cliente', 'Processos', 'Detalhe'];
+      out.linhas = ordem.slice(0, 40).map(function (id) { var c = clis[id] || {}, ps = procsDe[id] || [];
+        return { c: [c.nome || '—', ps.length ? ps.length + (ps.filter(function (x) { return x.status !== 'arquivado'; }).length < ps.length ? ' (' + ps.filter(function (x) { return x.status !== 'arquivado'; }).length + ' ativo/s)' : '') : 'sem processo',
+          ps.length ? ps.slice(0, 3).map(linhaProc).join(' | ') : [c.cidade, c.telefone].filter(Boolean).join(' · ')], link: '#/cliente/' + id }; });
+      if (idsC.length <= 15) out.opcoes = ordem.map(function (id) { var c = clis[id] || {}; return { id: id, nome: c.nome, extra: (procsDe[id] || []).length ? (procsDe[id] || []).length + ' processo(s)' : 'sem processo' }; });
       return out;
     }
-    cli = clis[alvo.ids[0]] || null;
+    cli = clis[idsC[0]] || null;
+  }
+  if (!cli && contra.length && /^(cliente|processo|conversa)$/.test(p.ferramenta)) { // 8.62: "processos contra a Empresa X"
+    var pcs = tabela_('Processos').linhas.filter(bateContra);
+    if (pcs.length !== 1) {
+      out.texto = pcs.length ? pcs.length + ' processo(s) contra "' + mapa['[CONTRA]'].texto + '":' : 'Não achei processo contra "' + mapa['[CONTRA]'].texto + '" no painel.';
+      out.colunas = ['Cliente', 'Processo', 'Detalhe'];
+      out.linhas = pcs.slice(0, 40).map(function (x) { return { c: [nomeCli(x) || '—', x.numero || 'sem número', linhaProc(x)], link: '#/processo/' + x.id }; });
+      return out;
+    }
+    if (!mapa['[PROCESSO1]'] && pcs[0].numero) mapa['[PROCESSO1]'] = { tipo: 'processo', numero: pcs[0].numero }; cli = clis[pcs[0].cliente_id] || null;
+    if (p.ferramenta === 'conversa') p.ferramenta = 'processo';
   }
   var f = p.ferramenta;
   if (f === 'juridico') return juridicoIA_(p, mapa, cli, procNum, procs, u, hoje);
@@ -6569,7 +6733,7 @@ function executarIA_(p, mapa, u, hoje) {
   }
   if (f === 'processo') {
     var pa = mapa[p.alvo] && mapa[p.alvo].tipo === 'processo' ? procNum[mapa[p.alvo].numero] : (mapa['[PROCESSO1]'] ? procNum[mapa['[PROCESSO1]'].numero] : null);
-    if (!pa && cli) pa = tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cli.id && x.status !== 'arquivado'; })[0];
+    if (!pa && cli) pa = procContraIA_(cli.id, contra);
     if (!pa && !mapa['[PROCESSO1]'] && cli) { /* cliente sem processo ativo: mostra os arquivados */ pa = tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cli.id; })[0]; }
     if (!pa) { out.texto = cli ? cli.nome + ' não tem processo cadastrado no painel.' : 'Não encontrei esse processo. Cole o número completo (CNJ) ou escreva o nome e o sobrenome do cliente.'; return out; }
     var outros = cli && !mapa['[PROCESSO1]'] ? tabela_('Processos').linhas.filter(function (x) { return x.cliente_id === cli.id && x.id !== pa.id && x.status !== 'arquivado'; }) : [];
@@ -7725,6 +7889,9 @@ function acharAto_(texto) {
   if (!ehPericia && !ehAudiencia) return null;
   if (ehPericia && ehAudiencia) ehPericia = t.search(/pericia|perito/) < t.search(/audiencia|sessao de|cejusc/);
   if (/cancelad|retirad[ao] d[ae] pauta|nao realizada|adiada sem|audiencia realizada|pericia realizada|termo de audiencia|ata de audiencia/.test(t) && !/redesignad|designo|designad[ao] (para|o dia|a data)/.test(t)) return null;
+  // 8.62 (audiência perdida de 26/11): "Intimado em audiência" = a parte foi intimada NA audiência que JÁ ACONTECEU (o prazo corre dela); não é audiência nova.
+  // O robô lia a data do prazo ("de 26/11 até 17/12") como data de audiência. Também "prazo … de dd/mm até dd/mm" nunca é data de ato.
+  if (/intimad[oa]s? em audiencia|intimacao em audiencia|ciente[s]? em audiencia|saem? as partes intimad/.test(t) && !/redesignad|designo|designad[ao] (para|o dia|a data)|(nova|proxima) audiencia/.test(t)) return null;
   var pos = t.search(ehPericia ? /pericia|perito/ : /audiencia|sessao de|cejusc/);
   // 8.19 (pedido da usuária: "audiências marcadas como instrução sem ser"): o tipo vem SÓ do que está escrito junto da palavra audiência
   // (antes, qualquer "instrução" em qualquer lugar do texto virava audiência de instrução)
@@ -7734,6 +7901,7 @@ function acharAto_(texto) {
   var agenda = ehPericia ? 'PERÍCIAS' : (kind === 'instrucao' || kind === 'una') ? 'AUDIÊNCIA INSTRUÇÃO' : 'AUDIÊNCIA CONCILIAÇÃO';
   // 8.6.0: números de processo ("…2026.5.12.0041") e de documentos não são data (o robô tinha lido 05/12/2041)
   var trecho = t.slice(Math.max(0, pos), pos + 600).replace(/\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}/g, ' [processo] ');
+  trecho = trecho.replace(/prazo:?[^.]{0,40}?de \d{1,2}\/\d{1,2}\/\d{4} ate \d{1,2}\/\d{1,2}\/\d{4}/g, ' [prazo] ');
   var hoje = hojeSP_(), achada = null, anoMax = +hoje.slice(0, 4) + 3;
   var re = /(?<![\d.\/-])(\d{1,2})\s*(?:\/|\.|-)\s*(\d{1,2})\s*(?:\/|\.|-)\s*(\d{4}|\d{2})(?!\d)|(\d{1,2})(?:º|o)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g, m;
   while ((m = re.exec(trecho))) {
@@ -9455,7 +9623,7 @@ function robosEscritorio_(ctx) {
   var r = {}, erros = [];
   [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['crmdados', function () { return crmDadosCliente_(); }], ['comissoes', function () { return gerarComissoes_(); }], ['explicacoes', explicacoesRobo_], ['atossemdata', cobrarAtosSemData_], ['caixavencida', baixarCaixaVencida_], ['notifinicial858', notificacoesIniciais858_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['cancelados850', atosCancelados_], ['tipos850', tiposDoPush850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'confirmacao', 'outraparte', 'djen', 'atoapagado', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.confirmacao.length + r.outraparte.length + r.djen.length + r.atoapagado.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['indicfim862', indicacaoFimProcesso862_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -13190,7 +13358,21 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis) };
+  var audRes = []; try { audRes = audienciasResultados_(hoje, 14, clis, procs); } catch (eR) { audRes = []; }
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis), audResultados: audRes };
+}
+/** 8.62 (pedido da usuária: "quando tiver audiência, deixar no Início FIXO se fechou ou não — principalmente no perfil da secretaria e do RH"):
+ *  audiências (conciliação e instrução) de HOJE e dos últimos N dias com o resultado anotado: acordo fechado (valor, parcelas, quem paga),
+ *  sem acordo (proposta), redesignada, não aconteceu — ou "falta anotar". Perícias ficam de fora. */
+function audienciasResultados_(hoje, dias, clis, procs) {
+  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' };
+  return atosDaAgenda_(somarDias_(hoje, -dias), hoje, tabela_('Eventos')).filter(function (a) { return a.tipo !== 'pericia'; }).map(function (a) {
+    var f = fichaDoAto_(fichas, a) || {}, ac = jsonAto_(f.acordo), pr = jsonAto_(f.preparo), p = procs[a.numero] || {}, c = clis[p.cliente_id] || {};
+    var r = ac.resultado || pr.resultado || '';
+    return { data: a.data, hora: a.hora || '', tipo: a.tipo, numero: a.numero, cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', processo_id: p.id || '',
+      resultado: r, resultado_nome: r ? nomes[r] || r : '', valor: ac.valor_fechado || '', parcelas: ac.parcelas_acordo || '', primeiro: ac.primeiro || '', empresa: ac.empresa || p.parte_contraria || '',
+      proposta: ac.proposta || '', obs: String(ac.resultado_obs || pr.resultado_obs || '').slice(0, 200), pedir: ac.pedir || '' };
+  }).sort(function (x, y) { return (y.data + y.hora) < (x.data + x.hora) ? -1 : 1; }).slice(0, 30);
 }
 /** 8.42 (pedido da usuária: "quem ainda não fechou e já faz tempo, ou está com a petição há muito tempo sem fazer — no Início de todos"):
  *  (1) procuração/contrato enviados e AINDA aguardando assinatura há 7+ dias; (2) petição inicial sem número há 10+ dias (processo ativo
@@ -13332,6 +13514,34 @@ function chatEnviar_(d, u) {
   });
 }
 /** 8.42: aviso do robô na conversa "Equipe toda" do chat (Central de Prazos). Só texto, sem dados sensíveis além de cliente/processo. */
+/** 8.62: depois de cada leitura dos portais (7h30 e 13h30), um resumo no chat da equipe: cada portal (✓ leu / ⚠ bloqueia / ✕ senha), o que
+ *  entrou (intimações, prazos com a data do tribunal, audiências) e o que ainda está sem informação no painel (ato não identificado, audiência
+ *  sem data). Também fica em Config PORTAIS_RESUMO (quadro "Portais ligados"). */
+function resumoPortaisChat_(ctx, epp, pjp) {
+  var partes = [], tot = { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, hora = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'HH:mm');
+  [epp, pjp].forEach(function (r) {
+    if (!r || !r.rodou) return;
+    ['intimacoes', 'prazos', 'ajustados', 'audiencias'].forEach(function (k) { tot[k] += +r[k] || 0; });
+    var st = r.st || {};
+    if (st.erro) { partes.push('✕ ' + r.nome + ': ' + st.erro); return; }
+    (st.contas || []).forEach(function (c) {
+      var nome = (r.nome === 'PJe' ? 'PJe ' : 'eproc ') + (c.sigla || c.chave) + (/2g$/.test(c.chave || '') ? ' 2º grau' : '');
+      if (c.ok) partes.push('✓ ' + nome);
+      else if (/bloqueio/.test(c.etapa || '') || /bloqueia a lista/.test(c.mensagem || '')) partes.push('⚠ ' + nome + ' (bloqueia a lista: via e-mail e DJEN)');
+      else if (/senha/.test(c.etapa || '')) partes.push('✕ ' + nome + ' (senha recusada: atualizar em Configurações › Intimações eletrônicas)');
+      else partes.push('✕ ' + nome + ' (' + String(c.mensagem || 'não conectou').slice(0, 80) + ')');
+    });
+  });
+  var abertos = ctx.prazos.linhas.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; });
+  var semAto = abertos.filter(function (z) { return /ATO N[ÃA]O IDENTIFICADO|PROVIS/i.test(z.descricao || ''); }).length;
+  var semData = abertos.filter(function (z) { return !z.fatal; }).length, audSemData = 0; try { audSemData = atosSemData_().length; } catch (e) { audSemData = 0; }
+  var txt = '📋 Leitura dos portais (' + hora + '): ' + (partes.join(' · ') || 'nenhum portal ligado') + '. Entraram ' + tot.intimacoes + ' intimação(ões) nova(s), ' + tot.prazos + ' prazo(s)/audiência(s) novo(s) e ' +
+    tot.ajustados + ' prazo(s) acertado(s) à data final do tribunal.' + (semAto || semData || audSemData ? ' Ainda sem informação no painel: ' + [semAto ? semAto + ' prazo(s) com ato não identificado' : '', semData ? semData + ' prazo(s) sem data' : '',
+    audSemData ? audSemData + ' audiência(s)/perícia(s) designada(s) sem data' : ''].filter(String).join(', ') + '.' : ' Nada provisório nem sem data no painel. ✓');
+  setConfig_('PORTAIS_RESUMO', JSON.stringify({ em: new Date().toISOString(), texto: txt }), 'Resumo da última leitura dos portais (7h30 e 13h30)');
+  chatRobo_(txt);
+  return txt;
+}
 function chatRobo_(texto) {
   try { inserirLinha_(tabela_('Chat'), { id: 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), sala: 'geral', de: 'robô', texto: String(texto).slice(0, 1200), em: new Date().toISOString(), apagado: '' }); return true; }
   catch (e) { return false; }
@@ -16266,11 +16476,14 @@ function geminiTexto_(parts, opc) {
   var corpo = { contents: [{ role: 'user', parts: parts }], generationConfig: { temperature: opc.temp === undefined ? 0.2 : opc.temp, maxOutputTokens: opc.max || 8192 } };
   if (opc.sistema) corpo.systemInstruction = { parts: [{ text: opc.sistema }] };
   if (opc.json) corpo.generationConfig.responseMimeType = 'application/json';
+  // 8.62 (pedido da usuária: "está demorando muito pra pensar"): limita o tempo de "raciocínio" do modelo
+  if (opc.pensar) corpo.generationConfig.thinkingConfig = /gemini-3/.test(modelo) ? { thinkingLevel: opc.pensar === 'minimo' ? 'low' : opc.pensar } : { thinkingBudget: opc.pensar === 'minimo' ? 0 : opc.pensar === 'low' ? 1024 : 4096 };
   var pedir = function (m) {
     return UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent',
       { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': chave }, payload: JSON.stringify(corpo) });
   };
   var resp = pedir(modelo);
+  if (corpo.generationConfig.thinkingConfig && resp.getResponseCode() === 400 && /think/i.test(resp.getContentText())) { delete corpo.generationConfig.thinkingConfig; resp = pedir(modelo); }
   if ((resp.getResponseCode() === 404 || resp.getResponseCode() === 400) && /not found|not supported|no longer/i.test(resp.getContentText())) {
     if (modelo !== principal) { modelo = principal; resp = pedir(modelo); }
     else { var novo = modeloSugerido_(resp); if (novo) { modelo = novo; resp = pedir(modelo); } }

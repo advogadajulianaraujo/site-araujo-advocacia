@@ -1622,6 +1622,22 @@
     const blocoAudiencias = bloco('📅 Próximos 7 dias — avisar o cliente (1 semana, véspera e no dia)', '#/audiencias', 'audiências',
       audSemana.length ? h('ul', { class: 'ini-lista' }, audSemana.slice(0, 12).map(a => linhaAud(a, false))) : vazio('Nenhuma audiência ou perícia nos próximos 7 dias.'));
 
+    // 8.62 (pedido da usuária: "deixar FIXO no Início se fechou ou não", principalmente secretaria e RH): hoje + últimos 14 dias, com o resultado
+    const audRes = ext.audResultados || [];
+    const chipRes = a => {
+      if (a.resultado === 'acordo') return h('span', { class: 'res-aud ok' }, '✓ Fechou acordo' + (a.valor ? ' · ' + reais(+a.valor) : '') + (a.parcelas ? ' em ' + a.parcelas + 'x' : '') + (a.primeiro ? ' · 1º pgto ' + dataBR(a.primeiro) : ''));
+      if (a.resultado === 'sem_acordo') return h('span', { class: 'res-aud nao' }, '✕ Não fechou' + (a.proposta ? ' · ofereceram ' + reais(+a.proposta) : ''));
+      if (a.resultado === 'redesignada') return h('span', { class: 'res-aud redes' }, '↻ Redesignada');
+      if (a.resultado === 'nao_houve') return h('span', { class: 'res-aud redes' }, '— Não aconteceu');
+      if (a.resultado === 'realizada') return h('span', { class: 'res-aud ok' }, '✓ Realizada');
+      return h('a', { class: 'res-aud falta', href: '#/audiencias', onclick: ev => ev.stopPropagation() }, '⏳ Falta anotar o resultado');
+    };
+    const faltaRes = audRes.filter(a => !a.resultado).length;
+    const blocoResultados = audRes.length ? bloco(`⚖ Resultado das audiências — hoje e últimos 14 dias${faltaRes ? ` (${faltaRes} sem resultado)` : ''}`, '#/audiencias', 'abrir Audiências',
+      h('ul', { class: 'ini-lista ini-res-aud' }, audRes.slice(0, 12).map(a => item(() => { location.hash = a.processo_id ? '#/processo/' + a.processo_id : '#/audiencias'; },
+        selo(a.data, a.data === hoje ? 'faixa-hoje' : ''), `${NOME_A[a.tipo] || 'Audiência'}${a.hora ? ' · ' + a.hora : ''} — ${a.cliente || 'cliente a identificar'}`,
+        [a.numero, a.resultado === 'acordo' && a.empresa ? 'paga: ' + a.empresa : '', a.obs].filter(Boolean).join(' · '), chipRes(a))))) : null;
+
     // 8.37.2: audiências NOVAS (o tribunal acabou de marcar: avisar o cliente já) e designadas sem a data no aviso
     const audNovas = ext.audNovas || [], audSemData = ext.audSemData || [];
     const blocoAudNovas = audNovas.length || audSemData.length ? bloco(`📅 Audiências novas — avisar o cliente (${audNovas.length + audSemData.length})`, '#/audiencias', 'abrir Audiências',
@@ -1759,7 +1775,7 @@
           atalho('#/audiencias?ver=avisar', 'Para avisar', naoAvisadas, naoAvisadas ? 'clientes sem aviso' : 'todos avisados 👏', naoAvisadas ? 'atencao' : ''),
           atalho('#/', 'Cobranças', ext.cobrancas.length, `${vencemHoje} vencem hoje · ${naoPagos.length} em atraso`, naoPagos.length ? 'alerta' : ''),
           atalho('#/clientes', 'Aniversários', ext.aniversarios.length, 'hoje')),
-        blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
+        blocoResultados, blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
         extras ? null : h('p', { class: 'nota' }, 'O Google está demorando para responder: os blocos abaixo aparecem sozinhos assim que chegarem.'),
         blocoAudNovas,
         h('div', { class: 'ini-duas' }, blocoAudHoje, blocoAudiencias),
@@ -1788,7 +1804,7 @@
         atalho('#/agenda?visao=dia', 'Hoje', nHoje, nHoje === 1 ? 'compromisso' : 'compromissos'),
         atalho('#/processos', 'Processos', t.processos, `${t.clientes} clientes`)),
       blocoAguardandoOk({ inicio: true }),
-      blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
+      blocoResultados, blocoMeuDia, blocoOQueFiz(), acoes, blocoEsperando,
       blocoAudNovas,
       h('div', { class: 'ini-duas' }, blocoPrazos, audHoje.length ? h('div', {}, blocoAudHoje, blocoAudiencias) : blocoAudiencias),
       ext.aniversarios.length || ext.cobrancas.length ? h('div', { class: 'ini-duas' }, blocoCobrancas, blocoAniversarios) : null,
@@ -4363,7 +4379,7 @@
         h('table', { class: 'tabela compacta pje-tab' }, h('thead', {}, h('tr', {}, h('th', {}, 'Portal'), h('th', {}, 'Situação'), h('th', {}, 'Última leitura'))),
           h('tbody', {}, ...linhas.map((l, i) => h('tr', {}, h('td', {}, h('b', {}, l.nome)), h('td', { class: 'pje-sit ' + sits[i][0] }, ({ verde: '✓ ', ambar: '⚠ ', vermelho: '✕ ', cinza: '• ' })[sits[i][0]] + sits[i][1]),
             h('td', {}, l.t && l.t.em ? dataBR2(l.t.em) + (l.t.por === 'robô' ? ' (robô)' : '') : '—'))))),
-        h('p', { class: 'peq' }, 'O robô confere todos de hora em hora e põe no painel: intimações com o texto e o resumo da IA, prazos com a data final do tribunal, audiências na Agenda e em Audiências, com checklist e o botão "✨ Avisar o cliente".'));
+        h('p', { class: 'peq' }, 'O robô lê os portais duas vezes por dia, às 7h30 e às 13h30 (para não sobrecarregar nem ser bloqueado), manda um resumo no chat da equipe e põe no painel: intimações com o texto e o resumo da IA, prazos com a data final do tribunal, audiências na Agenda e em Audiências, com checklist e o botão "✨ Avisar o cliente".'));
     }
     const caixa = h('dialog', { class: 'dialogo pje-dialogo' },
       h('h2', {}, 'Intimações eletrônicas'),
@@ -4802,7 +4818,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.61.0';
+  const VERSAO_PAINEL = '8.62.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -5430,6 +5446,9 @@
      alguém RESOLVER (confirmar a sugestão do painel, lançar prazo/audiência/tarefa/evento/histórico ou "Concluir" quando é só ciência)
      ou DESCARTAR. Nomes do escritório: "Para resolver / Resolvidas / Descartadas" (nunca "não tratadas", a pedido dela).
      ================================================================================================================ */
+  // 8.62 (pedido da usuária): "Gustavo · 26/11 14:32" — dia e hora de Brasília
+  const diaHoraSP = iso => { const d = new Date(iso); if (isNaN(d)) return String(iso || '').slice(8, 10) + '/' + String(iso || '').slice(5, 7);
+    return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', ''); };
   const ST_CAIXA = { nao: 'Para resolver', nao_hoje: 'Chegaram hoje', tratadas: 'Resolvidas', tratadas_hoje: 'Resolvidas hoje', descartadas: 'Descartadas',
     descartadas_hoje: 'Descartadas hoje', nao_feitas: 'Não foram feitas', todas: 'Todas' };
   const ROT_TRAT = { prazo: 'prazo lançado', audiencia: 'audiência marcada', tarefa: 'tarefa criada', evento: 'evento na agenda', historico: 'histórico anotado',
@@ -5475,7 +5494,7 @@
         h('span', { class: 'cx-conf ' + confCls(s.confianca || 0), title: 'Confiança da sugestão' }, (s.confianca || 0) + '%'));
     const feito = aberta ? null : h('div', { class: 'cx-feito' + (x.status === 'descartada' || x.status === 'nao_feita' ? ' desc' : '') },
       x.status === 'nao_feita' ? [h('span', { class: 'cx-naofeita' }, 'Descartada · o dia passou'), ' ', h('small', {}, x.tratada_por ? String(x.tratada_por).replace(/^robô \(não feita: |\)$/g, '') : 'o prazo venceu sem ser resolvida')] : x.status === 'descartada' ? 'Descartada' : 'Resolvida' + (ROT_TRAT[x.tratamento] ? ' · ' + ROT_TRAT[x.tratamento] : ''),
-      x.tratada_por && x.status !== 'nao_feita' ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + dataBR(String(x.tratada_em).slice(0, 10)).slice(0, 5) : '');
+      x.tratada_por && x.status !== 'nao_feita' ? ' · ' + primeiroNome(x.tratada_por) : '', x.tratada_em ? ' · ' + diaHoraSP(x.tratada_em) : '');
     return h('div', { class: 'cx-item' + (aberta ? '' : ' feita'), tabindex: '0', role: 'link', onclick: abrir, onkeydown: ev => { if (ev.key === 'Enter') abrir(); } },
       (() => { // 8.58.7 (pedido da usuária): em destaque a data FINAL do prazo; a data em que chegou fica pequena embaixo
         const fat = s.prazo && !s.prazo.ato && s.prazo.fatal && !s.so_historico ? s.prazo.fatal : '';

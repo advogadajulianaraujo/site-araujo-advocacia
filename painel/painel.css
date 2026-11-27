@@ -4153,3 +4153,8 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 .pje-resumo .pje-tab td{vertical-align:top}
 .pje-sit.verde{color:#1d7a3a}.pje-sit.ambar{color:#a36a00}.pje-sit.vermelho{color:#b3261e}.pje-sit.cinza{color:#6b6b6b}
 .pje-det{margin:8px 0}.pje-det>summary{cursor:pointer;font-size:13px;color:#6b6b6b}
+
+/* 8.62 resultado das audiências no Início */
+.res-aud{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.res-aud.ok{background:#e3f3e8;color:#1d6b35}.res-aud.nao{background:#fbe5e3;color:#a3261d}.res-aud.redes{background:#eeeae2;color:#5e574c}
+.res-aud.falta{background:#fff1d6;color:#8a5a00;text-decoration:none}

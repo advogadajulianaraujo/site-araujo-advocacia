@@ -2270,3 +2270,38 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   expedientes de TODAS as partes — só entra o do nosso cliente (nome do cadastro: 1º nome + outro igual) ou, sem cliente, o polo do processo.
 - Em 25/11 no TRT6: 3 processos; 0000330 com dois expedientes até 26/11 (o painel tinha um em 27/11), 0000299 com Alvará (15 dias corridos) até
   25/11 que o painel não tinha, e a instrução de 26/11 10h do 0000353 (já estava na agenda).
+
+## 8.62.0 Todos os PJe, leitura 2x/dia, IA que acha pelo nome, audiências (pedidos da usuária, 25–27/11/2026; sabatina em 27/11)
+
+- Portais com o mesmo login nacional (CPF + senha + 2FA Seed; chaves do cofre pjetrt{2,4,6,9,16,20,23}1g e pjetrt122g): TRT2, TRT4, TRT6, TRT9,
+  TRT16, TRT20 e TRT23 LEEM; TRT12 (1º e 2º grau) entra mas bloqueia a lista ("Request blocked") — via e-mail do PJe e DJEN (a usuária fala com o
+  TRT12). A função `tribunais` abre o login nacional UMA vez e reaproveita a sessão nos outros PJe (`entrarPje(base, cred, navJa)`; código do
+  autenticador repetido não é aceito pelo PDPJ → espera o próximo e tenta 1 vez). Tempo da rodada 115 s; TRT12 1º grau por último.
+  Mandado / central de mandados nunca é prazo do advogado (`pjeParaNos_`). eproc Federal (ssotrf4): a senha foi recusada em 27/11 — a usuária
+  vai mandar a nova (não insistir no login). Corrigido o erro da 8.61 ("period is not defined") que parou a leitura do eproc TJSC em 25–27/11.
+- Decisão da usuária (27/11): os PORTAIS (PJe e eproc pelo login, e o eproc MNI) são lidos DUAS vezes por dia, 7h30 e 13h30 de Brasília
+  (`horaDosPortais_`, `HORARIOS_PORTAIS_`; 1ª rodada do robô depois do horário) — Gmail e DJEN continuam de hora em hora. Depois de cada leitura,
+  resumo no chat da equipe e em Config PORTAIS_RESUMO (`resumoPortaisChat_`: ✓/⚠/✕ por portal, o que entrou e o que ainda está sem
+  informação). Configurações › Intimações eletrônicas: quadro "Portais ligados" com TODOS os portais e a situação de cada um (Funcionando / bloqueia
+  a lista / senha recusada) e a última leitura; os acessos (testar, apagar) ficam em "Ver cada acesso".
+- Outros tribunais onde o escritório tem processo (27/11): TJRS 15 ativos (precisa do login/chave do eproc TJRS — a usuária põe no painel),
+  TJAL 4, TJPR 3, TRF3 2, TJSP/TJRJ/TJMA/TJRR 1 cada (DJEN e DataJud cobrem até ligar).
+- Audiência perdida de 26/11 (5015898-88.2023.8.24.0075, TJSC): o aviso da designação NUNCA chegou (sem e-mail, sem DJEN; DataJud parado em 28/09) e
+  a leitura do eproc estava quebrada. `acharAto_`: "Intimado em audiência" (a audiência que JÁ aconteceu) não é audiência nova, e "Prazo … de dd/mm até
+  dd/mm" não é data de ato; `atosFalsosIntimadoAudiencia862_` (uma vez, Config FIX_INTAUD_862) tirou a "audiência" falsa de 17/12.
+- Início (secretaria/RH e administração): "⚖ Resultado das audiências — hoje e últimos 14 dias" (`audienciasResultados_` em inicio.extras →
+  `audResultados`): Fechou acordo (valor, parcelas, 1º pagamento, quem paga) / Não fechou / Redesignada / Não aconteceu / ⏳ Falta anotar.
+- IA (`entidadesIA_`): acha o cliente por QUALQUER parte do nome (só o 1º nome, minúsculo, sem acento; "janaina" → todas as Janaínas, dizendo quais
+  têm processo, até 60; `NAO_NOME_IA_` tira palavras comuns; nomes da equipe só contam como cliente se a pergunta disser "cliente") e entende
+  "contra X" (`[CONTRA]` → `procContraIA_`: o processo do cliente cuja parte contrária bate; sem cliente: lista os processos contra X). Mais
+  rápida: perguntas claramente jurídicas ou claramente sobre um cliente não passam pela IA "planejadora"; `geminiTexto_` com `pensar`
+  (thinkingLevel/thinkingBudget; tira se o modelo recusar).
+- `iniciaisProtocoladas862_` (robôs do escritório): e-mail "Processo protocolado (peticionamento eletrônico)" = NOSSO protocolo → a petição inicial
+  sem número do mesmo cliente (uma só, ou a da mesma área) sai do quadro (arquivada, anotada "protocolada como …"), a tarefa da inicial fecha,
+  honorários/tarefas passam para o processo com número e (protocolo de até 7 dias) nasce o "📣 Avisar o cliente". Casos de 27/11: Lucas (5165203,
+  bancário) e Aílton (5020622, Fazenda Pública) — nenhum dos dois tem ação trabalhista.
+- Indicações (Dra. Juliana Cachoeira, 30% dos honorários, base "todos"): 9 clientes marcados em 27/11; os telefones que ainda não são clientes ficam em
+  Config INDICACOES_PENDENTES (só no banco, nunca no código) e `indicacoesPendentes862_` marca quem se cadastrar; `indicacaoFimProcesso862_`: processo de
+  cliente indicado em Acordo/Execução/Encerrado → tarefa "🤝 Dividir honorários com …" (`[indicacao:procId|fase]`).
+- Intimações recebidas: "Resolvida · Gustavo · 26/11 14:32" (dia e hora de Brasília, `diaHoraSP`).
+- Teste: `.github/motor/teste/etapa862.js`.

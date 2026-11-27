@@ -14,8 +14,11 @@ const ver = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/.test(ver || '')) { console.error('uso: node .github/motor/motor-anterior.mjs <versão>'); process.exit(1); }
 const saida = path.join(raiz, 'supabase/functions/painel/motor-anterior.js');
 // o commit mais novo em que o Code.gs tinha essa VERSAO
-let commit = '';
-for (const c of sh('git log --format=%H -- painel-backend/Code.gs').trim().split('\n')) {
+// 8.62: procura no main PUBLICADO (origin/main), não no ramo de trabalho — o motor anterior tem de ser o código que o Google roda.
+// Um 3º argumento força o commit.
+let commit = process.argv[3] || '';
+const historia = (() => { try { return sh('git log --format=%H origin/main -- painel-backend/Code.gs'); } catch (e) { return sh('git log --format=%H -- painel-backend/Code.gs'); } })();
+for (const c of commit ? [] : historia.trim().split('\n')) {
   const v = (/^var VERSAO = '([^']+)'/m.exec(sh('git show ' + c + ':painel-backend/Code.gs')) || [])[1];
   if (v === ver) { commit = c; break; }
 }

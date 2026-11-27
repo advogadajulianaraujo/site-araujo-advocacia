@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.61.0 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.62.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.61.0';
+var MOTOR_VERSAO = '8.62.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.61.0';
+var VERSAO = '8.62.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2657,7 +2657,21 @@ function inicioExtras_(d, u) {
       .filter(function (x) { return x.cliente && x.dias <= 90; })
       .sort(function (a, b) { return (a.dias === 0 ? -1 : 0) - (b.dias === 0 ? -1 : 0) || a.dias - b.dias; }).slice(0, 30);
   }
-  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis) };
+  var audRes = []; try { audRes = audienciasResultados_(hoje, 14, clis, procs); } catch (eR) { audRes = []; }
+  return { audiencias: audiencias, audNovas: audNovas, audSemData: audSemData, aniversarios: aniversarios, cobrancas: cobrancas, hoje: hoje, esperando: esperandoMuito_(hoje, clis), audResultados: audRes };
+}
+/** 8.62 (pedido da usuária: "quando tiver audiência, deixar no Início FIXO se fechou ou não — principalmente no perfil da secretaria e do RH"):
+ *  audiências (conciliação e instrução) de HOJE e dos últimos N dias com o resultado anotado: acordo fechado (valor, parcelas, quem paga),
+ *  sem acordo (proposta), redesignada, não aconteceu — ou "falta anotar". Perícias ficam de fora. */
+function audienciasResultados_(hoje, dias, clis, procs) {
+  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' };
+  return atosDaAgenda_(somarDias_(hoje, -dias), hoje, tabela_('Eventos')).filter(function (a) { return a.tipo !== 'pericia'; }).map(function (a) {
+    var f = fichaDoAto_(fichas, a) || {}, ac = jsonAto_(f.acordo), pr = jsonAto_(f.preparo), p = procs[a.numero] || {}, c = clis[p.cliente_id] || {};
+    var r = ac.resultado || pr.resultado || '';
+    return { data: a.data, hora: a.hora || '', tipo: a.tipo, numero: a.numero, cliente: c.nome || (p.cliente_nome !== 'a identificar' ? p.cliente_nome : '') || '', cliente_id: c.id || '', processo_id: p.id || '',
+      resultado: r, resultado_nome: r ? nomes[r] || r : '', valor: ac.valor_fechado || '', parcelas: ac.parcelas_acordo || '', primeiro: ac.primeiro || '', empresa: ac.empresa || p.parte_contraria || '',
+      proposta: ac.proposta || '', obs: String(ac.resultado_obs || pr.resultado_obs || '').slice(0, 200), pedir: ac.pedir || '' };
+  }).sort(function (x, y) { return (y.data + y.hora) < (x.data + x.hora) ? -1 : 1; }).slice(0, 30);
 }
 /** 8.42 (pedido da usuária: "quem ainda não fechou e já faz tempo, ou está com a petição há muito tempo sem fazer — no Início de todos"):
  *  (1) procuração/contrato enviados e AINDA aguardando assinatura há 7+ dias; (2) petição inicial sem número há 10+ dias (processo ativo
