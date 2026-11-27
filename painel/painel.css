@@ -4148,3 +4148,8 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 .pje-ac{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border:1px solid #EFE7D9;border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px}
 .pje-ac small{color:#8A8276}
 .pje-lista{display:flex;flex-direction:column}
+
+/* 8.62 quadro dos portais ligados */
+.pje-resumo .pje-tab td{vertical-align:top}
+.pje-sit.verde{color:#1d7a3a}.pje-sit.ambar{color:#a36a00}.pje-sit.vermelho{color:#b3261e}.pje-sit.cinza{color:#6b6b6b}
+.pje-det{margin:8px 0}.pje-det>summary{cursor:pointer;font-size:13px;color:#6b6b6b}

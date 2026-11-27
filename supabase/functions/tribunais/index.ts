@@ -86,6 +86,8 @@ async function lerTribunal(trib: string, cred: { usuario: string; senha: string 
    ===================================================================================================================== */
 export const PJE: Record<string, { nome: string; graus: Record<string, string> }> = {
   trt12: { nome: 'TRT 12 — Santa Catarina', graus: { '1g': 'https://pje.trt12.jus.br/primeirograu/', '2g': 'https://pje.trt12.jus.br/segundograu/' } },
+  trt2: { nome: 'TRT 2 — São Paulo (capital)', graus: { '1g': 'https://pje.trt2.jus.br/primeirograu/', '2g': 'https://pje.trt2.jus.br/segundograu/' } },
+  trt20: { nome: 'TRT 20 — Sergipe', graus: { '1g': 'https://pje.trt20.jus.br/primeirograu/', '2g': 'https://pje.trt20.jus.br/segundograu/' } },
   trt6: { nome: 'TRT 6 — Pernambuco', graus: { '1g': 'https://pje.trt6.jus.br/primeirograu/', '2g': 'https://pje.trt6.jus.br/segundograu/' } },
   trt23: { nome: 'TRT 23 — Mato Grosso', graus: { '1g': 'https://pje.trt23.jus.br/primeirograu/', '2g': 'https://pje.trt23.jus.br/segundograu/' } },
   trt4: { nome: 'TRT 4 — Rio Grande do Sul', graus: { '1g': 'https://pje.trt4.jus.br/primeirograu/', '2g': 'https://pje.trt4.jus.br/segundograu/' } },
@@ -152,12 +154,14 @@ const titulo = (html: string) => deHtml((/<title>([^<]*)/i.exec(html) || [])[1] 
 const ehSso = (u: string) => /sso\.cloud\.pje\.jus\.br|\/auth\/realms\//.test(u);
 
 /** Entra no PJe (CPF + senha + código do autenticador). Devolve o navegador já logado ou o motivo exato. */
-export async function entrarPje(base: string, cred: { login: string; senha: string; seed: string; period?: number }) {
-  const seed = lerSeed(cred.seed || ''); const nav = new Nav();
+export async function entrarPje(base: string, cred: { login: string; senha: string; seed: string; period?: number }, navJa?: Nav) {
+  const seed = lerSeed(cred.seed || ''); const nav = navJa || new Nav();
   if (cred.seed && !seed) return { ok: false, etapa: 'seed', mensagem: 'A 2FA Seed não parece uma chave do autenticador (letras A–Z e números 2–7).' };
   if (seed && cred.period) seed.period = cred.period;
   let p = await nav.ir(base + 'authenticateSSO.seam');
   if (p.status === 403) return { ok: false, etapa: 'bloqueio', mensagem: 'O PJe recusou o servidor (403). Tente de novo mais tarde.' };
+  // 8.62: o login nacional (PDPJ) já está aberto neste navegador → o PJe do outro tribunal entra sem pedir senha nem código de novo
+  if (!ehSso(p.url) && navJa && p.status < 400 && (nav.jar[new URL(base).host] || {}).access_token) return { ok: true, nav, url: p.url, titulo: titulo(p.html), html: p.html, reuso: true };
   if (!ehSso(p.url)) return { ok: false, etapa: 'sso', mensagem: 'O PJe não abriu a tela de login nacional (' + p.status + ').' };
   let f = formulario(p.html); if (!f || !('username' in f.campos)) return { ok: false, etapa: 'login', mensagem: 'A tela de login do PJe mudou (' + titulo(p.html) + ').' };
   const corpo = new URLSearchParams({ ...f.campos, username: String(cred.login).replace(/\D/g, '') || cred.login, password: cred.senha, credentialId: '' });
@@ -186,11 +190,13 @@ export async function entrarPje(base: string, cred: { login: string; senha: stri
    O TRT12 (e outros) bloqueiam essa API para servidores ("Request blocked" do CloudFront): aí o robô avisa e o resto continua.
    ===================================================================================================================== */
 const PJE_MAX_PROC = 150, PJE_TEMPO = 100000;
-export async function lerPainelPje(cred: any) {
+export async function lerPainelPje(cred: any, navJa?: Nav) {
   const t0 = Date.now(), base = PJE[cred.trib] && PJE[cred.trib].graus[cred.grau];
   if (!base) return { ok: false, etapa: 'tribunal', mensagem: 'Tribunal/grau desconhecido.' };
-  let r: any = await entrarPje(base, cred);
+  let r: any = await entrarPje(base, cred, navJa);
   let period = 0;
+  // código recusado: pode ser o MESMO código já usado há segundos (o login nacional não aceita repetido) → espera o próximo e tenta 1 vez
+  if (!r.ok && r.etapa === 'codigo') { const per = (cred.period || 30) * 1000; await new Promise(ok => setTimeout(ok, per - (Date.now() % per) + 1500)); r = await entrarPje(base, cred); }
   if (!r.ok && r.etapa === 'codigo' && !cred.period) { const r2: any = await entrarPje(base, { ...cred, period: 60 }); if (r2.ok) { r = r2; period = 60; } }
   if (!r.ok) return { ok: false, etapa: r.etapa, mensagem: r.mensagem };
   const nav: Nav = r.nav, u0 = new URL(base), jar = nav.jar[u0.host] || {}, origem = u0.origin;
@@ -251,7 +257,7 @@ export async function lerPainelPje(cred: any) {
     if (m === 'BLOQUEIO') return { ok: false, period, etapa: 'bloqueio', mensagem: 'o ' + sigla + ' bloqueia a lista do painel do advogado para servidores (proteção do tribunal). Os avisos dele continuam chegando pelo e-mail e pelo DJEN.' };
     return { ok: false, period, etapa: 'lista', mensagem: m.slice(0, 200) };
   }
-  out.ms = Date.now() - t0; if (period) out.period = period;
+  out.ms = Date.now() - t0; if (period) out.period = period; out.nav = nav;
   return out;
 }
 
@@ -383,7 +389,7 @@ export async function lerPainelEproc(cfg: typeof SSO_EPROC[string], cred: { logi
   }
   const ua = /href="(controlador\.php\?acao=audiencia_futura_listar&(?:amp;)?acao_origem[^"]*)"/.exec(painel);
   if (ua) { try { const q = await ir(base + deHtml(ua[1])); out.audiencias = lerAudiencias(q.html); } catch (x) { out.avisos.push('audiências: ' + String((x as Error).message || x).slice(0, 80)); } }
-  out.ms = Date.now() - t0; if (period) out.period = period;
+  out.ms = Date.now() - t0;
   return out;
 }
 
@@ -443,8 +449,14 @@ Deno.serve(async (req: Request) => {
       const ids = Object.keys(cr).filter(t => /^pje/.test(t) && cr[t] && cr[t].login && PJE[cr[t].trib]);
       if (!ids.length) return resp({ ok: true, ligado: false, contas: [] });
       const st = await estado(escId), contas: any[] = [];
+      const navs: Record<string, Nav> = {}, t0p = Date.now();
+      // TRT12 1º grau por último (bloqueia a lista para servidores); o resto em ordem
+      ids.sort((x, y) => (x === 'pjetrt121g' ? 1 : 0) - (y === 'pjetrt121g' ? 1 : 0) || x.localeCompare(y));
       for (const t of ids) {
-        let c: any; try { c = await lerPainelPje(cr[t]); } catch (x) { c = { ok: false, etapa: 'erro', mensagem: String((x as Error).message || x).slice(0, 200) }; }
+        if (Date.now() - t0p > 115000) { contas.push({ chave: t, ok: false, etapa: 'tempo', mensagem: 'fica para a próxima rodada (tempo da rodada esgotado)', sigla: String(cr[t].trib || '').toUpperCase(), sistema: 'PJe' }); continue; }
+        const chaveNav = String(cr[t].login).replace(/\D/g, '');
+        let c: any; try { c = await lerPainelPje(cr[t], navs[chaveNav]); } catch (x) { c = { ok: false, etapa: 'erro', mensagem: String((x as Error).message || x).slice(0, 200) }; }
+        if (c.nav) { navs[chaveNav] = c.nav; delete c.nav; }
         st[t] = { ...(st[t] || {}), em: new Date().toISOString(), por: 'robô', ok: !!c.ok, etapa: c.etapa || '', ms: c.ms || 0, contagens: c.contagens || {},
           mensagem: c.ok ? (c.processos + ' processo(s), ' + c.prazos.length + ' expediente(s) com prazo em aberto, ' + c.audiencias.length + ' audiência(s) marcada(s)') : /bloqueio|lista|token/.test(c.etapa || '') ? 'entrou no PJe, mas ' + c.mensagem : c.mensagem };
         contas.push({ chave: t, ...c, sigla: c.sigla || String(cr[t].trib || '').toUpperCase(), sistema: 'PJe' });
@@ -549,7 +561,7 @@ Deno.serve(async (req: Request) => {
       } else { cred = creds[String(b.chave || '')]; if (!cred || !cred.login) return resp({ ok: false, erro: 'Este acesso não está guardado.' }, 400); }
       const t0 = Date.now();
       // 8.61: o teste já lê o painel do advogado (o mesmo que o robô); lista bloqueada pelo tribunal = o login vale e é guardado
-      const c: any = await lerPainelPje(cred);
+      const c: any = await lerPainelPje(cred); delete c.nav;
       const entrou = !!c.ok || c.etapa === 'bloqueio' || c.etapa === 'lista' || c.etapa === 'token';
       const r: any = entrou ? { ok: true } : { ok: false, etapa: c.etapa, mensagem: c.mensagem };
       if (c.period) cred.period = c.period;

@@ -4304,7 +4304,7 @@
     const listaSso = h('div', { class: 'pje-lista' });
     const contagensTxt = c => Object.entries(c || {}).map(([g, v]) => g + ': ' + v.prazos_em_aberto + ' prazo(s) em aberto, ' + v.aguardando_abertura + ' aguardando abertura' + (v.pauta ? ', ' + v.pauta + ' de pauta' : '')).join(' · ');
     function carregarSso() {
-      B.tribunais({ acao: 'sso_status' }, 30000).then(r => { const lig = (r.sso || []).filter(t => t.ligado);
+      B.tribunais({ acao: 'sso_status' }, 30000).then(r => { const lig = (r.sso || []).filter(t => t.ligado); estadoPortais.sso = r.sso || []; desenharResumo();
         listaSso.replaceChildren(...lig.map(t => h('div', { class: 'pje-ac' },
           h('div', {}, h('b', {}, t.nome), ' · login novo com 2FA', h('br'), h('small', {}, 'usuário ' + t.login + (t.com_seed ? ' · com 2FA' : ' · sem 2FA') + ' · guardado por ' + (t.guardado_por || '—') + ' em ' + dataBR2(t.guardado_em)),
             t.teste ? h('div', { class: t.teste.ok ? 'pje-ok' : 'erro' }, (t.teste.ok ? '✓ ' : '✕ ') + (t.teste.mensagem || '') + ' (' + (t.teste.por === 'robô' ? 'robô, ' : '') + dataBR2(t.teste.em) + ')') : null,
@@ -4340,11 +4340,36 @@
               try { const r = await B.tribunais({ acao: 'pje_apagar', chave: a.chave }); desenhar(r.acessos); avisar('Acesso apagado.'); } catch (e) { avisar(e.message, true); } }, 'mini sec')));
       }) : [h('p', { class: 'peq' }, 'PJe: nenhum acesso guardado.')]));
     }
+    // 8.62 (pedido da usuária: "deixar claro que todos estão"): quadro único com TODOS os portais e a situação de cada um
+    const resumoPortais = h('div', { class: 'pje-resumo' }, h('p', { class: 'peq' }, 'Carregando…'));
+    const estadoPortais = { sso: null, pje: null };
+    const situacaoPortal = t => {
+      if (!t) return ['cinza', 'Guardado — o robô lê na próxima rodada (de hora em hora)'];
+      if (t.ok) return ['verde', 'Funcionando' + (t.mensagem ? ' — ' + t.mensagem : '')];
+      if (/bloqueio/.test(t.etapa || '') || /bloqueia a lista/.test(t.mensagem || '')) return ['ambar', 'Entra com o login, mas o tribunal bloqueia a lista para servidores — os avisos dele chegam pelo e-mail do PJe e pelo DJEN'];
+      if (/senha/.test(t.etapa || '')) return ['vermelho', 'O tribunal recusou a senha — atualize em "Ligar ou atualizar um portal"'];
+      if (/tempo/.test(t.etapa || '')) return ['cinza', 'Fica para a próxima rodada'];
+      return ['vermelho', t.mensagem || 'Não conectou'];
+    };
+    function desenharResumo() {
+      if (!estadoPortais.sso && !estadoPortais.pje) return;
+      const linhas = [];
+      (estadoPortais.sso || []).filter(t => t.ligado).forEach(t => linhas.push({ nome: t.nome, t: t.teste }));
+      (estadoPortais.pje || []).slice().sort((a, b) => String(a.tribunal_nome).localeCompare(String(b.tribunal_nome), 'pt', { numeric: true }) || String(a.grau).localeCompare(String(b.grau)))
+        .forEach(a => linhas.push({ nome: 'PJe ' + a.tribunal_nome + ' · ' + (a.grau === '2g' ? '2º grau' : a.grau === '3g' ? 'TST' : '1º grau'), t: a.teste }));
+      const sits = linhas.map(l => situacaoPortal(l.t)), ok = sits.filter(x => x[0] === 'verde').length;
+      resumoPortais.replaceChildren(
+        h('p', { class: ok === linhas.length ? 'pje-ok' : 'peq' }, ok === linhas.length ? '✓ Todos os ' + linhas.length + ' portais estão funcionando.' : ok + ' de ' + linhas.length + ' portais funcionando — veja abaixo o que falta em cada um.'),
+        h('table', { class: 'tabela compacta pje-tab' }, h('thead', {}, h('tr', {}, h('th', {}, 'Portal'), h('th', {}, 'Situação'), h('th', {}, 'Última leitura'))),
+          h('tbody', {}, ...linhas.map((l, i) => h('tr', {}, h('td', {}, h('b', {}, l.nome)), h('td', { class: 'pje-sit ' + sits[i][0] }, ({ verde: '✓ ', ambar: '⚠ ', vermelho: '✕ ', cinza: '• ' })[sits[i][0]] + sits[i][1]),
+            h('td', {}, l.t && l.t.em ? dataBR2(l.t.em) + (l.t.por === 'robô' ? ' (robô)' : '') : '—'))))),
+        h('p', { class: 'peq' }, 'O robô confere todos de hora em hora e põe no painel: intimações com o texto e o resumo da IA, prazos com a data final do tribunal, audiências na Agenda e em Audiências, com checklist e o botão "✨ Avisar o cliente".'));
+    }
     const caixa = h('dialog', { class: 'dialogo pje-dialogo' },
       h('h2', {}, 'Intimações eletrônicas'),
       h('p', { class: 'peq' }, 'O robô usa estes dados para LISTAR as intimações. No eproc do TJSC ele entra com usuário, senha e 2FA e lê o Painel do Advogado (prazos em aberto com a data final, intimações aguardando abertura e audiências). ', h('b', {}, 'Ele nunca abre um expediente, então nunca dá ciência.'),
         ' A senha e a chave vão direto para o cofre do banco de dados (não ficam no navegador, na planilha nem no código) e só são guardadas se o tribunal aceitar o login.'),
-      h('h3', {}, 'Portais ligados (o que o robô está lendo)'), listaSso, lista, listaEproc,
+      h('h3', {}, 'Portais ligados (o que o robô está lendo)'), resumoPortais, h('details', { class: 'pje-det' }, h('summary', {}, 'Ver cada acesso (testar, apagar)'), listaSso, lista, listaEproc),
       h('h3', {}, 'Ligar ou atualizar um portal'),
       h('div', { class: 'pje-form' }, campo('Nome de pesquisa', nome, true), campo('Tribunal', selTrib, true), campo('Consulta', selGrau, true),
         (() => { const c = campo('Login de acesso no tribunal', login, true, 'o CPF usado no PJe'); rotLogin = c.querySelector('small'); return c; })(),
@@ -4357,7 +4382,7 @@
     B.tribunais({ acao: 'pje_status' }, 30000).then(r => {
       if (!r.ok) { lista.replaceChildren(h('p', { class: 'erro' }, r.erro || 'Não deu certo.')); return; }
       if ((r.tribunais || []).length) { const v = selTrib.value; opcoes = EPROC.concat(r.tribunais); selTrib.replaceChildren(...opcoes.map(t => h('option', { value: t.id, selected: t.id === v }, t.nome))); pintarGraus(); }
-      desenhar(r.acessos || []);
+      desenhar(r.acessos || []); estadoPortais.pje = r.acessos || []; desenharResumo();
     }).catch(e => lista.replaceChildren(h('p', { class: 'erro' }, e.message)));
     carregarEproc();
   }
