@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.64.0';
+var VERSAO = '8.64.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -4468,11 +4468,16 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     var livre = function (z) { return !/\[(eprocp|pjep):/.test(z.observacoes || ''); };
     var perto = function (z) { return z.fatal === x.fim || (z.ciencia && x.inicio && Math.abs(diffDias_(z.ciencia, x.inicio)) <= 15); };
     var alvo = doNum.filter(function (z) { return (z.observacoes || '').indexOf(marca) >= 0; })[0];
-    if (alvo && !aberto(alvo)) return; // a equipe já fechou: fica como está
+    // 8.64.1: fechado SOZINHO (robô, baixa em lote/automática) e o portal ainda mostra o prazo correndo → reabre com a data do portal.
+    // Fechado por uma pessoa ("Feito"/cumprido por alguém) continua como está.
+    var sozinho = function (z) { return !aberto(z) && x.fim >= hoje && (/^rob[ôo]|baixa em lote/i.test(z.cumprido_por || '') || /baixa em lote|baixa autom[áa]tica|sem prazo: [^|]*\(rob[ôo]/i.test(z.observacoes || '')) && !/reaberto pelo (eproc|PJe)/.test(z.observacoes || ''); };
+    var reabrir = false;
+    if (alvo && !aberto(alvo)) { if (sozinho(alvo)) reabrir = true; else return; } // a equipe já fechou: fica como está
     if (!alvo) alvo = doNum.filter(function (z) { return aberto(z) && livre(z) && perto(z); })
       .sort(function (p, q) { var sc = function (z) { return Math.abs(Date.parse(z.fatal || hoje) - Date.parse(x.fim)) + (z.ciencia && x.inicio ? Math.abs(Date.parse(z.ciencia) - Date.parse(x.inicio)) : 864e6); }; return sc(p) - sc(q); })[0];
     if (!alvo) {
       var feito = doNum.filter(function (z) { return !aberto(z) && livre(z) && perto(z); })[0];
+      if (feito && sozinho(feito)) { alvo = feito; reabrir = true; feito = null; }
       if (feito) { atualizarLinha_(ctx.prazos, feito, { observacoes: (feito.observacoes || '') + ' | ' + nota + ' — o ' + SIS + ' ainda mostra o prazo aberto; aqui já estava ' + feito.situacao + ' ' + marca }); a.ja_feitos++; return; }
     }
     if (alvo) {
@@ -4483,6 +4488,11 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
         m.origem = 'vinculado ao ' + SIS + ' (painel do advogado)'; m.situacao = 'conferido'; m.conferido_por = ROB; m.conferido_em = agora;
         m.conferido_fonte = 'Painel do Advogado do ' + SIS + ' ' + sigla + (alvo.fatal && alvo.fatal !== x.fim ? ' (o painel tinha ' + dataBR_(alvo.fatal) + ')' : '');
       }
+      if (reabrir) { var base = m.observacoes || alvo.observacoes || '';
+        m.situacao = 'conferido'; m.cumprido_por = ''; m.cumprido_em = ''; m.etapa = ''; m.ok_por = ''; m.ok_em = '';
+        m.origem = 'vinculado ao ' + SIS + ' (painel do advogado)'; m.conferido_por = ROB; m.conferido_em = agora;
+        m.observacoes = base + ' | reaberto pelo ' + SIS + ' em ' + dataBR_(hoje) + ': tinha sido fechado sozinho (' + (alvo.cumprido_por || 'baixa automática') + '), mas o ' + SIS + ' mostra o prazo correndo até ' + dataBR_(x.fim) + (base.indexOf(marca) >= 0 ? '' : ' ' + marca);
+        a.reabertos = (a.reabertos || 0) + 1; }
       if (!alvo.descricao || /PROVIS|a definir|ATO N[ÃA]O IDENTIFICADO/i.test(alvo.descricao)) m.descricao = desc;
       if (x.dias && String(alvo.dias) !== String(x.dias)) { m.dias = String(x.dias); m.contagem = x.corridos ? 'corridos' : 'uteis'; }
       if (Object.keys(m).length) { m.atualizado_em = agora; m.atualizado_por = ROB; atualizarLinha_(ctx.prazos, alvo, m); }
@@ -9679,13 +9689,24 @@ function robosEscritorio_(ctx) {
   var r = {}, erros = [];
   [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['crmdados', function () { return crmDadosCliente_(); }], ['comissoes', function () { return gerarComissoes_(); }], ['explicacoes', explicacoesRobo_], ['atossemdata', cobrarAtosSemData_], ['caixavencida', baixarCaixaVencida_], ['notifinicial858', notificacoesIniciais858_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['cancelados850', atosCancelados_], ['tipos850', tiposDoPush850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'confirmacao', 'outraparte', 'djen', 'atoapagado', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.confirmacao.length + r.outraparte.length + r.djen.length + r.atoapagado.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['situacao862', resumosProcessosIA_], ['indicfim862', indicacaoFimProcesso862_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['situacao862', resumosProcessosIA_], ['indicfim862', indicacaoFimProcesso862_], ['recibos864', recibosFaltando864_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
   if (feitas) registrar_('robô', 'robôs do escritório', JSON.stringify(r));
   if (erros.length) throw new Error(erros.join(' | '));
   return r;
+}
+
+/* 8.64.1 (revisão de 28/11/2026 aprovada pela usuária): parcela paga em novembro/2026 sem o PDF do recibo → gera o recibo (5 por rodada) até não
+   faltar nenhum; depois marca Config FIX_RECIBOS_864 e não roda mais. */
+function recibosFaltando864_() {
+  if (config_('FIX_RECIBOS_864')) return 0;
+  var falta = tabela_('Parcelas').linhas.filter(function (p) { return p.pago_em && p.pago_em.slice(0, 10) >= '2026-11-01' && !p.recibo_url && (dinheiro_(p.valor_pago) || dinheiro_(p.valor)) > 0; });
+  var robo = { usuario: 'robô', nome: 'robô (recibos)', perfil: 'administrador' }, n = 0, erros = 0;
+  falta.slice(0, 5).forEach(function (p) { try { reciboGerar_({ id: p.id }, robo); n++; } catch (e) { erros++; } });
+  if (falta.length <= 5 && !erros) setConfig_('FIX_RECIBOS_864', new Date().toISOString() + ' · ' + n + ' recibo(s) que faltavam gerado(s)', 'Recibos que faltavam (8.64.1, uma vez)');
+  return n;
 }
 
 /* 8.11.2 (pedido da usuária: "fazer isso"): UMA vez, lança sozinho os honorários de ÊXITO do levantamento (contrato com percentual) dos

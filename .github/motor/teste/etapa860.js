@@ -106,3 +106,17 @@ const nP = ctxP.prazos.linhas.length;
 const aP2 = C.aplicarPainelEproc_(ctxP, contaP, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
 assert(ctxP.prazos.linhas.length === nP && aP2.novos === 0 && aP2.audiencias === 0, 'PJe: a 2ª leitura não duplica nada');
 console.log('resumo', JSON.stringify(a), 'novidades', nov.length);
+// 8.64.1: fechado SOZINHO (robô / baixa em lote) e o eproc ainda mostra o prazo correndo → reabre; fechado por pessoa → fica
+add('Processos', [6, 7].map(i => ({ id: 'P864' + i, numero: N(i), tribunal: 'TJSC', sistema: 'eproc', status: 'ativo', area: 'Cível', criado_em: new Date().toISOString() })));
+add('Prazos', [
+  { id: 'Z864r', processo_id: 'P8646', numero: N(6), descricao: 'PROVISÓRIO: 5 dias', dias: '5', contagem: 'uteis', ciencia: dia(-10), fatal: dia(-3), situacao: 'cumprido', cumprido_por: 'robô (petição juntada em 01/01/2026)', origem: 'robô', observacoes: 'aviso', criado_em: new Date().toISOString() },
+  { id: 'Z864p', processo_id: 'P8647', numero: N(7), descricao: 'PROVISÓRIO: 5 dias', dias: '5', contagem: 'uteis', ciencia: dia(-10), fatal: dia(-3), situacao: 'cumprido', cumprido_por: 'Davi', origem: 'robô', observacoes: 'aviso', criado_em: new Date().toISOString() }]);
+const ctxR = C.contextoRobo_();
+const aR = C.aplicarPainelEproc_(ctxR, { chave: 'ssotjsc', sigla: 'TJSC', ok: true, contagens: {}, pendentes: [], pauta: [], audiencias: [], prazos: [
+  { numero: N(6), grau: '1º grau', evento: 'Expedida/certificada a intimação eletrônica - Despacho/Decisão', dias: 30, envio: dia(-12) + ' 10:00', inicio: dia(-9), fim: dia(9), cliente: '' },
+  { numero: N(7), grau: '1º grau', evento: 'Expedida/certificada a intimação eletrônica', dias: 15, envio: dia(-12) + ' 10:00', inicio: dia(-9), fim: dia(9), cliente: '' }] }, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
+const zr = ctxR.prazos.linhas.find(z => z.id === 'Z864r'), zp = ctxR.prazos.linhas.find(z => z.id === 'Z864p');
+assert(zr.situacao === 'conferido' && zr.fatal === dia(9) && !zr.cumprido_por && /reaberto pelo eproc/.test(zr.observacoes) && aR.reabertos === 1, 'fechado pelo robô e o eproc mostra correndo → reabre com a data do eproc');
+assert(zp.situacao === 'cumprido' && zp.cumprido_por === 'Davi', 'feito por uma pessoa → continua cumprido');
+const aR2 = C.aplicarPainelEproc_(ctxR, { chave: 'ssotjsc', sigla: 'TJSC', ok: true, contagens: {}, pendentes: [], pauta: [], audiencias: [], prazos: [{ numero: N(6), grau: '1º grau', evento: 'x', dias: 30, envio: dia(-12) + ' 10:00', inicio: dia(-9), fim: dia(9), cliente: '' }] }, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
+assert(!aR2.reabertos && aR2.iguais === 1, '2ª leitura: igual, não reabre de novo');

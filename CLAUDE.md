@@ -2369,3 +2369,8 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   DJEN/DataJud. TRF3: não aceita conexão de servidores.
 - Edifício Future (28/11): Jhuli 204 → 103 (temporário, reforma; mesmo contrato e caução; cobrança de dez/26 foi junto) e AP 204 "Em reforma";
   Wagner saiu do 107 em 27/11, a Hercílio Luz continua (falta o nome do novo morador para o "Trocar o morador").
+- 8.64.1 (28/11/2026, revisão aprovada pela usuária): etapas de 36 processos acertadas + 7 encerrados (baixa definitiva); uma parcela paga sem
+  dinheiro reaberta; 3 PIX ligados às parcelas baixadas à mão; 33 honorários do GEA com o total = soma das parcelas (anotado); tarefa "💸 Conferir
+  o repasse" dos pagamentos de acordo; `recibosFaltando864_` (robôs do escritório, Config FIX_RECIBOS_864) gera os recibos de parcelas pagas desde
+  01/11 sem PDF. Edifício Future: AP 107 vago. `aplicarPainelEproc_`: prazo fechado SOZINHO (robô, baixa em lote/automática) que o portal ainda
+  mostra correndo é REABERTO com a data do portal ("reaberto pelo eproc/PJe"); fechado por uma pessoa continua fechado (2 casos reais no TJSC).
