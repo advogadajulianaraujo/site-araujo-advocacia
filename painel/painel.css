@@ -4172,3 +4172,8 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 /* 8.62 Edifício Future: ações do locatário */
 .fut-mov-bts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--linha,#ded8ce);padding-top:10px}
 .fut-mov-area{width:100%}
+/* 8.64 Google Ads: sugestões do robô */
+.ads-sug { border: 1px solid #e6d9b8; background: #fffaf0; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.ads-sug h3 { margin: 0 0 8px; font-size: 14px; }
+.ads-sug-l { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid #f0e6cc; }
+.ads-sug-l:first-of-type { border-top: 0; }

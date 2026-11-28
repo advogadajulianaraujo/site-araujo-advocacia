@@ -441,6 +441,23 @@ Deno.serve(async (req: Request) => {
       await gravarEstado(escId, st);
       return resp({ ok: true, ligado: true, contas });
     }
+    // 8.64: o TRT12 bloqueia a lista para servidores da Amazon. Esta ação SÓ abre a sessão (login + 2FA, a senha não sai do cofre) e devolve os
+    // cookies da sessão para o robô do Google pedir a lista de lá. Só para quem tem a chave do banco (o robô).
+    if (b.acao === 'pje_sessao') {
+      const k = String(req.headers.get('x-painel-chave') || ''), escId = String(b.escritorio || ''), ch = String(b.chave || 'pjetrt121g');
+      if (!k || !/^[0-9a-f-]{36}$/.test(escId) || !/^pje[a-z0-9]+$/.test(ch)) return resp({ ok: false, erro: 'Pedido inválido.' }, 400);
+      const h: Record<string, string> = { apikey: k, 'Content-Type': 'application/json' }; if (k.startsWith('eyJ')) h.Authorization = 'Bearer ' + k;
+      const rr = await fetch(URL_BANCO + '/rest/v1/rpc/painel_trib_info', { method: 'POST', headers: h, body: JSON.stringify({ p_escritorio: escId }) });
+      if (!rr.ok) return resp({ ok: false, erro: 'Chave do banco recusada.' }, 403);
+      const cr: Record<string, any> = (await rr.json()) || {}, cred = cr[ch];
+      if (!cred || !cred.login || !PJE[cred.trib]) return resp({ ok: false, erro: 'Acesso não guardado.' });
+      const base = PJE[cred.trib].graus[cred.grau]; let e: any = await entrarPje(base, cred);
+      if (!e.ok && e.etapa === 'codigo') { await new Promise(ok => setTimeout(ok, 30000 - (Date.now() % 30000) + 1500)); e = await entrarPje(base, cred); }
+      if (!e.ok) return resp({ ok: false, erro: e.mensagem, etapa: e.etapa });
+      const u0 = new URL(base), jar = e.nav.jar[u0.host] || {}; let id = '';
+      try { const tok = decodeURIComponent(jar.access_token || ''); id = String(JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).id || ''); } catch { /* sem token */ }
+      return resp({ ok: true, origem: u0.origin, id, cookie: e.nav.cookie(base), xsrf: decodeURIComponent(jar['Xsrf-Token'] || ''), ua: UA_PJE });
+    }
     // 8.61 robô do painel: PJe (login + senha + 2FA) pelo painel do advogado — só lista
     if (b.acao === 'painel_pje') {
       const k = String(req.headers.get('x-painel-chave') || ''), escId = String(b.escritorio || '');

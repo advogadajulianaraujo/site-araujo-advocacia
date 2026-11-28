@@ -15,7 +15,7 @@
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.63.1';
+var VERSAO = '8.64.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -112,6 +112,10 @@ var ESQUEMA = {
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em', 'categoria'], // 8.53: tipo da tarefa (como no ADVBOX)
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
   Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
+  // 8.64 Google Ads: palavras-chave (últimos 30 dias, mandadas pelo script) e as ordens (↑/↓ lance, pausar/ativar) que o script aplica
+  AdsPalavras: ['id', 'campanha', 'grupo', 'grupo_id', 'criterio_id', 'palavra', 'corresp', 'status', 'lance', 'auto_lance', 'cliques', 'impressoes', 'custo', 'conversoes', 'qualidade', 'atualizado_em'],
+  AdsComandos: ['id', 'palavra_id', 'campanha', 'grupo_id', 'criterio_id', 'palavra', 'acao', 'pct', 'lance_novo', 'situacao', 'origem', 'motivo', 'criado_em', 'criado_por',
+    'aprovado_em', 'aprovado_por', 'aplicado_em', 'resultado'],
   SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
   MktFunil: ['mes', 'pagina', 'conversas', 'consultas', 'atualizado_em', 'atualizado_por'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao', 'categoria'],
@@ -578,6 +582,8 @@ var ROTAS = {
   'site.clique': { publica: true, fn: cliqueSite_ },
   'marketing.ads': { publica: true, fn: receberGoogleAds_ },
   'marketing.adsConfig': { permissao: 'usuarios', fn: configGoogleAds_ },
+  'marketing.adsPalavras': { permissao: 'usuarios', fn: adsPalavras_ },
+  'marketing.adsComando': { permissao: 'usuarios', fn: adsComando_ },
   'marketing.funil': { permissao: 'usuarios', fn: marketingFunil_ },
   'marketing.gbp': { permissao: 'usuarios', fn: marketingGbp_ },
   'resumo.email.testar': { fn: testarResumoEmail_ },
@@ -645,7 +651,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'ia.situacao': 1, 'processos.acordoMsg': 1, 'inss.listar': 1, 'inss.obter': 1, 'comissoes.listar': 1, 'horas.listar': 1, 'fin.fatura': 1, 'intimacoes.caixa': 1, 'intimacoes.obter': 1, 'andamentos.importantes': 1, 'audiencias.cliente': 1, 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'marketing.adsPalavras': 1, 'ia.situacao': 1, 'processos.acordoMsg': 1, 'inss.listar': 1, 'inss.obter': 1, 'comissoes.listar': 1, 'horas.listar': 1, 'fin.fatura': 1, 'intimacoes.caixa': 1, 'intimacoes.obter': 1, 'andamentos.importantes': 1, 'audiencias.cliente': 1, 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -3448,6 +3454,7 @@ function rodarRobo_(quem) {
     catch (e2) { erros.push('DJEN pelo servidor: ' + (e2.message || e2) + ' — abra o painel no computador do escritório para ler o DJEN'); }
     try { var ep = eprocDireto_(ctx); novas += ep.intimacoes; prazosNovos += ep.prazos; } catch (eE) { erros.push('eproc direto do tribunal: ' + (eE.message || eE)); }
     var epp = null, pjp = null;
+    try { pjePeloGoogle_(); } catch (eG) { /* só um teste */ }
     try { epp = eprocPainel_(ctx); novas += epp.intimacoes; prazosNovos += epp.prazos + epp.audiencias; } catch (eEP) { erros.push('eproc (Painel do Advogado): ' + (eEP.message || eEP)); }
     try { pjp = pjePainel_(ctx); novas += pjp.intimacoes; prazosNovos += pjp.prazos + pjp.audiencias; } catch (ePJ) { erros.push('PJe (Painel do Advogado): ' + (ePJ.message || ePJ)); }
     try { if ((epp && epp.rodou) || (pjp && pjp.rodou)) resumoPortaisChat_(ctx, epp, pjp); } catch (eRP) { erros.push('Resumo dos portais: ' + (eRP.message || eRP)); }
@@ -10602,6 +10609,8 @@ var MODELOS = {
   prestacao: { assinaCliente: true, nome: 'Contrato de prestação de serviços advocatícios (extrajudicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, config: 'MODELO9_PRESTACAO_ID', antigo: ['MODELO8_PRESTACAO_ID', 'MODELO6_PRESTACAO_ID', 'MODELO5_PRESTACAO_ID', 'MODELO4_PRESTACAO_ID', 'MODELO3_PRESTACAO_ID', 'MODELO2_PRESTACAO_ID'] },
   assessoria: { assinaCliente: true, nome: 'Contrato de assessoria jurídica (mensal)', grupo: 'Contratos, recibos e cobrança', financeiro: true, mensal: true, config: 'MODELO9_ASSESSORIA_ID', antigo: ['MODELO8_ASSESSORIA_ID', 'MODELO6_ASSESSORIA_ID', 'MODELO5_ASSESSORIA_ID', 'MODELO4_ASSESSORIA_ID', 'MODELO3_ASSESSORIA_ID', 'MODELO2_ASSESSORIA_ID'] },
   recibo: { nome: 'Recibo de honorários', grupo: 'Contratos, recibos e cobrança', financeiro: true, recibo: true, config: 'MODELO6_RECIBO_ID', antigo: ['MODELO5_RECIBO_ID', 'MODELO4_RECIBO_ID', 'MODELO3_RECIBO_ID', 'MODELO2_RECIBO_ID'] },
+  // 8.64 (pedido da usuária): petição inicial de EXECUÇÃO do contrato de honorários (exequente = a sociedade; executado = o cliente)
+  execucao: { nome: 'Execução de título extrajudicial — honorários em atraso (petição inicial)', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, execucao: true, config: 'MODELO12_EXECUCAO_ID' },
   cobranca: { nome: 'Notificação de cobrança de honorários em atraso', grupo: 'Contratos, recibos e cobrança', financeiro: true, cobranca: true, config: 'MODELO6_COBRANCA_ID', antigo: ['MODELO5_COBRANCA_ID', 'MODELO4_COBRANCA_ID', 'MODELO3_COBRANCA_ID'] },
   promissoria: { assinaCliente: true, nome: 'Notas promissórias das parcelas', grupo: 'Contratos, recibos e cobrança', financeiro: true, honorarios: true, gerado: true },
   procuracao_inventario: { assinaCliente: true, nome: 'Procuração para inventário e partilha (judicial ou em cartório)', grupo: 'Procuração e declarações', umaFolha: true, config: 'MODELO7_PROC_INVENTARIO_ID' },
@@ -10926,6 +10935,35 @@ var TEXTO_MODELOS = {
     ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
     ['a', '{{nome}}|CONTRATANTE']
   ],
+  execucao: [
+    ['t', '{{exec_juizo}}'],
+    ['p', '**{{escritorio_maiusc}}**, {{escritorio_qualificacao}}, endereço eletrônico {{escritorio_email}}, neste ato representada por {{adv:seu sócio e advogado|sua sócia e advogada}} **{{advogado_nome}}**, {{advogado_oab}}, que subscreve em causa própria (art. 103, parágrafo único, do Código de Processo Civil), vem, respeitosamente, à presença de Vossa Excelência, propor a presente'],
+    ['t', 'AÇÃO DE EXECUÇÃO DE TÍTULO EXTRAJUDICIAL'],
+    ['p', 'em face de **{{nome}}**, {{qualificacao_resto}}, pelos fatos e fundamentos a seguir expostos.'],
+    ['h', 'I – DO TÍTULO EXECUTIVO'],
+    ['p', 'A exequente e {{c:o|a}} executad{{c:o|a}} firmaram contrato de prestação de serviços advocatícios{{exec_data_contrato}}{{referente_processo}}, em que {{c:o|a}} executad{{c:o|a}} se obrigou ao pagamento dos honorários nas condições ali ajustadas (documento anexo).'],
+    ['p', 'O contrato escrito de honorários é título executivo extrajudicial, nos termos do art. 24 da Lei nº 8.906/1994 (Estatuto da Advocacia e da OAB) e do art. 784, XII, do Código de Processo Civil, e a obrigação nele prevista é certa, líquida e exigível (art. 783 do CPC): o valor e os vencimentos estão fixados no próprio instrumento, e as parcelas abaixo venceram sem pagamento.'],
+    ['h', 'II – DO DÉBITO'],
+    ['p', 'Encontram-se vencidas e não pagas as seguintes parcelas: {{exec_parcelas}}'],
+    ['p', '{{exec_antecipadas}}'],
+    ['h', 'III – DOS ENCARGOS E DO DEMONSTRATIVO (ART. 798, I, "b", DO CPC)'],
+    ['p', '{{exec_encargos}}'],
+    ['p', '{{exec_demonstrativo}}'],
+    ['p', 'O débito atualizado até {{exec_data_calculo}} soma **{{exec_total}}** ({{exec_total_extenso}}), sem prejuízo da atualização até o efetivo pagamento.'],
+    ['h', 'IV – DA COMPETÊNCIA'],
+    ['p', 'As partes elegeram no contrato o foro da Comarca de {{foro}} (art. 63 do CPC), que é também o lugar do pagamento.'],
+    ['h', 'V – DOS PEDIDOS'],
+    ['p', 'Diante do exposto, a exequente requer:'],
+    ['p', 'a) a citação d{{c:o|a}} executad{{c:o|a}}, por meio eletrônico ou pelo correio (arts. 246 e 247 do CPC), para que pague o débito de {{exec_total}} no prazo de 3 (três) dias, acrescido de honorários advocatícios de 10% (dez por cento) sobre o valor da execução, reduzidos pela metade em caso de pagamento integral no prazo (art. 827, caput e § 1º, e art. 829 do CPC), e das custas processuais;'],
+    ['p', 'b) não havendo pagamento no prazo, a penhora e a avaliação de tantos bens quantos bastem para a satisfação do crédito (art. 829, § 1º, do CPC), preferencialmente em dinheiro, por meio do sistema SISBAJUD (arts. 835, I, e 854 do CPC), e, sendo infrutífera, a pesquisa de veículos (RENAJUD) e de bens pelos sistemas conveniados ao Juízo;'],
+    ['p', 'c) a expedição de certidão de que a execução foi admitida, para averbação no registro de imóveis, de veículos ou de outros bens sujeitos a penhora (art. 828 do CPC);'],
+    ['p', 'd) a atualização do débito até o efetivo pagamento, com os encargos do contrato, e a condenação d{{c:o|a}} executad{{c:o|a}} nas custas e nos honorários advocatícios.'],
+    ['p', 'Dá-se à causa o valor de {{exec_total}} ({{exec_total_extenso}}), nos termos do art. 292, I, do CPC.'],
+    ['p', 'Documentos anexos: contrato de honorários; demonstrativo do débito; {{exec_doc_notificacao}}atos constitutivos da sociedade de advogados.'],
+    ['p', 'Nestes termos, pede deferimento.'],
+    ['c', '{{cidade_assinatura}}, {{data_extenso}}.'],
+    ['adv']
+  ],
   cobranca: [
     ['t', 'NOTIFICAÇÃO EXTRAJUDICIAL'],
     ['t', 'COBRANÇA DE HONORÁRIOS ADVOCATÍCIOS'],
@@ -10941,6 +10979,56 @@ var TEXTO_MODELOS = {
     ['adv']
   ]
 };
+
+/* ---------- 8.64 Execução do contrato de honorários: parcelas, vencimento antecipado e demonstrativo (cláusula 7ª: multa 2%, juros 1% a.m., INPC) ---------- */
+/** Fatores do INPC (Banco Central, série 188) por mês "aaaa-mm" → variação %. Sem resposta do BC: {} (o demonstrativo avisa). */
+function inpcMeses_(de, ate) {
+  try { var r = calcIndices_({ serie: 'inpc', de: de, ate: ate }); var m = {}; (r.itens || []).forEach(function (x) { m[x.mes] = x.valor; }); return m; } catch (e) { return {}; }
+}
+/** Correção pelo INPC do mês SEGUINTE ao vencimento até o último índice publicado; juros de 1% ao mês pro rata dia; multa de 2% sobre o corrigido.
+ *  `inpc` = { 'aaaa-mm': % }. Devolve { corrigido, correcao, juros, multa, total, dias, ultimo }. Valores arredondados a 2 casas, cada parcela. */
+function encargosParcela_(valor, venc, hoje, inpc) {
+  var r2 = function (v) { return Math.round(v * 100) / 100; };
+  var meses = Object.keys(inpc).sort(), f = 1, ultimo = '';
+  meses.forEach(function (m) { if (m > venc.slice(0, 7) && m <= hoje.slice(0, 7)) { f *= 1 + (+inpc[m] || 0) / 100; ultimo = m; } });
+  var corrigido = r2(valor * f), dias = Math.max(0, diffDias_(hoje, venc));
+  var juros = r2(corrigido * 0.01 * dias / 30), multa = r2(corrigido * 0.02);
+  return { corrigido: corrigido, correcao: r2(corrigido - valor), juros: juros, multa: multa, total: r2(corrigido + juros + multa), dias: dias, ultimo: ultimo };
+}
+function execucaoCalculo_(c, inpcForcado) {
+  var hoje = hojeSP_(), honsOk = {}, honorarios = tabela_('Honorarios').linhas.filter(function (h) { return h.cliente_id === c.id && !/^(retirado|cancelado)/.test(h.situacao || ''); });
+  honorarios.forEach(function (h) { honsOk[h.id] = h; });
+  var abertas = tabela_('Parcelas').linhas.filter(function (q) { return q.cliente_id === c.id && !q.pago_em && q.vencimento && (!q.honorario_id || honsOk[q.honorario_id]) && dinheiro_(q.valor) - dinheiro_(q.valor_pago) > 0; })
+    .sort(function (a, b) { return a.vencimento < b.vencimento ? -1 : 1; });
+  var vencidas = abertas.filter(function (q) { return q.vencimento < hoje; }), vincendas = abertas.filter(function (q) { return q.vencimento >= hoje; });
+  if (!vencidas.length) throw falha_('Este cliente não tem parcelas vencidas no Financeiro: não há o que executar.');
+  // cláusula 7ª: o atraso de mais de 30 dias antecipa o vencimento das demais parcelas
+  var antecipa = diffDias_(hoje, vencidas[0].vencimento) > 30 && vincendas.length > 0;
+  var inpc = inpcForcado || inpcMeses_(vencidas[0].vencimento.slice(0, 7), hoje.slice(0, 7));
+  var semIndice = !Object.keys(inpc).length, total = 0, linhas = [], ultimo = '';
+  var saldo = function (q) { return Math.round((dinheiro_(q.valor) - dinheiro_(q.valor_pago)) * 100) / 100; };
+  vencidas.forEach(function (q) {
+    var e = encargosParcela_(saldo(q), q.vencimento, hoje, inpc); total += e.total; if (e.ultimo > ultimo) ultimo = e.ultimo;
+    linhas.push((q.numero ? q.numero + 'ª parcela' : 'Parcela') + ' (vencida em ' + dataBR_(q.vencimento) + '): principal ' + reaisTxt_(saldo(q)) +
+      (semIndice ? '' : ' + correção ' + reaisTxt_(e.correcao)) + ' + juros de ' + e.dias + ' dias ' + reaisTxt_(e.juros) + ' + multa ' + reaisTxt_(e.multa) + ' = ' + reaisTxt_(e.total));
+  });
+  if (antecipa) vincendas.forEach(function (q) { total += saldo(q); linhas.push((q.numero ? q.numero + 'ª parcela' : 'Parcela') + ' (vencimento antecipado; vencia em ' + dataBR_(q.vencimento) + '): ' + reaisTxt_(saldo(q))); });
+  total = Math.round(total * 100) / 100;
+  var ultTxt = ultimo ? ' (índice publicado até ' + ultimo.slice(5) + '/' + ultimo.slice(0, 4) + ')' : '';
+  var dc = honorarios.filter(function (h) { return vencidas.some(function (q) { return q.honorario_id === h.id; }); }).map(function (h) { return String(h.inicio || h.criado_em || '').slice(0, 10); }).filter(Boolean).sort()[0] || '';
+  var notificado = false;
+  try { notificado = tabela_('Avisos').linhas.some(function (a) { return a.chave === 'acaocob:' + c.id + ':notificacao'; }); } catch (eN) { /* aba nova */ }
+  return {
+    hoje: hoje, total: total, dataContrato: dc, notificado: notificado, vencidas: vencidas.length, antecipadas: antecipa ? vincendas.length : 0,
+    parcelasTxt: vencidas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'vencida em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(saldo(q)); }).join('; ') + '.',
+    antecipadasTxt: antecipa ? 'Como o atraso supera 30 (trinta) dias, a cláusula 7ª do contrato antecipa o vencimento das parcelas seguintes, que também são exigíveis: ' +
+      vincendas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'que venceria em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(saldo(q)); }).join('; ') + '.' : '',
+    encargosTxt: 'Nos termos da cláusula 7ª do contrato, a parcela em atraso tem multa de 2% (dois por cento), juros de mora de 1% (um por cento) ao mês e correção monetária pelo INPC. ' +
+      (semIndice ? 'A correção pelo INPC será apurada até a data do pagamento [COMPLETAR: o Banco Central não respondeu ao gerar; conferir a correção].' : 'A correção foi calculada pelo INPC (IBGE) do mês seguinte a cada vencimento' + ultTxt + '; os juros, pro rata dia, desde o vencimento; e a multa, sobre o valor corrigido.') +
+      (antecipa ? ' As parcelas de vencimento antecipado entram pelo valor nominal.' : ''),
+    demonstrativoTxt: 'Demonstrativo: ' + linhas.join('; ') + '.'
+  };
+}
 
 /* ---------- Advogados (outorgados) ---------- */
 
@@ -11907,6 +11995,8 @@ function gerarDocumentos_(d, u) {
   var rec = d.recibo || {};
   if (quais.indexOf('recibo') >= 0 && !(dinheiro_(rec.valor) > 0)) throw falha_('Informe o valor recebido para o recibo.');
   var atrasadas = [], totalAtraso = 0;
+  var exec = null;
+  if (quais.indexOf('execucao') >= 0) exec = execucaoCalculo_(c);
   if (quais.indexOf('cobranca') >= 0) {
     var hojeC = hojeSP_();
     atrasadas = tabela_('Parcelas').linhas.filter(function (q) { return q.cliente_id === c.id && !q.pago_em && q.vencimento && q.vencimento < hojeC; })
@@ -11953,6 +12043,13 @@ function gerarDocumentos_(d, u) {
     '{{referente_processo}}': numProc ? ' no processo nº ' + numProc : (tipo ? ' (' + tipo.nome.toLowerCase() + ')' : ''),
     '{{parcelas_atrasadas}}': atrasadas.map(function (q) { return (q.numero ? q.numero + 'ª parcela, ' : '') + 'vencida em ' + dataBR_(q.vencimento) + ', no valor de ' + reaisTxt_(q.valor); }).join('; ') + (atrasadas.length ? '.' : ''),
     '{{total_atraso}}': reaisTxt_(totalAtraso), '{{total_atraso_extenso}}': extenso_(totalAtraso),
+    '{{escritorio_maiusc}}': String(esc.nome || '').toUpperCase(),
+    '{{exec_juizo}}': 'AO JUÍZO DE DIREITO DA ___ VARA CÍVEL DA COMARCA DE ' + String(esc.foro || 'Tubarão/SC').toUpperCase(),
+    '{{exec_data_contrato}}': exec && exec.dataContrato ? ' em ' + dataBR_(exec.dataContrato) : '',
+    '{{exec_parcelas}}': exec ? exec.parcelasTxt : '', '{{exec_antecipadas}}': exec && exec.antecipadasTxt ? exec.antecipadasTxt : '§§REMOVER§§',
+    '{{exec_encargos}}': exec ? exec.encargosTxt : '', '{{exec_demonstrativo}}': exec ? exec.demonstrativoTxt : '',
+    '{{exec_data_calculo}}': exec ? dataBR_(exec.hoje) : '', '{{exec_total}}': exec ? reaisTxt_(exec.total) : '', '{{exec_total_extenso}}': exec ? extenso_(exec.total) : '',
+    '{{exec_doc_notificacao}}': exec && exec.notificado ? 'comprovante da notificação de cobrança; ' : '',
     '{{qualificacao}}': qualificacao_(c), '{{qualificacao_sem_endereco}}': qualificacao_(c, true), '{{nome}}': String(c.nome).toUpperCase(),
     '{{prev_concessao}}': textoPrevConcessao_(d.prev || {}),
     '{{detalhes_peticao}}': detalhes || '[COMPLETAR: descreva aqui os fatos e o pedido específico deste caso]',
@@ -13566,6 +13663,32 @@ function chatEnviar_(d, u) {
 /** 8.62: depois de cada leitura dos portais (7h30 e 13h30), um resumo no chat da equipe: cada portal (✓ leu / ⚠ bloqueia / ✕ senha), o que
  *  entrou (intimações, prazos com a data do tribunal, audiências) e o que ainda está sem informação no painel (ato não identificado, audiência
  *  sem data). Também fica em Config PORTAIS_RESUMO (quadro "Portais ligados"). */
+/** 8.64 TESTE (pedido da usuária: "se conseguir outra solução para o TRT12, me avise"): o TRT12 bloqueia a lista para servidores da Amazon
+ *  (Supabase). A função do Supabase abre a sessão (a senha não sai do cofre) e o Google pede SÓ os totalizadores do painel do advogado
+ *  (nada é aberto: só contagens). Resultado em Config PJE_GOOGLE_TESTE. Roda 1×/dia no robô de hora em hora até dar certo. */
+function pjePeloGoogle_(forcar) {
+  var P = PropertiesService.getScriptProperties(), ult = +(P.getProperty('PJE_GOOGLE_TESTE_EM') || 0);
+  var st = {}; try { st = JSON.parse(config_('PJE_GOOGLE_TESTE') || '{}'); } catch (e) { st = {}; }
+  if (!forcar && (st.ok || Date.now() - ult < 20 * 3600000)) return st;
+  P.setProperty('PJE_GOOGLE_TESTE_EM', String(Date.now()));
+  var url = P.getProperty('SUPABASE_URL'), chave = P.getProperty('SUPABASE_CHAVE'), esc = P.getProperty('SUPABASE_ESCRITORIO');
+  var res = { em: new Date().toISOString(), ok: false };
+  try {
+    if (!url || !chave || !esc) throw new Error('Supabase não ligado');
+    var r = UrlFetchApp.fetch(url.replace(/\/$/, '') + '/functions/v1/tribunais', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-painel-chave': chave, 'x-region': 'sa-east-1' }, payload: JSON.stringify({ acao: 'pje_sessao', escritorio: esc, chave: 'pjetrt121g' }) });
+    var s = JSON.parse(r.getContentText() || '{}');
+    if (!s.ok) throw new Error('login: ' + (s.erro || r.getResponseCode()));
+    var t = UrlFetchApp.fetch(s.origem + '/pje-comum-api/api/paineladvogado/' + s.id + '/totalizadores', { muteHttpExceptions: true, followRedirects: false,
+      headers: { cookie: s.cookie, 'X-XSRF-TOKEN': s.xsrf, Accept: 'application/json, text/plain, */*', Referer: s.origem + '/pjekz/', 'User-Agent': s.ua } });
+    var cod = t.getResponseCode(), txt = t.getContentText().slice(0, 400);
+    res.codigo = cod;
+    if (cod === 200 && /^\s*\[/.test(txt)) { res.ok = true; res.mensagem = 'O TRT12 RESPONDEU pelo Google: a lista pode ser lida por este caminho.'; }
+    else res.mensagem = /Request blocked|cloudfront/i.test(txt) ? 'O TRT12 também bloqueia os servidores do Google (Request blocked).' : 'O TRT12 respondeu ' + cod + '.';
+  } catch (e) { res.mensagem = String(e.message || e).slice(0, 200); }
+  setConfig_('PJE_GOOGLE_TESTE', JSON.stringify(res), 'Teste: lista do TRT12 pedida pelos servidores do Google');
+  return res;
+}
 function resumoPortaisChat_(ctx, epp, pjp) {
   var partes = [], tot = { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, hora = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'HH:mm');
   [epp, pjp].forEach(function (r) {
@@ -14789,8 +14912,101 @@ function receberGoogleAds_(d) {
       if (l) { atualizarLinha_(tab, l, dados); alt++; }
       else { dados.id = novoId_('MK'); dados.criado_em = agora; dados.criado_por = 'Google Ads'; inserirLinha_(tab, dados); novos++; }
     });
-    setConfig_('MARKETING_ADS_ULTIMA', agora + ' · ' + linhas.length + ' linha(s)', 'Último envio automático do Google Ads');
-    return { ok: true, novos: novos, atualizados: alt };
+    if (linhas.length) setConfig_('MARKETING_ADS_ULTIMA', agora + ' · ' + linhas.length + ' linha(s)', 'Último envio automático do Google Ads');
+    var pal = Array.isArray(d.palavras) ? adsGuardarPalavras_(d.palavras.slice(0, 3000)) : null;
+    var res = Array.isArray(d.resultados) ? adsGuardarResultados_(d.resultados.slice(0, 500)) : 0;
+    var sug = pal ? adsSugestoes_() : 0;
+    // as ordens APROVADAS no painel voltam para o script aplicar (nada sugerido pelo robô sai sem aprovação de uma pessoa)
+    var ordens = tabela_('AdsComandos').linhas.filter(function (c) { return c.situacao === 'aprovada'; }).slice(0, 200).map(function (c) {
+      return { id: c.id, grupo_id: c.grupo_id, criterio_id: c.criterio_id, acao: c.acao, pct: +c.pct || 0, lance_novo: +c.lance_novo || 0 }; });
+    return { ok: true, novos: novos, atualizados: alt, palavras: pal, resultados: res, sugestoes: sug, comandos: ordens };
+  });
+}
+/* ---------- 8.64 Google Ads: palavras-chave, ordens e o robô que só SUGERE (pedido da usuária) ---------- */
+function adsGuardarPalavras_(lista) {
+  var tab = tabela_('AdsPalavras'), agora = new Date().toISOString(), vistos = {}, n = 0;
+  var porId = {}; tab.linhas.forEach(function (r) { porId[r.id] = r; });
+  lista.forEach(function (x) {
+    var gid = String(x.grupo_id || '').replace(/\D/g, ''), cid = String(x.criterio_id || '').replace(/\D/g, '');
+    if (!gid || !cid) return;
+    var id = gid + '~' + cid; vistos[id] = 1; n++;
+    var dados = { campanha: String(x.campanha || '').slice(0, 120), grupo: String(x.grupo || '').slice(0, 120), grupo_id: gid, criterio_id: cid, palavra: String(x.palavra || '').slice(0, 160),
+      corresp: String(x.corresp || '').slice(0, 20), status: String(x.status || '').slice(0, 20), lance: (Math.max(0, +x.lance || 0)).toFixed(2), auto_lance: x.auto_lance ? 'sim' : '',
+      cliques: String(parseInt(x.cliques, 10) || 0), impressoes: String(parseInt(x.impressoes, 10) || 0), custo: (Math.max(0, +x.custo || 0)).toFixed(2),
+      conversoes: String(Math.round((+x.conversoes || 0) * 10) / 10), qualidade: x.qualidade ? String(parseInt(x.qualidade, 10) || '') : '', atualizado_em: agora };
+    if (porId[id]) atualizarLinha_(tab, porId[id], dados); else { dados.id = id; inserirLinha_(tab, dados); }
+  });
+  tab.linhas.forEach(function (r) { if (!vistos[r.id] && r.status !== 'REMOVIDA') atualizarLinha_(tab, r, { status: 'REMOVIDA', atualizado_em: agora }); });
+  setConfig_('ADS_PALAVRAS_ULTIMA', agora + ' · ' + n + ' palavra(s)', 'Último envio das palavras-chave do Google Ads');
+  return n;
+}
+function adsGuardarResultados_(lista) {
+  var tab = tabela_('AdsComandos'), agora = new Date().toISOString(), n = 0;
+  lista.forEach(function (x) {
+    var c = tab.linhas.filter(function (r) { return r.id === x.id && r.situacao === 'aprovada'; })[0]; if (!c) return;
+    atualizarLinha_(tab, c, { situacao: x.ok ? 'aplicada' : 'erro', aplicado_em: agora, resultado: String(x.msg || (x.ok ? 'aplicado no Google Ads' : 'não aplicado')).slice(0, 300) }); n++;
+  });
+  return n;
+}
+/** O robô só SUGERE (fica "sugerida" até uma pessoa aprovar): pausar palavra que gasta sem converter, subir lance da que converte barato,
+ *  baixar lance da que tem índice de qualidade baixo. Não repete sugestão aberta nem a recusada nos últimos 14 dias. Limites em Config. */
+function adsSugestoes_() {
+  var pal = tabela_('AdsPalavras').linhas.filter(function (p) { return p.status === 'ENABLED'; }), tab = tabela_('AdsComandos'), agora = new Date().toISOString(), hoje = hojeSP_();
+  var limPausar = dinheiro_(config_('ADS_PAUSAR_CUSTO')) || 60, n = 0;
+  var aberto = {}, recusada = {};
+  tab.linhas.forEach(function (c) { if (/sugerida|aprovada/.test(c.situacao)) aberto[c.palavra_id] = 1; if (c.situacao === 'recusada' && diffDias_(hoje, String(c.aprovado_em || c.criado_em).slice(0, 10)) <= 14) recusada[c.palavra_id + '|' + c.acao] = 1; });
+  // custo por conversão de cada campanha (para comparar)
+  var camp = {}; pal.forEach(function (p) { var k = p.campanha; camp[k] = camp[k] || { custo: 0, conv: 0 }; camp[k].custo += +p.custo || 0; camp[k].conv += +p.conversoes || 0; });
+  var brl = function (v) { return reaisTxt_(v); };
+  pal.forEach(function (p) {
+    if (aberto[p.id]) return;
+    var custo = +p.custo || 0, conv = +p.conversoes || 0, cliques = +p.cliques || 0, q = +p.qualidade || 0, cc = camp[p.campanha], cpaCamp = cc && cc.conv ? cc.custo / cc.conv : 0;
+    var s = null;
+    if (custo >= limPausar && conv === 0 && cliques >= 10) s = { acao: 'pausar', pct: 0, motivo: 'Gastou ' + brl(custo) + ' em 30 dias (' + cliques + ' cliques) e não trouxe nenhuma conversão.' };
+    else if (conv >= 2 && cpaCamp > 0 && custo / conv <= cpaCamp * 0.7 && p.auto_lance !== 'sim') s = { acao: 'lance_mais', pct: 10, motivo: conv + ' conversões a ' + brl(custo / conv) + ' cada (a campanha: ' + brl(cpaCamp) + '). Vale aparecer mais.' };
+    else if (q > 0 && q <= 3 && custo >= 20 && p.auto_lance !== 'sim') s = { acao: 'lance_menos', pct: 10, motivo: 'Índice de qualidade ' + q + '/10: o Google cobra mais caro por clique. Melhor baixar o lance (ou melhorar o anúncio e a página).' };
+    if (!s || recusada[p.id + '|' + s.acao]) return;
+    inserirLinha_(tab, { id: novoId_('AC'), palavra_id: p.id, campanha: p.campanha, grupo_id: p.grupo_id, criterio_id: p.criterio_id, palavra: p.palavra, acao: s.acao, pct: String(s.pct),
+      lance_novo: s.acao === 'lance_mais' || s.acao === 'lance_menos' ? (Math.round((+p.lance || 0) * (1 + (s.acao === 'lance_mais' ? 1 : -1) * s.pct / 100) * 100) / 100).toFixed(2) : '',
+      situacao: 'sugerida', origem: 'robô', motivo: s.motivo, criado_em: agora, criado_por: 'robô' });
+    n++;
+  });
+  return n;
+}
+function adsPalavras_(d, u) {
+  var pal = tabela_('AdsPalavras').linhas.filter(function (p) { return p.status !== 'REMOVIDA'; }).map(function (p) {
+    return { id: p.id, campanha: p.campanha, grupo: p.grupo, palavra: p.palavra, corresp: p.corresp, status: p.status, lance: +p.lance || 0, auto_lance: p.auto_lance === 'sim',
+      cliques: +p.cliques || 0, impressoes: +p.impressoes || 0, custo: +p.custo || 0, conversoes: +p.conversoes || 0, qualidade: +p.qualidade || 0 }; })
+    .sort(function (a, b) { return b.custo - a.custo; });
+  var cmds = tabela_('AdsComandos').linhas.slice().sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 120).map(function (c) {
+    return { id: c.id, palavra_id: c.palavra_id, palavra: c.palavra, campanha: c.campanha, acao: c.acao, pct: +c.pct || 0, lance_novo: +c.lance_novo || 0, situacao: c.situacao, origem: c.origem,
+      motivo: c.motivo, criado_em: c.criado_em, criado_por: c.criado_por, aprovado_por: c.aprovado_por || '', aplicado_em: c.aplicado_em || '', resultado: c.resultado || '' }; });
+  return { palavras: pal, comandos: cmds, ultima: config_('ADS_PALAVRAS_ULTIMA') || '', pausar_custo: dinheiro_(config_('ADS_PAUSAR_CUSTO')) || 60 };
+}
+/** Ordem da pessoa: nova (palavra_id + acao lance_mais|lance_menos|pausar|ativar, pct) já APROVADA; ou aprovar/recusar/cancelar uma existente. */
+function adsComando_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('AdsComandos'), agora = new Date().toISOString(), quem = u.nome || u.usuario;
+    if (d.id) {
+      var c = tab.linhas.filter(function (x) { return x.id === d.id; })[0]; if (!c) throw falha_('Ordem não encontrada.');
+      if (d.decisao === 'aprovar' && c.situacao === 'sugerida') atualizarLinha_(tab, c, { situacao: 'aprovada', aprovado_em: agora, aprovado_por: quem });
+      else if (d.decisao === 'recusar' && c.situacao === 'sugerida') atualizarLinha_(tab, c, { situacao: 'recusada', aprovado_em: agora, aprovado_por: quem });
+      else if (d.decisao === 'cancelar' && /sugerida|aprovada/.test(c.situacao)) atualizarLinha_(tab, c, { situacao: 'cancelada', aprovado_em: agora, aprovado_por: quem });
+      else throw falha_('Esta ordem já foi ' + c.situacao + '.');
+      registrar_(u.usuario, 'marketing', 'Google Ads: ' + d.decisao + ' — ' + c.acao + ' "' + c.palavra + '"');
+      return { ok: true };
+    }
+    var acoes = { lance_mais: 1, lance_menos: 1, pausar: 1, ativar: 1 };
+    if (!acoes[d.acao]) throw falha_('Escolha o que fazer.');
+    var p = tabela_('AdsPalavras').linhas.filter(function (x) { return x.id === d.palavra_id; })[0]; if (!p) throw falha_('Palavra-chave não encontrada.');
+    var pct = Math.min(50, Math.max(1, parseInt(d.pct, 10) || 10));
+    if (/lance/.test(d.acao) && p.auto_lance === 'sim') throw falha_('Esta campanha usa lance automático do Google: o lance por palavra não muda. Ajuste a meta da campanha no Google Ads.');
+    tab.linhas.filter(function (x) { return x.palavra_id === p.id && /sugerida|aprovada/.test(x.situacao); }).forEach(function (x) { atualizarLinha_(tab, x, { situacao: 'cancelada', aprovado_em: agora, aprovado_por: quem }); });
+    var novo = /lance/.test(d.acao) ? (Math.round((+p.lance || 0) * (1 + (d.acao === 'lance_mais' ? 1 : -1) * pct / 100) * 100) / 100).toFixed(2) : '';
+    inserirLinha_(tab, { id: novoId_('AC'), palavra_id: p.id, campanha: p.campanha, grupo_id: p.grupo_id, criterio_id: p.criterio_id, palavra: p.palavra, acao: d.acao, pct: /lance/.test(d.acao) ? String(pct) : '',
+      lance_novo: novo, situacao: 'aprovada', origem: 'painel', motivo: '', criado_em: agora, criado_por: quem, aprovado_em: agora, aprovado_por: quem });
+    registrar_(u.usuario, 'marketing', 'Google Ads: ' + d.acao + ' "' + p.palavra + '"');
+    return { ok: true };
   });
 }
 function configGoogleAds_(d, u) {

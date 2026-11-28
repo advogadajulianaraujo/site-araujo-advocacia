@@ -2346,3 +2346,26 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   × portais ligados) e o resumo das 7h30/13h30 no chat diz "Sem leitura direta: TJRS (15), TJAL (4)…" (`faltamPortais_`, Config PORTAIS_RESUMO.faltam).
   Em 28/11: TJSC 676 ✓, TRT12 327 (bloqueia a lista), JF/TRF4 63 ✓, TJRS 15 ✗, TJAL 4, TRT4 4 ✓, TJPR 3, TRT6 3 ✓, TRF3 2, TRT9 2 ✓, TJSP/TJMA/
   TJRJ/TJRR 1 ✗, TRT2/TRT20/TRT23 1 ✓. TRF3/TJMA usam o PJe da CNJ (outra versão, sem a API do painel do advogado da Justiça do Trabalho).
+
+## 8.64.0 Execução de honorários, Google Ads com ordens, TRT12 pelo Google (pedidos da usuária, 28/11/2026: "faça do 1 ao 6")
+
+- Execução do contrato de honorários (modelo `execucao`, MODELO12_EXECUCAO_ID, grupo "Contratos, recibos e cobrança"; botão "⚖ Execução" na aba
+  Ação de cobrança): petição INICIAL, exequente = a sociedade (representada pela sócia em causa própria, art. 103, p. único, CPC), executado = o
+  cliente; título = art. 24 EAOAB + art. 784, XII, CPC; `execucaoCalculo_`: parcelas VENCIDAS com os encargos da CLÁUSULA 7ª do contrato do escritório
+  (multa 2%, juros 1% a.m. pro rata dia, correção INPC do mês seguinte ao vencimento — `inpcMeses_`/BCB série 188; sem resposta do BC o texto pede
+  "[COMPLETAR: … correção]") + vencimento ANTECIPADO das seguintes quando o atraso passa de 30 dias (valor nominal); demonstrativo (art. 798, I, b),
+  citação para pagar em 3 dias, 10% (art. 827), SISBAJUD/RENAJUD, certidão do art. 828, valor da causa (art. 292, I), foro do contrato (art. 63).
+  Sem versão de JEC (decisão da usuária). Teste `.github/motor/teste/execucao.js`.
+- Google Ads: o script (Marketing › Ligar o Google Ads — COLAR DE NOVO) manda também as palavras-chave dos últimos 30 dias (até 700, por custo) e
+  aplica as ORDENS APROVADAS. Abas AdsPalavras/AdsComandos (tabelas ads_palavras/ads_comandos já no banco). Marketing › "🔑 Palavras-chave do Google
+  Ads": ↑10% / ↓10% / ⏸ / ▶ por palavra (`marketing.adsComando` → ordem aprovada) e "Sugestões do robô" (`adsSugestoes_`: pausar quem gastou
+  ≥ Config ADS_PAUSAR_CUSTO (60) em 30 dias com 10+ cliques e 0 conversão; +10% quem converte a ≤ 70% do custo/conversão da campanha; −10% qualidade
+  ≤ 3 com custo ≥ 20) — NADA vai ao Google Ads sem "Aprovar"; recusada não volta em 14 dias; campanha com lance automático não recebe ordem de lance.
+  O script devolve o resultado (aplicada / não aplicada + motivo). Teste `.github/motor/teste/ads.js`.
+- TRT12: a função `tribunais` ganhou `pje_sessao` (só o robô, x-painel-chave): faz o login (senha e 2FA ficam no cofre) e devolve os cookies da sessão;
+  `pjePeloGoogle_` (robô de hora em hora, 1×/dia até dar certo) pede SÓ os totalizadores do painel do advogado pelos servidores do Google e grava em
+  Config PJE_GOOGLE_TESTE se o TRT12 responde ou bloqueia (Request blocked). Se responder, o próximo passo é ler a lista por este caminho.
+  TJMA: usa o login nacional (pje-tjma-1g) — a senha do PJe serve; é a versão PJe da CNJ (sem a API do painel do advogado da JT): 1 processo, fica com
+  DJEN/DataJud. TRF3: não aceita conexão de servidores.
+- Edifício Future (28/11): Jhuli 204 → 103 (temporário, reforma; mesmo contrato e caução; cobrança de dez/26 foi junto) e AP 204 "Em reforma";
+  Wagner saiu do 107 em 27/11, a Hercílio Luz continua (falta o nome do novo morador para o "Trocar o morador").

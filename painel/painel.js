@@ -90,7 +90,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['ia.assistente', 'processos.acordoMsg', 'ia.situacao', 'inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['marketing.adsPalavras', 'ia.assistente', 'processos.acordoMsg', 'ia.situacao', 'inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -2233,7 +2233,7 @@
     { id: 'procuracoes', nome: 'Procurações', ico: '⚖', desc: 'Ad judicia, filhos menores, inventário', tem: m => /^procuracao/.test(m.chave) },
     { id: 'contratos', nome: 'Contratos de honorários', ico: '✍', desc: 'Êxito, extrajudicial, mensal, INSS', tem: m => ['contrato', 'prestacao', 'assessoria', 'contrato_previdenciario'].includes(m.chave) },
     { id: 'declaracoes', nome: 'Declarações e termos', ico: '📝', desc: 'Justiça gratuita, residência, LGPD…', tem: m => ['hipossuficiencia', 'residencia', 'lgpd', 'comparecimento', 'isencao_irpf'].includes(m.chave) },
-    { id: 'financeiro', nome: 'Recibos e cobrança', ico: '💰', desc: 'Recibo, promissórias, cobrança', tem: m => ['recibo', 'cobranca', 'promissoria'].includes(m.chave) },
+    { id: 'financeiro', nome: 'Recibos e cobrança', ico: '💰', desc: 'Recibo, promissórias, cobrança, execução', tem: m => ['recibo', 'cobranca', 'promissoria', 'execucao'].includes(m.chave) },
     { id: 'peticoes', nome: 'Petições', ico: '📄', desc: 'Precisam do nº do processo', tem: m => m.processo || /^Petições \(precisam/.test(m.grupo || '') },
     { id: 'outros', nome: 'Notificações e outros', ico: '✉', desc: 'Notificação e modelos do Drive', tem: () => true }
   ];
@@ -4886,7 +4886,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.63.1';
+  const VERSAO_PAINEL = '8.64.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -7621,6 +7621,7 @@
         h('td', { 'data-r': 'Para a ação' }, falta(g)),
         h('td', { class: 'mini-acoes', onclick: ev => ev.stopPropagation() }, zap(g),
           h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=cobranca', onclick: ev => ev.stopPropagation() }, '📄 Notificação'),
+          h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=execucao', onclick: ev => ev.stopPropagation(), title: 'Petição inicial de execução do contrato de honorários' }, '⚖ Execução'),
           g.honorarios[0] ? h('a', { class: 'btn mini sec', href: '#/honorario/' + g.honorarios[0].id, onclick: ev => ev.stopPropagation() }, 'Honorário') : null,
           h('button', { type: 'button', class: 'btn mini sec', onclick: ev => { ev.stopPropagation(); if (confirm('Tirar ' + g.cliente + ' da ação de cobrança? As parcelas voltam para "Atrasadas".')) marcar(g, 'limpar', 'Voltou para "Atrasadas".'); } }, '↩ Voltar para atrasadas'))
       ], g => { location.hash = '#/cliente/' + g.cliente_id; }) : h('div', { class: 'cb-vazio' }, 'Ninguém em ação de cobrança. Para mandar alguém: em "Atrasadas", clique em ⋯ › "⚖ Ação de cobrança", ou use o botão na lista abaixo.');
@@ -7632,6 +7633,7 @@
             h('div', { class: 'cob-dir' }, rh ? null : h('b', { class: 'cob-total' }, reais(g.total)), h('span', { class: 'tag ' + cls }, rot))),
           h('div', { class: 'g-acoes' }, zap(g),
             h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=cobranca' }, '📄 Notificação de cobrança'),
+            h('a', { class: 'btn mini sec', href: '#/modelos?cliente=' + g.cliente_id + '&docs=execucao', title: 'Petição inicial de execução do contrato de honorários, com as parcelas e o demonstrativo do débito' }, '⚖ Petição de execução'),
             botao('⚖ Mandar para a ação de cobrança', () => marcar(g, 'acao', 'Foi para a ação de cobrança.'), 'mini'),
             g.ignorado ? botao('Voltar para a lista', () => marcar(g, 'voltar', 'Voltou para a lista.'), 'mini sec') : botao('Não cobrar', () => { if (confirm('Tirar ' + g.cliente + ' desta lista de sugestões? (as parcelas continuam em atraso; para tirar o honorário use "Retirar honorário")')) marcar(g, 'ignorar', 'Tirado da lista.'); }, 'mini sec'))); };
       caixa.replaceChildren(
@@ -8843,6 +8845,7 @@
       h('div', { class: 'mkt-grade' }, r.porArea.map(cartaoArea).filter(Boolean).length ? r.porArea.map(cartaoArea).filter(Boolean) : h('p', { class: 'caixa peq' }, 'Ainda não há dados no período.')),
       h('section', { class: 'caixa' }, h('h2', {}, 'Mês a mês'), tabMes),
       caixaGoogleAds(r),
+      caixaPalavrasAds(),
       caixaFunilPaginas(),
       caixaBlogGoogle(),
       h('section', { class: 'caixa' }, h('h2', {}, 'Lançar o investimento do mês (à mão)'),
@@ -8930,31 +8933,99 @@
     return h('section', { class: 'caixa' }, h('h2', {}, '📣 Blog no perfil do Google (automático)'), h('p', { class: 'peq' }, 'Abaixo: Zapier (funciona hoje) ou a ligação direta (depois da aprovação do Google). Use só um dos dois.'), corpo);
   }
 
+  /** 8.64 (pedido da usuária): palavras-chave do Google Ads com ↑/↓ lance e pausar, e as SUGESTÕES do robô (só aplicam depois de aprovadas). */
+  function caixaPalavrasAds() {
+    const corpo = h('div', {}, h('p', { class: 'peq' }, 'Carregando…'));
+    const NOME = { lance_mais: '↑ subir o lance', lance_menos: '↓ baixar o lance', pausar: '⏸ pausar', ativar: '▶ ativar' };
+    const SIT = { sugerida: 'sugestão do robô', aprovada: 'aprovada — o script aplica na próxima rodada', aplicada: '✓ aplicada no Google Ads', erro: '✕ não aplicada', recusada: 'recusada', cancelada: 'cancelada' };
+    const ordem = async (dados, ok) => { try { await api('marketing.adsComando', dados); avisar(ok); carregar(); } catch (e) { avisar(e.message, true); } };
+    async function carregar() {
+      let r; try { r = await api('marketing.adsPalavras', {}); } catch (e) { corpo.replaceChildren(h('p', { class: 'peq' }, 'Atualize o Code.gs do Google para usar este quadro (' + e.message + ').')); return; }
+      if (!r.palavras.length) { corpo.replaceChildren(h('p', { class: 'peq' }, 'Nenhuma palavra-chave chegou ainda. Cole o script NOVO (quadro acima) no Google Ads e rode uma vez.')); return; }
+      const aberta = {}; r.comandos.forEach(c => { if (/sugerida|aprovada/.test(c.situacao)) aberta[c.palavra_id] = c; });
+      const sugest = r.comandos.filter(c => c.situacao === 'sugerida');
+      const reais2 = v => 'R$ ' + (+v || 0).toFixed(2).replace('.', ',');
+      corpo.replaceChildren(
+        sugest.length ? h('div', { class: 'ads-sug' }, h('h3', {}, '🤖 Sugestões do robô (' + sugest.length + ') — nada muda no Google Ads sem o seu "Aprovar"'),
+          ...sugest.map(c => h('div', { class: 'ads-sug-l' }, h('div', {}, h('b', {}, NOME[c.acao] + (c.pct ? ' ' + c.pct + '%' : '') + (c.lance_novo ? ' → ' + reais2(c.lance_novo) : '')), ' · "', c.palavra, '" ', h('span', { class: 'peq' }, '(' + c.campanha + ')'), h('br'), h('span', { class: 'peq' }, c.motivo)),
+            h('div', { class: 'mini-acoes' }, botao('Aprovar', () => ordem({ id: c.id, decisao: 'aprovar' }, 'Aprovada: o script aplica na próxima rodada.'), 'mini'), botao('Recusar', () => ordem({ id: c.id, decisao: 'recusar' }, 'Recusada.'), 'mini sec'))))) : h('p', { class: 'peq' }, '🤖 Nenhuma sugestão do robô agora.'),
+        h('div', { class: 'mini-tab-wrap' }, h('table', { class: 'tabela compacta mini-tab' },
+          h('thead', {}, h('tr', {}, ...['Palavra-chave', 'Campanha', 'Situação', 'Lance', 'Cliques', 'Custo 30 d', 'Conversões', 'Custo/conv.', 'Qualidade', ''].map(t => h('th', {}, t)))),
+          h('tbody', {}, ...r.palavras.slice(0, 200).map(p => {
+            const a = aberta[p.id], cpa = p.conversoes ? p.custo / p.conversoes : 0;
+            return h('tr', {}, h('td', {}, h('b', {}, p.palavra), h('br'), h('span', { class: 'peq' }, (p.corresp || '').toLowerCase())), h('td', { class: 'peq' }, p.campanha),
+              h('td', {}, p.status === 'ENABLED' ? 'ativa' : p.status === 'PAUSED' ? 'pausada' : p.status), h('td', {}, p.auto_lance ? h('span', { class: 'peq', title: 'A campanha usa lance automático do Google' }, 'automático') : reais2(p.lance)),
+              h('td', { class: 'num' }, String(p.cliques)), h('td', { class: 'num' }, reais2(p.custo)), h('td', { class: 'num' }, String(p.conversoes)), h('td', { class: 'num' }, cpa ? reais2(cpa) : '—'),
+              h('td', { class: 'num' }, p.qualidade ? p.qualidade + '/10' : '—'),
+              h('td', {}, a ? h('span', { class: 'peq' }, NOME[a.acao] + ' · ' + SIT[a.situacao]) : h('div', { class: 'mini-acoes' },
+                p.auto_lance ? null : botao('↑ 10%', () => ordem({ palavra_id: p.id, acao: 'lance_mais', pct: 10 }, 'Ordem criada: subir o lance 10%.'), 'mini sec'),
+                p.auto_lance ? null : botao('↓ 10%', () => ordem({ palavra_id: p.id, acao: 'lance_menos', pct: 10 }, 'Ordem criada: baixar o lance 10%.'), 'mini sec'),
+                p.status === 'ENABLED' ? botao('⏸', () => ordem({ palavra_id: p.id, acao: 'pausar' }, 'Ordem criada: pausar.'), 'mini sec') : botao('▶', () => ordem({ palavra_id: p.id, acao: 'ativar' }, 'Ordem criada: ativar.'), 'mini sec'))));
+          })))),
+        h('details', {}, h('summary', {}, 'Ordens e o que já foi aplicado (' + r.comandos.length + ')'),
+          h('ul', { class: 'res-lista' }, ...r.comandos.map(c => h('li', {}, h('b', {}, NOME[c.acao] + (c.pct ? ' ' + c.pct + '%' : '')), ' "', c.palavra, '" — ', SIT[c.situacao] || c.situacao,
+            c.resultado ? ' (' + c.resultado + ')' : '', h('span', { class: 'peq' }, ' · ' + (c.origem === 'robô' ? 'robô' : c.criado_por) + (c.aprovado_por ? ', aprovado por ' + c.aprovado_por : '')),
+            c.situacao === 'aprovada' ? botao('cancelar', () => ordem({ id: c.id, decisao: 'cancelar' }, 'Ordem cancelada.'), 'link') : null)))),
+        h('p', { class: 'peq' }, 'Última leitura: ' + (r.ultima ? new Date(r.ultima.split(' · ')[0]).toLocaleString('pt-BR') + ' (' + r.ultima.split(' · ')[1] + ')' : '—') +
+          '. O robô sugere pausar a palavra que gastou ' + reais2(r.pausar_custo) + ' ou mais em 30 dias sem conversão, subir o lance da que converte mais barato que a média da campanha e baixar o da que tem qualidade 3 ou menos.'));
+    }
+    carregar();
+    return h('section', { class: 'caixa' }, h('h2', {}, '🔑 Palavras-chave do Google Ads'), corpo);
+  }
+
   /** 8.7.0: Google Ads automático — script pronto (com a chave secreta) para colar em Google Ads › Ferramentas › Scripts. */
   function caixaGoogleAds(r) {
     const corpo = h('div', {});
     const montar = async nova => {
       const c = await api('marketing.adsConfig', nova ? { nova: true } : {});
-      const script = `// Araújo Advocacia — manda ao painel o custo do Google Ads (roda todo dia)
+      const script = `// Araújo Advocacia — manda ao painel o custo do Google Ads e as palavras-chave, e aplica as ordens APROVADAS no painel (roda todo dia)
 // Não mexa nestas duas linhas:
 var PAINEL = '${window.PAINEL_API_URL}';
 var CHAVE = '${c.chave}';
+
+function enviar(dados) {
+  dados.chave = CHAVE;
+  var r = UrlFetchApp.fetch(PAINEL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true, payload: JSON.stringify({ acao: 'marketing.ads', dados: dados }) });
+  try { var j = JSON.parse(r.getContentText()); return j.dados || j; } catch (e) { Logger.log('Resposta do painel: ' + r.getContentText().slice(0, 300)); return {}; }
+}
 
 function main() {
   var fuso = AdsApp.currentAccount().getTimeZone();
   var hoje = new Date(), ini = new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1);
   var de = Utilities.formatDate(ini, fuso, 'yyyy-MM-dd'), ate = Utilities.formatDate(hoje, fuso, 'yyyy-MM-dd');
-  var q = 'SELECT campaign.name, segments.month, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions ' +
-          'FROM campaign WHERE segments.date BETWEEN "' + de + '" AND "' + ate + '"';
-  var linhas = [], it = AdsApp.search(q);
-  while (it.hasNext()) {
-    var r = it.next();
-    linhas.push({ mes: String(r.segments.month).slice(0, 7), campanha: r.campaign.name, custo: Number(r.metrics.costMicros || 0) / 1000000,
-      cliques: Number(r.metrics.clicks || 0), impressoes: Number(r.metrics.impressions || 0), conversoes: Number(r.metrics.conversions || 0) });
-  }
-  var resp = UrlFetchApp.fetch(PAINEL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true,
-    payload: JSON.stringify({ acao: 'marketing.ads', dados: { chave: CHAVE, linhas: linhas } }) });
-  Logger.log(linhas.length + ' linha(s) enviada(s). Resposta do painel: ' + resp.getContentText().slice(0, 200));
+  // 1) custo por campanha e mês (12 meses)
+  var linhas = [], it = AdsApp.search('SELECT campaign.name, segments.month, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions ' +
+    'FROM campaign WHERE segments.date BETWEEN "' + de + '" AND "' + ate + '"');
+  while (it.hasNext()) { var r = it.next();
+    linhas.push({ mes: String(r.segments.month).slice(0, 7), campanha: r.campaign.name, custo: Number(r.metrics.costMicros || 0) / 1e6,
+      cliques: Number(r.metrics.clicks || 0), impressoes: Number(r.metrics.impressions || 0), conversoes: Number(r.metrics.conversions || 0) }); }
+  // 2) palavras-chave dos últimos 30 dias (as 700 de maior custo)
+  var palavras = [], kw = AdsApp.search('SELECT campaign.name, campaign.bidding_strategy_type, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ' +
+    'ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.effective_cpc_bid_micros, ' +
+    'ad_group_criterion.quality_info.quality_score, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions ' +
+    'FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND ad_group_criterion.status != "REMOVED" ORDER BY metrics.cost_micros DESC LIMIT 700');
+  while (kw.hasNext()) { var k = kw.next(), c = k.adGroupCriterion;
+    palavras.push({ campanha: k.campaign.name, grupo: k.adGroup.name, grupo_id: String(k.adGroup.id), criterio_id: String(c.criterionId), palavra: c.keyword.text,
+      corresp: c.keyword.matchType, status: c.status, lance: Number(c.effectiveCpcBidMicros || 0) / 1e6, qualidade: c.qualityInfo ? c.qualityInfo.qualityScore : '',
+      auto_lance: !/MANUAL_CPC|ENHANCED_CPC/.test(String(k.campaign.biddingStrategyType)),
+      cliques: Number(k.metrics.clicks || 0), impressoes: Number(k.metrics.impressions || 0), custo: Number(k.metrics.costMicros || 0) / 1e6, conversoes: Number(k.metrics.conversions || 0) }); }
+  var resp = enviar({ linhas: linhas, palavras: palavras });
+  Logger.log(linhas.length + ' linha(s) e ' + palavras.length + ' palavra(s) enviadas; ' + (resp.sugestoes || 0) + ' sugestão(ões) nova(s) do robô no painel.');
+  // 3) aplica SÓ as ordens aprovadas por uma pessoa no painel
+  var resultados = [];
+  (resp.comandos || []).forEach(function (o) {
+    try {
+      var sel = AdsApp.keywords().withIds([[Number(o.grupo_id), Number(o.criterio_id)]]).get();
+      if (!sel.hasNext()) { resultados.push({ id: o.id, ok: false, msg: 'palavra-chave não encontrada no Google Ads' }); return; }
+      var p = sel.next();
+      if (o.acao === 'pausar') p.pause();
+      else if (o.acao === 'ativar') p.enable();
+      else { var atual = p.bidding().getCpc() || 0, novo = o.lance_novo || Math.round(atual * (1 + (o.acao === 'lance_mais' ? 1 : -1) * o.pct / 100) * 100) / 100;
+        p.bidding().setCpc(novo); }
+      resultados.push({ id: o.id, ok: true, msg: o.acao === 'pausar' ? 'pausada' : o.acao === 'ativar' ? 'ativada' : 'lance agora R$ ' + (p.bidding().getCpc() || 0).toFixed(2) });
+    } catch (e) { resultados.push({ id: o.id, ok: false, msg: String(e.message || e).slice(0, 200) }); }
+  });
+  if (resultados.length) { enviar({ resultados: resultados }); Logger.log(resultados.length + ' ordem(ns) aplicada(s).'); }
 }`;
       const ta = h('textarea', { class: 'ads-script', readonly: true, rows: 12, 'aria-label': 'Script do Google Ads' }, script);
       corpo.replaceChildren(
@@ -8962,7 +9033,7 @@ function main() {
           h('li', {}, 'Entre no Google Ads › ', h('b', {}, 'Ferramentas'), ' (ícone de chave) › ', h('b', {}, 'Ações em massa'), ' › ', h('b', {}, 'Scripts'), ' › botão ', h('b', {}, '+'), '.'),
           h('li', {}, 'Apague o que vier escrito, cole o texto abaixo e dê o nome "Painel Araújo".'),
           h('li', {}, 'Clique em ', h('b', {}, 'Autorizar'), ' (o Google pede permissão para ler as campanhas e enviar ao painel) e depois em ', h('b', {}, 'Visualizar'), ' para testar.'),
-          h('li', {}, 'Volte à lista de scripts e, em ', h('b', {}, 'Frequência'), ', escolha ', h('b', {}, 'Diariamente'), '. Pronto: o investimento entra sozinho aqui.'),
+          h('li', {}, 'Volte à lista de scripts e, em ', h('b', {}, 'Frequência'), ', escolha ', h('b', {}, 'Diariamente'), ' (ou "De hora em hora", para as ordens saírem mais rápido). Pronto: o investimento e as palavras-chave entram sozinhos aqui, e as ordens que vocês aprovarem são aplicadas no Google Ads.'),
           h('li', {}, 'Dica: coloque a ÁREA no nome de cada campanha (ex.: "Trabalhista — Tubarão", "Família", "Previdenciário"), para o painel separar o retorno por área.')),
         ta,
         h('div', { class: 'acoes' }, botao('Copiar o script', async () => { try { await navigator.clipboard.writeText(script); avisar('Script copiado.'); } catch (e) { ta.select(); document.execCommand('copy'); avisar('Script copiado.'); } }),

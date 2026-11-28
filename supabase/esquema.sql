@@ -1889,3 +1889,93 @@ alter table clientes add column if not exists "falecido" text;
 alter table clientes add column if not exists "obito_em" text;
 alter table audiencias add column if not exists "forum" text;
 alter table audiencias add column if not exists "sala" text;
+
+-- 8.64 Google Ads
+create table if not exists ads_palavras (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "campanha" text,
+  "grupo" text,
+  "grupo_id" text,
+  "criterio_id" text,
+  "palavra" text,
+  "corresp" text,
+  "status" text,
+  "lance" text,
+  "auto_lance" text,
+  "cliques" text,
+  "impressoes" text,
+  "custo" text,
+  "conversoes" text,
+  "qualidade" text,
+  "atualizado_em" text,
+  primary key (escritorio_id, "id")
+);
+alter table ads_palavras add column if not exists "id" text;
+alter table ads_palavras add column if not exists "campanha" text;
+alter table ads_palavras add column if not exists "grupo" text;
+alter table ads_palavras add column if not exists "grupo_id" text;
+alter table ads_palavras add column if not exists "criterio_id" text;
+alter table ads_palavras add column if not exists "palavra" text;
+alter table ads_palavras add column if not exists "corresp" text;
+alter table ads_palavras add column if not exists "status" text;
+alter table ads_palavras add column if not exists "lance" text;
+alter table ads_palavras add column if not exists "auto_lance" text;
+alter table ads_palavras add column if not exists "cliques" text;
+alter table ads_palavras add column if not exists "impressoes" text;
+alter table ads_palavras add column if not exists "custo" text;
+alter table ads_palavras add column if not exists "conversoes" text;
+alter table ads_palavras add column if not exists "qualidade" text;
+alter table ads_palavras add column if not exists "atualizado_em" text;
+alter table ads_palavras enable row level security;
+drop policy if exists "ads_palavras: só o próprio escritório" on ads_palavras;
+create policy "ads_palavras: só o próprio escritório" on ads_palavras for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+-- 8.64 Google Ads
+create table if not exists ads_comandos (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "palavra_id" text,
+  "campanha" text,
+  "grupo_id" text,
+  "criterio_id" text,
+  "palavra" text,
+  "acao" text,
+  "pct" text,
+  "lance_novo" text,
+  "situacao" text,
+  "origem" text,
+  "motivo" text,
+  "criado_em" text,
+  "criado_por" text,
+  "aprovado_em" text,
+  "aprovado_por" text,
+  "aplicado_em" text,
+  "resultado" text,
+  primary key (escritorio_id, "id")
+);
+alter table ads_comandos add column if not exists "id" text;
+alter table ads_comandos add column if not exists "palavra_id" text;
+alter table ads_comandos add column if not exists "campanha" text;
+alter table ads_comandos add column if not exists "grupo_id" text;
+alter table ads_comandos add column if not exists "criterio_id" text;
+alter table ads_comandos add column if not exists "palavra" text;
+alter table ads_comandos add column if not exists "acao" text;
+alter table ads_comandos add column if not exists "pct" text;
+alter table ads_comandos add column if not exists "lance_novo" text;
+alter table ads_comandos add column if not exists "situacao" text;
+alter table ads_comandos add column if not exists "origem" text;
+alter table ads_comandos add column if not exists "motivo" text;
+alter table ads_comandos add column if not exists "criado_em" text;
+alter table ads_comandos add column if not exists "criado_por" text;
+alter table ads_comandos add column if not exists "aprovado_em" text;
+alter table ads_comandos add column if not exists "aprovado_por" text;
+alter table ads_comandos add column if not exists "aplicado_em" text;
+alter table ads_comandos add column if not exists "resultado" text;
+alter table ads_comandos enable row level security;
+drop policy if exists "ads_comandos: só o próprio escritório" on ads_comandos;
+create policy "ads_comandos: só o próprio escritório" on ads_comandos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);

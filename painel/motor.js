@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.63.1 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.64.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.63.1';
+var MOTOR_VERSAO = '8.64.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.63.1';
+var VERSAO = '8.64.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -173,6 +173,10 @@ var ESQUEMA = {
     'prioridade', 'checklist', 'repetir', 'ok_por', 'ok_em', 'categoria'], // 8.53: tipo da tarefa (como no ADVBOX)
   Contatos: ['id', 'criado_em', 'nome', 'telefone', 'assunto', 'horario', 'pagina', 'situacao', 'tarefa_id', 'observacoes', 'origem', 'campanha'],
   Marketing: ['id', 'mes', 'canal', 'campanha', 'area', 'investimento', 'cliques', 'impressoes', 'conversoes', 'obs', 'criado_em', 'criado_por'],
+  // 8.64 Google Ads: palavras-chave (últimos 30 dias, mandadas pelo script) e as ordens (↑/↓ lance, pausar/ativar) que o script aplica
+  AdsPalavras: ['id', 'campanha', 'grupo', 'grupo_id', 'criterio_id', 'palavra', 'corresp', 'status', 'lance', 'auto_lance', 'cliques', 'impressoes', 'custo', 'conversoes', 'qualidade', 'atualizado_em'],
+  AdsComandos: ['id', 'palavra_id', 'campanha', 'grupo_id', 'criterio_id', 'palavra', 'acao', 'pct', 'lance_novo', 'situacao', 'origem', 'motivo', 'criado_em', 'criado_por',
+    'aprovado_em', 'aprovado_por', 'aplicado_em', 'resultado'],
   SiteCliques: ['quando', 'pagina', 'area', 'origem', 'campanha', 'canal'],
   MktFunil: ['mes', 'pagina', 'conversas', 'consultas', 'atualizado_em', 'atualizado_por'],
   Pix: ['id', 'recebido_em', 'valor', 'pagador', 'situacao', 'cliente_id', 'parcela_id', 'motivo', 'criado_em', 'atualizado_em', 'atualizado_por', 'recibo', 'sugestao', 'categoria'],
