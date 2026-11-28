@@ -4158,3 +4158,17 @@ body[data-tela="ia"] .ia-puxar,body.ia-gaveta-on .ia-puxar,body.modo-future .ia-
 .res-aud{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
 .res-aud.ok{background:#e3f3e8;color:#1d6b35}.res-aud.nao{background:#fbe5e3;color:#a3261d}.res-aud.redes{background:#eeeae2;color:#5e574c}
 .res-aud.falta{background:#fff1d6;color:#8a5a00;text-decoration:none}
+/* 8.62 relatórios: números de cada pessoa */
+.mini-tab-wrap{overflow-x:auto;max-width:100%}
+.eq-numeros td small{white-space:nowrap}
+/* 8.62 A IA explica no processo */
+.ia-explica-proc{border-left:4px solid var(--dourado,#B58D52)}
+.ia-explica-proc .ia-md p{margin:.25em 0}
+/* 8.62 calculadora: adicionais e reflexos */
+.calc-adic{border:1px solid var(--linha,#ded8ce);border-radius:10px;padding:10px 12px}
+.calc-adic>summary{cursor:pointer;font-weight:600}
+.calc-adic .form-grade{margin-top:10px}
+.calc-tab tr.calc-reflexo th{font-weight:400;padding-left:18px}
+/* 8.62 Edifício Future: ações do locatário */
+.fut-mov-bts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--linha,#ded8ce);padding-top:10px}
+.fut-mov-area{width:100%}

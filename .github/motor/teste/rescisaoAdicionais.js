@@ -1,0 +1,25 @@
+// 8.62: adicionais (insalubridade, periculosidade, noturno, horas extras) com reflexos — motor único assets/rescisao-motor.js
+require('../../../assets/rescisao-motor.js');
+const R = globalThis.RESCISAO, d = s => new Date(s + 'T00:00:00Z');
+let falhas = 0; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ FALHOU: ') + m); if (!c) falhas++; };
+const base = { salario: 2860, admissao: d('2025-06-01'), ruptura: d('2026-08-27'), motivo: 'indireta', feriasPagas: [false], decimoAnterior: 'pago', fgtsDep: 'sim', multaFgts: true };
+const r0 = R.calcular(base);
+ok(r0.subtotal === 12949.44 && r0.subAdic === 0, 'sem adicionais: o exemplo da usuária continua R$ 12.949,44');
+const r1 = R.calcular(Object.assign({}, base, { adicionais: { insal: { grau: 20, base: 'sm', pago: false } } }));
+const ins = r1.adicionais.find(x => /insalubridade/.test(x.rot));
+ok(ins && Math.abs(ins.valor - 324.2 * r1.adicionais.length / r1.adicionais.length * ((d('2026-08-27') - d('2025-06-01')) / 86400000 / (365.25 / 12))) < 0.05, 'insalubridade 20% do salário mínimo × meses do contrato');
+ok(!r1.adicionais.some(x => /DSR/.test(x.rot)), 'insalubridade não tem reflexo em DSR (é mensal)');
+ok(r1.adicionais.some(x => /13º/.test(x.rot)) && r1.adicionais.some(x => /férias/.test(x.rot)) && r1.adicionais.some(x => /aviso/.test(x.rot)) && r1.adicionais.some(x => /FGTS \(8%\)/.test(x.rot)) && r1.adicionais.some(x => /multa de 40%/.test(x.rot)), 'reflexos em 13º, férias, aviso, FGTS e multa');
+ok(Math.abs(r1.total - (r1.subtotal + r1.subAnt + r1.subFgts + r1.subMultas + r1.subAdic)) < 0.02, 'o total soma os adicionais');
+const r2 = R.calcular(Object.assign({}, base, { adicionais: { insal: { grau: 40, pago: false }, peric: { ativo: true, pago: false } } }));
+ok(r2.adicionais.filter(x => /^Adicional de (insalubridade|periculosidade)/.test(x.rot)).length === 1 && r2.adicionais.some(x => /periculosidade/.test(x.rot)) && r2.notas.some(n => /não se acumulam/.test(n)), 'insalubridade + periculosidade: fica só a mais vantajosa (periculosidade de 30% de R$ 2.860 > 40% do mínimo)');
+const r3 = R.calcular(Object.assign({}, base, { adicionais: { he: [{ horas: 10, pct: 50, pago: false }] } }));
+const he = r3.adicionais.find(x => /Horas extras/.test(x.rot)), dsr = r3.adicionais.find(x => /DSR/.test(x.rot));
+ok(he && dsr && Math.abs(dsr.valor - he.valor / 6) < 0.02, 'horas extras: reflexo no DSR (1/6)');
+const r4 = R.calcular(Object.assign({}, base, { adicionais: { peric: { ativo: true, pago: true } } }));
+ok(r4.rem === 2860 * 1.3 && r4.subAdic === 0 && r4.subtotal > r0.subtotal, 'periculosidade PAGA: integra a remuneração das verbas rescisórias (não vira pedido)');
+const r5 = R.calcular(Object.assign({}, base, { multaFgts: false, adicionais: { insal: { grau: 20, pago: false } } }));
+ok(!r5.adicionais.some(x => /multa de/.test(x.rot)), 'sem a multa do FGTS marcada, não entra o reflexo na multa');
+const noturno = R.adicionaisMensais(2200, { noturno: { horas: 52.5 } }).itens[0];
+ok(Math.abs(noturno.mensal - 2200 / 220 * 0.2 * 60) < 0.01, 'adicional noturno com a hora reduzida (52,5 h de relógio = 60 h)');
+console.log(falhas ? falhas + ' falha(s)' : 'fim adicionais');

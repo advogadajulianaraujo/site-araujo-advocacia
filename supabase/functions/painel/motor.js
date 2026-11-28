@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.62.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.62.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.63.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.63.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.62.0';
+var VERSAO = '8.63.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -107,6 +107,7 @@ var ESQUEMA = {
     'resultado_em', 'motivo', 'valor_beneficio', 'dib', 'recurso_prazo', 'processo_id', 'honorario_id', 'assinatura_id', 'historico', 'observacoes', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por'],
   Comissoes: ['id', 'cliente_id', 'cliente_nome', 'indicador', 'parcela_id', 'honorario_id', 'base', 'pct', 'valor', 'situacao', 'gerada_em', 'paga_em', 'paga_por', 'despesa_id', 'observacoes'],
   Explicacoes: ['id', 'chave', 'cliente_id', 'processo_id', 'numero', 'andamento', 'dia', 'texto', 'situacao', 'criado_em', 'criado_por', 'enviado_em', 'enviado_por', 'canal'],
+  ResumosIA: ['id', 'processo_id', 'numero', 'cliente_id', 'texto', 'base', 'criado_em', 'por'], // 8.62: "A IA explica" de cada processo (id = processo)
   Horas: ['id', 'usuario', 'inicio', 'fim', 'minutos', 'dia', 'cliente_id', 'processo_id', 'numero', 'descricao', 'faturavel', 'valor_hora', 'faturado_em', 'fatura_id', 'criado_em'],
   Usuarios: ['id', 'usuario', 'nome', 'perfil', 'hash', 'salt', 'ativo', 'tentativas', 'bloqueado_ate', 'criado_em', 'ultimo_acesso', 'sessao_versao', 'email', 'resumo_email', 'avisos'],
   ObsArquivo: ['id', 'cliente_id', 'texto', 'arquivado_em'],
@@ -117,7 +118,7 @@ var ESQUEMA = {
     'indicado_por', 'indicacao_pct', 'indicacao_base', 'indicacao_em', 'ctps', 'pis', 'cnh', 'nome_pai', 'nome_mae', 'naturalidade', 'banco', 'agencia', 'conta', 'pix', 'falecido', 'obito_em'], // 8.53: bairro em coluna própria (PJe pede)
   Processos: ['id', 'cliente_id', 'cliente_nome', 'numero', 'tribunal', 'sistema', 'orgao', 'area', 'polo',
     'parte_contraria', 'proximo_ato', 'proximo_ato_data', 'status', 'observacoes', 'origem', 'criado_em',
-    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em', 'docs_ok', 'docs_ok_em', 'docs_ok_por'],
+    'atualizado_em', 'atualizado_por', 'ultimo_movimento', 'ultimo_movimento_em', 'classe', 'andamentos', 'datajud_em', 'fase', 'fase_auto', 'responsavel', 'avisado_mov_em', 'fluxo_fase', 'inicial_feita_em', 'inicial_feita_por', 'inicial_enviada_em', 'docs_ok', 'docs_ok_em', 'docs_ok_por', 'acordo_tent', 'acordo_tent_em', 'acordo_tent_por'],
   Intimacoes: ['id', 'chave', 'fonte', 'recebido_em', 'numero', 'tribunal', 'movimento', 'evento', 'texto',
     'partes_cliente', 'processo_id', 'prazo_id', 'criado_em', 'resumo_ia', 'terminada_por', 'terminada_em', 'ok_por', 'ok_em',
     'ia_dados', 'ia_tentativas', 'ia_erro', 'ia_proxima', 'gmail_id', 'gmail_lido_em', 'gmail_apagado_em', 'tratada_em', 'tratada_por', 'tratamento'], // 8.55: caixa de entrada (tratar/descartar) // 8.48: aviso aberto/apagado no Gmail; 8.42: fila persistente da IA (dados estruturados, tentativas, erro, próxima tentativa)
@@ -499,6 +500,8 @@ var ROTAS = {
   'trabalho.devolver': { permissao: 'usuarios', fn: devolverTrabalho_ },
   'ia.resumirIntimacao': { fn: resumirIntimacaoIA_ },
   'ia.resumirProcesso': { fn: resumirProcessoIA_ },
+  'ia.situacao': { fn: function (d) { return situacaoGuardada_(d.id); } },
+  'ia.situacaoRefazer': { fn: function (d, u) { return situacaoProcessoIA_(d.id, true, u); } },
   'processos.linhaTempo': { fn: linhaDoTempo_ },
   'robo.consertar': { permissao: 'usuarios', fn: consertarRobo_ },
   'clientes.abrirAcao': { fn: abrirAcaoCliente_ },
@@ -568,12 +571,15 @@ var ROTAS = {
   'processos.inicialEnviada': { fn: inicialEnviada_ },
   'processos.inicialEtapa': { fn: inicialEtapa_ },     // 8.58.6: arrastar a petição entre Documentos / Fazer a inicial / Avisar o cliente / Protocolar
   'processos.docs': { fn: processoDocs_ },
+  'processos.acordoTentativa': { fn: acordoTentativa_ },
+  'processos.acordoMsg': { fn: acordoMsg_ },
   'fin.alevantar': { permissao: 'financeiro', fn: aLevantar_ },
   'future.resumo': { future: true, fn: futureResumo_ },
   'future.unidade': { future: true, fn: futureUnidade_ },
   'future.unidade.salvar': { future: true, fn: futureSalvarUnidade_ },
   'future.pessoas': { future: true, fn: futurePessoas_ },
   'future.pessoa.salvar': { future: true, fn: futureSalvarPessoa_ },
+  'future.pessoa.mover': { future: true, fn: futureMoverPessoa_ },
   'future.cobrancas': { future: true, fn: futureCobrancas_ },
   'future.cobranca.pagar': { future: true, fn: futurePagarCobranca_ },
   'future.cobranca.pagarGrupo': { future: true, fn: futurePagarGrupo_ },
@@ -686,7 +692,7 @@ var ROTAS = {
 };
 
 var MEMO_LEITURA = null;
-var LEITURAS_RAPIDAS = { 'inss.listar': 1, 'inss.obter': 1, 'comissoes.listar': 1, 'horas.listar': 1, 'fin.fatura': 1, 'intimacoes.caixa': 1, 'intimacoes.obter': 1, 'andamentos.importantes': 1, 'audiencias.cliente': 1, 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
+var LEITURAS_RAPIDAS = { 'ia.situacao': 1, 'processos.acordoMsg': 1, 'inss.listar': 1, 'inss.obter': 1, 'comissoes.listar': 1, 'horas.listar': 1, 'fin.fatura': 1, 'intimacoes.caixa': 1, 'intimacoes.obter': 1, 'andamentos.importantes': 1, 'audiencias.cliente': 1, 'chat.listar': 1, 'prazos.memoria': 1, 'indicadores.mes': 1, 'fluxos.processo': 1, 'clientes.portal': 1, 'future.conferir': 1, 'fin.conferencia': 1, 'fin.acaoCobranca': 1, 'audiencias.listar': 1, 'inicio.acoes': 1, 'processos.linhaTempo': 1, 'organizar.listar': 1, 'resumo': 1, 'fin.alevantar': 1, 'inicio.extras': 1, 'equipe.listar': 1, 'eu.painel': 1, 'trabalho.aguardando': 1, 'fin.pix': 1, 'relatorio.semana': 1, 'clientes.listar': 1, 'clientes.obter': 1, 'processos.listar': 1, 'prazos.listar': 1, 'intimacoes.listar': 1,
   'feriados.listar': 1, 'ia.transcricoes': 1, 'ia.transcricao': 1, 'fin.recibos': 1, 'usuarios.listar': 1, 'relatorio.cumpridos': 1, 'agenda.listar': 1, 'fin.honorarios': 1, 'fin.honorario': 1, 'clientes.documentos': 1, 'fin.areceber': 1, 'tarefas.listar': 1, 'relatorio.geral': 1 };
 
 function rotear_(acao, token, dados) {
@@ -2116,6 +2122,37 @@ function processoDocs_(d, u) {
   });
 }
 
+/* 8.62 (pedido da usuária: "depois de protocolar, um quadro para avisar a parte contrária para uma possível tentativa de acordo, com
+   mensagem fixa mudando o número do processo"): Processos.acordo_tent = pendente | feito | sem_contato. Nasce "pendente" no protocolo
+   (fora previdenciário, criminal e família). O texto fica em Config ACORDO_MSG (editável em Configurações). */
+var ACORDO_MSG_PADRAO_ = 'Prezados, aqui é do escritório Araújo Advocacia, que representa [CLIENTE] no processo nº [NÚMERO], ajuizado contra [EMPRESA] na [VARA]. ' +
+  'Antes da audiência, estamos abertos a conversar sobre um acordo. Caso tenham interesse, respondam por aqui.';
+function acordoCabe_(p) { return !/previd|criminal|famil/.test(normalizar_((p && p.area) || '')) && !/aposentad|benef[ií]cio|\binss\b/i.test(String((p && p.tipo_acao) || '')); }
+function marcarTentativaAcordo_(p) {
+  if (!p || !p.numero || p.acordo_tent || !acordoCabe_(p)) return false;
+  atualizarLinha_(tabela_('Processos'), p, { acordo_tent: 'pendente', acordo_tent_em: new Date().toISOString(), acordo_tent_por: 'robô' });
+  return true;
+}
+function acordoTentativa_(d, u) {
+  return comTrava_(function () {
+    var tab = tabela_('Processos'), p = tab.linhas.filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw falha_('Processo não encontrado.');
+    var sit = { feito: 'feito', sem_contato: 'sem_contato', desfazer: 'pendente', tirar: 'nao' }[d.situacao];
+    if (!sit) throw falha_('Escolha: feito, sem contato ou desfazer.');
+    atualizarLinha_(tab, p, { acordo_tent: sit, acordo_tent_em: new Date().toISOString(), acordo_tent_por: u.nome || u.usuario });
+    registrar_(u.usuario, 'tentativa de acordo', ({ feito: 'mensagem mandada à outra parte', sem_contato: 'sem contato da outra parte', pendente: 'voltou para a tentativa de acordo', nao: 'tirada da tentativa de acordo' })[sit] + ' · ' + (p.numero || p.id));
+    return { ok: true, acordo_tent: sit };
+  });
+}
+function acordoMsg_(d, u) {
+  if (d.texto !== undefined) {
+    if (!(PERFIS[u.perfil] || {}).usuarios) throw falha_('Só a administração muda a mensagem.');
+    var t = String(d.texto || '').trim().slice(0, 1500);
+    setConfig_('ACORDO_MSG', t, 'Mensagem da tentativa de acordo (Processos › Petição inicial). Marcas: [CLIENTE] [NÚMERO] [EMPRESA] [VARA]');
+    return { ok: true, texto: t || ACORDO_MSG_PADRAO_ };
+  }
+  return { texto: config_('ACORDO_MSG') || ACORDO_MSG_PADRAO_, padrao: ACORDO_MSG_PADRAO_ };
+}
 function concluirPeticaoInicial_(proc, u) {
   var tab = tabela_('Tarefas'), marca = '[inicial:' + proc.id + ']', agora = new Date().toISOString(), quem = '';
   tab.linhas.forEach(function (x) {
@@ -2127,6 +2164,7 @@ function concluirPeticaoInicial_(proc, u) {
     registrar_(u.usuario, 'tarefa: Protocolado', x.titulo);
   });
   if (proc.numero) tarefaAvisarProtocolo_(proc, quem || proc.responsavel || respSecretaria_(), u);
+  if (proc.numero) { var pp = tabela_('Processos').linhas.filter(function (x) { return x.id === proc.id; })[0]; try { marcarTentativaAcordo_(pp); } catch (eA) { /* segue */ } }
 }
 /** 8.37.3 (pedido da usuária: "quero automatizar enviar ao cliente o número do processo junto com o código"): protocolou → tarefa
  *  "📣 Avisar o cliente: processo protocolado" com o botão que abre a mensagem pronta (número + link + código do Acompanhe). Fecha sozinha
@@ -2190,6 +2228,7 @@ function iniciaisProtocoladas862_() {
     });
     var tabH = tabela_('Honorarios'); tabH.linhas.forEach(function (h) { if (h.processo_id === ini.id) atualizarLinha_(tabH, h, { processo_id: pn.id }); });
     if (diffDias_(hoje, prot[num]) <= 7) tarefaAvisarProtocolo_(pn, quem || pn.responsavel || respSecretaria_(), robo);
+    if (diffDias_(hoje, prot[num]) <= 7) marcarTentativaAcordo_(pn);
     n++;
   });
   if (n) registrar_('robô', 'inicial protocolada', n + ' petição(ões) inicial(is) juntada(s) ao processo protocolado (peticionamento eletrônico)');
@@ -6632,6 +6671,63 @@ function juridicoIA_(p, mapa, cli, procNum, procs, u, hoje, opc) {
   if (pa) { out.caso = { numero: pa.numero || '', cliente: cli ? cli.nome : '', link: '#/processo/' + pa.id }; out.abrir = '#/processo/' + pa.id; }
   return out;
 }
+/* 8.62 (pedido da usuária: "um IA explica sobre todos os processos e como estão — ex.: fez acordo dia X, pagamento em N parcelas; ou o juiz
+   está com a decisão, temos que aguardar"): resumo curto de cada processo, GUARDADO na aba ResumosIA (id = processo). O robô refaz quando muda
+   a "base" (último andamento + última intimação + resultado de audiência); a tela tem "Ler de novo". Tudo anonimizado; a IA não inventa. */
+var SISTEMA_SITUACAO_ = 'Você é a IA do escritório Araújo Advocacia. Recebe os DADOS de um processo (etapa, andamentos do tribunal, intimações, prazos, audiências e acordo) ' +
+  'e explica para a EQUIPE, em português simples e em Markdown, em no máximo 6 linhas: "**Onde está:** …" (a etapa real, em uma frase), "**Último acontecimento:** …" (o mais ' +
+  'importante, com a data), "**O que esperar:** …" (ex.: "o juiz está com o processo para decidir: aguardar"; "acordo de R$ X em N parcelas, 1ª em dd/mm: acompanhar os pagamentos") ' +
+  'e, se houver, "**O que fazer:** …" (prazo aberto ou providência). Use SÓ os dados recebidos; se faltar informação, diga o que conferir. Nunca invente data, valor ou decisão. Não use nomes.';
+function baseSituacao_(pa, ints, fichas) {
+  var mv = ''; try { var a = JSON.parse(pa.andamentos || '[]'); mv = String((a[0] || {}).d || (a[0] || {}).data || ''); } catch (e) { mv = ''; }
+  var ui = ints.filter(function (i) { return i.processo_id === pa.id || (pa.numero && i.numero === pa.numero); }).map(function (i) { return String(i.recebido_em || ''); }).sort().pop() || '';
+  var ac = (fichas || []).filter(function (f) { return f.numero === pa.numero; }).map(function (f) { return String(f.atualizado_em || ''); }).sort().pop() || '';
+  return [mv.slice(0, 16), ui.slice(0, 16), ac.slice(0, 16), pa.fase || '', pa.status || ''].join('|');
+}
+function acordoDoProcessoTxt_(pa, fichas) {
+  return (fichas || []).filter(function (f) { return f.numero === pa.numero; }).map(function (f) { var a = jsonAto_(f.acordo); if (!a.resultado) return '';
+    return '- audiência de ' + dataBR_(f.data) + ': ' + ({ acordo: 'ACORDO FECHADO' + (a.valor_fechado ? ' de R$ ' + a.valor_fechado : '') + (a.parcelas_acordo ? ' em ' + a.parcelas_acordo + ' parcela(s)' : '') + (a.primeiro ? ', 1º pagamento em ' + dataBR_(a.primeiro) : ''),
+      sem_acordo: 'sem acordo', redesignada: 'redesignada', nao_houve: 'não aconteceu' })[a.resultado] || a.resultado; }).filter(String).join('\n');
+}
+function situacaoGuardada_(id) {
+  var r = tabela_('ResumosIA').linhas.filter(function (x) { return x.id === id; })[0];
+  var pa = tabela_('Processos').linhas.filter(function (x) { return x.id === id; })[0];
+  var velho = !r || (pa && r.base !== baseSituacao_(pa, tabela_('Intimacoes').linhas, tabela_('Audiencias').linhas));
+  return r ? { texto: r.texto, em: r.criado_em, por: r.por, velho: velho } : { texto: '', em: '', velho: true };
+}
+function situacaoProcessoIA_(id, forcar, u, cache) {
+  if (!chaveIA_()) throw falha_('A IA precisa da chave do Gemini (Configurações › Robôs e sistema).');
+  cache = cache || {};
+  var pa = (cache.procs || tabela_('Processos').linhas).filter(function (x) { return x.id === id; })[0];
+  if (!pa) throw falha_('Processo não encontrado.');
+  var ints = cache.ints || tabela_('Intimacoes').linhas, fichas = cache.fichas || tabela_('Audiencias').linhas;
+  var base = baseSituacao_(pa, ints, fichas), tab = tabela_('ResumosIA'), atual = tab.linhas.filter(function (x) { return x.id === id; })[0];
+  if (atual && atual.base === base && !forcar) return { texto: atual.texto, em: atual.criado_em, igual: true };
+  var cli = pa.cliente_id ? (cache.clis || {})[pa.cliente_id] || tabela_('Clientes').linhas.filter(function (c) { return c.id === pa.cliente_id; })[0] : null;
+  var acordo = acordoDoProcessoTxt_(pa, fichas);
+  var txt = 'HOJE: ' + hojeExtenso_() + '\n\n' + casoParaIA_(pa, true) + (acordo ? '\n' + anonimizar_(acordo, [cli ? cli.nome : '', pa.parte_contraria || '']) : '');
+  var r = geminiTexto_([{ text: txt }], { sistema: SISTEMA_SITUACAO_, max: 700, temp: 0.2, pensar: 'minimo' });
+  var t = String(r.texto || '').trim(); if (!t) throw falha_('A IA não respondeu agora. Tente de novo.');
+  if (cli) t = t.replace(/\[CLIENTE1\]|\[PARTE\]/g, primeiroNomeProprio_(cli.nome));
+  var agora = new Date().toISOString(), por = u ? (u.nome || u.usuario) : 'robô';
+  if (atual) atualizarLinha_(tab, atual, { texto: t, base: base, criado_em: agora, por: por });
+  else inserirLinha_(tab, { id: id, processo_id: id, numero: pa.numero || '', cliente_id: pa.cliente_id || '', texto: t, base: base, criado_em: agora, por: por });
+  return { texto: t, em: agora };
+}
+/** Robô (robôs do escritório): até 6 processos por rodada (7h–20h), os que mudaram há menos tempo primeiro; só refaz quando a base mudou. */
+function resumosProcessosIA_() {
+  if (!chaveIA_()) return 0;
+  var hh = +Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'H'); if (hh < 7 || hh >= 20) return 0; // tempo de robô do Google é limitado
+  var t0 = Date.now(), procs = tabela_('Processos').linhas, ints = tabela_('Intimacoes').linhas, fichas = tabela_('Audiencias').linhas, feitos = {};
+  tabela_('ResumosIA').linhas.forEach(function (x) { feitos[x.id] = x.base; });
+  var clis = {}; tabela_('Clientes').linhas.forEach(function (c) { clis[c.id] = c; });
+  var cache = { procs: procs, ints: ints, fichas: fichas, clis: clis };
+  var fila = procs.filter(function (p) { return p.numero && p.status !== 'arquivado' && p.fase !== 'contratado' && feitos[p.id] !== baseSituacao_(p, ints, fichas); })
+    .sort(function (a, b) { return String(b.ultimo_movimento_em || b.atualizado_em || '') < String(a.ultimo_movimento_em || a.atualizado_em || '') ? -1 : 1; });
+  var n = 0;
+  for (var i = 0; i < fila.length && n < 6 && Date.now() - t0 < 25000; i++) { try { situacaoProcessoIA_(fila[i].id, false, null, cache); n++; } catch (e) { if (/limitando|429/.test(String(e.message || e))) break; } }
+  return n;
+}
 function primeiroNomeProprio_(nome) { var w = String(nome || '').trim().split(/\s+/)[0] || 'o cliente'; return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }
 function executarIA_(p, mapa, u, hoje) {
   var de = /^\d{4}-\d{2}-\d{2}$/.test(p.de || '') ? p.de : '', ate = /^\d{4}-\d{2}-\d{2}$/.test(p.ate || '') ? p.ate : '';
@@ -9623,7 +9719,7 @@ function robosEscritorio_(ctx) {
   var r = {}, erros = [];
   [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['crmdados', function () { return crmDadosCliente_(); }], ['comissoes', function () { return gerarComissoes_(); }], ['explicacoes', explicacoesRobo_], ['atossemdata', cobrarAtosSemData_], ['caixavencida', baixarCaixaVencida_], ['notifinicial858', notificacoesIniciais858_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['cancelados850', atosCancelados_], ['tipos850', tiposDoPush850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'confirmacao', 'outraparte', 'djen', 'atoapagado', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.confirmacao.length + r.outraparte.length + r.djen.length + r.atoapagado.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['indicfim862', indicacaoFimProcesso862_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['situacao862', resumosProcessosIA_], ['indicfim862', indicacaoFimProcesso862_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -13942,10 +14038,36 @@ function relatorioSemana_(d) {
   var ant = diaSo ? somarDias_(ini, -1) : mes ? somarDias_(ini, -1).slice(0, 8) + '01' : somarDias_(ini, -7), prox = diaSo ? somarDias_(ini, 1) : mes ? somarDias_(fim, 1) : somarDias_(ini, 7);
   var aguardando = 0;
   try { aguardando = aguardandoOk_().length; } catch (e) { /* segue */ }
+  // 8.62 (pedido da usuária: "relatórios mais completos, para ver o que cada pessoa está fazendo"): números tirados do próprio trabalho
+  try { metricasPessoas_(lista, ini, fim); } catch (eM) { /* o relatório sai sem os números novos */ }
   return { inicio: ini, fim: fim, hoje: hoje, periodo: diaSo ? 'dia' : mes ? 'mes' : 'semana', anterior: ant, proxima: prox <= hoje ? prox : '', aguardando: aguardando,
     categorias: CATEGORIAS_LOG.map(function (c) { return { id: c[0], nome: c[1] }; }), pessoas: lista };
 }
 
+/** 8.62: por pessoa no período — intimações resolvidas (e o tempo médio entre chegar e resolver), prazos cumpridos dentro/fora do prazo,
+ *  tarefas concluídas (no prazo/atrasadas) e horas lançadas. "Quem" é reconhecido pelo usuário, pelo nome ou pelo primeiro nome. */
+function metricasPessoas_(lista, ini, fim) {
+  var dentro = function (iso) { var d = diaSP_(iso); return d && d >= ini && d <= fim; };
+  var chaves = lista.map(function (x) { return { x: x, k: [normalizar_(x.usuario), normalizar_(x.nome), normalizar_(String(x.nome || '').split(' ')[0])].filter(String) }; });
+  var dono = function (quem) { var q = normalizar_(String(quem || '').replace(/^robô.*$/, '')); if (!q) return null;
+    var c = chaves.filter(function (c) { return c.k.indexOf(q) >= 0; })[0] || chaves.filter(function (c) { return c.k[2] && q.split(' ')[0] === c.k[2]; })[0]; return c ? c.x : null; };
+  lista.forEach(function (x) { x.metricas = { intimacoes: 0, tempo_medio_h: null, prazos: 0, prazos_no_prazo: 0, tarefas: 0, tarefas_no_prazo: 0, horas_min: 0, _t: [] }; });
+  tabela_('Intimacoes').linhas.forEach(function (i) {
+    if (!i.tratada_em || !dentro(i.tratada_em) || i.tratamento === 'nao_feita' || i.tratamento === 'descartada') return;
+    var x = dono(i.tratada_por); if (!x) return; x.metricas.intimacoes++;
+    var h = (Date.parse(i.tratada_em) - Date.parse(i.recebido_em)) / 3600000; if (h >= 0 && h < 24 * 60) x.metricas._t.push(h);
+  });
+  tabela_('Prazos').linhas.forEach(function (z) {
+    if (z.situacao !== 'cumprido' || !z.cumprido_em || !dentro(z.cumprido_em)) return;
+    var x = dono(z.cumprido_por); if (!x) return; x.metricas.prazos++; if (!z.fatal || diaSP_(z.cumprido_em) <= z.fatal) x.metricas.prazos_no_prazo++;
+  });
+  tabela_('Tarefas').linhas.forEach(function (t) {
+    if (!t.concluida_em || !dentro(t.concluida_em)) return;
+    var x = dono(t.concluida_por); if (!x) return; x.metricas.tarefas++; if (!t.vence_em || diaSP_(t.concluida_em) <= t.vence_em) x.metricas.tarefas_no_prazo++;
+  });
+  try { tabela_('Horas').linhas.forEach(function (hh) { if (!hh.dia || hh.dia < ini || hh.dia > fim) return; var x = dono(hh.usuario); if (x) x.metricas.horas_min += +hh.minutos || 0; }); } catch (eH) { /* sem horas */ }
+  lista.forEach(function (x) { var t = x.metricas._t; x.metricas.tempo_medio_h = t.length ? Math.round(t.reduce(function (a, b) { return a + b; }, 0) / t.length * 10) / 10 : null; delete x.metricas._t; });
+}
 /* ---------- Resumo do dia por e-mail (7h) ---------- */
 
 function esc_(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -15081,7 +15203,7 @@ function futureUnidade_(d) {
   if (!x) throw falha_('Unidade não encontrada.');
   var hoje = hojeSP_(), o = {}; T.un.cab.forEach(function (k) { o[k] = x[k]; });
   o.pessoas = T.pe.linhas.filter(function (p) { return p.unidade === x.id; }).sort(function (a, b) { return (b.entrada || '') < (a.entrada || '') ? -1 : 1; })
-    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, contrato_url: p.contrato_url || '' }; });
+    .map(function (p) { return { id: p.id, nome: p.nome, telefone: p.telefone, unidade: p.unidade, cpf: p.cpf || '', entrada: p.entrada, saida: p.saida, garantia: p.garantia, caucao: p.caucao, situacao: p.situacao, obs: p.obs, pasta_url: p.pasta_url || '', arquivos: +p.arquivos || 0, contrato_url: p.contrato_url || '' }; });
   o.cobrancas = T.co.linhas.filter(function (c) { return c.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
     .slice(0, 24).map(function (c) { return { id: c.id, competencia: c.competencia, vencimento: c.vencimento, aluguel: futN_(c.aluguel), taxas: futN_(c.taxas), energia: futN_(c.energia), total: futN_(c.total), pago_em: c.pago_em, valor_pago: futN_(c.valor_pago), situacao: futSituacaoCobranca_(c, hoje), pessoa: c.pessoa }; });
   o.energia = T.en.linhas.filter(function (e) { return e.unidade === x.id; }).sort(function (a, b) { return a.competencia < b.competencia ? 1 : -1; })
@@ -15140,6 +15262,67 @@ function futureSalvarPessoa_(d, u) {
   });
 }
 
+/* 8.62 (pedido do Luiz/usuária: "quando clico no nome da pessoa não tem como tirar; botão de mudou de apartamento, de nem entrou; o Hercílio
+   Luz tem vários apartamentos e o que muda é quem está dentro"): ações sobre o(a) locatário(a):
+   - mudou: vai para outro apartamento com o MESMO contrato (aluguel, datas, garantia, caução, pagador e conta); o antigo fica vago ou em reforma;
+     as cobranças ainda não mandadas/pagas passam para o novo; anotado nas observações (temporária = volta depois da reforma).
+   - nao_entrou: não chegou a morar — sai do apartamento (vago) e as cobranças abertas dela são canceladas; caução, se marcado, volta no caixa.
+   - saiu_antes: saiu antes do fim do contrato (data) — o apartamento fica vago (ou, se a empresa paga, continua alugado à empresa, sem morador);
+     cobranças abertas de meses depois da saída são canceladas.
+   - trocar_morador: apartamento pago por empresa (Hercílio Luz): só troca QUEM mora; contrato e cobrança continuam com a empresa. */
+function futureMoverPessoa_(d, u) {
+  return comTrava_(function () {
+    var T = futTabs_(), agora = new Date().toISOString(), hoje = hojeSP_(), quem = u.nome || u.usuario;
+    var p = T.pe.linhas.filter(function (x) { return x.id === d.id; })[0]; if (!p) throw falha_('Locatário(a) não encontrado(a).');
+    var data = /^\d{4}-\d{2}-\d{2}$/.test(d.data || '') ? d.data : hoje;
+    var un = T.un.linhas.filter(function (x) { return x.id === p.unidade; })[0] || null;
+    var obsMais = function (o, t) { return (o ? o + '\n' : '') + '[' + dataBR_(hoje) + ' · ' + quem + '] ' + t; };
+    var abertas = function (unidadeId, pessoaNome) { return T.co.linhas.filter(function (c) { return c.unidade === unidadeId && !c.pago_em && !c.enviado_em && c.situacao !== 'cancelada' && c.situacao !== 'paga' &&
+      (!pessoaNome || normalizar_(c.pessoa || '') === normalizar_(pessoaNome)); }); };
+    var cancelar = function (lista, motivo) { lista.forEach(function (c) { atualizarLinha_(T.co, c, { situacao: 'cancelada', obs: ((c.obs || '') + ' ' + motivo).trim(), atualizado_em: agora, atualizado_por: quem }); }); return lista.length; };
+    var res = { ok: true, acao: d.acao };
+    if (d.acao === 'mudou') {
+      var novo = T.un.linhas.filter(function (x) { return x.id === futIdUnidade_(d.unidade_nova); })[0];
+      if (!novo) throw falha_('Escolha o apartamento novo.');
+      if (un && novo.id === un.id) throw falha_('É o mesmo apartamento.');
+      if (/alugado|renovar/.test(novo.situacao) && novo.locatario && normalizar_(novo.locatario) !== normalizar_(p.nome)) throw falha_(novo.id + ' está alugado para ' + novo.locatario + '. Libere o apartamento antes.');
+      var copiar = {}; if (un) ['aluguel', 'taxas', 'telefone', 'entrada', 'saida', 'garantia', 'caucao', 'pagador', 'conta_receb', 'modalidade', 'moeda'].forEach(function (k) { if (un[k] !== undefined && un[k] !== '') copiar[k] = un[k]; });
+      atualizarLinha_(T.un, novo, Object.assign(copiar, { situacao: un && un.situacao === 'renovar' ? 'renovar' : 'alugado', locatario: p.nome, atualizado_em: agora, atualizado_por: quem,
+        obs: obsMais(novo.obs, p.nome + ' veio do ' + (un ? un.id : '?') + ' em ' + dataBR_(data) + (d.motivo ? ' (' + d.motivo + ')' : '') + (d.temporaria === 'sim' ? ' — temporário' : '')) }));
+      if (un) atualizarLinha_(T.un, un, { situacao: d.antigo === 'reforma' ? 'reforma' : 'disponivel', locatario: '', telefone: '', atualizado_em: agora, atualizado_por: quem,
+        obs: obsMais(un.obs, p.nome + ' foi para o ' + novo.id + ' em ' + dataBR_(data) + (d.motivo ? ' (' + d.motivo + ')' : '') + (d.temporaria === 'sim' ? '; volta depois' : '')) });
+      var movidas = un ? abertas(un.id, p.nome) : [];
+      movidas.forEach(function (c) { atualizarLinha_(T.co, c, { unidade: novo.id, obs: ((c.obs || '') + ' Passou do ' + un.id + ' para o ' + novo.id + ' (mudança de apartamento).').trim(), atualizado_em: agora, atualizado_por: quem }); });
+      atualizarLinha_(T.pe, p, { unidade: novo.id, obs: obsMais(p.obs, 'mudou do ' + (un ? un.id : '?') + ' para o ' + novo.id + ' em ' + dataBR_(data) + (d.motivo ? ' (' + d.motivo + ')' : '') + (d.temporaria === 'sim' ? ' — temporário, mesmo contrato' : ' — mesmo contrato')) });
+      res.de = un ? un.id : ''; res.para = novo.id; res.cobrancas = movidas.length;
+    } else if (d.acao === 'nao_entrou') {
+      res.canceladas = cancelar(T.co.linhas.filter(function (c) { return !c.pago_em && c.situacao !== 'cancelada' && normalizar_(c.pessoa || '') === normalizar_(p.nome); }), 'Cancelada: não chegou a entrar no apartamento.');
+      if (un && normalizar_(un.locatario || '') === normalizar_(p.nome)) atualizarLinha_(T.un, un, { situacao: 'disponivel', locatario: '', telefone: '', atualizado_em: agora, atualizado_por: quem, obs: obsMais(un.obs, p.nome + ' não chegou a entrar') });
+      atualizarLinha_(T.pe, p, { situacao: 'saiu', saida: p.entrada || data, obs: obsMais(p.obs, 'NÃO chegou a entrar no apartamento') });
+      if (d.devolver_caucao === 'sim' && futN_(p.caucao) > 0) {
+        inserirLinha_(T.la, { id: novoId_('FL'), data: data, competencia: data.slice(0, 7), tipo: 'despesa', categoria: 'Devolução de caução', unidade: p.unidade || '', pessoa: p.nome, valor: txtDinheiro_(futN_(p.caucao)),
+          forma: '', responsavel: quem, descricao: 'Devolução da caução (não chegou a entrar)', origem: 'painel', chave: 'naoentrou:' + p.id, criado_em: agora, criado_por: u.usuario });
+        res.caucao = futN_(p.caucao);
+      }
+    } else if (d.acao === 'saiu_antes') {
+      var hc = un && un.pagador;
+      if (un && normalizar_(un.locatario || '') === normalizar_(p.nome)) atualizarLinha_(T.un, un, hc ? { locatario: '', telefone: '', atualizado_em: agora, atualizado_por: quem, obs: obsMais(un.obs, p.nome + ' saiu em ' + dataBR_(data) + '; continua alugado à ' + un.pagador + ' (sem morador)') }
+        : { situacao: 'disponivel', locatario: '', telefone: '', atualizado_em: agora, atualizado_por: quem, obs: obsMais(un.obs, p.nome + ' saiu em ' + dataBR_(data) + ' (antes do fim do contrato)') });
+      if (!hc) res.canceladas = cancelar(abertas(un ? un.id : '', p.nome).filter(function (c) { return futRefDaCobranca_(c) > data.slice(0, 7); }), 'Cancelada: saiu antes (' + dataBR_(data) + ').');
+      atualizarLinha_(T.pe, p, { situacao: 'saiu', saida: data, obs: obsMais(p.obs, 'saiu em ' + dataBR_(data) + ' (antes do fim do contrato)' + (d.motivo ? ': ' + d.motivo : '')) });
+    } else if (d.acao === 'trocar_morador') {
+      if (!un) throw falha_('Esta pessoa não está ligada a um apartamento.');
+      var nome = String(d.nome_novo || '').trim(); if (!nome) throw falha_('Informe quem passa a morar.');
+      atualizarLinha_(T.pe, p, { situacao: 'saiu', saida: data, obs: obsMais(p.obs, 'saiu em ' + dataBR_(data) + '; ' + nome + ' passou a morar no ' + un.id) });
+      inserirLinha_(T.pe, { id: novoId_('FP'), nome: nome.slice(0, 120), telefone: String(d.telefone_novo || '').trim().slice(0, 40), unidade: un.id, entrada: data, saida: un.saida || '', garantia: p.garantia || '', caucao: p.caucao || '',
+        situacao: 'atual', obs: '[' + dataBR_(hoje) + ' · ' + quem + '] entrou no lugar de ' + p.nome + (un.pagador ? ' (pago por ' + un.pagador + ')' : ''), origem: 'painel (troca de morador)', criado_em: agora });
+      atualizarLinha_(T.un, un, { locatario: nome.slice(0, 120), telefone: String(d.telefone_novo || '').trim().slice(0, 40) || un.telefone, atualizado_em: agora, atualizado_por: quem, obs: obsMais(un.obs, 'morador: ' + p.nome + ' → ' + nome + ' em ' + dataBR_(data)) });
+      abertas(un.id, p.nome).forEach(function (c) { atualizarLinha_(T.co, c, { pessoa: nome.slice(0, 120), atualizado_em: agora, atualizado_por: quem }); });
+    } else throw falha_('Ação desconhecida.');
+    registrar_(u.usuario, 'Edifício Future: ' + ({ mudou: 'mudou de apartamento', nao_entrou: 'não chegou a entrar', saiu_antes: 'saiu antes', trocar_morador: 'trocou o morador' })[d.acao], p.nome + (res.para ? ' → ' + res.para : ''));
+    return res;
+  });
+}
 function futureCobrancas_(d) {
   var T = futTabs_(), hoje = hojeSP_(), comp = /^\d{4}-\d{2}$/.test(d.mes || '') ? d.mes : futComp_(hoje);
   if (comp <= futCompMais_(futComp_(hoje), 1)) futureGerarCobrancas_(comp, T);
@@ -15367,7 +15550,9 @@ function futurePastaPessoa_(d, u) {
    O contrato é um só modelo: sem caução, os parágrafos com [[SO_CAUCAO]] saem e as disposições finais viram a cláusula 9ª. */
 var FUT_MODELOS = { contrato: ['FUTURE_MODELO_CONTRATO', 'MODELO — CONTRATO DE LOCAÇÃO (painel)'], laudo: ['FUTURE_MODELO_LAUDO', 'MODELO — LAUDO DE VISTORIA (painel)'],
   temporada: ['FUTURE_MODELO_TEMPORADA', 'MODELO — CONTRATO DE TEMPORADA (painel)'],
-  distrato: ['FUTURE_MODELO_DISTRATO', 'MODELO — DISTRATO DE LOCAÇÃO (painel)'], aditivo: ['FUTURE_MODELO_ADITIVO', 'MODELO — TERMO ADITIVO DE LOCAÇÃO (painel)'] };
+  distrato: ['FUTURE_MODELO_DISTRATO', 'MODELO — DISTRATO DE LOCAÇÃO (painel)'], aditivo: ['FUTURE_MODELO_ADITIVO', 'MODELO — TERMO ADITIVO DE LOCAÇÃO (painel)'],
+  // 8.63 (pedido do Luiz: "cria os que faltam"): sala comercial (locação não residencial) — criados por futAtualizarModelos863_
+  comercial: ['FUTURE_MODELO_COMERCIAL', 'MODELO — CONTRATO DE LOCAÇÃO COMERCIAL (painel)'], laudo_comercial: ['FUTURE_MODELO_LAUDO_COMERCIAL', 'MODELO — LAUDO DE VISTORIA COMERCIAL (painel)'] };
 function futModelo_(tipo) {
   var m = FUT_MODELOS[tipo], id = config_(m[0]);
   if (id) { try { var f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (e) { /* procura pelo nome */ } }
@@ -15426,8 +15611,8 @@ function futPreencherDoc_(doc, campos, manter) {
 
 function futureContratos_(d) {
   var T = futTabs_(), tc = tabela_('FutContratos'), hoje = hojeSP_();
-  var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return /^AP /.test(x.id) && x.situacao !== 'proprio'; })
-    .map(function (x) { return { id: x.id, situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, medidor: x.medidor || '', pasta_url: x.pasta_url || '',
+  var unidades = T.un.linhas.slice().sort(futOrdenarUnidades_).filter(function (x) { return /^(AP|SALA) /.test(x.id) && x.situacao !== 'proprio'; })
+    .map(function (x) { return { id: x.id, sala: /^SALA/.test(x.id), taxas: futN_(x.taxas), situacao: x.situacao, locatario: x.locatario, telefone: x.telefone, entrada: x.entrada, saida: x.saida, aluguel: futN_(x.aluguel), kit: x.kit, uc: x.uc, medidor: x.medidor || '', pasta_url: x.pasta_url || '',
       caucao: futN_(x.caucao), garantia: x.garantia || '', modalidade: x.modalidade || '' }; });
   var lista = tc.linhas.filter(function (c) { return c.situacao !== 'excluido'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 60)
     .map(function (c) { return { id: c.id, criado_em: c.criado_em, criado_por: c.criado_por, unidade: c.unidade, nome: c.nome, telefone: c.telefone, prazo_meses: +c.prazo_meses || 0,
@@ -15443,21 +15628,43 @@ function futureGerarContrato_(d, u) {
   return comTrava_(function () {
     var T = futTabs_(), tc = tabela_('FutContratos'), agora = new Date().toISOString(), hoje = hojeSP_();
     var un = T.un.linhas.filter(function (x) { return x.id === futIdUnidade_(d.unidade); })[0];
-    if (!un) throw falha_('Escolha o apartamento.');
-    if (!/^AP /.test(un.id)) throw falha_('O modelo é de locação residencial (apartamentos).');
+    if (!un) throw falha_('Escolha o apartamento ou a sala.');
+    // 8.63: sala comercial = locação NÃO residencial (modelo próprio); apartamento = residencial
+    var sala = /^SALA/.test(un.id);
+    if (!/^AP /.test(un.id) && !sala) throw falha_('Escolha um apartamento ou uma sala comercial.');
     var nome = String(d.nome || '').replace(/\s+/g, ' ').trim().toUpperCase();
     if (nome.length < 5) throw falha_('Informe o nome completo do(a) locatário(a).');
-    var cpf = String(d.cpf || '').trim();
-    if (cpf.replace(/\D/g, '').length !== 11) throw falha_('Informe o CPF (11 números).');
+    var cpf = String(d.cpf || '').trim(), nDoc = cpf.replace(/\D/g, '').length, pj = sala && nDoc === 14;
+    if (!(nDoc === 11 || pj)) throw falha_(sala ? 'Informe o CPF (11 números) ou o CNPJ da empresa (14 números).' : 'Informe o CPF (11 números).');
+    if (pj && !String(d.qualificacao || '').trim()) throw falha_('Locatária empresa: escreva a qualificação inteira (razão social, CNPJ, sede e quem assina por ela).');
+    var atividade = String(d.atividade || '').replace(/\s+/g, ' ').trim().replace(/[.;]\s*$/, '');
+    if (sala && atividade.length < 4) throw falha_('Informe a atividade que vai funcionar na sala (ex.: escritório de contabilidade).');
+    // Lei 8.245/91, art. 37, parágrafo único: uma garantia só por contrato (caução OU fiador OU nenhuma)
+    var gar = d.garantia === 'sem' ? 'sem' : d.garantia === 'fiador' ? 'fiador' : 'caucao';
+    var fia = null;
+    if (gar === 'fiador') {
+      var fNome = String(d.fia_nome || '').replace(/\s+/g, ' ').trim().toUpperCase(), fCpf = String(d.fia_cpf || '').trim();
+      if (fNome.length < 5) throw falha_('Informe o nome completo do(a) fiador(a).');
+      if (fCpf.replace(/\D/g, '').length !== 11) throw falha_('Informe o CPF do(a) fiador(a) (11 números).');
+      if (fCpf.replace(/\D/g, '') === cpf.replace(/\D/g, '')) throw falha_('O(a) fiador(a) não pode ser o(a) próprio(a) locatário(a).');
+      var gF = d.fia_genero === 'F' || d.fia_genero === 'M' ? d.fia_genero : generoPeloNome_(fNome) || 'M';
+      var casado = /casad|uni[aã]o est/i.test(d.fia_estado_civil || '') || /\bcasad[oa]\b/i.test(d.fia_qualificacao || '');
+      var cNome = String(d.fia_conj_nome || '').replace(/\s+/g, ' ').trim().toUpperCase(), cCpf = String(d.fia_conj_cpf || '').trim();
+      // Código Civil, art. 1.647, III: fiança de pessoa casada precisa da autorização do cônjuge (salvo separação absoluta de bens)
+      if (casado && d.fia_separacao !== 'sim' && (cNome.length < 5 || cCpf.replace(/\D/g, '').length !== 11))
+        throw falha_('Fiador(a) casado(a): informe o nome e o CPF do cônjuge, que também assina (art. 1.647, III, do Código Civil), ou marque "separação total de bens".');
+      fia = { nome: fNome, cpf: fCpf, g: gF, conj: cNome.length >= 5 && cCpf.replace(/\D/g, '').length === 11 ? { nome: cNome, cpf: cCpf } : null,
+        qual: futQualificacao_({ qualificacao: d.fia_qualificacao, cpf: fCpf, rg: d.fia_rg, estado_civil: d.fia_estado_civil, profissao: d.fia_profissao, endereco: d.fia_endereco }, gF) };
+    }
     var meses = parseInt(d.prazo_meses, 10);
     if (!(meses >= 1 && meses <= 60)) throw falha_('Escolha o prazo do contrato.');
     var inicio = /^\d{4}-\d{2}-\d{2}$/.test(d.inicio || '') ? d.inicio : '';
     if (!inicio) throw falha_('Informe a data de início.');
     var fim = futFimContrato_(inicio, meses);
     var aluguel = futN_(d.aluguel) || futN_(un.aluguel); if (!(aluguel > 0)) throw falha_('Informe o valor do aluguel.');
-    var comCaucao = d.garantia !== 'sem';
+    var comCaucao = gar === 'caucao', comFiador = gar === 'fiador';
     var caucao = comCaucao ? (futN_(d.caucao) || futCaucaoPadrao_(meses, aluguel)) : 0;
-    var g = d.genero === 'F' || d.genero === 'M' ? d.genero : generoPeloNome_(nome) || 'M';
+    var g = d.genero === 'F' || d.genero === 'M' ? d.genero : pj ? 'F' : generoPeloNome_(nome) || 'M';
     var diaVenc = parseInt(d.dia_venc, 10) || parseInt(config_('FUTURE_DIA_VENC'), 10) || 10;
     var telefone = String(d.telefone || un.telefone || '').trim();
     var vistoria = /^\d{4}-\d{2}-\d{2}$/.test(d.data_vistoria || '') ? d.data_vistoria : inicio;
@@ -15467,17 +15674,21 @@ function futureGerarContrato_(d, u) {
       APTO: un.id.replace('AP ', ''), KIT: String(d.kit || un.kit || '—').replace(/\.0$/, ''), UC: String(d.uc || un.uc || '—').replace(/\.0$/, ''),
       PRAZO: futMesesTxt_(meses), INICIO: dataBR_(inicio), FIM: dataBR_(fim), ALUGUEL: valorComExtenso_(aluguel), DIA_VENC: String(diaVenc),
       CAUCAO: comCaucao ? valorComExtenso_(caucao) + (nAlug === 1 ? ', equivalente a 1 (um) aluguel' : nAlug === 2 ? ', equivalente a 2 (dois) aluguéis' : '') : '',
-      GARANTIA_ROTULO: comCaucao ? 'CAUÇÃO' : 'GARANTIA', GARANTIA_TEXTO: comCaucao ? valorComExtenso_(caucao) : 'sem caução',
-      TITULO_GARANTIA: comCaucao ? 'COM CAUÇÃO' : 'SEM CAUÇÃO', TITULO_GARANTIA_TEXTO: comCaucao ? ' COM CAUÇÃO' : '',
+      GARANTIA_ROTULO: comCaucao ? 'CAUÇÃO' : comFiador ? 'FIANÇA' : 'GARANTIA',
+      GARANTIA_TEXTO: comCaucao ? valorComExtenso_(caucao) : comFiador ? (fia.g === 'F' ? 'fiadora ' : 'fiador ') + fia.nome + ', CPF nº ' + fia.cpf : 'sem caução',
+      TITULO_GARANTIA: comCaucao ? 'COM CAUÇÃO' : comFiador ? 'COM FIANÇA' : 'SEM CAUÇÃO', TITULO_GARANTIA_TEXTO: comCaucao ? ' COM CAUÇÃO' : comFiador ? ' COM FIANÇA' : '',
+      DESCONTO_CAUCAO: comCaucao ? ', podendo o valor ser descontado da caução' : '',
       CAUCAO_ATO: comCaucao ? 'No ato da assinatura deste contrato, ' + (g === 'F' ? 'A LOCATÁRIA' : 'O LOCATÁRIO') + ' efetuará o pagamento de ' + valorComExtenso_(caucao) + ', a título de caução, nos termos da Cláusula 9ª. ' : '',
-      N_FINAL: comCaucao ? '10ª' : '9ª', DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje),
+      N_FINAL: comCaucao || comFiador ? '10ª' : '9ª', DATA_ASSINATURA: porExtensoData_(/^\d{4}-\d{2}-\d{2}$/.test(d.data_assinatura || '') ? d.data_assinatura : hoje),
       DATA_VISTORIA: dataBR_(vistoria), VIDEO_DURACAO: String(d.video_duracao || '').trim() || '___ minutos',
       // 8.11: UC + medidor (relógio) no contrato e no laudo; e-mail para mandar o laudo e o vídeo; prazo para apontar divergências
       MEDIDOR: String(d.medidor || un.medidor || '—').replace(/\.0$/, ''), LOC_EMAIL: String(d.email || '').trim() || 'informado pelo(a) locatário(a)',
       PRAZO_LAUDO: futPrazoLaudo_(), CHAVES: String(d.chaves || '').trim() || 'conforme registrado no vídeo da vistoria',
       LEITURA: String(d.leitura || '').trim() || '________', OBS_VISTORIA: String(d.obs_vistoria || '').trim() || 'Nenhuma ressalva além do desgaste natural.'
-    });
+    }, futCamposFiador_(fia), futCamposSala_(un, sala, pj, cpf, atividade, d, g));
     try { futAtualizarModelos811_(); } catch (eM) { /* segue com o modelo como está */ }
+    try { futAtualizarModelos863_(); } catch (eM) { if (sala || comFiador) throw falha_('Não consegui preparar o modelo ' + (sala ? 'da sala comercial' : 'com fiador') + ' no Drive: ' + (eM.message || eM)); }
+    var manter = { SO_CAUCAO: comCaucao, SO_FIADOR: comFiador, SO_CONJUGE: !!(fia && fia.conj) };
     // pasta do morador: APARTAMENTOS › AP x › NOME (só agora, com o contrato)
     var pastaUrl = futCriarPasta_(un.id, nome);
     if (!pastaUrl) throw falha_('Não achei a pasta 05. ED. FUTURE no Drive.');
@@ -15485,16 +15696,17 @@ function futureGerarContrato_(d, u) {
     var gerar = function (tipo, titulo) {
       var arq = titulo + ' — ' + un.id + ' — ' + nome;
       var copia = futModelo_(tipo).makeCopy(arq, pasta), doc = DocumentApp.openById(copia.getId());
-      futPreencherDoc_(doc, campos, comCaucao); doc.saveAndClose();
+      futPreencherDoc_(doc, campos, manter); doc.saveAndClose();
       var pdf = pasta.createFile(copia.getAs('application/pdf')).setName(arq + '.pdf');
       return { doc: copia.getUrl(), pdf: pdf.getUrl() };
     };
-    var ct = gerar('contrato', 'CONTRATO DE LOCAÇÃO'), la = gerar('laudo', 'LAUDO DE VISTORIA');
+    var ct = gerar(sala ? 'comercial' : 'contrato', sala ? 'CONTRATO DE LOCAÇÃO COMERCIAL' : 'CONTRATO DE LOCAÇÃO'), la = gerar(sala ? 'laudo_comercial' : 'laudo', 'LAUDO DE VISTORIA');
+    var garTxt = comCaucao ? 'Caução' : comFiador ? 'Fiador: ' + fia.nome + ' (CPF ' + fia.cpf + ')' : 'Sem caução';
     // unidade e locatário atualizados
     var mudaUnidade = d.atualizar_unidade !== 'nao' && d.atualizar_unidade !== false;
     var pessoa = T.pe.linhas.filter(function (p) { return p.unidade === un.id && (futMesmaPessoa_(p.nome, nome) || (p.cpf && p.cpf.replace(/\D/g, '') === cpf.replace(/\D/g, ''))); })[0];
     var dadosP = { nome: nome, telefone: telefone, cpf: cpf, rg: String(d.rg || '').trim(), qualificacao: String(d.qualificacao || '').trim() || campos.LOC_QUALIFICACAO, genero: g,
-      entrada: pessoa && pessoa.entrada && pessoa.entrada < inicio ? pessoa.entrada : inicio, saida: fim, garantia: comCaucao ? 'Caução' : 'Sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
+      entrada: pessoa && pessoa.entrada && pessoa.entrada < inicio ? pessoa.entrada : inicio, saida: fim, garantia: garTxt, caucao: comCaucao ? txtDinheiro_(caucao) : '',
       pasta_url: pastaUrl, contrato_url: ct.pdf, laudo_url: la.pdf, email: futEmailOk_(d.email) };
     if (mudaUnidade) {
       T.pe.linhas.filter(function (p) { return p.unidade === un.id && p.situacao === 'atual' && p !== pessoa; }).forEach(function (p) {
@@ -15511,11 +15723,11 @@ function futureGerarContrato_(d, u) {
         forma: String(d.forma_caucao || 'Pix').slice(0, 40), responsavel: u.nome || u.usuario, descricao: 'Caução do contrato ' + dataBR_(inicio) + ' a ' + dataBR_(fim), origem: 'contrato', chave: '', criado_em: agora, criado_por: u.usuario });
     }
     var reg = { id: novoId_('FK'), criado_em: agora, criado_por: u.nome || u.usuario, unidade: un.id, pessoa_id: pessoa.id, nome: nome, cpf: cpf, telefone: telefone,
-      prazo_meses: String(meses), inicio: inicio, fim: fim, aluguel: txtDinheiro_(aluguel), garantia: comCaucao ? 'caução' : 'sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
+      prazo_meses: String(meses), inicio: inicio, fim: fim, aluguel: txtDinheiro_(aluguel), garantia: comCaucao ? 'caução' : comFiador ? 'fiador: ' + fia.nome : 'sem caução', caucao: comCaucao ? txtDinheiro_(caucao) : '',
       doc_url: ct.doc, pdf_url: ct.pdf, laudo_doc: la.doc, laudo_pdf: la.pdf, pasta_url: pastaUrl, situacao: 'gerado', tipo: 'mensal', dias: '', valor_total: '', email: futEmailOk_(d.email), video_url: '', enviado_em: '', enviado_por: '' };
     inserirLinha_(tc, reg);
-    registrar_(u.usuario, 'future: contrato gerado', un.id + ' ' + nome + ' ' + meses + ' meses ' + (comCaucao ? 'com caução' : 'sem caução'));
-    return { ok: true, id: reg.id, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, unidade: un.id, nome: nome, telefone: telefone, email: reg.email };
+    registrar_(u.usuario, 'future: contrato gerado', un.id + ' ' + nome + ' ' + meses + ' meses ' + (comCaucao ? 'com caução' : comFiador ? 'com fiador' : 'sem caução') + (sala ? ' (comercial)' : ''));
+    return { ok: true, id: reg.id, contrato: ct, laudo: la, pasta_url: pastaUrl, fim: fim, caucao: caucao, fiador: comFiador ? fia.nome : '', comercial: sala, unidade: un.id, nome: nome, telefone: telefone, email: reg.email };
   });
 }
 
@@ -15576,6 +15788,140 @@ function futAtualizarModelos811_() {
   }
   dl.saveAndClose();
   setConfig_('FUTURE_MODELOS_811', new Date().toISOString(), 'Modelos do Edifício Future atualizados (UC, medidor, vistoria, caução)');
+}
+/* ---------- 8.63: fiador e sala comercial nos contratos do Edifício Future (pedido do Luiz: "cria os que faltam") ---------- */
+/** Marcas do fiador no modelo: {{FIA_NOME}}, {{FIA_QUALIFICACAO}}, {{FIA_O}}… (vazias quando a garantia não é fiança). */
+function futCamposFiador_(fia) {
+  var f = fia && fia.g === 'F';
+  if (!fia) return { FIA_NOME: '', FIA_CPF: '', FIA_QUALIFICACAO: '', FIA_ROTULO: '', FIA_O: '', FIA_O_MIN: '', FIA_DO: '', FIA_OBRIGADO: '', FIA_PAGADOR: '', FIA_CONJ_NOME: '', FIA_CONJ_CPF: '' };
+  return { FIA_NOME: fia.nome, FIA_CPF: fia.cpf, FIA_QUALIFICACAO: fia.qual, FIA_ROTULO: f ? 'FIADORA' : 'FIADOR', FIA_O: f ? 'A FIADORA' : 'O FIADOR',
+    FIA_O_MIN: f ? 'a FIADORA' : 'o FIADOR', FIA_DO: f ? 'da FIADORA' : 'do FIADOR', FIA_OBRIGADO: f ? 'obrigada' : 'obrigado', FIA_PAGADOR: f ? 'principal pagadora' : 'principal pagador',
+    FIA_CONJ_NOME: fia.conj ? fia.conj.nome : '', FIA_CONJ_CPF: fia.conj ? fia.conj.cpf : '' };
+}
+/** Marcas da sala comercial: {{SALA}}, {{ATIVIDADE}}, {{TAXAS_TXT}}, {{LOC_DOC}}… (a locatária pode ser empresa: CNPJ). */
+function futCamposSala_(un, sala, pj, doc, atividade, d, g) {
+  var x = function (m, f) { return g === 'F' ? f : m; };
+  var docTxt = (pj ? 'CNPJ nº ' : 'CPF nº ') + doc;
+  if (!sala) return { LOC_DOC: docTxt, LOC_DOC_INSCRITO: x('inscrito', 'inscrita') + ' no ' + docTxt };
+  var taxas = futN_(un.taxas) || futN_(config_('FUTURE_TAXAS_SALA')) || 0;
+  return { SALA: 'sala comercial nº ' + String(un.id).replace(/\D/g, ''), ATIVIDADE: atividade,
+    TAXAS_TXT: taxas > 0 ? ' e das taxas do condomínio de ' + valorComExtenso_(taxas) + ' mensais' : '',
+    LOC_DOC: docTxt, LOC_DOC_INSCRITO: x('inscrito', 'inscrita') + ' no ' + docTxt,
+    CARACTERISTICAS: String(d.caracteristicas || '').trim() || 'Sala comercial com banheiro, entregue sem mobília.',
+    ITENS_SALA: String(d.itens_sala || '').trim() || 'Nenhum móvel ou equipamento além das instalações descritas neste laudo.' };
+}
+/** Uma vez (Config FUTURE_MODELOS_863), no Drive (MODELOS DE CONTRATO):
+ *  1) no contrato residencial, a cláusula da FIANÇA e as assinaturas do fiador e do cônjuge, entre marcas [[SO_FIADOR]]/[[SO_CONJUGE]]
+ *     (somem quando a garantia é caução ou nenhuma — os contratos de hoje saem iguais); "descontado da caução" só quando há caução;
+ *  2) cria o CONTRATO DE LOCAÇÃO COMERCIAL e o LAUDO DE VISTORIA COMERCIAL (sala), copiados dos residenciais e adaptados.
+ *  Os dados da locadora continuam só nos modelos do Drive. Se algum trecho esperado não estiver no modelo, anota em Config FUTURE_MODELOS_863_AVISO. */
+function futAtualizarModelos863_() {
+  if (config_('FUTURE_MODELOS_863')) return;
+  var avisos = [];
+  var achar = function (body, re) { var ps = body.getParagraphs(); for (var i = 0; i < ps.length; i++) if (re.test(ps[i].getText())) return ps[i]; return null; };
+  var ultimo = function (body, re) { var ps = body.getParagraphs(), r = null; for (var i = 0; i < ps.length; i++) if (re.test(ps[i].getText())) r = ps[i]; return r; };
+  var depois = function (body, p, txt, negritoAte) {
+    var np = body.insertParagraph(body.getChildIndex(p) + 1, txt);
+    np.setHeading(DocumentApp.ParagraphHeading.NORMAL).editAsText().setBold(false);
+    if (negritoAte) np.editAsText().setBold(0, negritoAte - 1, true);
+    return np;
+  };
+  var trocar = function (body, de, para, nome) { if (!body.findText(de)) { avisos.push(nome); return; } body.replaceText(de, para); };
+  // ----- 1) contrato residencial: fiança -----
+  var mc = futModelo_('contrato'), dc = DocumentApp.openById(mc.getId()), bc = dc.getBody();
+  if (bc.findText(', podendo o valor ser descontado da caução\\.')) bc.replaceText(', podendo o valor ser descontado da caução\\.', '{{DESCONTO_CAUCAO}}.');
+  if (!achar(bc, /DA FIANÇA/)) {
+    var titCau = achar(bc, /^\[\[SO_CAUCAO\]\]CLÁUSULA 9ª/), fimCau = ultimo(bc, /^\[\[SO_CAUCAO\]\]/);
+    if (!titCau || !fimCau) avisos.push('cláusula 9ª da caução (para pôr a fiança depois dela)');
+    else {
+      var t = bc.insertParagraph(bc.getChildIndex(fimCau) + 1, titCau.copy());
+      t.setText('[[SO_FIADOR]]CLÁUSULA 9ª – DA FIANÇA'); t.editAsText().setBold(true);
+      var pf = [
+        ['[[SO_FIADOR]]', 'Assina este contrato, como {{FIA_ROTULO}} e {{FIA_PAGADOR}}, {{FIA_NOME}}, {{FIA_QUALIFICACAO}}, que se obriga solidariamente com {{O_LOCATARIO_MIN}} por todas as obrigações deste contrato: aluguéis, energia, taxas, tributos, multas, danos ao imóvel e aos itens do laudo de vistoria, despesas de cobrança, custas e honorários de advogado.'],
+        ['[[SO_FIADOR]]PARÁGRAFO PRIMEIRO.', ' {{FIA_O}} renuncia aos benefícios de ordem e de divisão (arts. 827, 828, II, e 829 do Código Civil) e responde por todas as obrigações até a efetiva devolução das chaves e a quitação do que for devido, ainda que a locação seja prorrogada por prazo indeterminado (art. 39 da Lei nº 8.245/1991).'],
+        ['[[SO_FIADOR]]PARÁGRAFO SEGUNDO.', ' Prorrogada a locação por prazo indeterminado, {{FIA_O_MIN}} poderá exonerar-se da fiança por notificação escrita à LOCADORA, ficando {{FIA_OBRIGADO}} por todos os efeitos da fiança durante 120 (cento e vinte) dias após a notificação (art. 40, X, da Lei nº 8.245/1991).'],
+        ['[[SO_FIADOR]]PARÁGRAFO TERCEIRO.', ' Em caso de morte, ausência, interdição, insolvência, recuperação judicial ou falência, alienação dos bens sem comunicação à LOCADORA, mudança de residência sem aviso ou exoneração {{FIA_DO}}, {{O_LOCATARIO}} deverá apresentar nova garantia aceita pela LOCADORA no prazo de 30 (trinta) dias da notificação, sob pena de rescisão do contrato (art. 40 da Lei nº 8.245/1991).'],
+        ['[[SO_FIADOR]]PARÁGRAFO QUARTO.', ' {{FIA_O}} declara possuir bens suficientes para garantir esta locação e se obriga a comunicar à LOCADORA, por escrito, qualquer mudança de endereço, de estado civil ou do seu patrimônio que possa diminuir a garantia.'],
+        ['[[SO_CONJUGE]]PARÁGRAFO QUINTO.', ' Assina também este contrato {{FIA_CONJ_NOME}}, CPF nº {{FIA_CONJ_CPF}}, cônjuge {{FIA_DO}}, dando a autorização exigida pelo art. 1.647, III, do Código Civil.']];
+      var ant = t;
+      pf.forEach(function (x) { ant = depois(bc, ant, x[0] + x[1], x[0].length > 15 ? x[0].length : 0); });
+    }
+    // assinaturas: depois da do(a) locatário(a), antes de TESTEMUNHAS
+    var papel = ultimo(bc, /^\{\{LOCATARIO\}\}$/);
+    if (!papel) avisos.push('assinatura do(a) locatário(a)');
+    else {
+      var iP = bc.getChildIndex(papel), linha = bc.getChild(iP - 2), nomeP = bc.getChild(iP - 1), vazio = bc.getChild(iP + 1);
+      var molde = [[linha, '[[SO_FIADOR]]_______________________________________'], [nomeP, '[[SO_FIADOR]]{{FIA_NOME}}'], [papel, '[[SO_FIADOR]]{{FIA_ROTULO}}'], [vazio, '[[SO_FIADOR]]'],
+        [linha, '[[SO_CONJUGE]]_______________________________________'], [nomeP, '[[SO_CONJUGE]]{{FIA_CONJ_NOME}}'], [papel, '[[SO_CONJUGE]]CÔNJUGE {{FIA_DO}} (art. 1.647, III, do Código Civil)'], [vazio, '[[SO_CONJUGE]]']];
+      var pos = iP + 2;
+      molde.forEach(function (m) {
+        var el = m[0].getType() === DocumentApp.ElementType.PARAGRAPH ? m[0].asParagraph().copy() : null;
+        var np = el ? bc.insertParagraph(pos, el) : bc.insertParagraph(pos, '');
+        np.setText(m[1]); pos++;
+      });
+    }
+  }
+  dc.saveAndClose();
+  var pasta = null; try { var ps = mc.getParents(); if (ps.hasNext()) pasta = ps.next(); } catch (eP) { /* pasta do modelo */ }
+  // ----- 2) contrato comercial (sala) -----
+  var existe = function (tipo) { var m = FUT_MODELOS[tipo]; if (config_(m[0])) return true; return DriveApp.searchFiles("title = '" + m[1] + "' and trashed = false").hasNext(); };
+  if (!existe('comercial')) {
+    var cc = pasta ? mc.makeCopy(FUT_MODELOS.comercial[1], pasta) : mc.makeCopy(FUT_MODELOS.comercial[1]);
+    var dcc = DocumentApp.openById(cc.getId()), b = dcc.getBody();
+    trocar(b, 'CONTRATO DE LOCAÇÃO RESIDENCIAL', 'CONTRATO DE LOCAÇÃO NÃO RESIDENCIAL (SALA COMERCIAL)', 'título');
+    trocar(b, 'INSTRUMENTO PARTICULAR DE LOCAÇÃO RESIDENCIAL', 'INSTRUMENTO PARTICULAR DE LOCAÇÃO NÃO RESIDENCIAL', 'preâmbulo');
+    trocar(b, 'IMÓVEL: apartamento \\{\\{APTO\\}\\}', 'IMÓVEL: {{SALA}}', 'quadro-resumo (imóvel)');
+    trocar(b, 'nº 888, apartamento \\{\\{APTO\\}\\},', 'nº 888, {{SALA}},', 'cláusula 1ª (objeto)');
+    trocar(b, '\\{\\{LOC_NOME\\}\\}, CPF nº \\{\\{LOC_CPF\\}\\}\\.', '{{LOC_NOME}}, {{LOC_DOC}}.', 'quadro-resumo (CPF/CNPJ)');
+    trocar(b, 'A locação destina-se exclusivamente ao uso residencial, com prazo', 'A locação destina-se exclusivamente ao uso não residencial, para {{ATIVIDADE}}, com prazo', 'quadro-resumo (uso)');
+    trocar(b, 'A locação destina-se exclusivamente ao uso residencial, sendo vedado', 'A locação destina-se exclusivamente ao uso não residencial, para {{ATIVIDADE}}, sendo vedado', 'cláusula 4ª (uso)');
+    trocar(b, 'finalidade diversa da residencial', 'finalidade diversa da prevista neste contrato', 'cláusula 4ª (desvio de uso)');
+    trocar(b, ' e das despesas de consumo de energia elétrica do imóvel, que deverão ser quitados', '{{TAXAS_TXT}}, que deverão ser quitados', 'cláusula 3ª (aluguel e taxas)');
+    trocar(b, 'As despesas de energia elétrica serão apuradas conforme o consumo mensal do imóvel e repassadas \\{\\{AO_LOCATARIO\\}\\}, que se obriga ao pagamento integral, não recaindo',
+      'A energia elétrica da sala é contratada e paga diretamente à concessionária, por conta {{DO_LOCATARIO}}, na unidade consumidora (UC) nº {{UC}}, não recaindo', 'cláusula 3ª (energia)');
+    trocar(b, 'A locação destina-se exclusivamente a fins residenciais e será regida pela Lei nº 8\\.245/1991 e suas alterações\\.',
+      'A locação é não residencial e será regida pela Lei nº 8.245/1991 e suas alterações. {{O_LOCATARIO}} é responsável por obter e manter em dia o alvará de funcionamento, as licenças e as autorizações exigidas para a sua atividade, respondendo pelas multas a que der causa; a falta de qualquer deles não suspende o pagamento do aluguel.', 'disposições finais');
+    dcc.saveAndClose();
+    setConfig_(FUT_MODELOS.comercial[0], cc.getId(), 'Modelo do Edifício Future: ' + FUT_MODELOS.comercial[1]);
+  }
+  // ----- 3) laudo comercial (sala) -----
+  if (!existe('laudo_comercial')) {
+    var ml = futModelo_('laudo'), lc = pasta ? ml.makeCopy(FUT_MODELOS.laudo_comercial[1], pasta) : ml.makeCopy(FUT_MODELOS.laudo_comercial[1]);
+    var dlc = DocumentApp.openById(lc.getId()), bl = dlc.getBody();
+    bl.replaceText('apartamento \\{\\{APTO\\}\\}', '{{SALA}}');
+    bl.replaceText('\\{\\{INSCRITO\\}\\} no CPF( sob)? nº \\{\\{LOC_CPF\\}\\}', '{{LOC_DOC_INSCRITO}}');
+    bl.replaceText('· CPF nº \\{\\{LOC_CPF\\}\\}', '· {{LOC_DOC}}');
+    trocar(bl, 'Kitnet residencial composta por sala/cozinha integrada, quarto e banheiro\\.', '{{CARACTERISTICAS}}', 'características');
+    trocar(bl, 'Imóvel novo, mobiliado e em ótimo estado de conservação\\.', 'Imóvel em ótimo estado de conservação.', 'condição geral');
+    trocar(bl, 'O imóvel, seus móveis, eletrodomésticos, utensílios e instalações foram vistoriados', 'O imóvel e suas instalações foram vistoriados', 'declaração da vistoria');
+    trocar(bl, 'Todos os pontos de luz, lâmpadas, luminárias e luminárias de leitura da sala/cozinha, do quarto e do banheiro acesos e funcionando\\.', 'Todos os pontos de luz e lâmpadas da sala e do banheiro acesos e funcionando.', 'iluminação');
+    bl.replaceText('Chuveiro elétrico, registros e torneiras funcionando, sem vazamentos\\.', 'Registros, torneiras e descarga funcionando, sem vazamentos.');
+    bl.replaceText('Chuveiro e água quente', 'Água');
+    bl.replaceText('Ar-condicionado split ligando, resfriando e com controle remoto entregue\\.', 'Se houver: ligando, resfriando e com controle remoto entregue.');
+    // seção 3: em vez dos cômodos da kitnet, um quadro só da sala
+    var a = -1, z = -1;
+    for (var i = 0; i < bl.getNumChildren(); i++) {
+      var tx = bl.getChild(i).getType() === DocumentApp.ElementType.PARAGRAPH ? bl.getChild(i).asParagraph().getText() : '';
+      if (a < 0 && /^3\.\s*VISTORIA POR AMBIENTE/.test(tx)) a = i;
+      else if (a >= 0 && /^4\.\s*INSTALAÇÕES GERAIS/.test(tx)) { z = i; break; }
+    }
+    if (a < 0 || z < 0) avisos.push('seção 3 do laudo (vistoria por ambiente)');
+    else {
+      for (var k = z - 1; k > a; k--) bl.removeChild(bl.getChild(k));
+      bl.getChild(a).asParagraph().setText('3. VISTORIA DA SALA');
+      var tb = bl.insertTable(a + 1, [
+        ['Acabamentos', 'Piso, paredes, teto, rodapés e pintura sem riscos, manchas, trincas ou infiltrações aparentes.'],
+        ['Esquadrias e fachada', 'Porta de entrada, janelas, vitrine e fechaduras em bom estado, abrindo, fechando e trancando.'],
+        ['Banheiro', 'Vaso sanitário, pia, torneira e descarga funcionando, sem quebras nem vazamentos aparentes.'],
+        ['Itens entregues', '{{ITENS_SALA}}']]);
+      for (var r = 0; r < tb.getNumRows(); r++) tb.getCell(r, 0).editAsText().setBold(true);
+      bl.insertParagraph(a + 2, '');
+    }
+    dlc.saveAndClose();
+    setConfig_(FUT_MODELOS.laudo_comercial[0], lc.getId(), 'Modelo do Edifício Future: ' + FUT_MODELOS.laudo_comercial[1]);
+  }
+  if (avisos.length) setConfig_('FUTURE_MODELOS_863_AVISO', 'Trechos que não estavam no modelo (conferir à mão): ' + avisos.join('; '), 'Modelos 8.63');
+  setConfig_('FUTURE_MODELOS_863', new Date().toISOString(), 'Modelos do Edifício Future: fiador e sala comercial');
 }
 /** Manda o contrato e o laudo (PDF anexo) e o link do vídeo da vistoria por e-mail; o vídeo fica compartilhado só com esse e-mail. */
 function futureEnviarVistoria_(d, u) {
@@ -16438,6 +16784,7 @@ function futureRobo_() {
   try { futureImportarPasta_(); } catch (eI) { /* tenta na próxima hora */ }
   try { futureSincronizarDrive_(!config_('FUTURE_DISTRATO_812')); setConfig_('FUTURE_DISTRATO_812', hojeSP_(), 'Primeira leitura dos distratos no Drive (8.11.2)'); } catch (e) { /* tenta amanhã */ }
   try { futAtualizarModelos811_(); } catch (eM) { /* tenta na próxima hora */ } // modelos de contrato/laudo prontos antes do 1º contrato
+  try { futAtualizarModelos863_(); } catch (eM) { /* tenta na próxima hora */ } // 8.63: fiador e sala comercial
   var hoje = hojeSP_(), n = futureGerarCobrancas_(futComp_(hoje));
   if (+hoje.slice(8, 10) >= 25) n += futureGerarCobrancas_(futCompMais_(futComp_(hoje), 1));
   return n;
@@ -18913,7 +19260,7 @@ function sha256Hex_(txt) { return hexDe_(Utilities.computeDigest(Utilities.Diges
 /** O que cada perfil pode ler do banco (o Supabase confere isto em painel_ler; nada além). */
 function sbPermissoes_(u) {
   var p = PERFIS[u.perfil] || {}, adm = !!p.usuarios, g = {};
-  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo', 'AgendaEventos', 'IaAprendizado', 'Inss', 'Explicacoes', 'Horas'].forEach(function (a) { g[sbTabela_(a)] = {}; });
+  ['Clientes', 'Processos', 'Intimacoes', 'Prazos', 'Eventos', 'Audiencias', 'Feriados', 'Advogados', 'Assinaturas', 'Avisos', 'ObsArquivo', 'AgendaEventos', 'IaAprendizado', 'Inss', 'Explicacoes', 'Horas', 'ResumosIA'].forEach(function (a) { g[sbTabela_(a)] = {}; });
   g.clientes = { mascarar: ['acesso_hash'] }; // o navegador só sabe SE o cliente tem código do Acompanhe
   g.processos = { mascarar: ['andamentos'] }; // os andamentos (JSON grande do DataJud) ficam no banco; as listas só perguntam se tem
   g.config = { chaves: SB_CONFIG_LIVRE };

@@ -48,3 +48,42 @@ const res = C.audienciasResultados_(hoje, 14, { C862a: { id: 'C862a', nome: 'Jan
 const r0 = res.find(a => a.numero === N(1));
 assert(r0 && r0.resultado === '' && r0.cliente === 'Janaína Fictícia Souza', 'Início: audiência de hoje aparece com "falta anotar o resultado"');
 console.log('fim 862');
+// 8.62 etapa 2: tentativa de acordo, A IA explica (guardada), números por pessoa
+const pAc = C.tabela_('Processos').linhas.find(p => p.id === 'P862a');
+assert(C.marcarTentativaAcordo_(pAc) === true && C.tabela_('Processos').linhas.find(p => p.id === 'P862a').acordo_tent === 'pendente', 'processo trabalhista protocolado entra na "Tentativa de acordo"');
+assert(C.acordoCabe_({ area: 'Previdenciário' }) === false && C.acordoCabe_({ area: 'Família' }) === false, 'previdenciário e família não entram');
+C.acordoTentativa_({ id: 'P862a', situacao: 'feito' }, admin);
+assert(C.tabela_('Processos').linhas.find(p => p.id === 'P862a').acordo_tent === 'feito', '"✓ Feito" tira do quadro');
+assert(/\[NÚMERO\]/.test(C.acordoMsg_({}, admin).texto), 'mensagem padrão com as marcas');
+C.chaveIA_ = () => 'x'; let chamadas = 0;
+C.geminiTexto_ = () => { chamadas++; return { texto: '**Onde está:** aguardando sentença.\n**O que esperar:** o juiz está com o processo para decidir: aguardar.' }; };
+const s1 = C.situacaoProcessoIA_('P862a', false, admin), s2 = C.situacaoProcessoIA_('P862a', false, admin);
+assert(/Onde está/.test(s1.texto) && s2.igual && chamadas === 1 && C.situacaoGuardada_('P862a').velho === false, 'A IA explica: guardada; sem novidade não chama a IA de novo');
+const rel = C.relatorioSemana_({ periodo: 'mes' });
+assert(rel.pessoas.every(p => p.metricas && typeof p.metricas.intimacoes === 'number'), 'relatório: cada pessoa com os números do próprio trabalho');
+console.log('fim 862b');
+
+// 8.62 Edifício Future: mudou de apartamento, não chegou a entrar, trocar o morador (dados inventados)
+add('FutUnidades', [{ id: 'AP 904', tipo: 'apartamento', aluguel: '1750.00', taxas: '140.00', situacao: 'alugado', locatario: 'MORADORA TESTE', telefone: '48 90000-0001', entrada: '2026-09-14', saida: '2027-09-14', caucao: '3600.00' },
+  { id: 'AP 903', tipo: 'apartamento', aluguel: '1750.00', situacao: 'disponivel', locatario: '' },
+  { id: 'AP 907', tipo: 'apartamento', aluguel: '1750.00', situacao: 'alugado', locatario: 'FUNCIONARIO A', pagador: 'Empresa Fictícia (HC)', saida: '2026-12-31' }]);
+add('FutPessoas', [{ id: 'FP1', nome: 'MORADORA TESTE', unidade: 'AP 904', entrada: '2026-09-14', saida: '2027-09-14', caucao: '3600.00', situacao: 'atual' },
+  { id: 'FP2', nome: 'NOVA QUE NAO ENTROU', unidade: 'AP 903', entrada: '2026-11-06', caucao: '1750.00', situacao: 'atual' },
+  { id: 'FP3', nome: 'FUNCIONARIO A', unidade: 'AP 907', situacao: 'atual' }]);
+add('FutCobrancas', [{ id: 'FC1', unidade: 'AP 904', pessoa: 'MORADORA TESTE', competencia: '2099-01', vencimento: '2099-01-10', total: '1890.00', situacao: 'aberta' },
+  { id: 'FC2', unidade: 'AP 903', pessoa: 'NOVA QUE NAO ENTROU', competencia: '2099-01', vencimento: '2099-01-10', total: '1598.33', situacao: 'aberta' },
+  { id: 'FC3', unidade: 'AP 907', pessoa: 'FUNCIONARIO A', competencia: '2099-01', vencimento: '2099-01-10', total: '1890.00', situacao: 'aberta' }]);
+const luiz = { usuario: 'admin', nome: 'Admin Teste', perfil: 'administrador' };
+
+let erroMv = ''; try { C.futureMoverPessoa_({ id: 'FP1', acao: 'mudou', unidade_nova: 'AP 907' }, luiz); } catch (e) { erroMv = e.message; }
+assert(/alugado para FUNCIONARIO A/.test(erroMv), 'não deixa mudar para apartamento alugado a outra pessoa');
+const rM = C.futureMoverPessoa_({ id: 'FP2', acao: 'nao_entrou', devolver_caucao: 'sim' }, luiz);
+const u903 = C.tabela_('FutUnidades').linhas.find(x => x.id === 'AP 903');
+assert(rM.canceladas === 1 && u903.situacao === 'disponivel' && C.tabela_('FutPessoas').linhas.find(x => x.id === 'FP2').situacao === 'saiu' && C.tabela_('FutLanc').linhas.some(l => l.chave === 'naoentrou:FP2'), 'não chegou a entrar: sai, cobrança cancelada, caução devolvida no caixa');
+const rM2 = C.futureMoverPessoa_({ id: 'FP1', acao: 'mudou', unidade_nova: '903', motivo: 'reforma', temporaria: 'sim', antigo: 'reforma' }, luiz);
+const a903 = C.tabela_('FutUnidades').linhas.find(x => x.id === 'AP 903'), a904 = C.tabela_('FutUnidades').linhas.find(x => x.id === 'AP 904');
+assert(rM2.para === 'AP 903' && a903.locatario === 'MORADORA TESTE' && a903.caucao === '3600.00' && a904.situacao === 'reforma' && C.tabela_('FutCobrancas').linhas.find(c => c.id === 'FC1').unidade === 'AP 903', 'mudou de apartamento: mesmo contrato, o antigo em reforma, a cobrança vai junto');
+C.futureMoverPessoa_({ id: 'FP3', acao: 'trocar_morador', nome_novo: 'FUNCIONARIO B' }, luiz);
+const a907 = C.tabela_('FutUnidades').linhas.find(x => x.id === 'AP 907');
+assert(a907.locatario === 'FUNCIONARIO B' && a907.situacao === 'alugado' && C.tabela_('FutCobrancas').linhas.find(c => c.id === 'FC3').pessoa === 'FUNCIONARIO B' && C.tabela_('FutPessoas').linhas.some(p => p.nome === 'FUNCIONARIO B' && p.situacao === 'atual'), 'empresa paga: troca só o morador; a cobrança continua');
+console.log('fim future');

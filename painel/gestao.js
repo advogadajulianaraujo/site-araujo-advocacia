@@ -446,6 +446,7 @@
     sec((r.indireta ? 'Verbas rescisórias — rescisão indireta (equivalente à dispensa sem justa causa)' : 'Verbas rescisórias') + ' · valores brutos');
     r.verbas.forEach(x => lin(x)); tot('Subtotal das verbas rescisórias', r.subtotal);
     if (r.anteriores.length) { sec('Parcelas anteriores não pagas (fora do subtotal acima)'); r.anteriores.forEach(x => lin(x)); tot('Subtotal das parcelas anteriores', r.subAnt); }
+    if (r.adicionais && r.adicionais.length) { sec('Adicionais e horas extras não pagos, com reflexos'); r.adicionais.forEach(x => lin(x, /^\s/.test(x.rot) ? 'calc-reflexo' : '')); tot('Subtotal dos adicionais e reflexos', r.subAdic); }
     sec('FGTS' + (r.fgts.some(x => /^Multa de /.test(x.rot)) ? ' e multa selecionada' : '') + ' (bloco separado)');
     r.contratual.forEach(x => lin(x, 'calc-conf'));
     r.fgts.forEach(x => lin(Object.assign({}, x, x.fora ? { rot: x.rot + ' — já calculado em outro pedido (não soma)' } : {})));
@@ -473,6 +474,24 @@
     const { h, campo } = K();
     const chk = (nome, rot) => h('label', { class: 'g-chk largo' }, h('input', { type: 'checkbox', name: nome }), ' ', rot);
     const feriasBox = h('div', { class: 'largo ferias-periodos' });
+    // 8.62 (pedido da usuária: "insalubridade, periculosidade, adicional noturno têm reflexo; mais perto de um perito")
+    const simNao = [['nao', 'Não foi pago'], ['sim', 'Era pago no salário']];
+    const adicionaisBox = h('details', { class: 'largo calc-adic' }, h('summary', {}, 'Adicionais e horas extras (insalubridade, periculosidade, noturno, extras) — com reflexos'),
+      h('div', { class: 'form-grade' },
+        seg('ins_grau', 'Insalubridade', [['0', 'Não tem'], ['10', 'Grau mínimo (10%)'], ['20', 'Médio (20%)'], ['40', 'Máximo (40%)']], '0', { largo: true }),
+        seg('ins_base', 'Base da insalubridade', [['sm', 'Salário mínimo'], ['piso', 'Piso da categoria']], 'sm'),
+        campo('ins_piso', 'Piso da categoria (R$)', '', { modo: 'decimal' }),
+        seg('ins_pago', 'A insalubridade…', simNao, 'nao'),
+        seg('per', 'Periculosidade (30%)', [['nao', 'Não tem'], ['sim', 'Tem']], 'nao'),
+        seg('per_pago', 'A periculosidade…', simNao, 'nao'),
+        campo('not_h', 'Adicional noturno: horas por mês entre 22h e 5h', '', { modo: 'numeric', dica: 'horas de relógio; o painel aplica a hora reduzida' }),
+        seg('not_pago', 'O adicional noturno…', simNao, 'nao'),
+        campo('he50', 'Horas extras a 50% por mês', '', { modo: 'decimal' }),
+        seg('he50_pago', 'As horas extras a 50%…', simNao, 'nao'),
+        campo('he100', 'Horas extras a 100% por mês (domingos e feriados)', '', { modo: 'decimal' }),
+        seg('he100_pago', 'As horas extras a 100%…', simNao, 'nao'),
+        campo('divisor', 'Divisor da hora', '220', { opcoes: [['220', '220 (44 h por semana)'], ['200', '200 (40 h por semana)'], ['180', '180 (36 h por semana)']] }),
+        h('p', { class: 'peq largo' }, 'Pago na época: entra na remuneração das verbas rescisórias. Não pago: entra o valor dos meses (até 5 anos) com DSR (extras e noturno) e os reflexos em 13º, férias + 1/3, aviso, FGTS e multa. Insalubridade e periculosidade não se acumulam: fica a mais vantajosa.')));
     const form = h('form', { class: 'g-form form-grade' },
       campo('salario', 'Salário-base (R$)', '', { modo: 'decimal', obrigatorio: true }),
       campo('medias', 'Médias remuneratórias mensais (R$)', '', { modo: 'decimal', dica: 'horas extras habituais, comissões, adicionais (opcional)' }),
@@ -488,6 +507,7 @@
       seg('fgts_dep', 'O FGTS foi pago (depositado)?', [['sim', 'Sim, todos os meses'], ['nao', 'Não foi pago'], ['parte', 'Só em parte'], ['outro', 'Já está em outro pedido da inicial'], ['naosei', 'Não sei']], 'naosei', { largo: true }),
       campo('meses_np', 'Meses sem depósito', '', { modo: 'numeric', dica: 'se for "em parte" e sem o extrato' }),
       campo('fgts', 'FGTS já depositado — comprovado no extrato (R$)', '', { modo: 'decimal' }),
+      adicionaisBox,
       chk('mfgts', 'Incluir a multa do FGTS (40% na dispensa sem justa causa/rescisão indireta; 20% no acordo)'),
       chk('m477', 'Incluir a multa do art. 477 da CLT'), chk('m467', 'Incluir a multa do art. 467 da CLT'),
       campo('base_m467', 'Base das verbas rescisórias incontroversas — art. 467 (R$)', '', { modo: 'decimal', dica: 'Informe somente a base que pretende incluir. Não usamos automaticamente todas as verbas.' }),
@@ -535,7 +555,15 @@
           motivo: form.motivo.value, aviso: form.aviso.value, diasSaldo: form.dias_saldo.value.trim() === '' ? null : +form.dias_saldo.value, saldoPago: num(form.saldo_pago.value),
           feriasPagas: feriasPagas.slice(), decimoAnoPago: num(form.decimo_pago.value), decimoAnterior: form.decimo_ant.value, fgtsDep: form.fgts_dep.value === 'outro' ? 'nao' : form.fgts_dep.value,
           fgtsMesesNP: form.meses_np.value, fgtsComprovado: num(form.fgts.value), fgtsOutroPedido: form.fgts_dep.value === 'outro', multaFgts: form.mfgts.checked,
-          multa477: form.m477.checked, multa467: form.m467.checked, baseMulta467: num(form.base_m467.value) });
+          multa477: form.m477.checked, multa467: form.m467.checked, baseMulta467: num(form.base_m467.value),
+          adicionais: (() => { const f = form, he = [];
+            if (num(f.he50.value) > 0) he.push({ horas: num(f.he50.value), pct: 50, pago: f.he50_pago.value === 'sim' });
+            if (num(f.he100.value) > 0) he.push({ horas: num(f.he100.value), pct: 100, pago: f.he100_pago.value === 'sim' });
+            const ad = { divisor: +f.divisor.value || 220, he,
+              insal: +f.ins_grau.value ? { grau: +f.ins_grau.value, base: f.ins_base.value, piso: num(f.ins_piso.value), pago: f.ins_pago.value === 'sim' } : null,
+              peric: f.per.value === 'sim' ? { ativo: true, pago: f.per_pago.value === 'sim' } : null,
+              noturno: num(f.not_h.value) > 0 ? { horas: num(f.not_h.value), pago: f.not_pago.value === 'sim' } : null };
+            return ad.insal || ad.peric || ad.noturno || he.length ? ad : null; })() });
       } catch (e) { out.replaceChildren(h('p', { class: 'erro' }, e.message)); return; }
       const t = tabelaRescisao(r);
       const alerta = r.indireta ? h('div', { class: 'calc-alerta' }, h('strong', {}, '⚠ Rescisão indireta (CLT, art. 483): '), 'cálculo para a petição — verbas da dispensa sem justa causa com aviso indenizado, valores BRUTOS, que dependem do reconhecimento pelo juiz. Nada aqui foi pago. Conferir antes de usar.') : null;

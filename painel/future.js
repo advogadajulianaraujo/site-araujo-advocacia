@@ -162,6 +162,7 @@
     const { h, reais } = K();
     const g = String(u.garantia || '').toLowerCase();
     if (/cau[cç]/.test(g) || u.caucao) return h('span', { class: 'fut-gar ok' }, 'Caução' + (u.caucao ? ' ' + reais(u.caucao) : ''));
+    if (/fiad/.test(g)) return h('span', { class: 'fut-gar' }, 'Fiador');
     if (/aval/.test(g)) return h('span', { class: 'fut-gar' }, 'Avalista');
     if (/propri/.test(g) || u.situacao === 'proprio') return h('span', { class: 'peq' }, '—');
     return h('span', { class: 'fut-gar falta' }, 'Sem garantia');
@@ -238,7 +239,7 @@
             d === null ? 'sem data de fim' : d < 0 ? `venceu há ${-d} dia(s)` : `faltam ${d} dia(s)`); })(),
         (() => { const pa = u.pessoas.find(p => p.situacao === 'atual') || {}, g = String(u.garantia || '').toLowerCase();
           return numero(pa.contrato_url ? 'verde' : 'vermelho', pa.contrato_url ? 'Tem contrato' : 'Sem contrato', 'Contrato e garantia',
-            (/cau/.test(g) || num(u.caucao) ? 'Caução ' + (num(u.caucao) ? reais(num(u.caucao)) : '') : /aval/.test(g) ? 'Avalista' : 'Sem garantia'), pa.contrato_url || null); })()),
+            (/cau/.test(g) || num(u.caucao) ? 'Caução ' + (num(u.caucao) ? reais(num(u.caucao)) : '') : /fiad/.test(g) ? 'Fiador' : /aval/.test(g) ? 'Avalista' : 'Sem garantia'), pa.contrato_url || null); })()),
       secao('Dados da unidade e do contrato', form, false),
       h('section', { class: 'caixa' }, h('h2', {}, 'Quem já morou / ocupou'),
         tabela(['Nome', 'Entrada', 'Saída', 'Garantia', 'Situação'], u.pessoas, p => [
@@ -247,7 +248,7 @@
           h('td', { 'data-r': 'Entrada' }, dataBR(p.entrada) || '—'), h('td', { 'data-r': 'Saída' }, dataBR(p.saida) || '—'),
           h('td', { 'data-r': 'Garantia' }, [p.garantia, p.caucao ? reais(num(p.caucao)) : ''].filter(Boolean).join(' · ') || '—'),
           h('td', { 'data-r': 'Situação' }, h('span', { class: 'tag ' + (p.situacao === 'atual' ? 'ok' : '') }, p.situacao === 'atual' ? 'mora agora' : 'saiu'))
-        ], () => { location.hash = '#/future/pessoas'; }, 'Ninguém registrado ainda.')),
+        ], p => (p && p.id ? editarPessoa(p) : (location.hash = '#/future/pessoas')), 'Ninguém registrado ainda.')),
       h('section', { class: 'caixa' }, h('h2', {}, 'Cobranças'),
         tabela(['Mês', 'Vence', 'Aluguel', 'Taxas', 'Energia', 'Total', 'Situação'], u.cobrancas, c => [
           h('td', { 'data-r': 'Mês' }, curto(c.competencia)), h('td', { 'data-r': 'Vence' }, dataBR(c.vencimento)),
@@ -742,6 +743,27 @@
       campo('garantia', 'Garantia', p.garantia), campo('obs', 'Observações', p.obs, { area: true, largo: true }),
       h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Salvar'), K().botao('Fechar', () => dlg.close(), 'sec'), h('p', { class: 'erro' })));
     aoEnviar(f, async fd => { await api('future.pessoa.salvar', { id: p.id, ...Object.fromEntries(fd.entries()) }); avisar('Salvo.'); dlg.close(); K().rota(); });
+    // 8.62: o que aconteceu com esta pessoa — mudou de apartamento, não chegou a entrar, saiu antes, trocar o morador (empresa paga)
+    const area = h('div', { class: 'fut-mov-area largo' });
+    const hoje = K().hojeISO();
+    const formMov = (acao) => {
+      const campos = acao === 'mudou' ? [campo('unidade_nova', 'Para qual apartamento', '', { dica: 'ex.: 103' }), campo('data', 'A partir de', hoje, { tipo: 'date' }),
+          campo('motivo', 'Motivo', '', { dica: 'ex.: reforma no 204' }), campo('temporaria', 'A mudança é', 'sim', { opcoes: [['sim', 'Temporária (volta depois)'], ['nao', 'Definitiva']] }),
+          campo('antigo', 'O apartamento antigo fica', 'reforma', { opcoes: [['reforma', 'Em reforma'], ['disponivel', 'Disponível']] })]
+        : acao === 'nao_entrou' ? [campo('devolver_caucao', 'Caução', 'nao', { opcoes: [['nao', 'Não recebemos caução / já devolvida'], ['sim', 'Lançar a devolução da caução no caixa']] })]
+        : acao === 'saiu_antes' ? [campo('data', 'Saiu em', hoje, { tipo: 'date' }), campo('motivo', 'Observação', '')]
+        : [campo('nome_novo', 'Quem passa a morar', ''), campo('telefone_novo', 'Telefone', '', { tipo: 'tel' }), campo('data', 'A partir de', hoje, { tipo: 'date' })];
+      const titulo = { mudou: '↔ Mudou de apartamento (mesmo contrato)', nao_entrou: '✕ Não chegou a entrar', saiu_antes: '⏏ Saiu antes do fim do contrato', trocar_morador: '⇄ Trocar o morador (a empresa continua pagando)' }[acao];
+      const fm = h('form', { class: 'campos fut-mov', novalidate: true }, h('h3', { class: 'largo' }, titulo), ...campos,
+        h('div', { class: 'acoes largo' }, h('button', { type: 'submit', class: 'btn' }, 'Confirmar'), h('p', { class: 'erro' })));
+      aoEnviar(fm, async fd => { const r = await api('future.pessoa.mover', { id: p.id, acao, ...Object.fromEntries(fd.entries()) });
+        avisar(acao === 'mudou' ? `Pronto: ${p.nome} agora está no ${r.para}${r.cobrancas ? ' (' + r.cobrancas + ' cobrança(s) passaram junto)' : ''}.` : acao === 'nao_entrou' ? `Pronto: ${p.nome} saiu do apartamento${r.canceladas ? '; ' + r.canceladas + ' cobrança(s) cancelada(s)' : ''}.` : 'Pronto.');
+        dlg.close(); K().rota(); });
+      area.replaceChildren(fm);
+    };
+    if (p.situacao === 'atual' || p.unidade) f.insertBefore(h('div', { class: 'largo fut-mov-bts' }, h('span', { class: 'peq' }, 'O que aconteceu?'),
+      K().botao('↔ Mudou de apartamento', () => formMov('mudou'), 'sec mini'), K().botao('✕ Não chegou a entrar', () => formMov('nao_entrou'), 'sec mini'),
+      K().botao('⏏ Saiu antes do fim', () => formMov('saiu_antes'), 'sec mini'), K().botao('⇄ Trocar o morador', () => formMov('trocar_morador'), 'sec mini'), area), f.lastElementChild);
     dlg.append(f); document.body.append(dlg); dlg.addEventListener('close', () => dlg.remove()); dlg.showModal();
   }
 
@@ -753,7 +775,15 @@
     const { h, api, mostrar, reais, dataBR, avisar, carregando, campo, hojeISO } = K();
     carregando();
     const r = await api('future.contratos', {});
-    const base = r.contratos.find(c => c.id === params.get('renovar')) || null;
+    let base = r.contratos.find(c => c.id === params.get('renovar')) || null;
+    // 8.62 (pedido do Luiz: "aperto em renovar contrato e não vai"): contrato que veio da planilha antiga não tem registro em FutContratos —
+    // o formulário abria VAZIO. Agora a renovação usa o apartamento e o(a) locatário(a) atual; o novo começa no dia seguinte ao fim do atual.
+    if (!base && params.get('renova') && params.get('ap')) {
+      const u0 = r.unidades.find(u => u.id === params.get('ap')) || {}, p0 = r.pessoas.find(p => p.unidade === u0.id && p.situacao === 'atual') || {};
+      const diaDepois = u0.saida ? new Date(Date.parse(u0.saida + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10) : '';
+      base = { unidade: u0.id, nome: u0.locatario || p0.nome || '', cpf: p0.cpf || '', telefone: u0.telefone || p0.telefone || '', aluguel: u0.aluguel || '', fim: diaDepois || hojeISO(), prazo_meses: 12,
+        garantia: /sem/i.test(p0.garantia || u0.garantia || '') ? 'sem caução' : 'com caução', tipo: 'mensal', _daUnidade: true };
+    }
     const unSel = params.get('ap') || (base && base.unidade) || '';
     const pes = base ? r.pessoas.find(p => p.unidade === base.unidade) || {} : {};
     const opAp = r.unidades.map(u => [u.id, u.id + ' · ' + ((SIT[u.situacao] || [''])[0]) + (u.locatario ? ' · ' + u.locatario : '')]);
@@ -772,7 +802,12 @@
         h('label', { class: 'fut-chip grande' }, h('input', { type: 'radio', name: 'tipo', value: 'mensal', checked: tipoIni === 'mensal' }), h('span', {}, '🏠 Mensal — 3, 4, 6 ou 12 meses')),
         h('label', { class: 'fut-chip grande' }, h('input', { type: 'radio', name: 'tipo', value: 'temporada', checked: tipoIni === 'temporada' }), h('span', {}, '🧳 Temporada — alguns dias ou 1 mês, valor fechado')))),
       h('h3', { class: 'largo fut-passo' }, '1. Apartamento e prazo'),
-      campo('unidade', 'Apartamento', unSel, { opcoes: [['', 'Escolha…']].concat(opAp) }),
+      campo('unidade', 'Apartamento ou sala', unSel, { opcoes: [['', 'Escolha…']].concat(opAp) }),
+      // 8.63: sala comercial = contrato NÃO residencial (modelo próprio no Drive)
+      h('div', { class: 'largo fut-sala campos' },
+        campo('atividade', 'Atividade que vai funcionar na sala', '', { largo: true, dica: 'ex.: escritório de contabilidade, consultório de psicologia, loja de roupas' }),
+        campo('caracteristicas', 'Como é a sala (vai no laudo)', '', { largo: true, dica: 'vazio = "Sala comercial com banheiro, entregue sem mobília."' }),
+        campo('itens_sala', 'Móveis e equipamentos entregues junto', '', { largo: true, dica: 'vazio = nenhum além das instalações' })),
       blocoTemp,
       h('div', {}, h('label', {}, 'Prazo do contrato'),
         h('div', { class: 'fut-chips', role: 'radiogroup' }, PRAZOS.map(n => h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'prazo_meses', value: String(n), checked: n === ((base && base.prazo_meses) || 12) }), h('span', {}, n + ' meses'))),
@@ -785,14 +820,28 @@
       h('h3', { class: 'largo fut-passo fut-garantia' }, '2. Garantia'),
       h('div', { class: 'largo fut-garantia' }, h('div', { class: 'fut-chips', role: 'radiogroup' },
         h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'com', checked: !base || base.garantia !== 'sem caução' }), h('span', {}, 'Com caução')),
-        h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'sem', checked: !!base && base.garantia === 'sem caução' }), h('span', {}, 'Sem caução')))),
+        h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'fiador', checked: !!base && /fiador/i.test(base.garantia || '') }), h('span', {}, 'Com fiador')),
+        h('label', { class: 'fut-chip' }, h('input', { type: 'radio', name: 'garantia', value: 'sem', checked: !!base && base.garantia === 'sem caução' }), h('span', {}, 'Sem caução'))),
+        h('p', { class: 'peq' }, 'A lei permite uma garantia só por contrato (caução OU fiador) — Lei 8.245/91, art. 37.')),
+      h('div', { class: 'largo fut-fiador campos' },
+        campo('fia_nome', 'Nome completo do(a) fiador(a)', '', { max: 120 }),
+        campo('fia_genero', 'Fiador ou fiadora', '', { opcoes: [['', 'Pelo nome'], ['M', 'Fiador'], ['F', 'Fiadora']] }),
+        campo('fia_cpf', 'CPF do(a) fiador(a)', '', { max: 18 }), campo('fia_rg', 'RG do(a) fiador(a)', '', { max: 30 }),
+        campo('fia_estado_civil', 'Estado civil do(a) fiador(a)', '', { opcoes: [['', '—'], ['solteiro(a)', 'Solteiro(a)'], ['casado(a)', 'Casado(a)'], ['união estável', 'União estável'], ['divorciado(a)', 'Divorciado(a)'], ['viúvo(a)', 'Viúvo(a)']] }),
+        campo('fia_profissao', 'Profissão do(a) fiador(a)', ''),
+        campo('fia_endereco', 'Endereço do(a) fiador(a)', '', { largo: true }),
+        campo('fia_qualificacao', 'Ou escreva a qualificação inteira do(a) fiador(a)', '', { area: true, largo: true }),
+        h('div', { class: 'largo fut-conj campos' },
+          h('p', { class: 'peq largo' }, 'Fiador(a) casado(a): o cônjuge também assina, autorizando a fiança (Código Civil, art. 1.647, III).'),
+          campo('fia_conj_nome', 'Nome do cônjuge', '', { max: 120 }), campo('fia_conj_cpf', 'CPF do cônjuge', '', { max: 18 }),
+          h('label', { class: 'marcar largo' }, h('input', { type: 'checkbox', name: 'fia_separacao', value: 'sim' }), ' Casado(a) com separação total de bens (o cônjuge não precisa assinar)'))),
       campo('caucao', 'Valor da caução (R$)', '1.750,00', { modo: 'decimal', dica: 'R$ 1.750,00 ou R$ 3.500,00, conforme a pessoa (ou digite outro valor)' }),
       h('div', { class: 'fut-chips fut-caucao-rapida' }, ['1.750,00', '3.500,00'].map(v => h('button', { type: 'button', class: 'fut-chip', onclick: ev => { const i = ev.currentTarget.closest('form').querySelector('[name="caucao"]'); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); } }, 'R$ ' + v))),
       campo('lancar_caucao', 'Caução recebida?', 'nao', { opcoes: [['nao', 'Ainda não (lanço depois no caixa)'], ['sim', 'Sim, lançar hoje no caixa do prédio']] }),
       h('h3', { class: 'largo fut-passo' }, '3. Locatário(a)'),
       campo('nome', 'Nome completo', base ? base.nome : '', { max: 120 }),
       campo('genero', 'Locatário ou locatária', pes.genero || '', { opcoes: [['', 'Pelo nome'], ['M', 'Locatário'], ['F', 'Locatária']] }),
-      campo('cpf', 'CPF', base ? base.cpf : '', { max: 18 }),
+      campo('cpf', 'CPF', base ? base.cpf : '', { max: 18, dica: 'na sala comercial também pode ser o CNPJ da empresa (aí escreva a qualificação inteira)' }),
       campo('rg', 'RG', pes.rg || '', { max: 30 }),
       campo('telefone', 'WhatsApp', base ? base.telefone : '', { tipo: 'tel', max: 30, dica: 'vai no contrato (vistoria enviada por WhatsApp)' }),
       campo('email', 'E-mail (Gmail)', pes.email || '', { tipo: 'email', max: 120, dica: 'para mandar o contrato, o laudo e o vídeo da vistoria' }),
@@ -827,6 +876,7 @@
       f.classList.toggle('modo-temporada', temp);
       ['prazo_meses', 'aluguel', 'dia_venc', 'caucao', 'lancar_caucao'].forEach(k => { const el = f.querySelector(`[name="${k}"]`); const box = el && (el.closest('.fut-chips') ? el.closest('.fut-chips').parentElement : el.parentElement); if (box) box.hidden = temp; });
       f.querySelectorAll('.fut-garantia').forEach(x => { x.hidden = temp; });
+      if (temp) { f.querySelector('.fut-fiador').hidden = true; f.querySelector('.fut-sala').hidden = true; }
       blocoTemp.hidden = !temp;
       if (temp) {
         const porMes = (f.querySelector('[name="unidade_prazo"]:checked') || {}).value === 'mes';
@@ -840,7 +890,11 @@
           h('br'), h('span', { class: 'peq' }, `O painel cria as cobranças das parcelas e não cobra aluguel mensal deste apartamento enquanto durar a temporada.`)) : h('p', { class: 'peq' }, 'Escolha o apartamento, a entrada, o período e o valor total.'));
         return;
       }
-      const n = meses(), al = num(q('aluguel').value), ini = q('inicio').value, com = (f.querySelector('[name="garantia"]:checked') || {}).value !== 'sem';
+      const garV = (f.querySelector('[name="garantia"]:checked') || {}).value, com = garV === 'com', fiador = garV === 'fiador';
+      const n = meses(), al = num(q('aluguel').value), ini = q('inicio').value;
+      const ehSala = !!(u && u.sala);
+      f.querySelector('.fut-sala').hidden = !ehSala; f.querySelector('.fut-fiador').hidden = !fiador;
+      f.querySelector('.fut-conj').hidden = !/casad|uni/.test(q('fia_estado_civil').value || '');
       const fim = ini && n ? somarMesesJS(ini, n) : '';
       q('fim').value = fim ? dataBR(fim) : '—';
       // 8.36.1 (pedido da usuária): a caução do prédio é R$ 1.750,00 ou R$ 3.500,00, conforme a pessoa (não depende do aluguel)
@@ -848,8 +902,9 @@
       q('caucao').parentElement.hidden = !com; q('lancar_caucao').parentElement.hidden = !com; f.querySelector('.fut-caucao-rapida').hidden = !com;
       const res = f.querySelector('.fut-resumo');
       res.replaceChildren(u && n && ini && al ? h('p', {}, h('b', {}, `${u.id}: ${n} meses, de ${dataBR(ini)} a ${dataBR(fim)}`), ` · aluguel ${reais(al)} todo dia ${q('dia_venc').value}`,
-        com ? ` · caução ${reais(num(q('caucao').value))}` : ' · sem caução',
-        h('br'), h('span', { class: 'peq' }, `A pasta "${(q('nome').value || 'NOME').toUpperCase()}" será criada em APARTAMENTOS › ${u.id}, com o contrato e o laudo (Google Docs para ajustar + PDF).`)) : h('p', { class: 'peq' }, 'Escolha o apartamento, o prazo, o início e o aluguel.'));
+        com ? ` · caução ${reais(num(q('caucao').value))}` : fiador ? ` · fiador(a): ${(q('fia_nome').value || '—').toUpperCase()}` : ' · sem caução',
+        ehSala ? ' · contrato COMERCIAL (não residencial)' : '',
+        h('br'), h('span', { class: 'peq' }, `A pasta "${(q('nome').value || 'NOME').toUpperCase()}" será criada em ${ehSala ? u.id : 'APARTAMENTOS › ' + u.id}, com o contrato e o laudo (Google Docs para ajustar + PDF).`)) : h('p', { class: 'peq' }, 'Escolha o apartamento, o prazo, o início e o aluguel.'));
     };
     f.addEventListener('input', ev => atualizar(ev.target.name === 'unidade' ? 'troca' : false));
     f.addEventListener('change', ev => atualizar(ev.target.name === 'unidade' ? 'troca' : false));
@@ -862,7 +917,7 @@
       avisar(`${x.unidade}: contrato e laudo gerados na pasta de ${x.nome}.`);
       const link = (u, t) => h('a', { class: 'btn sec', href: u, target: '_blank', rel: 'noopener noreferrer' }, t);
       saida.replaceChildren(h('section', { class: 'caixa fut-pronto' }, h('h2', {}, '✓ Contrato pronto — ' + x.unidade + ' · ' + x.nome),
-        h('p', { class: 'peq' }, `Termina em ${dataBR(x.fim)}.` + (x.temporada ? ` Temporada de ${reais(x.total)} · ${x.parcelas} cobrança(s) criada(s) em Cobranças.` : x.caucao ? ` Caução: ${reais(x.caucao)}.` : ' Sem caução.') + ' Confira o texto antes de imprimir; os Google Docs podem ser ajustados.'),
+        h('p', { class: 'peq' }, `Termina em ${dataBR(x.fim)}.` + (x.temporada ? ` Temporada de ${reais(x.total)} · ${x.parcelas} cobrança(s) criada(s) em Cobranças.` : x.caucao ? ` Caução: ${reais(x.caucao)}.` : x.fiador ? ` Fiador(a): ${x.fiador}.` : ' Sem caução.') + (x.comercial ? ' Contrato comercial (sala).' : '') + ' Confira o texto antes de imprimir; os Google Docs podem ser ajustados.'),
         h('div', { class: 'fut-acoes' }, link(x.contrato.pdf, '📄 Contrato (PDF)'), link(x.contrato.doc, '✎ Contrato (editar)'), link(x.laudo.pdf, '📋 Laudo (PDF)'), link(x.laudo.doc, '✎ Laudo (editar)'), link(x.pasta_url, '📁 Pasta'),
           x.telefone ? h('a', { class: 'btn wa', href: whats(x.telefone, `Olá, ${primeiro(x.nome)}! Seu contrato de locação do ${x.unidade.replace('AP ', 'apartamento ')} está pronto. Vou te mandar o contrato e o laudo de vistoria para conferir e assinar.`), target: '_blank', rel: 'noopener noreferrer' }, 'Avisar no WhatsApp') : null),
         x.id ? caixaEnviarVistoria({ id: x.id, unidade: x.unidade, nome: x.nome, telefone: x.telefone, email: x.email, pasta_url: x.pasta_url }) : null));
@@ -873,7 +928,7 @@
       h('td', { 'data-r': 'Locatário' }, c.nome),
       h('td', { 'data-r': 'Prazo' }, c.tipo === 'distrato' ? h('span', { class: 'tag urgente' }, 'Distrato') : c.tipo === 'aditivo' ? h('span', { class: 'tag info' }, 'Termo aditivo') : c.tipo === 'temporada' ? `Temporada · ${c.dias} dias` : `${c.prazo_meses} meses`,
         h('div', { class: 'peq' }, c.tipo === 'distrato' ? 'encerrado em ' + dataBR(c.fim) : dataBR(c.inicio) + ' a ' + dataBR(c.fim)), c.situacao === 'encerrado' ? h('div', { class: 'peq' }, '(encerrado)') : null),
-      h('td', { 'data-r': 'Garantia' }, c.tipo === 'temporada' ? reais(c.valor_total) + ' fechado' : c.caucao ? 'Caução ' + reais(c.caucao) : 'Sem caução'),
+      h('td', { 'data-r': 'Garantia' }, c.tipo === 'temporada' ? reais(c.valor_total) + ' fechado' : c.caucao ? 'Caução ' + reais(c.caucao) : /fiador/i.test(c.garantia || '') ? 'Fiador' : 'Sem caução'),
       h('td', { 'data-r': 'Documentos' }, h('div', { class: 'fut-docs' },
         c.pdf_url ? h('a', { class: 'fut-doc', href: c.pdf_url, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, c.tipo === 'distrato' ? '📄 distrato' : c.tipo === 'aditivo' ? '📄 aditivo' : '📄 contrato') : null,
         c.laudo_pdf ? h('a', { class: 'fut-doc', href: c.laudo_pdf, target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, '📋 laudo') : null,
@@ -883,8 +938,9 @@
           saida.replaceChildren(h('section', { class: 'caixa' }, h('h2', {}, `Enviar a vistoria — ${c.unidade} · ${c.nome}`), caixaEnviarVistoria(c))); saida.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, c.enviado_em ? '✉ enviado' : '✉ enviar vistoria') : null))
     ], () => {}, 'Nenhum contrato gerado pelo painel ainda.');
     // ----- 8.8.0: contratos EM VIGOR com Termo aditivo e Distrato -----
-    const vigentes = r.unidades.filter(u => /^(alugado|renovar)$/.test(u.situacao) && u.modalidade !== 'temporada');
-    const vagos = r.unidades.filter(u => !/^(alugado|renovar)$/.test(u.situacao));
+    // aditivo e distrato: modelos dos apartamentos (as salas ficam de fora até ter modelo próprio)
+    const vigentes = r.unidades.filter(u => !u.sala && /^(alugado|renovar)$/.test(u.situacao) && u.modalidade !== 'temporada');
+    const vagos = r.unidades.filter(u => !u.sala && !/^(alugado|renovar)$/.test(u.situacao));
     const resultadoDoc = (alvo, titulo, x, msgWa) => {
       const link = (u, t) => u ? h('a', { class: 'btn sec', href: u, target: '_blank', rel: 'noopener noreferrer' }, t) : null;
       alvo.replaceChildren(h('div', { class: 'nota ok' }, h('strong', {}, '✓ ' + titulo + ' pronto — ' + x.unidade + ' · ' + x.nome),
@@ -953,7 +1009,7 @@
           h('div', { class: 'fut-acoes' },
             K().botao('✎ Termo aditivo', () => abrir('a'), 'sec mini'),
             K().botao('⏹ Encerrar (distrato)', () => abrir('d'), 'sec mini'),
-            K().botao('↻ Renovar (contrato novo)', () => ir('contratos', c ? { renovar: c.id, ap: '' } : { ap: u.id, renovar: '' }), 'mini'))),
+            K().botao('↻ Renovar (contrato novo)', () => ir('contratos', c ? { renovar: c.id, ap: '', renova: '' } : { ap: u.id, renovar: '', renova: '1' }), 'mini'))),
         area);
     };
     const blocoVigentes = h('section', { class: 'caixa' }, h('h2', {}, `Contratos em vigor (${vigentes.length})`),
@@ -964,13 +1020,14 @@
         h('button', { type: 'button', class: 'btn mini sec', onclick: () => { const c = r.contratos.find(x => x.unidade === u.id); ir('contratos', c ? { renovar: c.id, ap: '' } : { ap: u.id, renovar: '' }); } }, 'Fazer o novo contrato'))))) : null;
     mostrar(topo('Edifício Future', 'Contratos de locação', 'Em vigor (aditivo e distrato) · novo contrato mensal ou por temporada · histórico, tudo na pasta do morador',
         [h('a', { class: 'btn sec', href: '#/future/pessoas' }, 'Locatários')]),
-      base ? h('p', { class: 'nota' }, `Renovação de ${base.nome} (${base.unidade}): o novo contrato começa no fim do anterior (${dataBR(base.fim)}). Confira os dados.`) : null,
+      base ? h('p', { class: 'nota' }, `Renovação de ${base.nome || 'locatário(a)'} (${base.unidade}): o novo contrato começa ${base._daUnidade ? 'no dia seguinte ao fim do atual' : 'no fim do anterior'} (${dataBR(base.fim)}). Confira os dados${base._daUnidade ? ' — o contrato anterior veio da planilha antiga: CPF, RG e endereço podem faltar' : ''}.`) : null,
       base ? null : blocoVigentes,
       vence,
       h('section', { class: 'caixa' }, h('h2', {}, base ? 'Renovar contrato' : 'Novo contrato'), f),
       saida,
       h('section', { class: 'caixa' }, h('h2', {}, 'Histórico: contratos, aditivos e distratos'), lista));
     if (unSel) atualizar(base ? 'base' : 'troca'); else atualizar(false);
+    if (base) { try { window.scrollTo(0, 0); f.querySelector('[name="nome"]').focus({ preventScroll: true }); } catch (e) { /* segue */ } }
   }
 
   /** 8.11: manda o contrato, o laudo e o vídeo da vistoria por e-mail (Gmail, com PDFs anexos) ou WhatsApp (mensagem pronta;

@@ -190,6 +190,9 @@ create table if not exists processos (
   "docs_ok" text,
   "docs_ok_em" text,
   "docs_ok_por" text,
+  "acordo_tent" text,
+  "acordo_tent_em" text,
+  "acordo_tent_por" text,
   primary key (escritorio_id, "id")
 );
 alter table processos add column if not exists "id" text;
@@ -226,6 +229,9 @@ alter table processos add column if not exists "inicial_enviada_em" text;
 alter table processos add column if not exists "docs_ok" text;
 alter table processos add column if not exists "docs_ok_em" text;
 alter table processos add column if not exists "docs_ok_por" text;
+alter table processos add column if not exists "acordo_tent" text;
+alter table processos add column if not exists "acordo_tent_em" text;
+alter table processos add column if not exists "acordo_tent_por" text;
 alter table processos enable row level security;
 drop policy if exists "processos: só o próprio escritório" on processos;
 create policy "processos: só o próprio escritório" on processos for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
@@ -1799,6 +1805,32 @@ alter table explicacoes add column if not exists "canal" text;
 alter table explicacoes enable row level security;
 drop policy if exists "explicacoes: só o próprio escritório" on explicacoes;
 create policy "explicacoes: só o próprio escritório" on explicacoes for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
+
+create table if not exists resumos_ia (
+  escritorio_id uuid not null references escritorios(id) on delete cascade,
+  _n integer,
+  _sinc text,
+  "id" text,
+  "processo_id" text,
+  "numero" text,
+  "cliente_id" text,
+  "texto" text,
+  "base" text,
+  "criado_em" text,
+  "por" text,
+  primary key (escritorio_id, "id")
+);
+alter table resumos_ia add column if not exists "id" text;
+alter table resumos_ia add column if not exists "processo_id" text;
+alter table resumos_ia add column if not exists "numero" text;
+alter table resumos_ia add column if not exists "cliente_id" text;
+alter table resumos_ia add column if not exists "texto" text;
+alter table resumos_ia add column if not exists "base" text;
+alter table resumos_ia add column if not exists "criado_em" text;
+alter table resumos_ia add column if not exists "por" text;
+alter table resumos_ia enable row level security;
+drop policy if exists "resumos_ia: só o próprio escritório" on resumos_ia;
+create policy "resumos_ia: só o próprio escritório" on resumos_ia for select using (escritorio_id = nullif((select auth.jwt()) ->> 'escritorio_id', '')::uuid);
 
 create table if not exists horas (
   escritorio_id uuid not null references escritorios(id) on delete cascade,

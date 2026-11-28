@@ -1,5 +1,5 @@
 {
- "versao": "8.62.0",
+ "versao": "8.63.0",
  "configLivre": [
   "ACAO_COB_IGNORADOS",
   "AGENDAS",
@@ -225,6 +225,7 @@
    "tabelas": [
     "Avisos",
     "Clientes",
+    "Horas",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -234,7 +235,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 39
+   "funcoes": 40
   },
   "documentos.assinaturas": {
    "tabelas": [
@@ -374,6 +375,7 @@
   "relatorio.semana": {
    "tabelas": [
     "Clientes",
+    "Horas",
     "Intimacoes",
     "Prazos",
     "Processos",
@@ -383,7 +385,7 @@
    "servicos": [
     "Utilities"
    ],
-   "funcoes": 15
+   "funcoes": 17
   },
   "relatorio.cumpridos": {
    "tabelas": [
@@ -574,5 +576,5 @@
    "funcoes": 13
   }
  },
- "funcoes": 223
+ "funcoes": 224
 }

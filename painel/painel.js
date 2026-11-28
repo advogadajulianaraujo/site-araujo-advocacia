@@ -90,7 +90,7 @@
   /* ---------- memória das telas ----------
      O Google demora 1 a 3 s por pedido. O painel guarda na memória desta aba o que já leu,
      mostra na hora e confere por trás; se algo mudou, redesenha. Qualquer gravação limpa a memória. */
-  const LEITURAS = new Set(['ia.assistente', 'inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
+  const LEITURAS = new Set(['ia.assistente', 'processos.acordoMsg', 'ia.situacao', 'inss.listar', 'inss.obter', 'comissoes.listar', 'horas.listar', 'fin.fatura', 'intimacoes.caixa', 'intimacoes.obter', 'andamentos.importantes', 'audiencias.cliente', 'chat.listar', 'indicadores.mes', 'fluxos.processo', 'clientes.portal', 'fin.conferencia', 'audiencias.listar', 'fin.acaoCobranca', 'whats.conversas', 'crm.listar', 'padroes.listar', 'prompts.listar', 'ia.transcricoes', 'fin.recibos', 'fin.painel', 'calc.prazo', 'calc.indices', 'inicio.acoes', 'processos.linhaTempo', 'organizar.listar', 'resumo', 'agenda.listar', 'clientes.listar', 'clientes.obter', 'clientes.documentos',
     'processos.listar', 'prazos.listar', 'intimacoes.listar', 'feriados.listar', 'usuarios.listar', 'relatorio.cumpridos',
     'fin.resumo', 'fin.honorarios', 'fin.honorario', 'fin.areceber', 'modelos.listar', 'tarefas.listar', 'fin.caixa', 'relatorio.geral', 'eu.painel', 'equipe.listar', 'trabalho.aguardando', 'fin.pix', 'relatorio.semana', 'inicio.extras', 'marketing.resumo', 'fin.alevantar', 'future.resumo', 'future.unidade', 'future.pessoas', 'future.cobrancas', 'future.lancamentos', 'future.relatorio', 'future.contratos', 'future.lavanderia', 'future.energia', 'documentos.assinaturas']);
   const FRESCO_MS = 15000; // dentro disso nem confere de novo
@@ -3332,6 +3332,18 @@
       linha: h('div', { class: 'px3-k-l' }, fechou(p), col === 'protocolar' && p.inicial_enviada_em ? h('small', { class: 'px3-k-d ok' }, '✓ avisado ' + dataBR(String(p.inicial_enviada_em).slice(0, 10)).slice(0, 5)) : col !== 'docs' ? docsOk(p) : null),
       bts: col === 'docs' ? [botao('Documentos OK', ev => { ev.currentTarget.disabled = true; moverPet(p.id, 'fazer'); }, 'mini')] : col === 'fazer' ? [inicialFeita(p)] : col === 'avisar' ? [avisarCli(p)] : [botao('Protocolar', () => dialogoProtocolar(p, ri.beneficios), 'mini')] });
     const colPet = p => p.inicial_enviada_em ? 'protocolar' : p.inicial_feita_em ? 'avisar' : p.docs_ok === 'sim' ? 'fazer' : 'docs';
+    // 8.62 (pedido da usuária): depois de protocolar, "Tentativa de acordo" — mensagem fixa à outra parte (muda o nome e o número)
+    const msgAcordoR = aba === 'peticao' ? await api('processos.acordoMsg', {}).catch(() => ({ texto: '' })) : { texto: '' };
+    const textoAcordo = p => String(msgAcordoR.texto || '').replace(/\[CLIENTE\]/g, p.cliente_nome || 'o nosso cliente').replace(/\[N[ÚU]MERO\]/g, p.numero || '')
+      .replace(/\[EMPRESA\]/g, p.parte_contraria || 'a empresa').replace(/\[VARA\]/g, p.orgao || 'vara');
+    const marcarAcordo = (p, situacao) => async ev => { ev.stopPropagation(); ev.currentTarget.disabled = true;
+      try { await api('processos.acordoTentativa', { id: p.id, situacao }); avisar(situacao === 'feito' ? 'Pronto: tentativa de acordo feita.' : 'Anotado: sem contato com a outra parte.'); rota(); } catch (e) { avisar(e.message, true); } };
+    const acordoCartao = p => cartao({ id: p.id, nome: (p.cliente_nome || 'Cliente') + (p.parte_contraria ? ' × ' + p.parte_contraria : ''), quem: p.responsavel, abrir: () => { location.hash = '#/processo/' + p.id; },
+      sub: [p.numero, p.orgao].filter(Boolean).join(' · '),
+      bts: [h('button', { type: 'button', class: 'btn mini sec', onclick: ev => { ev.stopPropagation(); copiar(textoAcordo(p), 'Mensagem copiada.'); } }, 'Copiar mensagem'),
+        h('a', { class: 'btn mini wa', href: 'https://wa.me/?text=' + encodeURIComponent(textoAcordo(p)), target: '_blank', rel: 'noopener noreferrer', onclick: ev => ev.stopPropagation() }, 'WhatsApp'),
+        h('a', { class: 'btn mini sec', href: 'mailto:?subject=' + encodeURIComponent('Processo nº ' + (p.numero || '') + ' — proposta de conversa sobre acordo') + '&body=' + encodeURIComponent(textoAcordo(p)), onclick: ev => ev.stopPropagation() }, 'E-mail'),
+        h('button', { type: 'button', class: 'btn mini', onclick: marcarAcordo(p, 'feito') }, '✓ Feito'), h('button', { type: 'button', class: 'btn mini sec', onclick: marcarAcordo(p, 'sem_contato') }, 'Sem contato')] });
     // colunas por aba: [chave, nome, descrição, cor, itens(cartões), contagem]
     let cols = [], dica = '', arrastavel = false, mover = null;
     if (aba === 'peticao') {
@@ -3339,7 +3351,9 @@
       cols = [['docs', 'Documentos', 'conferir se o cliente mandou tudo', '#B9752F'], ['fazer', 'Fazer a inicial', 'documentos completos', '#6B7FA3'],
         ['avisar', 'Avisar o cliente', 'inicial feita: mandar para aprovar', '#9C7A43'], ['protocolar', 'Protocolar', 'cliente avisado: protocolar', '#2F7D4F']]
         .map(([k, n, d, c]) => { const its = lp.filter(p => colPet(p) === k).sort((a, b) => (a.criado_em || '') < (b.criado_em || '') ? -1 : 1); return [k, n, d, c, its.map(p => peticaoCartao(p, k)), its.length]; });
-      arrastavel = true; mover = moverPet;
+      const tent = procs.filter(p => p.numero && p.acordo_tent === 'pendente' && p.status !== 'arquivado' && bate(p.cliente_nome, p.parte_contraria, p.numero));
+      cols.push(['acordo', 'Tentativa de acordo', 'protocolado: chamar a outra parte para conversar', '#B58D52', tent.map(acordoCartao), tent.length]);
+      arrastavel = true; mover = (id, et) => { if (et !== 'acordo') moverPet(id, et); };
       dica = 'Arraste o cartão de um quadro para o outro. Documentos → inicial → avisar o cliente → protocolar. O previdenciário fica na aba INSS.';
     } else if (aba === 'inss') {
       const lp = petPrev.filter(p => bate(p.cliente_nome, p.tipo_acao));
@@ -3685,9 +3699,24 @@
         h('h3', { class: 'proc-cli-sub' }, `Observações do cliente (${obs.length})`), f,
         h('ul', { class: 'fg-notas proc-notas' }, obs.length ? obs.map(o => { const m = /^\[([^\]]+)\]\s*(.*)$/.exec(o); return h('li', {}, m ? h('small', {}, m[1]) : null, h('div', {}, corpoNota(m ? m[2] : o))); }) : [h('li', { class: 'peq' }, 'Nenhuma observação ainda.')]));
     }).catch(() => cliCard.replaceChildren(h('p', { class: 'peq' }, 'Não deu para carregar o cliente agora.')));
+    // 8.62 "⚡ A IA explica" (pedido da usuária): onde o processo está, o último acontecimento e o que esperar — guardado; refaz quando muda
+    const iaCard = h('section', { class: 'fg-card ia-explica-proc' }, h('header', {}, h('h2', {}, '⚡ A IA explica')), h('p', { class: 'peq' }, p.numero ? 'Carregando…' : 'Aparece depois que o processo tiver número.'));
+    const pintarIA = (r, gerando) => {
+      const bt = botao(gerando ? 'Lendo…' : '↻ Ler de novo', async ev => { ev.currentTarget.disabled = true; pintarIA(r, true);
+        try { pintarIA(await api('ia.situacaoRefazer', { id: p.id })); } catch (e) { avisar(e.message, true); pintarIA(r); } }, 'mini sec');
+      if (gerando) bt.disabled = true;
+      iaCard.replaceChildren(h('header', {}, h('h2', {}, '⚡ A IA explica'), bt),
+        r && r.texto ? h('div', { class: 'ia-md' }, mdParaDom(r.texto)) : h('p', { class: 'peq' }, gerando ? 'A IA está lendo o processo…' : 'Ainda sem resumo.'),
+        r && r.em ? h('small', { class: 'peq' }, 'Lido em ' + new Date(r.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + ' · a IA ajuda a ler; confira sempre no tribunal.') : null);
+    };
+    if (p.numero) api('ia.situacao', { id: p.id }).then(async r => {
+      pintarIA(r, r.velho);
+      if (r.velho) { try { pintarIA(await api('ia.situacaoRefazer', { id: p.id })); } catch (e) { pintarIA(r); } }
+    }).catch(() => pintarIA(null));
     const visao = () => h('div', { class: 'fg' },
       h('div', { class: 'fg-col' },
         p.numero && !cnjValido(p.numero) ? h('div', { class: 'nota alerta' }, h('strong', {}, '⚠ Número com o dígito verificador errado. '), 'O PJe/eproc e o DataJud não acham este processo. Confira no tribunal e corrija em "Editar".') : null,
+        p.numero ? iaCard : null,
         agora,
         p.fase === 'contratado' ? caixaPeticaoInicial(p, cli) : null,
         caixaDesfazerProcesso(p),
@@ -4587,6 +4616,7 @@
         admin ? grupo('👥 Equipe',
           item('🧑‍🤝‍🧑', 'Pessoas e acessos', 'Quem entra no painel, perfis, senhas e bloqueios', '#/usuarios'),
           item('🗂', 'Quem faz o quê', 'Distribuição automática de prazos, petições e secretaria', '#/distribuicao'),
+          item('🤝', 'Mensagem da tentativa de acordo', 'Texto mandado à outra parte depois do protocolo (muda só o nome e o número)', () => dialogoMsgAcordo()),
           item('📈', 'O que cada um fez', 'Produtividade da equipe na semana e no mês', '#/relatorios?ver=equipe')) : null,
         admin && p.financeiro ? grupo('💳 Cobrança',
           item('⚡', 'Boleto e Pix automático', 'Cobrança que dá baixa sozinha quando o cliente paga', '#/financeiro?ver=asaas'),
@@ -4602,6 +4632,17 @@
         p.future ? grupo('🏢 Edifício Future', item('🏢', 'Painel do prédio', 'Apartamentos, cobranças, contratos e configurações', '#/future')) : null));
   }
 
+  /* 8.62: texto da tentativa de acordo (Config ACORDO_MSG) — marcas [CLIENTE] [NÚMERO] [EMPRESA] [VARA] */
+  async function dialogoMsgAcordo() {
+    const r = await api('processos.acordoMsg', {});
+    const ta = h('textarea', { id: 'msg-acordo', rows: 7 }); ta.value = r.texto || '';
+    const caixa = h('dialog', { class: 'dialogo' }, h('h2', {}, 'Mensagem da tentativa de acordo'),
+      h('p', { class: 'peq' }, 'Vai para a outra parte depois do protocolo (quadro Processos › Petição inicial › Tentativa de acordo). O painel troca sozinho: [CLIENTE], [NÚMERO], [EMPRESA] e [VARA].'),
+      ta, h('div', { class: 'acoes' },
+        botao('Salvar', async () => { try { await api('processos.acordoMsg', { texto: ta.value }); avisar('Mensagem salva.'); caixa.close(); } catch (e) { avisar(e.message, true); } }),
+        botao('Voltar ao texto padrão', () => { ta.value = r.padrao || ''; }, 'sec'), botao('Fechar', () => caixa.close(), 'sec')));
+    caixa.addEventListener('close', () => caixa.remove()); document.body.append(caixa); caixa.showModal();
+  }
   /* ---------- 8.36 Quem faz o quê (distribuição automática por área e tipo de trabalho) ---------- */
   const AREAS_DIST = [['trabalhista', 'Trabalhista'], ['civel', 'Cível e consumidor'], ['familia', 'Família'], ['previdenciario', 'Previdenciário (INSS)'], ['criminal', 'Criminal'], ['outros', 'Outras áreas']];
   async function telaDistribuicao() {
@@ -4818,7 +4859,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.62.0';
+  const VERSAO_PAINEL = '8.63.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -8519,6 +8560,16 @@
           h('div', { class: 'eq-kpi total' }, h('b', {}, String(total)), h('span', {}, 'ações da equipe')),
           kpi('intimacoes', 'intimações conferidas'), kpi('prazos', 'prazos feitos'), kpi('iniciais', 'petições iniciais'), kpi('whatsapp', 'clientes avisados'),
           r.aguardando ? h('a', { class: 'eq-kpi alerta', href: '#/prazos' }, h('b', {}, String(r.aguardando)), h('span', {}, 'esperando o seu OK')) : null),
+        // 8.62: números do próprio trabalho de cada pessoa (intimações e tempo para resolver, prazos e tarefas dentro do prazo, horas)
+        r.pessoas.some(p => p.metricas) ? h('div', { class: 'eq-bloco eq-numeros' }, h('h3', {}, 'Números de cada pessoa'),
+          h('div', { class: 'mini-tab-wrap' }, h('table', { class: 'tabela compacta mini-tab' },
+            h('thead', {}, h('tr', {}, ['Pessoa', 'Intimações resolvidas', 'Tempo médio até resolver', 'Prazos cumpridos', 'Tarefas feitas', 'Horas lançadas'].map(t => h('th', {}, t)))),
+            h('tbody', {}, r.pessoas.filter(p => p.metricas).map(p => { const m = p.metricas, pc = (a, t) => t ? Math.round(a * 100 / t) + '% no prazo' : '';
+              const tm = m.tempo_medio_h === null ? '—' : m.tempo_medio_h < 24 ? m.tempo_medio_h.toFixed(1).replace('.', ',') + ' h' : (m.tempo_medio_h / 24).toFixed(1).replace('.', ',') + ' dias';
+              return h('tr', {}, h('td', {}, h('b', {}, p.nome)), h('td', { class: 'num' }, String(m.intimacoes)), h('td', { class: 'num' }, tm),
+                h('td', { class: 'num' }, String(m.prazos), m.prazos ? h('small', { class: 'peq' }, ' · ' + pc(m.prazos_no_prazo, m.prazos)) : null),
+                h('td', { class: 'num' }, String(m.tarefas), m.tarefas ? h('small', { class: 'peq' }, ' · ' + pc(m.tarefas_no_prazo, m.tarefas)) : null),
+                h('td', { class: 'num' }, m.horas_min ? Math.floor(m.horas_min / 60) + 'h' + String(m.horas_min % 60).padStart(2, '0') : '—')); }))))) : null,
         total ? h('div', { class: 'eq-bloco' }, h('h3', {}, 'Ranking do período'), ranking,
           h('div', { class: 'eq-legenda' }, catsUsadas.map(c => h('span', {}, h('span', { class: 'eq-ponto', 'data-cor': corCat(c.id) }), c.nome)))) : null,
         h('div', { class: 'eq-cards' }, r.pessoas.map(cartao)))));

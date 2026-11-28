@@ -2305,3 +2305,36 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   cliente indicado em Acordo/Execução/Encerrado → tarefa "🤝 Dividir honorários com …" (`[indicacao:procId|fase]`).
 - Intimações recebidas: "Resolvida · Gustavo · 26/11 14:32" (dia e hora de Brasília, `diaHoraSP`).
 - Teste: `.github/motor/teste/etapa862.js`.
+- 8.63.0 (etapa 2 do pedido de 27/11):
+  - Processos › Petição inicial: coluna "Tentativa de acordo" depois de Protocolar (Processos.acordo_tent = pendente | feito | sem_contato, com _em/_por).
+    Nasce "pendente" no protocolo (`concluirPeticaoInicial_` e `iniciaisProtocoladas862_` → `marcarTentativaAcordo_`; fora previdenciário, criminal e
+    família — `acordoCabe_`). Cartão "Cliente × Empresa" com Copiar mensagem / WhatsApp / E-mail / ✓ Feito / Sem contato (rota `processos.acordoTentativa`);
+    o processo também está em Ajuizados. Texto em Config ACORDO_MSG (Configurações › Equipe › "Mensagem da tentativa de acordo", rota
+    `processos.acordoMsg`; marcas [CLIENTE] [NÚMERO] [EMPRESA] [VARA]).
+  - "⚡ A IA explica" em cada processo (tela do processo, antes de "Agora"): aba/tabela ResumosIA (id = processo; `situacaoProcessoIA_`,
+    `SISTEMA_SITUACAO_`: onde está, último acontecimento, o que esperar, o que fazer; inclui o acordo anotado na audiência). Guardado; refaz quando
+    muda a base (último andamento, última intimação, ficha de audiência, etapa) — `baseSituacao_`. Rotas `ia.situacao` (leitura; devolve `velho`)
+    e `ia.situacaoRefazer`; a tela refaz sozinha quando está velho. Robô `resumosProcessosIA_`: 6 por rodada, só 7h–20h (tempo de robô).
+  - Relatórios › Equipe: "Números de cada pessoa" (`metricasPessoas_`: intimações resolvidas e tempo médio até resolver, prazos cumpridos e % no
+    prazo, tarefas e % no prazo, horas lançadas), no Dia/Semana/Mês.
+  - Calculadora de rescisão (painel; motor único assets/rescisao-motor.js): "Adicionais e horas extras" (insalubridade 10/20/40% sobre o salário
+    mínimo — `SALARIO_MINIMO` 1.621,00 — ou o piso; periculosidade 30%; adicional noturno com a hora reduzida; horas extras 50% e 100%; divisor
+    220/200/180). Pago na época → integra a remuneração das rescisórias. NÃO pago → `adicionaisMensais` + bloco "Adicionais… com reflexos":
+    principal dos meses (até 60) + DSR 1/6 (extras e noturno) + 13º + férias + 1/3 + aviso + FGTS (sem férias indenizadas — OJ 195) + multa
+    (só se a multa do FGTS estiver marcada, regra de 18/11). Insalubridade × periculosidade: fica a mais vantajosa (CLT 193, § 2º); a hora das
+    extras e do noturno já leva o adicional (Súmulas 132/139). Teste `.github/motor/teste/rescisaoAdicionais.js`.
+  - Edifício Future (pedidos do Luiz, 27/11): ficha do locatário com "↔ Mudou de apartamento" (mesmo contrato; o antigo fica vago ou "reforma";
+    a cobrança em aberto vai junto), "✕ Não chegou a entrar" (sai, cobranças em aberto canceladas, caução devolvida no caixa se marcado),
+    "⏏ Saiu antes do fim" e "⇄ Trocar o morador" (empresa que paga, ex.: Hercílio Luz: troca só quem mora; contrato e cobrança continuam)
+    — rota `future.pessoa.mover` (`futureMoverPessoa_`, acao mudou | nao_entrou | saiu_antes | trocar_morador). "↻ Renovar" de contrato que veio
+    da planilha antiga (sem FutContratos) abre preenchido com a unidade e o locatário atual (`renova=1`), começando no dia seguinte ao fim.
+  - Contratos do prédio: garantia = Caução OU Fiador OU Sem (uma só: Lei 8.245/91, art. 37). Fiador: cláusula 9ª "DA FIANÇA" (solidário, renúncia
+    ao benefício de ordem — CC 827/828/829 —, até a devolução das chaves — art. 39 —, exoneração com 120 dias — art. 40, X —, nova garantia em 30
+    dias — art. 40) e assinaturas do fiador e, se casado(a), do cônjuge (CC 1.647, III; "separação total de bens" dispensa). Sala comercial =
+    contrato NÃO residencial (atividade obrigatória, alvará por conta da locatária, energia direto na concessionária, taxas da sala, CPF ou CNPJ —
+    empresa exige a qualificação inteira) e laudo próprio ("3. VISTORIA DA SALA"). `futAtualizarModelos863_` (uma vez, Config FUTURE_MODELOS_863;
+    também no robô de hora em hora) põe a fiança entre marcas [[SO_FIADOR]]/[[SO_CONJUGE]] no modelo residencial (somem com caução: os contratos
+    de hoje saem iguais; "descontado da caução" virou {{DESCONTO_CAUCAO}}) e CRIA no Drive "MODELO — CONTRATO DE LOCAÇÃO COMERCIAL (painel)" e
+    "MODELO — LAUDO DE VISTORIA COMERCIAL (painel)" (Config FUTURE_MODELO_COMERCIAL / _LAUDO_COMERCIAL), copiados dos residenciais; trecho que
+    não estava no modelo vai para Config FUTURE_MODELOS_863_AVISO. Aditivo e distrato continuam só para apartamentos. Teste
+    `.github/motor/teste/futureModelos.js` (Google Docs falso, textos inventados).
