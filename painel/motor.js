@@ -1,8 +1,8 @@
-/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.64.1 — NÃO EDITE À MÃO.
+/* GERADO por .github/motor/gerar.mjs a partir de painel-backend/Code.gs 8.65.0 — NÃO EDITE À MÃO.
    O navegador faz as mesmas contas do Apps Script com os dados lidos do Supabase. Gravar, serviços do Google ou tabela não
    liberada param a conta e a tela volta a ser pedida ao Apps Script (painel/banco.js). */
 (function () {
-var MOTOR_VERSAO = '8.64.1';
+var MOTOR_VERSAO = '8.65.0';
 var AMB = null; // ambiente da vez (banco.js): { tabela(nome), config(chave), parar(motivo) }
 function foraDoNavegador_(o) { var e = new Error('fora do navegador: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
 function servico_(nome) { return new Proxy({}, { get: function (_, p) { if (nome === 'Utilities' && UTIL_[p]) return UTIL_[p]; if (nome === 'Logger') return function () {}; return foraDoNavegador_(nome + '.' + String(p)); } }); }
@@ -79,7 +79,7 @@ function asaasChave_() { return AMB.asaas ? 'ligado' : ''; }
 function semGoogle_() { return true; } // 8.35: a agenda vem da cópia (AgendaEventos)
 function ultimasLinhasLog_(n) { var sh = aba_('Log'), ult = sh.getLastRow(), q = Math.min(Math.max(ult - 1, 0), n); return q ? sh.getRange(ult - q + 1, 1, q, 4).getDisplayValues() : []; }
 var MEMO_LEITURA = null;
-var VERSAO = '8.64.1';
+var VERSAO = '8.65.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -2669,7 +2669,7 @@ function inicioExtras_(d, u) {
  *  audiências (conciliação e instrução) de HOJE e dos últimos N dias com o resultado anotado: acordo fechado (valor, parcelas, quem paga),
  *  sem acordo (proposta), redesignada, não aconteceu — ou "falta anotar". Perícias ficam de fora. */
 function audienciasResultados_(hoje, dias, clis, procs) {
-  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' };
+  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada', ok_auto: 'OK (sem anotação em 5 dias)' };
   return atosDaAgenda_(somarDias_(hoje, -dias), hoje, tabela_('Eventos')).filter(function (a) { return a.tipo !== 'pericia'; }).map(function (a) {
     var f = fichaDoAto_(fichas, a) || {}, ac = jsonAto_(f.acordo), pr = jsonAto_(f.preparo), p = procs[a.numero] || {}, c = clis[p.cliente_id] || {};
     var r = ac.resultado || pr.resultado || '';

@@ -2374,3 +2374,20 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
   o repasse" dos pagamentos de acordo; `recibosFaltando864_` (robôs do escritório, Config FIX_RECIBOS_864) gera os recibos de parcelas pagas desde
   01/11 sem PDF. Edifício Future: AP 107 vago. `aplicarPainelEproc_`: prazo fechado SOZINHO (robô, baixa em lote/automática) que o portal ainda
   mostra correndo é REABERTO com a data do portal ("reaberto pelo eproc/PJe"); fechado por uma pessoa continua fechado (2 casos reais no TJSC).
+
+## 8.65.0 O PORTAL MANDA (pedido da usuária, 28/11/2026: "se tem o painel, sempre vá pelo painel; o Gmail e o DJEN são bons quando não tem o painel"; "faça em todos os sistemas")
+
+- `portaisLidos_()` (Config EPROC_PAINEL / PJE_PAINEL lidos com sucesso nas últimas 30 h; `COBRE_PORTAL_`: conta TJSC → TJSC, JFSC → TRF4, PJe TRTx → TRTx):
+  e-mail do tribunal e DJEN desses tribunais só REGISTRAM a intimação (terminada_por "robô (o prazo vem do portal: …)", fora das Recebidas); o prazo
+  vem só do portal. A leitura do portal não reaproveita essa intimação (cria a dela, com o texto do portal). TRT12, TJRS, TJAL, TJPR etc. seguem pelo e-mail/DJEN.
+- `foraDoPortal865_` (fim do `aplicarPainelEproc_`, eproc e PJe, só com a leitura COMPLETA): prazo do robô (origem robô, sem marca do portal, não
+  conferido/reaberto por pessoa, fora "ato:", criado há 2 h+) que não bate com nenhum prazo em aberto nem intimação aguardando abertura do portal
+  (mesmo fim, ou data da ciência/expedição ±3 dias do envio/início) → cancelado "sem prazo: … o portal não mostra … Se for nosso, reabra", e a
+  intimação ligada sai das Recebidas. Achado em 28/11: Priscila e Jacinto/Onélia (30/11) eram confirmações de intimações de OUTRAS partes.
+- Audiências pelo portal (`resultadosDoPortal865_`): a função `tribunais` lê também (só a lista, nada é aberto) audiencia_realizada_listar,
+  audiencia_nao_realizada_listar e as de conciliação (últimos 75 dias, `audHist`) e, no PJe, as audiências passadas com o status. Cancelada no
+  futuro → sai da agenda (`cancelarEventoAto_`); passada → resultado na ficha (realizada / sem_acordo "sem conciliação" / acordo "com conciliação" /
+  nao_houve / redesignada), "Pelo eproc: …", sem passar por cima do que a equipe anotou (`gravarResultadoAto_`). A ATA não é aberta (abrir documento pode dar ciência).
+- `audienciasOkAuto865_` (robôs do escritório): audiência que passou há 5+ dias sem resultado → "ok_auto" ("OK (sem anotação em 5 dias)").
+- Mapa do painel do eproc (`mapa`/`mapaAjax` na resposta de painel_eproc): só os nomes das listas, para saber o que mais o eproc mostra.
+- Leitura extra uma vez logo depois de instalar (Properties P865_EPROC_PAINEL_EM / P865_PJE_PAINEL_EM). Teste em `.github/motor/teste/etapa860.js`.

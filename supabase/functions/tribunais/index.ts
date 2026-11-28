@@ -242,7 +242,7 @@ export async function lerPainelPje(cred: any, navJa?: Nav) {
       const au = await jget('/processos/id/' + p.id + '/audiencias?canceladas=true');
       (Array.isArray(au) ? au : []).forEach((a: any) => {
         const ini = String(a.dataInicio || ''), st = String(a.status || '');
-        if (!/^\d{4}-\d{2}-\d{2}T/.test(ini) || ini.slice(0, 10) < hoje) return;
+        if (!/^\d{4}-\d{2}-\d{2}T/.test(ini) || ini.slice(0, 10) < new Date(Date.now() - 75 * 864e5).toISOString().slice(0, 10)) return; // 8.65: as passadas trazem o resultado
         out.audiencias.push({ ...base0, evento: String((a.tipo && (a.tipo.descricao || a.tipo)) || 'Audiência') + (/designad/i.test(st) ? '' : ' — ' + st), situacao: st,
           data: ini.slice(0, 10), hora: ini.slice(11, 16), sala: String((a.salaFisica && a.salaFisica.nome) || ''), obs: '' });
       });
@@ -374,12 +374,16 @@ export async function lerPainelEproc(cfg: typeof SSO_EPROC[string], cred: { logi
   const ir = async (u: string, init: RequestInit = {}) => { if (NUNCA_ABRIR.test(u)) throw new Error('endereço proibido (daria ciência)'); let ult: unknown;
     for (let t = 0; t < 3; t++) { try { return await nav.ir(u, init); } catch (x) { ult = x; await new Promise(r => setTimeout(r, 1500)); } } throw ult; };
   const out: any = { ok: true, prazos: [], pendentes: [], pauta: [], audiencias: [], contagens: {}, avisos: [], perfil: e.perfil || '', perfis: e.perfis || [] };
+  // 8.65: mapa do painel (só os NOMES das listas e o texto do link — nada é aberto), para saber o que mais o eproc mostra
+  out.mapa = [...painel.matchAll(/<a[^>]*href="(controlador\.php\?acao=([a-z_]+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)].map(m => ({ acao: m[2], texto: textoH(m[3]).slice(0, 80) }))
+    .filter((x, i, a) => x.texto && !NUNCA_ABRIR.test(x.acao) && a.findIndex(y => y.acao === x.acao && y.texto === x.texto) === i).slice(0, 120);
   const ajax = [...painel.matchAll(/controlador_ajax\.php\?acao_ajax=retornar_citacao_intimacao_estado[^"'\s]*/gi)].map(m => deHtml(m[0])).filter((x, i, a) => a.indexOf(x) === i);
   for (const u of ajax) {
     try {
       const r = await ir(base + u, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = JSON.parse(r.html);
       const us = (j.usuarios || [])[0]; if (!us) continue;
       const uf = String((j.requestInfo || {}).uf || ''), grau = cfg.graus[uf] || uf, R = us.resultados || {}, L = us.links || {};
+      out.mapaAjax = out.mapaAjax || {}; out.mapaAjax[grau] = { resultados: R, links: Object.keys(L) };
       out.contagens[grau] = { aguardando_abertura: +R.numCitacaoIntimacaoPendente || 0, prazos_em_aberto: +R.numCitacaoIntimacaoAberto || 0, pauta: +R.numCitacaoIntimacaoPauta || 0, decurso: +R.numDecursoPrazo || 0 };
       const lista = async (k: string, fn: (h: string, g: string) => any[], chave: string) => {
         if (!L[k]) return; try { const q = await ir(base + L[k]); const itens = fn(q.html, grau); out[chave].push(...itens);
@@ -392,6 +396,17 @@ export async function lerPainelEproc(cfg: typeof SSO_EPROC[string], cred: { logi
   }
   const ua = /href="(controlador\.php\?acao=audiencia_futura_listar&(?:amp;)?acao_origem[^"]*)"/.exec(painel);
   if (ua) { try { const q = await ir(base + deHtml(ua[1])); out.audiencias = lerAudiencias(q.html); } catch (x) { out.avisos.push('audiências: ' + String((x as Error).message || x).slice(0, 80)); } }
+  // 8.65: audiências realizadas / não realizadas (só a LISTA — nada é aberto) para anotar o resultado no painel
+  out.audHist = {};
+  for (const ac of ['audiencia_realizada_listar', 'audiencia_nao_realizada_listar', 'audiencia_realizada_conciliacao_listar', 'audiencia_nao_realizada_conciliacao_listar']) {
+    const m = new RegExp('href="(controlador\\.php\\?acao=' + ac + '[^"]*)"').exec(painel); if (!m) continue;
+    try { const q = await ir(base + deHtml(m[1]));
+      const desde = new Date(Date.now() - 75 * 864e5).toISOString().slice(0, 10);
+      out.audHist[ac] = linhasH(q.html).map(tr => { const cel = celulasH(tr).map(c => textoH(c).slice(0, 200)), dt = datasH(cel[2] || '')[0] || { d: '', h: '' };
+        return { numero: (reCnj.exec(tr) || [''])[0], situacao: cel[1] || '', data: dt.d, hora: dt.h, sala: ((cel[2] || '').match(/Sala \| ([^|]+)/) || [])[1] || '', obs: cel[3] || '' }; })
+        .filter(x => x.data >= desde).slice(-150);
+    } catch (x) { out.avisos.push(ac + ': ' + String((x as Error).message || x).slice(0, 80)); }
+  }
   out.ms = Date.now() - t0;
   return out;
 }

@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.64.1 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.64.1';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.65.0 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.65.0';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.64.1';
+var VERSAO = '8.65.0';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -3667,6 +3667,13 @@ function registrarIntimacao_(ctx, d) {
     if (op) { atualizarLinha_(ctx.intim, intim, { terminada_por: 'robô (para a outra parte: ' + op.slice(0, 60) + ')', terminada_em: agora, ok_por: 'robô', ok_em: agora }); return { nova: true, prazo: marcado }; }
   }
   if (!d.tipo) return { nova: true, prazo: marcado };
+  // 8.65 (pedido da usuária: "o Gmail e o DJEN são bons quando não tem o próprio painel; se tem o painel, sempre vá pelo painel"): tribunal com
+  // portal lido (eproc/PJe pelo login) nas últimas 30 h → o e-mail e o DJEN só registram a intimação; o PRAZO vem do portal.
+  if (!/painel do advogado|\(portal\)/.test(d.fonte || '') && portaisLidos_()[proc.tribunal || tribunalDoNumero_(d.numero)]) {
+    var agoraP = new Date().toISOString();
+    atualizarLinha_(ctx.intim, intim, { terminada_por: 'robô (o prazo vem do portal: ' + portaisLidos_()[proc.tribunal || tribunalDoNumero_(d.numero)] + ')', terminada_em: agoraP, ok_por: 'robô', ok_em: agoraP });
+    return { nova: true, prazo: marcado };
+  }
   // 8.54: "Expedido(a) intimação a(o) X" do PJe para a OUTRA parte, ou mandado do oficial de justiça: fica em "Todas", sem prazo
   var opPje = d.tipo === 'expedida' ? destinoPjeOutraParte_(d, proc) : '';
   if (opPje) { atualizarLinha_(ctx.intim, intim, { terminada_por: 'robô (para a outra parte: ' + opPje.slice(0, 70) + ')', terminada_em: agora, ok_por: 'robô', ok_em: agora }); return { nova: true, prazo: marcado }; }
@@ -4469,8 +4476,10 @@ function painelPortal_(ctx, forcar, o) {
   var res = { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 };
   if (!sbLigado_()) return res;
   var P = PropertiesService.getScriptProperties(), ult = +P.getProperty(o.prop) || 0;
-  if (!forcar && !horaDosPortais_(ult)) return res;
-  P.setProperty(o.prop, String(Date.now())); res.rodou = true; res.nome = o.nome;
+  // 8.65: logo depois de instalar a versão, uma leitura fora de hora para aplicar as regras novas (portal manda) sem esperar as 7h30
+  var uma865 = !P.getProperty('P865_' + o.prop);
+  if (!forcar && !uma865 && !horaDosPortais_(ult)) return res;
+  P.setProperty(o.prop, String(Date.now())); P.setProperty('P865_' + o.prop, '1'); res.rodou = true; res.nome = o.nome;
   var c = sbConf_(), j = {};
   try {
     var r = UrlFetchApp.fetch(c.url + '/functions/v1/tribunais', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
@@ -4548,7 +4557,7 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     }
     if (x.fim < hoje) return;
     var proc = procDe(numero, x.cliente), envio = dia(x.envio);
-    var intim = ctx.intim.linhas.filter(function (i) { return i.numero === numero && !i.prazo_id && envio && dia(i.recebido_em) >= somarDias_(envio, -3) && dia(i.recebido_em) <= somarDias_(envio, 15); })[0];
+    var intim = ctx.intim.linhas.filter(function (i) { return i.numero === numero && !i.prazo_id && !/vem do portal/.test(i.terminada_por || '') && envio && dia(i.recebido_em) >= somarDias_(envio, -3) && dia(i.recebido_em) <= somarDias_(envio, 15); })[0];
     if (!intim) {
       var chaveI = SIS === 'PJe' ? 'pje-painel|' + numero + '|' + x.expediente : 'eproc-painel|' + numero + '|' + x.envio;
       if (!ctx.chaves[chaveI]) registrarIntimacao_(ctx, { fonte: fonte, chave: chaveI, recebido_em: (envio || hoje) + 'T12:00:00.000Z', numero: numero, tribunal: tribunalDoNumero_(numero) || sigla, sistema: SIS,
@@ -4627,6 +4636,10 @@ function aplicarPainelEproc_(ctx, conta, res, novidades) {
     tabela_('Eventos').linhas.filter(function (e) { return e.numero === numero && e.data > hoje && datas.indexOf(e.data) < 0 && !/per[ií]cia/.test(e.tipo || '') && !/apagado/.test(e.evento_id || ''); })
       .forEach(function (e) { cancelarEventoAto_(e, 'audiência remarcada no ' + SIS + ' para ' + datas.map(dataBR_).join(', ')); a.remarcadas++; });
   });
+  // 5) 8.65 RESULTADO / CANCELAMENTO das audiências pelo portal (o que o portal diz que aconteceu entra no painel)
+  try { resultadosDoPortal865_(ctx, conta, SIS, a); } catch (eR) { a.erro_resultados = String(eR.message || eR).slice(0, 120); }
+  // 6) 8.65 prazo do robô que o portal NÃO mostra (era de outra parte, do MP ou já terminou) sai da lista
+  try { a.fora_do_portal = foraDoPortal865_(ctx, conta, SIS); } catch (eF2) { a.erro_fora = String(eF2.message || eF2).slice(0, 120); }
   return a;
 }
 
@@ -6704,7 +6717,7 @@ function baseSituacao_(pa, ints, fichas) {
 function acordoDoProcessoTxt_(pa, fichas) {
   return (fichas || []).filter(function (f) { return f.numero === pa.numero; }).map(function (f) { var a = jsonAto_(f.acordo); if (!a.resultado) return '';
     return '- audiência de ' + dataBR_(f.data) + ': ' + ({ acordo: 'ACORDO FECHADO' + (a.valor_fechado ? ' de R$ ' + a.valor_fechado : '') + (a.parcelas_acordo ? ' em ' + a.parcelas_acordo + ' parcela(s)' : '') + (a.primeiro ? ', 1º pagamento em ' + dataBR_(a.primeiro) : ''),
-      sem_acordo: 'sem acordo', redesignada: 'redesignada', nao_houve: 'não aconteceu' })[a.resultado] || a.resultado; }).filter(String).join('\n');
+      sem_acordo: 'sem acordo', redesignada: 'redesignada', nao_houve: 'não aconteceu', ok_auto: 'passou sem anotação' })[a.resultado] || a.resultado; }).filter(String).join('\n');
 }
 function situacaoGuardada_(id) {
   var r = tabela_('ResumosIA').linhas.filter(function (x) { return x.id === id; })[0];
@@ -9232,8 +9245,8 @@ function atosSemData_() {
 /* 8.45 (pedido da usuária: "página de audiência separada em conciliação e instrução; na conciliação o valor do acordo combinado com o
    cliente; na instrução as testemunhas, se tem ou não"): campos novos da ficha, guardados em JSON nas colunas `acordo` e `preparo`. */
 function jsonAto_(v) { if (!v) return {}; try { var o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
-var CAMPOS_ACORDO_ = { pedir: 'v', minimo: 'v', forma: ['', 'avista', 'parcelado', 'tanto'], parcelas: 'n', autorizou: 'q', obs: 't', resultado: ['', 'acordo', 'sem_acordo', 'redesignada', 'nao_houve'], valor_fechado: 'v', resultado_obs: 't' };
-var CAMPOS_PREPARO_ = { tem: ['', 'sim', 'nao', 'confirmar'], pontos: 't', documentos: 't', orientado: 'q', depoimento: 't', resultado: ['', 'realizada', 'redesignada', 'nao_houve', 'acordo'], resultado_obs: 't' };
+var CAMPOS_ACORDO_ = { pedir: 'v', minimo: 'v', forma: ['', 'avista', 'parcelado', 'tanto'], parcelas: 'n', autorizou: 'q', obs: 't', resultado: ['', 'acordo', 'sem_acordo', 'redesignada', 'nao_houve', 'realizada', 'ok_auto'], valor_fechado: 'v', resultado_obs: 't' };
+var CAMPOS_PREPARO_ = { tem: ['', 'sim', 'nao', 'confirmar'], pontos: 't', documentos: 't', orientado: 'q', depoimento: 't', resultado: ['', 'realizada', 'redesignada', 'nao_houve', 'acordo', 'sem_acordo', 'ok_auto'], resultado_obs: 't' };
 function limparCamposAto_(d, campos, antes, quem, agora) {
   var o = Object.assign({}, antes || {});
   Object.keys(campos).forEach(function (k) {
@@ -9736,7 +9749,7 @@ function robosEscritorio_(ctx) {
   var r = {}, erros = [];
   [['valores', valoresALevantar_], ['parados', processosParados_], ['retomar', retomarAtendimentos_], ['assinaturas', lembrarAssinaturas_], ['google', postagemGoogle_], ['privacidade', limparContatosAntigos_], ['log', arquivarLog_], ['crm', crmSincronizar_], ['crmdados', function () { return crmDadosCliente_(); }], ['comissoes', function () { return gerarComissoes_(); }], ['explicacoes', explicacoesRobo_], ['atossemdata', cobrarAtosSemData_], ['caixavencida', baixarCaixaVencida_], ['notifinicial858', notificacoesIniciais858_], ['audios', function () { apagarTemporarios_(''); }], ['emails', avisarMovimentoClientes_], ['levantamento', lancarExitosLevantamento_], ['whats', whatsCutucar_], ['whatsdocs', whatsDocsRobo_], ['fluxos', fluxosProcessos_], ['testemunhas', testemunhasNasNotas_], ['identificar', identificarProvisorios_], ['reabrir848', reabrirVencidosCedo848_], ['publicacoes849', separarPublicacoes849_], ['reabrir849', function () { return reabrirVencidosCedo848_('FIX_REABRIR_849'); }], ['outra850', outraParte850_], ['atosdpush850', function () { return atosSemDataPeloPush_(12); }], ['pericia850', periciasTrocadas850_], ['cancelados850', atosCancelados_], ['tipos850', tiposDoPush850_], ['vencidos844', baixarVencidos844_], ['ajuizados847', ajuizadosSemNumero847_], ['semnum848', semNumeroParaProtocolar848_], ['atosproxato848', function () { return atosDoProximoAto_(40); }], ['atosdup848', limparAtosDuplicados848_], ['prazos823', function () { var r = revisarPrazos_({ aplicar: true, categorias: ['repetidos', 'mp', 'confirmacao', 'outraparte', 'djen', 'atoapagado', 'recalcular'] }, null); var n = r.repetidos.length + r.mp.length + r.confirmacao.length + r.outraparte.length + r.djen.length + r.atoapagado.length + r.recalcular.length; /* 8.37.2: a intimação de audiência NÃO é mais cancelada: fica nos prazos para conferir (pedido da usuária) */
     if (!config_('FIX_VENCIDOS_823')) { var v = revisarPrazos_({ aplicar: true, categorias: ['vencidos'] }, { usuario: 'robô', nome: 'robô (pedido da Dra. Júlian)' }); setConfig_('FIX_VENCIDOS_823', new Date().toISOString() + ' · ' + v.vencidos.length + ' prazo(s) vencido(s) baixado(s) em lote', 'Baixa dos prazos vencidos já feitos (8.23, uma vez)'); n += v.vencidos.length; }
-    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['situacao862', resumosProcessosIA_], ['indicfim862', indicacaoFimProcesso862_], ['recibos864', recibosFaltando864_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
+    return n; }], ['asaas', asaasRobo_], ['audiencias819', conferirAudienciasInstrucao_], ['dist837', distribuirAdvogado837_], ['atosdup837', limparAtosDuplicados837_], ['partes837', identificarPartes_], ['iniciais837', iniciaisComNumero_], ['iniciais862', iniciaisProtocoladas862_], ['intaud862', atosFalsosIntimadoAudiencia862_], ['indic862', indicacoesPendentes862_], ['situacao862', resumosProcessosIA_], ['indicfim862', indicacaoFimProcesso862_], ['recibos864', recibosFaltando864_], ['audok865', audienciasOkAuto865_], ['prazospje', function () { if (config_('FIX_PRAZOS_819')) return 0; var r = recalcularPrazosPje_({ aplicar: true }, null); setConfig_('FIX_PRAZOS_819', new Date().toISOString() + ' · ' + r.itens.length + ' prazo(s) do PJe passaram a contar da publicação no DJEN', 'Correção 8.19 dos prazos do PJe (uma vez)'); return r.itens.length; }]].forEach(function (x) {
     try { r[x[0]] = x[1](ctx); } catch (e) { erros.push(x[0] + ': ' + (e.message || e)); }
   });
   var feitas = Object.keys(r).reduce(function (a, k) { return a + (+r[k] || 0); }, 0);
@@ -9753,6 +9766,99 @@ function recibosFaltando864_() {
   var robo = { usuario: 'robô', nome: 'robô (recibos)', perfil: 'administrador' }, n = 0, erros = 0;
   falta.slice(0, 5).forEach(function (p) { try { reciboGerar_({ id: p.id }, robo); n++; } catch (e) { erros++; } });
   if (falta.length <= 5 && !erros) setConfig_('FIX_RECIBOS_864', new Date().toISOString() + ' · ' + n + ' recibo(s) que faltavam gerado(s)', 'Recibos que faltavam (8.64.1, uma vez)');
+  return n;
+}
+
+/* ===================================================================================================================================
+   8.65 Portal manda (pedido da usuária, 28/11/2026): "se tem o painel, sempre vá pelo painel"; "faça isso em todos os sistemas".
+   =================================================================================================================================== */
+var COBRE_PORTAL_ = { TJSC: ['TJSC'], JFSC: ['TRF4'] };
+var PORTAIS_LIDOS_ = null;
+/** Tribunais cujo portal (eproc/PJe pelo login) foi lido COM SUCESSO nas últimas 30 h → { 'TJSC': 'eproc TJSC', 'TRT6': 'PJe TRT6', … }. */
+function portaisLidos_() {
+  if (PORTAIS_LIDOS_) return PORTAIS_LIDOS_;
+  var out = {}, lim = Date.now() - 30 * 3600e3;
+  [['EPROC_PAINEL', 'eproc'], ['PJE_PAINEL', 'PJe']].forEach(function (k) {
+    var st; try { st = JSON.parse(config_(k[0]) || '{}'); } catch (e) { st = {}; }
+    if (!st.em || Date.parse(st.em) < lim) return;
+    (st.contas || []).forEach(function (c) { if (!c.ok || !c.sigla) return; (COBRE_PORTAL_[c.sigla] || [c.sigla]).forEach(function (t) { out[t] = k[1] + ' ' + c.sigla; }); });
+  });
+  return (PORTAIS_LIDOS_ = out);
+}
+/** Grava o resultado de um ato na ficha (Audiencias), sem passar por cima do que a equipe anotou. */
+function gravarResultadoAto_(fichas, ato, res, obs, por) {
+  var f = fichas.porChave[ato.chave], campo = ato.tipo === 'instrucao' ? 'preparo' : 'acordo', o = jsonAto_(f && f[campo]);
+  if (o.resultado || (f && jsonAto_(f.acordo).resultado)) return false;
+  var agora = new Date().toISOString();
+  o.resultado = res; o.resultado_em = agora; o.resultado_por = por; o.resultado_obs = String(obs || '').slice(0, 500);
+  var m = {}; m[campo] = JSON.stringify(o); m.atualizado_em = agora; m.atualizado_por = 'robô';
+  if (f) atualizarLinha_(fichas.tab, f, m);
+  else { var nf = Object.assign({ chave: ato.chave, numero: ato.numero || '', data: ato.data || '', hora: ato.hora || '', tipo: ato.tipo || '', modo: '', link: '', testemunhas: '[]', obs: '',
+    ciente_em: '', ciente_por: '', criado_em: agora }, m); inserirLinha_(fichas.tab, nf); fichas.porChave[ato.chave] = nf; }
+  return true;
+}
+/** O que o portal diz das audiências (realizada com/sem acordo, cancelada, não realizada): cancelada no futuro sai da agenda; passada ganha o
+ *  resultado na ficha (a ata NÃO é aberta: abrir documento pode dar ciência). */
+function resultadosDoPortal865_(ctx, conta, SIS, a) {
+  var hoje = hojeSP_(), hist = [], num = function (v) { return mascaraCnj_(String(v || '').replace(/\D/g, '')); };
+  Object.keys(conta.audHist || {}).forEach(function (k) { (conta.audHist[k] || []).forEach(function (x) { hist.push({ numero: num(x.numero), data: x.data, hora: x.hora || '', sit: String(x.situacao || '') + (x.obs ? ' — ' + x.obs : '') }); }); });
+  (conta.audiencias || []).forEach(function (x) { var st = normalizar_(x.situacao || x.evento || '');
+    if ((x.data && x.data < hoje) || /cancel|nao realizad|realizad/.test(st)) hist.push({ numero: num(x.numero), data: x.data, hora: x.hora || '', sit: String(x.evento || '') + (x.situacao && String(x.evento || '').indexOf(x.situacao) < 0 ? ' — ' + x.situacao : '') }); });
+  if (!hist.length) return;
+  var tabE = tabela_('Eventos'), fichas = fichasAtos_(), passados = null, por = 'robô (' + SIS + ' ' + (conta.sigla || '') + ')';
+  a.canceladas = a.canceladas || 0; a.resultados = a.resultados || 0;
+  hist.forEach(function (x) {
+    if (!RE_CNJ.test(x.numero) || !/^\d{4}-\d{2}-\d{2}$/.test(x.data || '')) return;
+    var t = normalizar_(x.sit), cancel = /cancelad|nao realizad|nao houve|redesign/.test(t) && !/\brealizada\b/.test(t.replace(/nao realizad/g, ''));
+    if (x.data >= hoje) {
+      if (!cancel) return;
+      tabE.linhas.filter(function (e) { return e.numero === x.numero && e.data === x.data && !/apagado/.test(e.evento_id || '') && !/per[ií]cia/.test(e.tipo || '') && (!x.hora || !e.hora || e.hora === x.hora); })
+        .forEach(function (e) { cancelarEventoAto_(e, 'audiência cancelada no ' + SIS + ' (' + x.sit.slice(0, 50) + ')'); a.canceladas++; });
+      return;
+    }
+    passados = passados || atosDaAgenda_(somarDias_(hoje, -75), somarDias_(hoje, -1), tabE);
+    passados.filter(function (at) { return at.numero === x.numero && at.data === x.data && at.tipo !== 'pericia'; }).forEach(function (at) {
+      var res = cancel ? (/redesign/.test(t) ? 'redesignada' : 'nao_houve') : /sem concilia|sem acordo|infrutif|inexitos/.test(t) ? 'sem_acordo'
+        : /com concilia|conciliacao parcial|acordo/.test(t) ? 'acordo' : 'realizada';
+      if (gravarResultadoAto_(fichas, at, res, 'Pelo ' + SIS + ': ' + x.sit, por)) a.resultados++;
+    });
+  });
+}
+/** Prazo do robô (do e-mail ou do DJEN) num tribunal cujo portal foi lido por inteiro, que não bate com nenhum prazo em aberto nem intimação
+ *  aguardando abertura do portal → cancelado "sem prazo" (reversível). Nunca mexe em prazo conferido/lançado por pessoa, de audiência ("ato:")
+ *  nem já ligado ao portal. */
+function foraDoPortal865_(ctx, conta, SIS) {
+  if (/mostrou|tempo esgotado|n[ãa]o consegui/i.test((conta.avisos || []).join(' '))) return 0; // leitura incompleta: não decide
+  var tribs = COBRE_PORTAL_[conta.sigla] || [conta.sigla], hoje = hojeSP_(), agora = new Date().toISOString(), n = 0;
+  var num = function (v) { return mascaraCnj_(String(v || '').replace(/\D/g, '')); };
+  var itens = (conta.prazos || []).concat(conta.pendentes || []).map(function (x) { return { numero: num(x.numero), fim: x.fim || '', envio: String(x.envio || x.inicio || '').slice(0, 10), inicio: String(x.inicio || '').slice(0, 10) }; });
+  var porNum = {}; itens.forEach(function (x) { (porNum[x.numero] = porNum[x.numero] || []).push(x); });
+  var perto = function (d1, d2) { return d1 && d2 && Math.abs(diffDias_(d1, d2)) <= 3; };
+  ctx.prazos.linhas.forEach(function (z) {
+    if (SITUACOES_ABERTAS.indexOf(z.situacao) < 0 || /^ato:/.test(z.observacoes || '') || /\[(eprocp|pjep):/.test(z.observacoes || '')) return;
+    if (tribs.indexOf(tribunalDoNumero_(z.numero || '')) < 0) return;
+    if (z.origem !== 'robô' || (z.conferido_por && !/^rob[ôo]/i.test(z.conferido_por))) return;
+    if (/reaberto|saiu da lista em|baixa em lote em/.test(z.observacoes || '')) return; // reaberto por alguém: fica
+    if (String(z.criado_em || '') > new Date(Date.now() - 2 * 3600e3).toISOString()) return;
+    var ct = String(z.ciencia_tipo || ''), d = ct.match(/(\d{2})\/(\d{2})\/(\d{4})/), dCt = d ? d[3] + '-' + d[2] + '-' + d[1] : '';
+    var bate = (porNum[z.numero] || []).some(function (x) { return x.fim === z.fatal || perto(dCt, x.envio) || perto(dCt, x.inicio) || perto(z.ciencia, x.inicio); });
+    if (bate) return;
+    atualizarLinha_(ctx.prazos, z, { situacao: 'cancelado', atualizado_em: agora, atualizado_por: 'robô (' + SIS + ')',
+      observacoes: (z.observacoes ? z.observacoes + ' | ' : '') + 'sem prazo: em ' + dataBR_(hoje) + ' o ' + SIS + ' ' + conta.sigla + ' (painel do advogado) não mostra este prazo para o escritório — veio do e-mail/DJEN e era de outra parte, do MP ou já terminou (robô). Se for nosso, reabra.' });
+    ctx.intim.linhas.filter(function (i) { return (i.id === z.intimacao_id || i.prazo_id === z.id) && !i.tratada_em && !i.terminada_por; })
+      .forEach(function (i) { atualizarLinha_(ctx.intim, i, { terminada_por: 'robô (o ' + SIS + ' não mostra prazo para o escritório)', terminada_em: agora, ok_por: 'robô', ok_em: agora }); });
+    n++;
+  });
+  return n;
+}
+/** 8.65 (pedido da usuária: "pode dar OK quando já aconteceram, se não foi falado nada em 5 dias"): audiência que passou há 5 dias ou mais sem
+ *  resultado anotado (nem pelo portal) ganha "OK (sem anotação em 5 dias)" e sai do "O que aconteceu?". */
+function audienciasOkAuto865_() {
+  var hoje = hojeSP_(), fichas = fichasAtos_(), n = 0;
+  atosDaAgenda_(somarDias_(hoje, -60), somarDias_(hoje, -5), tabela_('Eventos')).forEach(function (at) {
+    if (at.tipo === 'pericia') return;
+    if (gravarResultadoAto_(fichas, at, 'ok_auto', 'Passaram 5 dias sem ninguém anotar o resultado (OK automático).', 'robô')) n++;
+  });
   return n;
 }
 
@@ -13579,7 +13685,7 @@ function inicioExtras_(d, u) {
  *  audiências (conciliação e instrução) de HOJE e dos últimos N dias com o resultado anotado: acordo fechado (valor, parcelas, quem paga),
  *  sem acordo (proposta), redesignada, não aconteceu — ou "falta anotar". Perícias ficam de fora. */
 function audienciasResultados_(hoje, dias, clis, procs) {
-  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' };
+  var fichas = fichasAtos_(), nomes = { acordo: 'Fechou acordo', sem_acordo: 'Não fechou acordo', redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada', ok_auto: 'OK (sem anotação em 5 dias)' };
   return atosDaAgenda_(somarDias_(hoje, -dias), hoje, tabela_('Eventos')).filter(function (a) { return a.tipo !== 'pericia'; }).map(function (a) {
     var f = fichaDoAto_(fichas, a) || {}, ac = jsonAto_(f.acordo), pr = jsonAto_(f.preparo), p = procs[a.numero] || {}, c = clis[p.cliente_id] || {};
     var r = ac.resultado || pr.resultado || '';

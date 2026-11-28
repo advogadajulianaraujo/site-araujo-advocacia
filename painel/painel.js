@@ -1629,6 +1629,7 @@
       if (a.resultado === 'sem_acordo') return h('span', { class: 'res-aud nao' }, '✕ Não fechou' + (a.proposta ? ' · ofereceram ' + reais(+a.proposta) : ''));
       if (a.resultado === 'redesignada') return h('span', { class: 'res-aud redes' }, '↻ Redesignada');
       if (a.resultado === 'nao_houve') return h('span', { class: 'res-aud redes' }, '— Não aconteceu');
+      if (a.resultado === 'ok_auto') return h('span', { class: 'res-aud redes' }, '— OK (ninguém anotou em 5 dias)');
       if (a.resultado === 'realizada') return h('span', { class: 'res-aud ok' }, '✓ Realizada');
       return h('a', { class: 'res-aud falta', href: '#/audiencias', onclick: ev => ev.stopPropagation() }, '⏳ Falta anotar o resultado');
     };
@@ -4886,7 +4887,7 @@
       document.body.append(caixa); caixa.showModal();
     });
   }
-  const VERSAO_PAINEL = '8.64.1';
+  const VERSAO_PAINEL = '8.65.0';
 
   /** Faixa de urgência do prazo (para a cor da linha). */
   function faixaPrazo(z) {
@@ -6726,7 +6727,7 @@
   function resultadoDe(a) { const o = (ehConc(a) ? a.acordo : a.preparo) || {}; return o.resultado ? o : (a.acordo && a.acordo.resultado ? a.acordo : null); }
   function chipResultado(a) {
     const o = resultadoDe(a); if (!o) return null;
-    const t = { acordo: '🤝 Acordo ' + realBR(o.valor_fechado), sem_acordo: 'Sem acordo' + (o.proposta ? ' (ofereceram ' + realBR(o.proposta) + ')' : ''), redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada' }[o.resultado] || o.resultado;
+    const t = { acordo: '🤝 Acordo ' + realBR(o.valor_fechado), sem_acordo: 'Sem acordo' + (o.proposta ? ' (ofereceram ' + realBR(o.proposta) + ')' : ''), redesignada: 'Redesignada', nao_houve: 'Não aconteceu', realizada: 'Realizada', ok_auto: 'OK (sem anotação)' }[o.resultado] || o.resultado;
     return h('span', { class: 'aud-l-res ' + (o.resultado === 'acordo' || o.resultado === 'realizada' ? 'r-ok' : 'r-info'), title: o.resultado_por ? 'Anotado por ' + o.resultado_por : '' }, t);
   }
   function resumoTestemunhas(a) {

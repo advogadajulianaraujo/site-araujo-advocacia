@@ -120,3 +120,30 @@ assert(zr.situacao === 'conferido' && zr.fatal === dia(9) && !zr.cumprido_por &&
 assert(zp.situacao === 'cumprido' && zp.cumprido_por === 'Davi', 'feito por uma pessoa → continua cumprido');
 const aR2 = C.aplicarPainelEproc_(ctxR, { chave: 'ssotjsc', sigla: 'TJSC', ok: true, contagens: {}, pendentes: [], pauta: [], audiencias: [], prazos: [{ numero: N(6), grau: '1º grau', evento: 'x', dias: 30, envio: dia(-12) + ' 10:00', inicio: dia(-9), fim: dia(9), cliente: '' }] }, { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
 assert(!aR2.reabertos && aR2.iguais === 1, '2ª leitura: igual, não reabre de novo');
+// 8.65: o portal manda — prazo do e-mail que o portal não mostra sai; e-mail de tribunal com portal não cria prazo; resultado das audiências
+add('Processos', [8, 9].map(i => ({ id: 'P865' + i, numero: N(i), tribunal: 'TJSC', sistema: 'eproc', status: 'ativo', area: 'Cível', criado_em: new Date().toISOString() })));
+const velho = new Date(Date.now() - 5 * 864e5).toISOString();
+add('Prazos', [
+  { id: 'Z865x', processo_id: 'P8658', numero: N(8), descricao: 'Intimação de audiência', dias: '5', contagem: 'uteis', ciencia: dia(-3), ciencia_tipo: 'confirmada em ' + dia(-3).split('-').reverse().join('/'), fatal: dia(3), situacao: 'calculado', origem: 'robô', observacoes: 'eproc TJSC: Confirmada', criado_em: velho },
+  { id: 'Z865y', processo_id: 'P8659', numero: N(9), descricao: 'Prazo do eproc', dias: '15', contagem: 'uteis', ciencia: dia(-5), fatal: dia(9), situacao: 'calculado', origem: 'robô', observacoes: 'aviso', criado_em: velho }]);
+add('Eventos', [
+  { chave: 'E865a', numero: N(8), tipo: 'audiência de conciliação', data: dia(6), hora: '14:00', agenda: 'AUDIÊNCIA CONCILIAÇÃO', evento_id: 'ev865a', criado_em: velho },
+  { chave: 'E865b', numero: N(9), tipo: 'audiência de conciliação', data: dia(-2), hora: '15:20', agenda: 'AUDIÊNCIA CONCILIAÇÃO', evento_id: 'ev865b', criado_em: velho },
+  { chave: 'E865c', numero: N(8), tipo: 'audiência de instrução', data: dia(-8), hora: '10:00', agenda: 'AUDIÊNCIA INSTRUÇÃO', evento_id: 'ev865c', criado_em: velho }]);
+const ctx5 = C.contextoRobo_();
+const a5 = C.aplicarPainelEproc_(ctx5, { chave: 'ssotjsc', sigla: 'TJSC', ok: true, contagens: {}, pendentes: [], pauta: [], audiencias: [], avisos: [],
+  prazos: [{ numero: N(9), grau: '1º grau', evento: 'Expedida/certificada a intimação eletrônica', dias: 15, envio: dia(-7) + ' 10:00', inicio: dia(-5), fim: dia(9), cliente: '' }],
+  audHist: { audiencia_nao_realizada_conciliacao_listar: [{ numero: N(8), situacao: 'Audiência de conciliação - cancelada', data: dia(6), hora: '14:00', obs: '' }],
+    audiencia_realizada_conciliacao_listar: [{ numero: N(9), situacao: 'Audiência de conciliação - realizada sem conciliação', data: dia(-2), hora: '15:20', obs: '' }] } },
+  { intimacoes: 0, prazos: 0, ajustados: 0, audiencias: 0 }, []);
+const zx = ctx5.prazos.linhas.find(z => z.id === 'Z865x'), zy = ctx5.prazos.linhas.find(z => z.id === 'Z865y');
+assert(zx.situacao === 'cancelado' && /não mostra este prazo/.test(zx.observacoes) && zy.situacao !== 'cancelado', 'prazo do e-mail que o eproc não mostra sai (reversível); o que o eproc mostra fica');
+assert(/apagado/.test(C.tabela_('Eventos').linhas.find(e => e.chave === 'E865a').evento_id) && a5.canceladas === 1, 'audiência futura CANCELADA no eproc sai da agenda');
+const fb = C.tabela_('Audiencias').linhas.find(f => f.numero === N(9));
+assert(fb && /sem_acordo/.test(fb.acordo) && a5.resultados === 1, 'audiência que passou: o resultado do eproc (sem conciliação) entra na ficha');
+C.setConfig_('EPROC_PAINEL', JSON.stringify({ em: new Date().toISOString(), contas: [{ sigla: 'TJSC', ok: true }] })); C.PORTAIS_LIDOS_ = null;
+const ctx6 = C.contextoRobo_(), nZ6 = ctx6.prazos.linhas.length;
+C.registrarIntimacao_(ctx6, { fonte: 'eproc TJSC', chave: 'mail865', recebido_em: new Date().toISOString(), numero: N(8), tribunal: 'TJSC', sistema: 'eproc', movimento: 'Expedida/certificada a intimação eletrônica', texto: '', nomes: [], tipo: 'expedida', ciencia: dia(0) });
+assert(ctx6.prazos.linhas.length === nZ6 && /vem do portal/.test(ctx6.intim.linhas.find(i => i.chave === 'mail865').terminada_por), 'e-mail do eproc com o portal lido: registra a intimação, mas NÃO cria prazo');
+const nOk = C.audienciasOkAuto865_(), fc = C.tabela_('Audiencias').linhas.find(f => f.numero === N(8) && f.tipo === 'instrucao');
+assert(nOk >= 1 && fc && /ok_auto/.test(fc.preparo), 'audiência passada há 5+ dias sem anotação ganha OK automático');
