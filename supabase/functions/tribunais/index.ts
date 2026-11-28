@@ -274,6 +274,9 @@ export const SSO_EPROC: Record<string, { nome: string; sigla: string; auth?: str
   // 8.60.1 Justiça Federal: eproc da JFSC → login nacional (sso.cloud.pje.jus.br, kc_idp_hint=trf4) → login do TRF4 (eproc-sso.trf4.jus.br) + 2FA do TRF4
   ssotrf4: { nome: 'Justiça Federal — eproc (JFSC e TRF4)', sigla: 'JFSC', inicio: 'https://eproc.jfsc.jus.br/eprocV2/', base: 'https://eproc.jfsc.jus.br/eprocV2/',
     graus: { SC: 'JFSC (1º grau)', JFSC: 'JFSC (1º grau)', TRF4: 'TRF4 (2º grau)', RS: 'JFRS', PR: 'JFPR' } },
+  // 8.63.1 TJRS: eproc do RS → login nacional (sso.cloud.pje.jus.br, kc_idp_hint=tjrs) → login do TJRS (respondeu do Supabase de São Paulo em 28/11)
+  ssotjrs: { nome: 'TJRS — eproc (1º e 2º grau)', sigla: 'TJRS', inicio: 'https://eproc1g.tjrs.jus.br/eproc/', base: 'https://eproc1g.tjrs.jus.br/eproc/',
+    graus: { RS: '1º grau', TJRS: '2º grau' } },
 };
 const NUNCA_ABRIR = /preparar_processo_citado|confirma|ciencia|abrir_prazo|marcar_visualiz/i;
 const reCnj = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
@@ -426,7 +429,7 @@ Deno.serve(async (req: Request) => {
       const rr = await fetch(URL_BANCO + '/rest/v1/rpc/painel_trib_info', { method: 'POST', headers: h, body: JSON.stringify({ p_escritorio: escId }) });
       if (!rr.ok) return resp({ ok: false, erro: 'Chave do banco recusada.' }, 403);
       const cr: Record<string, any> = (await rr.json()) || {};
-      const ids = Object.keys(cr).filter(t => SSO_EPROC[t] && cr[t] && cr[t].login);
+      const ids = Object.keys(cr).filter(t => SSO_EPROC[t] && cr[t] && cr[t].login && (!b.so || t === b.so));
       if (!ids.length) return resp({ ok: true, ligado: false, contas: [] });
       const st = await estado(escId), contas: any[] = [];
       for (const t of ids) {

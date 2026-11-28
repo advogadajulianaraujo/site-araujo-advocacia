@@ -1,5 +1,5 @@
-/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.63.0 — NÃO EDITE À MÃO. */
-export const VERSAO_MOTOR = '8.63.0';
+/* GERADO por .github/motor/gerar-edge.mjs a partir de painel-backend/Code.gs 8.63.1 — NÃO EDITE À MÃO. */
+export const VERSAO_MOTOR = '8.63.1';
 export function criarMotor(base) {
 var AMB = null;
 function foraDoNavegador_(o) { var e = new Error('fora do Supabase: ' + o); e.motor = true; if (AMB) AMB.parar(o); throw e; }
@@ -62,7 +62,7 @@ function formatarData_(d, tz, fmt) {
  * Como instalar: veja painel-backend/INSTALAR.md no repositório do site.
  */
 
-var VERSAO = '8.63.0';
+var VERSAO = '8.63.1';
 
 var PERFIS = {
   administrador: { nome: 'Administrador', financeiro: true, usuarios: true, conferePrazos: true },
@@ -13628,15 +13628,32 @@ function resumoPortaisChat_(ctx, epp, pjp) {
       else partes.push('✕ ' + nome + ' (' + String(c.mensagem || 'não conectou').slice(0, 80) + ')');
     });
   });
+  // 8.63.1 (pedido da usuária: "sempre avise no sistema quais faltam"): tribunais com processo ATIVO que nenhum portal leu nesta rodada
+  var lidos = {};
+  [epp, pjp].forEach(function (r) { ((r && r.st && r.st.contas) || []).forEach(function (c) {
+    if (!c.ok) return; var k = String(c.chave || '');
+    var t = k === 'ssotjsc' ? 'TJSC' : k === 'ssotrf4' ? 'TRF4' : k === 'ssotjrs' ? 'TJRS' : /^pjetrt(\d+)\dg$/.test(k) ? 'TRT' + /^pjetrt(\d+)\dg$/.exec(k)[1] : /^pjetst/.test(k) ? 'TST' : '';
+    if (t) lidos[t] = 1; }); });
+  var faltam = faltamPortais_(lidos);
   var abertos = ctx.prazos.linhas.filter(function (z) { return SITUACOES_ABERTAS.indexOf(z.situacao) >= 0; });
   var semAto = abertos.filter(function (z) { return /ATO N[ÃA]O IDENTIFICADO|PROVIS/i.test(z.descricao || ''); }).length;
   var semData = abertos.filter(function (z) { return !z.fatal; }).length, audSemData = 0; try { audSemData = atosSemData_().length; } catch (e) { audSemData = 0; }
   var txt = '📋 Leitura dos portais (' + hora + '): ' + (partes.join(' · ') || 'nenhum portal ligado') + '. Entraram ' + tot.intimacoes + ' intimação(ões) nova(s), ' + tot.prazos + ' prazo(s)/audiência(s) novo(s) e ' +
     tot.ajustados + ' prazo(s) acertado(s) à data final do tribunal.' + (semAto || semData || audSemData ? ' Ainda sem informação no painel: ' + [semAto ? semAto + ' prazo(s) com ato não identificado' : '', semData ? semData + ' prazo(s) sem data' : '',
     audSemData ? audSemData + ' audiência(s)/perícia(s) designada(s) sem data' : ''].filter(String).join(', ') + '.' : ' Nada provisório nem sem data no painel. ✓');
-  setConfig_('PORTAIS_RESUMO', JSON.stringify({ em: new Date().toISOString(), texto: txt }), 'Resumo da última leitura dos portais (7h30 e 13h30)');
+  if (faltam.length) txt += ' Sem leitura direta (só e-mail, DJEN e DataJud): ' + faltam.map(function (f) { return f.t + ' (' + f.n + ')'; }).join(', ') + ' — falta o acesso em Configurações › Intimações eletrônicas.';
+  setConfig_('PORTAIS_RESUMO', JSON.stringify({ em: new Date().toISOString(), texto: txt, faltam: faltam }), 'Resumo da última leitura dos portais (7h30 e 13h30)');
   chatRobo_(txt);
   return txt;
+}
+/** 8.63.1: tribunais (pelo nº CNJ) com processo ativo e quantos, menos os que o robô leu (lidos = { TJSC: 1, TRT6: 1 … }). */
+function faltamPortais_(lidos) {
+  var cont = {};
+  tabela_('Processos').linhas.forEach(function (p) {
+    if (!p.numero || p.status === 'arquivado' || p.fase === 'extinto') return;
+    var t = tribunalDoNumero_(p.numero); if (t) cont[t] = (cont[t] || 0) + 1;
+  });
+  return Object.keys(cont).filter(function (t) { return !lidos[t]; }).sort(function (a, b) { return cont[b] - cont[a]; }).map(function (t) { return { t: t, n: cont[t] }; });
 }
 function chatRobo_(texto) {
   try { inserirLinha_(tabela_('Chat'), { id: 'M' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), sala: 'geral', de: 'robô', texto: String(texto).slice(0, 1200), em: new Date().toISOString(), apagado: '' }); return true; }

@@ -87,3 +87,9 @@ C.futureMoverPessoa_({ id: 'FP3', acao: 'trocar_morador', nome_novo: 'FUNCIONARI
 const a907 = C.tabela_('FutUnidades').linhas.find(x => x.id === 'AP 907');
 assert(a907.locatario === 'FUNCIONARIO B' && a907.situacao === 'alugado' && C.tabela_('FutCobrancas').linhas.find(c => c.id === 'FC3').pessoa === 'FUNCIONARIO B' && C.tabela_('FutPessoas').linhas.some(p => p.nome === 'FUNCIONARIO B' && p.situacao === 'atual'), 'empresa paga: troca só o morador; a cobrança continua');
 console.log('fim future');
+// 8.63.1: tribunais com processo ativo sem leitura direta (dados inventados)
+add('Processos', [{ id: 'P863rs1', numero: '5000001-11.2026.8.21.0001', status: 'ativo', fase: 'andamento' }, { id: 'P863rs2', numero: '5000002-11.2026.8.21.0001', status: 'ativo', fase: 'andamento' },
+  { id: 'P863rs3', numero: '5000003-11.2026.8.21.0001', status: 'arquivado', fase: 'extinto' }, { id: 'P863pr', numero: '0000004-11.2026.8.16.0001', status: 'ativo', fase: 'andamento' }]);
+const falt = C.faltamPortais_({ TJSC: 1, TRT12: 1 });
+assert(falt.some(f => f.t === 'TJRS' && f.n === 2) && falt.some(f => f.t === 'TJPR' && f.n === 1) && !falt.some(f => f.t === 'TJSC' || f.t === 'TRT12'), 'faltam acessos: TJRS (2 ativos; o arquivado não conta) e TJPR; os lidos ficam de fora');
+console.log('fim 863.1');

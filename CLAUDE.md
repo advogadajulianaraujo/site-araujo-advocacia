@@ -2338,3 +2338,11 @@ Toda vez que um portal for ligado ao painel (eproc, PJe, JTe, qualquer outro):
     "MODELO — LAUDO DE VISTORIA COMERCIAL (painel)" (Config FUTURE_MODELO_COMERCIAL / _LAUDO_COMERCIAL), copiados dos residenciais; trecho que
     não estava no modelo vai para Config FUTURE_MODELOS_863_AVISO. Aditivo e distrato continuam só para apartamentos. Teste
     `.github/motor/teste/futureModelos.js` (Google Docs falso, textos inventados).
+- 8.63.1 (28/11/2026, pedido da usuária: "sempre avise no sistema quais faltam"): eproc da Justiça Federal com a senha NOVA (cofre ssotrf4; leu
+  JFSC 2 prazos em aberto, 5 aguardando abertura, 1 pauta; TRF4/JFRS/JFPR vazios). TJRS: o eproc do RS responde do Supabase de São Paulo
+  (eproc1g/eproc2g.tjrs.jus.br → login nacional kc_idp_hint=tjrs → login do TJRS); `ssotjrs` em SSO_EPROC e "TJRS — eproc" em Intimações
+  eletrônicas, mas o login sc054832 foi RECUSADO pelo TJRS ("usuário ou senha inválida") — o TJRS tem login próprio; não insistir.
+  `painel_eproc` aceita `so` (testa um portal só). Intimações eletrônicas: tabela "Tribunais com processo ativo e sem leitura direta" (pelo nº CNJ
+  × portais ligados) e o resumo das 7h30/13h30 no chat diz "Sem leitura direta: TJRS (15), TJAL (4)…" (`faltamPortais_`, Config PORTAIS_RESUMO.faltam).
+  Em 28/11: TJSC 676 ✓, TRT12 327 (bloqueia a lista), JF/TRF4 63 ✓, TJRS 15 ✗, TJAL 4, TRT4 4 ✓, TJPR 3, TRT6 3 ✓, TRF3 2, TRT9 2 ✓, TJSP/TJMA/
+  TJRJ/TJRR 1 ✗, TRT2/TRT20/TRT23 1 ✓. TRF3/TJMA usam o PJe da CNJ (outra versão, sem a API do painel do advogado da Justiça do Trabalho).
